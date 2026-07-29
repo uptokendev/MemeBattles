@@ -1,5 +1,7 @@
 import "dotenv/config";
 
+const ACTIVE_BSC_TESTNET_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
+
 function req(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -21,7 +23,7 @@ export const ENV = {
   BSC_RPC_HTTP_97: req("BSC_RPC_HTTP_97"),
   BSC_RPC_HTTP_56: process.env.BSC_RPC_HTTP_56 || "",
 
-  FACTORY_ADDRESS_97: firstEnv("FACTORY_ADDRESS_97", "VITE_FACTORY_ADDRESS_97", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
+  FACTORY_ADDRESS_97: ACTIVE_BSC_TESTNET_FACTORY,
   FACTORY_ADDRESS_56: firstEnv("FACTORY_ADDRESS_56", "VITE_FACTORY_ADDRESS_56", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
 
   SOLANA_RPC_HTTP: process.env.SOLANA_RPC_HTTP || "",

@@ -83,6 +83,9 @@ async function main() {
   assertAddressEq("Active LaunchFactory.owner", await activeFactory.owner(), deployerAddress);
   if (!(await activeFactory.live())) throw new Error("Active LaunchFactory is not live.");
   if (await activeFactory.globalPaused()) throw new Error("Active LaunchFactory is globally paused.");
+  if (await activeFactory.createPaused()) {
+    throw new Error("Active factory creation is already paused. Refusing a duplicate replacement deployment.");
+  }
 
   const router = requireAddress("Topaz router adapter", await activeFactory.router());
   const treasuryRouter = requireAddress("TreasuryRouterV2", await activeFactory.feeRecipient());
@@ -247,7 +250,11 @@ async function main() {
 
   const creatorProfile = await registry.getCreatorProfile(qaCreator);
   const creatorRules = await registry.getCreatorRules(qaCreator);
-  const expectedEarliest = BigInt(creatorProfile.lastLaunchTimestamp) + BigInt(creatorRules.cooldownSeconds);
+  const latestBlock = await ethers.provider.getBlock("latest");
+  const registryEarliest = BigInt(creatorProfile.lastLaunchTimestamp) + BigInt(creatorRules.cooldownSeconds);
+  const expectedEarliest = registryEarliest > BigInt(latestBlock?.timestamp || 0)
+    ? registryEarliest
+    : BigInt(latestBlock?.timestamp || 0);
   const beforeEligibility = await replacement.creatorLaunchEligibilityAt(qaCreator, expectedEarliest - 1n);
   const atEligibility = await replacement.creatorLaunchEligibilityAt(qaCreator, expectedEarliest);
   if (beforeEligibility.allowed) throw new Error("Replacement factory incorrectly allows a scheduled launch before cooldown ends.");
@@ -333,6 +340,7 @@ async function main() {
     [
       `VITE_FACTORY_ADDRESS_97=${replacementFactoryAddress}`,
       `VITE_SCHEDULED_FACTORY_ADDRESS_97=${replacementFactoryAddress}`,
+      `VITE_PERMANENT_LP_LOCKER_ADDRESS_97=${replacementLocker}`,
       `SCHEDULED_FACTORY_ADDRESS_97=${replacementFactoryAddress}`,
       `FACTORY_ADDRESS_97=${replacementFactoryAddress}`,
       `FACTORY_START_BLOCK_97=${deploymentBlock}`,
@@ -397,18 +405,36 @@ async function main() {
   if (!bnbContractsSource.includes("ACTIVE_BSC_TESTNET_FACTORY")) {
     bnbContractsSource = bnbContractsSource.replace(
       "const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;",
-      `const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;\nexport const ACTIVE_BSC_TESTNET_FACTORY = "${replacementFactoryAddress}";`,
+      `const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;\nexport const ACTIVE_BSC_TESTNET_FACTORY = "${replacementFactoryAddress}";\nexport const ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER = "${replacementLocker}";`,
     );
   } else {
     bnbContractsSource = bnbContractsSource.replace(
       /export const ACTIVE_BSC_TESTNET_FACTORY = "0x[a-fA-F0-9]{40}";/,
       `export const ACTIVE_BSC_TESTNET_FACTORY = "${replacementFactoryAddress}";`,
     );
+    if (bnbContractsSource.includes("ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER")) {
+      bnbContractsSource = bnbContractsSource.replace(
+        /export const ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER = "0x[a-fA-F0-9]{40}";/,
+        `export const ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER = "${replacementLocker}";`,
+      );
+    } else {
+      bnbContractsSource = bnbContractsSource.replace(
+        /export const ACTIVE_BSC_TESTNET_FACTORY = "0x[a-fA-F0-9]{40}";/,
+        (match) => `${match}\nexport const ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER = "${replacementLocker}";`,
+      );
+    }
   }
   bnbContractsSource = bnbContractsSource.replace(
     /launchFactory: readAddress\(chainId, "VITE_FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"\),/,
     "launchFactory: Number(chainId) === 97 ? ACTIVE_BSC_TESTNET_FACTORY : readAddress(chainId, \"VITE_FACTORY_ADDRESS\", \"VITE_FACTORY_ADDRESS\"),",
   );
+  bnbContractsSource = bnbContractsSource.replace(
+    /permanentLpLocker: readAddress\(chainId, "VITE_PERMANENT_LP_LOCKER_ADDRESS"\),/,
+    "permanentLpLocker: Number(chainId) === 97 ? ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER : readAddress(chainId, \"VITE_PERMANENT_LP_LOCKER_ADDRESS\"),",
+  );
+  if (!bnbContractsSource.includes(replacementFactoryAddress) || !bnbContractsSource.includes(replacementLocker)) {
+    throw new Error("Frontend BSC Testnet factory or locker pointer was not updated.");
+  }
   fs.writeFileSync(bnbContractsFile, bnbContractsSource);
 
   const indexerEnvFile = path.join(root, "realtime-indexer", "src", "env.ts");
@@ -434,6 +460,7 @@ async function main() {
   let exampleEnv = fs.readFileSync(exampleEnvFile, "utf8");
   exampleEnv = exampleEnv.replace(/^VITE_FACTORY_ADDRESS_97=.*$/m, `VITE_FACTORY_ADDRESS_97=${replacementFactoryAddress}`);
   exampleEnv = exampleEnv.replace(/^VITE_SCHEDULED_FACTORY_ADDRESS_97=.*$/m, `VITE_SCHEDULED_FACTORY_ADDRESS_97=${replacementFactoryAddress}`);
+  exampleEnv = exampleEnv.replace(/^VITE_PERMANENT_LP_LOCKER_ADDRESS_97=.*$/m, `VITE_PERMANENT_LP_LOCKER_ADDRESS_97=${replacementLocker}`);
   exampleEnv = exampleEnv.replace(/^SCHEDULED_FACTORY_ADDRESS_97=.*$/m, `SCHEDULED_FACTORY_ADDRESS_97=${replacementFactoryAddress}`);
   fs.writeFileSync(exampleEnvFile, exampleEnv);
 
