@@ -6,6 +6,7 @@ import process from "node:process";
 const PLACEHOLDER_PROGRAM_ID = "Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG";
 const PROGRAM_SOURCE = "programs/memewarzone_solana/src/lib.rs";
 const ANCHOR_TOML = "Anchor.toml";
+const GENERATION_MANIFEST = "config/solana/devnet-generation-v1.json";
 const DEFAULT_OUTPUT = "deployments/solana-devnet.prepared.json";
 
 function fail(message) {
@@ -15,6 +16,20 @@ function fail(message) {
 function readText(filePath) {
   if (!fs.existsSync(filePath)) fail(`Missing required file: ${filePath}`);
   return fs.readFileSync(filePath, "utf8");
+}
+
+function readJson(filePath) {
+  try {
+    return JSON.parse(readText(filePath));
+  } catch (error) {
+    fail(`${filePath} is not valid JSON: ${error.message}`);
+  }
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 
 function sha256File(filePath) {
@@ -48,6 +63,7 @@ function parseArgs(argv) {
 const options = parseArgs(process.argv);
 const libSource = readText(PROGRAM_SOURCE);
 const anchorSource = readText(ANCHOR_TOML);
+const generationManifest = readJson(GENERATION_MANIFEST);
 const declaredId = extractProgramId(libSource, /declare_id!\("([1-9A-HJ-NP-Za-km-z]+)"\)/, "declare_id!");
 const anchorDevnetId = extractProgramId(
   anchorSource,
@@ -72,6 +88,7 @@ for (const [label, filePath] of Object.entries(artifacts)) {
   if (!fs.existsSync(filePath)) fail(`Missing ${label} artifact: ${filePath}. Run the pinned Anchor build first.`);
 }
 
+const generationManifestSha256 = sha256Text(canonicalJson(generationManifest));
 const prepared = {
   schemaVersion: 1,
   status: "prepared_not_deployed",
@@ -91,10 +108,12 @@ const prepared = {
     programSha256: sha256File(artifacts.programSo),
     idlSha256: sha256File(artifacts.idl),
     v4BindingSha256: sha256File(artifacts.v4Binding),
+    generationManifestSha256,
     programSourceSha256: sha256Text(libSource),
     anchorTomlSha256: sha256Text(anchorSource),
   },
   artifacts,
+  generationManifest: GENERATION_MANIFEST,
   deployment: {
     signature: null,
     slot: null,
@@ -105,6 +124,7 @@ const prepared = {
     globalConfig: null,
     generationConfig: null,
     clusterProfile: null,
+    protocolStateEvidence: null,
     securityDefaultsLocked: false,
     pauseFlagsVerified: false,
   },
@@ -115,3 +135,4 @@ fs.writeFileSync(options.output, `${JSON.stringify(prepared, null, 2)}\n`, "utf8
 console.log(`Prepared Solana devnet deployment manifest: ${options.output}`);
 console.log(`Program ID: ${requestedId}`);
 console.log(`Program SHA-256: ${prepared.hashes.programSha256}`);
+console.log(`Generation manifest SHA-256: ${generationManifestSha256}`);
