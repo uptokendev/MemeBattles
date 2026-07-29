@@ -1,2 +1,2 @@
-// Execute the byte-matched devpostgrad deployment workflow. Removed automatically after publishing the replacement.
+// Trigger the registered Ticker Reservation CI deployment job. Removed automatically after publishing the replacement.
 export {};
