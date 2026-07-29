@@ -7,6 +7,7 @@ const SCHEDULED_FACTORY_ABI = [
   "function globalPaused() view returns (bool)",
   "function createPaused() view returns (bool)",
   "function creatorRegistry() view returns (address)",
+  "function lastScheduledLaunchTimestamp(address creator) view returns (uint256)",
   "function creatorLaunchEligibilityAt(address creator,uint256 launchTimestamp) view returns (bool allowed,uint256 earliestLaunchTimestamp,uint256 currentLiveCount,uint256 maxLiveBonding)",
   "function createScheduledCampaignAuthorized(((string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint256 graduationTarget) campaign,uint64 launchAt,bytes32 draftReferenceHash,bytes32 normalizedTickerHash,bytes32 metadataHash,uint64 reservationVersion,uint256 authorizationNonce) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
   "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI,string metadataURI)",
@@ -134,6 +135,10 @@ export type ScheduledCreatorLaunchEligibility = {
   earliestLaunchAt: number;
   currentLiveCount: number;
   maxLiveBonding: number;
+  cooldownSeconds: number;
+  lastRecordedLaunchAt: number;
+  lastScheduledLaunchAt: number;
+  cooldownAnchorAt: number;
 };
 
 export async function readScheduledCreatorLaunchEligibility(input: {
@@ -153,12 +158,37 @@ export async function readScheduledCreatorLaunchEligibility(input: {
 
   const factory = new Contract(input.factoryAddress, SCHEDULED_FACTORY_ABI, provider) as any;
   try {
-    const result = await factory.creatorLaunchEligibilityAt(await input.signer.getAddress(), input.launchAt);
+    const creator = await input.signer.getAddress();
+    const [result, registryAddressRaw, lastScheduledRaw] = await Promise.all([
+      factory.creatorLaunchEligibilityAt(creator, input.launchAt),
+      factory.creatorRegistry(),
+      factory.lastScheduledLaunchTimestamp(creator),
+    ]);
+
+    let cooldownSeconds = 0;
+    let lastRecordedLaunchAt = 0;
+    const registryAddress = String(registryAddressRaw || "");
+    if (ethers.isAddress(registryAddress) && registryAddress !== ethers.ZeroAddress) {
+      const registry = new Contract(registryAddress, CREATOR_REGISTRY_ABI, provider) as any;
+      const [profile, rules] = await Promise.all([
+        registry.getCreatorProfile(creator),
+        registry.getCreatorRules(creator),
+      ]);
+      lastRecordedLaunchAt = Number(profile.lastLaunchTimestamp ?? profile[3] ?? 0);
+      cooldownSeconds = Number(rules.cooldownSeconds ?? rules[1] ?? 0);
+    }
+
+    const lastScheduledLaunchAt = Number(lastScheduledRaw ?? 0);
+    const cooldownAnchorAt = Math.max(lastRecordedLaunchAt, lastScheduledLaunchAt);
     return {
       allowed: Boolean(result.allowed ?? result[0]),
       earliestLaunchAt: Number(result.earliestLaunchTimestamp ?? result[1] ?? 0),
       currentLiveCount: Number(result.currentLiveCount ?? result[2] ?? 0),
       maxLiveBonding: Number(result.maxLiveBonding ?? result[3] ?? 0),
+      cooldownSeconds,
+      lastRecordedLaunchAt,
+      lastScheduledLaunchAt,
+      cooldownAnchorAt,
     };
   } catch (error: any) {
     const text = String(error?.shortMessage || error?.message || error || "");

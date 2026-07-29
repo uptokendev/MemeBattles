@@ -68,6 +68,14 @@ function formatLocalLaunch(seconds: number) {
   });
 }
 
+function formatCooldownDuration(seconds: number) {
+  const hours = Math.floor(Math.max(0, seconds) / 3600);
+  const minutes = Math.floor((Math.max(0, seconds) % 3600) / 60);
+  if (hours && minutes) return `${hours} hours ${minutes} minutes`;
+  if (hours) return `${hours} hours`;
+  return `${minutes} minutes`;
+}
+
 async function markDraftDeployment(input: {
   draftId: string;
   auth: any;
@@ -376,7 +384,7 @@ export default function PushDraftLive() {
                 setScheduledEligibility(null);
                 setScheduledEligibilityError(null);
               }}
-              min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
+              min={toLocalInputValue(new Date(Math.max(Date.now() + 5 * 60 * 1000, Number(scheduledEligibility?.earliestLaunchAt || 0) * 1000)))}
               max={toLocalInputValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))}
               className="mt-2 max-w-md"
               disabled={submitting}
@@ -396,9 +404,28 @@ export default function PushDraftLive() {
                 Eligible at this launch time. You will sign and pay gas now; the deployed contract blocks trading until the selected time.
               </p>
             ) : scheduledEligibility && scheduledEligibility.earliestLaunchAt ? (
-              <p className="mt-3 text-sm text-orange-300">
-                Earliest allowed launch: {formatLocalLaunch(scheduledEligibility.earliestLaunchAt)} ({creatorTimeZone}).
-              </p>
+              <div className="mt-3 space-y-2 border border-orange-400/30 bg-orange-500/5 p-3 text-sm text-orange-200">
+                <p className="font-medium">
+                  Earliest next launch: {formatLocalLaunch(scheduledEligibility.earliestLaunchAt)} ({creatorTimeZone}).
+                </p>
+                {scheduledEligibility.cooldownAnchorAt ? (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Cooldown starts from this wallet&apos;s latest {scheduledEligibility.lastScheduledLaunchAt >= scheduledEligibility.lastRecordedLaunchAt ? "scheduled" : "recorded"} launch on {formatLocalLaunch(scheduledEligibility.cooldownAnchorAt)}. Creator launches must be {formatCooldownDuration(scheduledEligibility.cooldownSeconds)} apart.
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mwz-button h-9 font-retro text-xs"
+                  onClick={() => {
+                    setLaunchAtInput(toLocalInputValue(new Date(scheduledEligibility.earliestLaunchAt * 1000)));
+                    setScheduledEligibility(null);
+                    setScheduledEligibilityError(null);
+                  }}
+                >
+                  Use earliest allowed time
+                </Button>
+              </div>
             ) : null}
             {scheduledEligibilityError ? <p className="mt-3 text-sm text-orange-300">{scheduledEligibilityError}</p> : null}
           </div>
