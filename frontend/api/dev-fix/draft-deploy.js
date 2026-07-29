@@ -10,11 +10,10 @@ import {
   loadDraftRowById,
 } from "./scheduled-lifecycle.js";
 
-const BSC_TESTNET_SCHEDULED_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
+const OBSOLETE_BSC_TESTNET_SCHEDULED_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
 
 function configuredScheduledFactory(chainId) {
   const id = Number(chainId);
-  if (id === 97) return BSC_TESTNET_SCHEDULED_FACTORY;
   const configured = String(
     process.env[`SCHEDULED_FACTORY_ADDRESS_${id}`] ||
       process.env[`SCHEDULED_LAUNCH_FACTORY_ADDRESS_${id}`] ||
@@ -23,7 +22,10 @@ function configuredScheduledFactory(chainId) {
       process.env.SCHEDULED_LAUNCH_FACTORY_ADDRESS ||
       "",
   ).trim();
-  return ethers.isAddress(configured) ? ethers.getAddress(configured) : "";
+  if (!ethers.isAddress(configured)) return "";
+  const address = ethers.getAddress(configured);
+  if (id === 97 && address.toLowerCase() === OBSOLETE_BSC_TESTNET_SCHEDULED_FACTORY.toLowerCase()) return "";
+  return address;
 }
 
 function isUnsignedDecimal(value, { allowZero = true } = {}) {
@@ -72,7 +74,7 @@ export async function draftDeploy(req, res) {
       const supplied = String(body.factoryAddress || "").trim();
       if (!expected) {
         return json(res, 503, {
-          error: "Scheduled LaunchFactory is not configured for this chain.",
+          error: "The corrected scheduled LaunchFactory is not configured. The obsolete BSC Testnet factory is blocked for new campaigns.",
           code: "SCHEDULED_FACTORY_NOT_CONFIGURED",
         });
       }
