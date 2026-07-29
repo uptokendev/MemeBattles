@@ -8,10 +8,13 @@ import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production-dca0.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
-const DISABLE_ONCHAIN_TRADE_FALLBACK = String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1";
-const ENABLE_ONCHAIN_TRADE_FALLBACK = !DISABLE_ONCHAIN_TRADE_FALLBACK;
+// Browser eth_getLogs is intentionally opt-in. Historical recovery belongs in
+// the server-side indexer, where ranges can be split, retried and persisted.
+const ENABLE_ONCHAIN_TRADE_FALLBACK =
+  String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
+  String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() !== "1";
 const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 5_000;
-const ONCHAIN_FALLBACK_CHUNK_SIZE = 1_000;
+const ONCHAIN_FALLBACK_CHUNK_SIZE = 250;
 
 type RealtimeChannel = any;
 
@@ -41,6 +44,11 @@ const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 function isTradeCampaignAddress(campaignAddress: string | undefined, chainId: number) {
   const raw = String(campaignAddress || "").trim();
   return isEvmChainId(chainId) && ethers.isAddress(raw);
+}
+
+function isAbortError(error: unknown): boolean {
+  const candidate = error as any;
+  return candidate?.name === "AbortError" || String(candidate?.message || candidate || "").toLowerCase().includes("aborted");
 }
 
 function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
@@ -125,6 +133,27 @@ async function fetchJson(url: string, signal?: AbortSignal) {
   return r.json();
 }
 
+async function getLogsAdaptive(
+  provider: ethers.Provider,
+  params: { address: string; topics?: (string | string[] | null)[] },
+  fromBlock: number,
+  toBlock: number,
+  signal?: AbortSignal,
+  depth = 0,
+): Promise<ethers.Log[]> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  try {
+    return await provider.getLogs({ ...params, fromBlock, toBlock } as any);
+  } catch (error) {
+    const span = toBlock - fromBlock + 1;
+    if (span <= 25 || depth >= 8) throw error;
+    const middle = Math.floor((fromBlock + toBlock) / 2);
+    const left = await getLogsAdaptive(provider, params, fromBlock, middle, signal, depth + 1);
+    const right = await getLogsAdaptive(provider, params, middle + 1, toBlock, signal, depth + 1);
+    return left.concat(right);
+  }
+}
+
 async function getLogsChunked(
   provider: ethers.Provider,
   params: { address: string; topics?: (string | string[] | null)[] },
@@ -137,7 +166,7 @@ async function getLogsChunked(
   for (let start = fromBlock; start <= toBlock; start += ONCHAIN_FALLBACK_CHUNK_SIZE) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const end = Math.min(toBlock, start + ONCHAIN_FALLBACK_CHUNK_SIZE - 1);
-    const chunk = await provider.getLogs({ ...params, fromBlock: start, toBlock: end } as any);
+    const chunk = await getLogsAdaptive(provider, params, start, end, signal);
     logs.push(...chunk);
   }
 
@@ -229,7 +258,7 @@ async function fetchOnChainTradeSnapshot(
 /**
  * Curve trades backed by:
  *  1) Snapshot: Railway realtime-indexer REST endpoint
- *  2) Dev-only fallback snapshot: recent on-chain campaign trade logs when Railway fails
+ *  2) Explicit dev-only fallback: recent on-chain campaign logs
  *  3) Realtime: Ably channel updates
  *  4) Optional safety reconcile when VITE_ENABLE_TOKEN_POLLING=1
  */
@@ -317,33 +346,37 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       try {
         const rows = await fetchJson(apiTradesUrl, signal);
         const apiRows = Array.isArray(rows) ? rows : [];
-        const applied = applySnapshot(apiRows);
-        if ((applied === 0 || forceOnChainReconcile) && ENABLE_ONCHAIN_TRADE_FALLBACK) {
+        applySnapshot(apiRows);
+        if (forceOnChainReconcile && ENABLE_ONCHAIN_TRADE_FALLBACK) {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           applySnapshot(fallbackRows);
         }
         setError(null);
         initialLoadedRef.current = true;
       } catch (apiError: any) {
+        if (isAbortError(apiError)) return;
         if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
-          console.warn("[useCurveTrades] trade API failed; falling back to on-chain logs", apiError);
+          console.warn("[useCurveTrades] trade API failed; using explicit on-chain fallback", apiError);
           try {
             const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
             applySnapshot(fallbackRows);
+            setError(null);
           } catch (fallbackError) {
-            console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+            if (!isAbortError(fallbackError)) {
+              console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+              setError("Trade history is temporarily unavailable.");
+            }
           }
-          setError(null);
         } else {
           console.warn("[useCurveTrades] trade API failed; indexer must repair/backfill", apiError);
-          setError(null);
+          setError("Trade history is temporarily unavailable.");
         }
         initialLoadedRef.current = true;
       }
-    } catch (e: any) {
-      if (e?.name !== "AbortError") {
-        console.warn("[useCurveTrades] trade snapshot failed", e);
-        setError(null);
+    } catch (error: any) {
+      if (!isAbortError(error)) {
+        console.warn("[useCurveTrades] trade snapshot failed", error);
+        setError("Trade history is temporarily unavailable.");
         initialLoadedRef.current = true;
       }
     } finally {
@@ -364,16 +397,16 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       initialLoadedRef.current = false;
     }
 
-    pullSnapshot(ac.signal);
+    void pullSnapshot(ac.signal);
 
     if (!canLoadTrades || !ENABLE_TOKEN_POLLING) return () => ac.abort();
 
-    const t = setInterval(() => {
-      pullSnapshot(ac.signal);
+    const timer = setInterval(() => {
+      void pullSnapshot(ac.signal);
     }, reconcileMs);
 
     return () => {
-      clearInterval(t);
+      clearInterval(timer);
       ac.abort();
     };
   }, [canLoadTrades, campaignAddress, pullSnapshot, reconcileMs]);
@@ -389,8 +422,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       if (Array.isArray(detail?.trades) && detail.trades.length) {
         applySnapshot(detail.trades);
       }
-      const ac = new AbortController();
-      void pullSnapshot(ac.signal, true);
+      // Reconcile through the persisted API. Browser log scans are a deliberate
+      // dev-only escape hatch and should not run after every confirmed trade.
+      void pullSnapshot();
     };
 
     window.addEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
@@ -411,7 +445,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       ably.channel.subscribe("trade", onTrade);
     } catch {
-      // ignore
+      // HTTP snapshot remains the source of truth when realtime is unavailable.
     }
 
     return () => {
