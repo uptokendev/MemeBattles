@@ -79,6 +79,18 @@ describe("scheduled testnet deployment scripts", function () {
     expect(correctedActivation).to.include("CAMPAIGN_GENERATION()) !== 2");
   });
 
+  it("emits active frontend, Railway, and generation manifests after corrected activation", async () => {
+    expect(correctedActivation).to.include("bscTestnet.creator-arm-cooldown-factory.frontend.env");
+    expect(correctedActivation).to.include("bscTestnet.creator-arm-cooldown-factory.railway.env");
+    expect(correctedActivation).to.include("bscTestnet.creator-arm-cooldown-factory.generations.json");
+    expect(correctedActivation).to.include("VITE_FACTORY_ADDRESS_97=${replacementAddress}");
+    expect(correctedActivation).to.include("VITE_SCHEDULED_FACTORY_ADDRESS_97=${replacementAddress}");
+    expect(correctedActivation).to.include("FACTORY_ADDRESS_97=${replacementAddress}");
+    expect(correctedActivation).to.include("SUPPORTED_FACTORY_ADDRESSES_97=${supportedCsv}");
+    expect(correctedActivation).to.include("activeFactoryGeneration: 3");
+    expect(correctedActivation).to.include("activeCampaignGeneration: 2");
+  });
+
   it("refuses all staged test-threshold operations on BSC mainnet", async () => {
     for (const source of [treasuryMigration, stagedFactory, activation]) {
       expect(source).to.include("MAINNET_CHAIN_ID = 56n");
