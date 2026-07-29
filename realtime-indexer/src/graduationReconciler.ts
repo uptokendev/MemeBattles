@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { ablyRest, tokenChannel } from "./ably.js";
 import { LAUNCH_CAMPAIGN_ABI } from "./abis.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
@@ -48,12 +49,14 @@ async function listCandidates(chainId: number): Promise<Candidate[]> {
        c.campaign_address,
        coalesce(c.created_block,0) as created_block,
        c.graduated_block,
-       coalesce(c.market_stage,'BONDING') as market_stage
+       coalesce(cms.market_stage,c.market_stage,'BONDING') as market_stage
      from public.campaigns c
+     left join public.campaign_market_state cms
+       on cms.chain_id=c.chain_id and cms.campaign_address=c.campaign_address
      where c.chain_id=$1
        and c.support_enabled=true
        and c.indexing_enabled=true
-       and coalesce(c.market_stage,'BONDING') in ('BONDING','GRADUATING','TOPAZ_PENDING','TOPAZ_DEGRADED')
+       and coalesce(cms.market_stage,c.market_stage,'BONDING') in ('BONDING','GRADUATING','TOPAZ_PENDING','TOPAZ_DEGRADED')
      order by
        case when c.graduated_block is not null then 0 else 1 end,
        coalesce(c.graduated_at_chain,c.created_at_chain,c.updated_at) desc nulls last
@@ -117,6 +120,34 @@ async function findGraduationLog(
   }
 
   return latest;
+}
+
+async function publishStageChange(input: {
+  chainId: number;
+  campaignAddress: string;
+  from: string;
+  to: string;
+  blockNumber: number;
+  txHash: string;
+  reason?: string | null;
+}) {
+  if (input.from === input.to) return;
+  try {
+    const channel = ablyRest.channels.get(tokenChannel(input.chainId, input.campaignAddress));
+    await channel.publish("market_stage_changed", {
+      eventId: `${input.chainId}:${input.campaignAddress}:${input.blockNumber}:${input.to}`,
+      chainId: input.chainId,
+      campaignAddress: input.campaignAddress,
+      from: input.from,
+      to: input.to,
+      marketStage: input.to,
+      blockNumber: input.blockNumber,
+      txHash: input.txHash,
+      reason: input.reason ?? null,
+    });
+  } catch (error: any) {
+    console.warn("[wtr] market stage realtime publish failed", error?.message || String(error));
+  }
 }
 
 async function noteMissingGraduationLog(chainId: number, candidate: Candidate) {
@@ -195,6 +226,16 @@ async function reconcileCandidate(
     blockNumber: log.blockNumber,
     blockTime,
     args: parsed.args,
+  });
+
+  await publishStageChange({
+    chainId,
+    campaignAddress: candidate.campaignAddress,
+    from: candidate.marketStage,
+    to: result.marketStage,
+    blockNumber: log.blockNumber,
+    txHash: log.transactionHash,
+    reason: result.reason,
   });
 
   console.log("[wtr] graduation reconciled", result);
