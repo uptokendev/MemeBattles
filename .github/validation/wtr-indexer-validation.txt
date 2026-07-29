@@ -1,0 +1,4 @@
+WTR indexer validation passed
+validated_source_sha=c3c20cf90b30b9a72f1b7b2dcc090ada15e808d8
+node=20
+commands=npm_ci,test_wtr,typescript_build
