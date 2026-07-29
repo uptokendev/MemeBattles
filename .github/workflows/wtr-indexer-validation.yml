@@ -1,0 +1,56 @@
+name: WTR indexer validation
+
+on:
+  push:
+    branches:
+      - agent/war-trade-room-continuity-foundation
+    paths:
+      - .github/workflows/wtr-indexer-validation.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wtr-indexer-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/war-trade-room-continuity-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Install realtime indexer dependencies
+        run: npm ci --prefix realtime-indexer --no-audit --no-fund
+
+      - name: Run War Trade Room regression tests
+        run: npm --prefix realtime-indexer run test:wtr
+
+      - name: Build realtime indexer
+        run: npm --prefix realtime-indexer run build
+
+      - name: Publish validation marker
+        shell: bash
+        run: |
+          mkdir -p .github/validation
+          cat > .github/validation/wtr-indexer-validation.txt <<EOF
+          WTR indexer validation passed
+          validated_source_sha=${GITHUB_SHA}
+          node=20
+          commands=npm_ci,test_wtr,typescript_build
+          EOF
+          git config user.name "MemeWarzone Validation Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/validation/wtr-indexer-validation.txt
+          git commit -m "ci(wtr): record successful indexer validation"
+          git push origin HEAD:agent/war-trade-room-continuity-foundation
