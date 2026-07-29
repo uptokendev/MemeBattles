@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import { badMethod, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
-import { evaluateCreatePreflight } from "./security.js";
+import { evaluateCreatePreflight } from "./security-current-time.js";
 import { getRouteDecision } from "./route-decision.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
 import { signScheduledCreateAuthorization } from "./routeAuthorizationSigner.js";
@@ -15,7 +15,10 @@ import {
   withTickerReservationTransaction,
 } from "./ticker-reservation-service.js";
 
+const MIN_SCHEDULE_SECONDS = 5 * 60;
 const MAX_SCHEDULE_SECONDS = 30 * 24 * 60 * 60;
+const FACTORY_GENERATION = 3;
+const CAMPAIGN_GENERATION = 2;
 const WAD = 10n ** 18n;
 const STANDARD_TARGETS = new Set([
   (15_000n * WAD).toString(),
@@ -132,8 +135,8 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
   const now = Math.floor(Date.now() / 1000);
 
   if (!walletAddress || !factoryAddress) return json(res, 400, { error: "Missing wallet or factory address." });
-  if (!Number.isInteger(launchAt) || launchAt <= now || launchAt > now + MAX_SCHEDULE_SECONDS) {
-    return json(res, 400, { error: "Launch time must be in the future and no more than 30 days away." });
+  if (!Number.isInteger(launchAt) || launchAt < now + MIN_SCHEDULE_SECONDS || launchAt > now + MAX_SCHEDULE_SECONDS) {
+    return json(res, 400, { error: "Launch time must be at least five minutes in the future and no more than 30 days away." });
   }
   if (row.campaign_address) return json(res, 409, { error: "This draft already has an on-chain campaign." });
   if (!["promotion_published", "ready_to_launch"].includes(String(row.status))) {
@@ -158,10 +161,13 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
     graduationTarget,
   };
 
-  const preflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress, launchAt });
+  // The creator cooldown applies to this irreversible arm/deploy action now.
+  // launchAt remains an immutable signed trading-open timestamp, but it must
+  // never be used to evaluate or bypass the current creator cooldown.
+  const preflight = await evaluateCreatePreflight({ walletAddress });
   if (!preflight.allowed) {
     return json(res, 403, {
-      error: preflight.reasons?.[0] || "Creator is not eligible to launch.",
+      error: preflight.reasons?.[0] || "This creator wallet cannot arm another campaign yet.",
       code: "CREATE_PREFLIGHT_BLOCKED",
       preflight,
     });
@@ -224,13 +230,22 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
           metadataHash,
           reservationVersion,
           authorizationNonce,
+          factoryGeneration: FACTORY_GENERATION,
+          campaignGeneration: CAMPAIGN_GENERATION,
           tradeRouteProfileId,
           finalizeRouteProfileId,
           deadline,
         });
         return {
           scheduledRequest,
-          authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
+          authorization: {
+            tradeRouteProfileId,
+            finalizeRouteProfileId,
+            factoryGeneration: FACTORY_GENERATION,
+            campaignGeneration: CAMPAIGN_GENERATION,
+            validUntil,
+            signature,
+          },
         };
       },
     });
@@ -252,6 +267,8 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
         scheduledRequest: canonical.scheduledRequest,
         tickerReservation: canonical.reservation,
         preflight,
+        factoryGeneration: FACTORY_GENERATION,
+        campaignGeneration: CAMPAIGN_GENERATION,
       },
     });
 
@@ -363,7 +380,7 @@ export async function draftDeploy(req, res) {
     ? {
         eventType: "schedule",
         title: "Campaign countdown armed",
-        body: `$${draft?.ticker || row.ticker || "DRAFT"} deploys for trading at ${new Date(scheduledLaunchAt * 1000).toLocaleString("en-GB")}.`,
+        body: `$${draft?.ticker || row.ticker || "DRAFT"} opens for trading at ${new Date(scheduledLaunchAt * 1000).toLocaleString("en-GB")}.`,
         metadata: { target, campaignAddress, tokenAddress: tokenAddress || null, deployTxHash, scheduledLaunchAt },
       }
     : {

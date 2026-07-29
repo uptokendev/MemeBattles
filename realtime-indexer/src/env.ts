@@ -1,7 +1,5 @@
 import "dotenv/config";
 
-const ACTIVE_BSC_TESTNET_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
-
 function req(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -16,6 +14,14 @@ function firstEnv(...names: string[]): string {
   return "";
 }
 
+function csvEnv(...names: string[]): string[] {
+  const value = firstEnv(...names);
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export const ENV = {
   DATABASE_URL: req("DATABASE_URL"),
   ABLY_API_KEY: req("ABLY_API_KEY"),
@@ -23,8 +29,19 @@ export const ENV = {
   BSC_RPC_HTTP_97: req("BSC_RPC_HTTP_97"),
   BSC_RPC_HTTP_56: process.env.BSC_RPC_HTTP_56 || "",
 
-  FACTORY_ADDRESS_97: ACTIVE_BSC_TESTNET_FACTORY,
+  // Creation resolves only against the accepted active factory. The former
+  // scheduled-slot factory is never a fallback creation target.
+  FACTORY_ADDRESS_97: firstEnv("FACTORY_ADDRESS_97", "VITE_FACTORY_ADDRESS_97", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
   FACTORY_ADDRESS_56: firstEnv("FACTORY_ADDRESS_56", "VITE_FACTORY_ADDRESS_56", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
+
+  // Support inventory is deliberately separate from the one active creation
+  // factory. Old factories remain readable and their campaigns continue to be
+  // scanned through the campaigns table. Generation-aware factory discovery
+  // should use this inventory with one checkpoint per address.
+  SUPPORTED_FACTORY_ADDRESSES_97: csvEnv("SUPPORTED_FACTORY_ADDRESSES_97", "VITE_SUPPORTED_FACTORY_ADDRESSES_97"),
+  SUPPORTED_FACTORY_START_BLOCKS_97: csvEnv("SUPPORTED_FACTORY_START_BLOCKS_97", "VITE_SUPPORTED_FACTORY_START_BLOCKS_97").map((value) => Number(value || 0)),
+  SUPPORTED_FACTORY_ADDRESSES_56: csvEnv("SUPPORTED_FACTORY_ADDRESSES_56", "VITE_SUPPORTED_FACTORY_ADDRESSES_56"),
+  SUPPORTED_FACTORY_START_BLOCKS_56: csvEnv("SUPPORTED_FACTORY_START_BLOCKS_56", "VITE_SUPPORTED_FACTORY_START_BLOCKS_56").map((value) => Number(value || 0)),
 
   SOLANA_RPC_HTTP: process.env.SOLANA_RPC_HTTP || "",
   SOLANA_LAUNCHPAD_PROGRAM_ID: process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || "",
@@ -39,7 +56,6 @@ export const ENV = {
   VOTE_TREASURY_ADDRESS_56: firstEnv("VOTE_TREASURY_ADDRESS_56", "VITE_VOTE_TREASURY_ADDRESS_56", "VOTE_TREASURY_ADDRESS", "VITE_VOTE_TREASURY_ADDRESS"),
 
   // Indexing window controls
-  // Set FACTORY_START_BLOCK_97 to the factory deployment block (BSC testnet: 83444786 in your current deployment).
   FACTORY_START_BLOCK_97: Number(process.env.FACTORY_START_BLOCK_97 || 0),
   FACTORY_START_BLOCK_56: Number(process.env.FACTORY_START_BLOCK_56 || 0),
 
@@ -72,7 +88,7 @@ export const ENV = {
 
   // Optional telemetry (recommended). If not set, telemetry is disabled.
   TELEMETRY_INGEST_URL: process.env.TELEMETRY_INGEST_URL || "https://memebattles-telemetry-production.up.railway.app/ingest",
-  TELEMETRY_TOKEN: process.env.TELEMETRY_TOKEN || "datraadjetochnooit1234!!",
+  TELEMETRY_TOKEN: process.env.TELEMETRY_TOKEN || "",
   TELEMETRY_INTERVAL_MS: Number(process.env.TELEMETRY_INTERVAL_MS || "15000"),
 
   RANK_EVENTS_TOKEN: process.env.RANK_EVENTS_TOKEN || "",

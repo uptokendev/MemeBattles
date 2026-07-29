@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
-import { evaluateCreatePreflight, evaluateTradePreflight } from "./security.js";
+import { evaluateCreatePreflight, evaluateTradePreflight } from "./security-current-time.js";
 import {
   getRouteDecision,
   ROUTE_PROFILE_NAMES,
@@ -17,7 +17,18 @@ const VALID_PROFILES = new Set([
   ROUTE_PROFILE_OG_LINKED,
 ]);
 
+const EXPECTED_FACTORY_GENERATION = 3;
+const EXPECTED_CAMPAIGN_GENERATION = 2;
 const FACTORY_ROUTE_AUTHORITY_ABI = ["function routeAuthority() view returns (address)"];
+const FACTORY_CREATION_PREFLIGHT_ABI = [
+  "function routeAuthority() view returns (address)",
+  "function live() view returns (bool)",
+  "function globalPaused() view returns (bool)",
+  "function createPaused() view returns (bool)",
+  "function FACTORY_GENERATION() view returns (uint32)",
+  "function CAMPAIGN_GENERATION() view returns (uint32)",
+  "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
+];
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -191,6 +202,96 @@ async function readOnchainRouteAuthority({ chainId, factoryAddress }) {
   }
 }
 
+async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAddress }) {
+  const rpcUrl = getRpcUrl(chainId);
+  if (!rpcUrl) return { ok: false, status: 503, code: "CREATE_RPC_NOT_CONFIGURED", error: "RPC URL is missing for this chain." };
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    const code = await provider.getCode(factoryAddress);
+    if (!code || code === "0x") {
+      return { ok: false, status: 409, code: "CREATE_FACTORY_CODE_MISSING", error: "The configured creation factory has no contract code." };
+    }
+
+    const factory = new ethers.Contract(factoryAddress, FACTORY_CREATION_PREFLIGHT_ABI, provider);
+    const [
+      live,
+      globalPaused,
+      createPaused,
+      factoryGenerationRaw,
+      campaignGenerationRaw,
+      eligibility,
+      routeAuthority,
+    ] = await Promise.all([
+      factory.live(),
+      factory.globalPaused(),
+      factory.createPaused(),
+      factory.FACTORY_GENERATION(),
+      factory.CAMPAIGN_GENERATION(),
+      factory.creatorLaunchEligibility(walletAddress),
+      factory.routeAuthority(),
+    ]);
+
+    const factoryGeneration = Number(factoryGenerationRaw);
+    const campaignGeneration = Number(campaignGenerationRaw);
+    if (factoryGeneration !== EXPECTED_FACTORY_GENERATION || campaignGeneration !== EXPECTED_CAMPAIGN_GENERATION) {
+      return {
+        ok: false,
+        status: 409,
+        code: "CREATE_FACTORY_GENERATION_MISMATCH",
+        error: `Creation requires factory/campaign generation ${EXPECTED_FACTORY_GENERATION}/${EXPECTED_CAMPAIGN_GENERATION}; configured factory reports ${factoryGeneration}/${campaignGeneration}.`,
+      };
+    }
+    if (!live || globalPaused || createPaused) {
+      return {
+        ok: false,
+        status: 503,
+        code: "CREATE_FACTORY_NOT_READY",
+        error: !live ? "The corrected creation factory is not live." : globalPaused ? "The creation factory is globally paused." : "New campaign creation is paused.",
+      };
+    }
+
+    const allowed = Boolean(eligibility.allowed ?? eligibility[0]);
+    const cooldownEndsAt = Number(eligibility.cooldownEndsAt ?? eligibility[1] ?? 0);
+    const onChainLiveCampaignCount = Number(eligibility.currentLiveCount ?? eligibility[2] ?? 0);
+    const onChainLiveCampaignLimit = Number(eligibility.maxLiveBonding ?? eligibility[3] ?? 0);
+    if (!allowed) {
+      return {
+        ok: false,
+        status: 403,
+        code: "CREATE_ONCHAIN_ELIGIBILITY_BLOCKED",
+        error: cooldownEndsAt > Math.floor(Date.now() / 1000)
+          ? `This creator wallet cannot deploy or arm another campaign until ${new Date(cooldownEndsAt * 1000).toISOString()}. The selected trading-open time does not affect this cooldown.`
+          : onChainLiveCampaignCount >= onChainLiveCampaignLimit
+            ? "This creator wallet has reached its deployed, non-graduated campaign limit."
+            : "This creator wallet cannot deploy or arm another campaign right now.",
+        onChain: { allowed, cooldownEndsAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
+      };
+    }
+
+    return {
+      ok: true,
+      onChain: {
+        allowed,
+        canArmNow: true,
+        cooldownEndsAt,
+        onChainLiveCampaignCount,
+        onChainLiveCampaignLimit,
+        factoryGeneration,
+        campaignGeneration,
+        routeAuthority: ethers.getAddress(routeAuthority),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 503,
+      code: "CREATE_ONCHAIN_PREFLIGHT_FAILED",
+      error: `Current on-chain creation eligibility could not be verified: ${String(error?.shortMessage || error?.message || error)}`,
+    };
+  }
+}
+
 function buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain }) {
   const warnings = [];
   if (!signer) warnings.push("Route-authority private key is not configured or is invalid.");
@@ -230,7 +331,10 @@ export async function routingStatus(req, res) {
 
   const walletAddress = normalizeAddress(q.walletAddress);
   const routeDecision = walletAddress ? await getRouteDecision(walletAddress) : null;
-  const createPreflight = walletAddress ? await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress }) : null;
+  const createPreflight = walletAddress ? await evaluateCreatePreflight({ walletAddress }) : null;
+  const onChainCreationPreflight = walletAddress && factoryAddress
+    ? await readOnchainCreationPreflight({ chainId, factoryAddress, walletAddress })
+    : null;
 
   return json(res, 200, {
     ok: readyForCoreFlow,
@@ -252,12 +356,14 @@ export async function routingStatus(req, res) {
     },
     routeDecision: routeDecision?.decision || null,
     createPreflight,
+    onChainCreationPreflight,
     ttlSeconds: parsePositiveInt(process.env.ROUTE_AUTH_TTL_SECONDS, 10 * 60),
     closeout: {
       requiresSignerConfigured: true,
       requiresOnchainMatch: true,
       requiresCreateAndTradeAuthorization200: true,
       requiresSecurityPreflightAllowed: true,
+      requiresCurrentOnChainCreatorEligibility: true,
     },
   });
 }
@@ -285,7 +391,22 @@ export async function routingCreateAuthorization(req, res) {
     return json(res, 400, { error: error.message });
   }
 
-  const createPreflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress });
+  const onChainPreflight = await readOnchainCreationPreflight({ chainId, factoryAddress, walletAddress });
+  if (!onChainPreflight.ok) {
+    return json(res, onChainPreflight.status || 503, {
+      error: onChainPreflight.error,
+      code: onChainPreflight.code,
+      onChainPreflight: onChainPreflight.onChain || null,
+    });
+  }
+  if (onChainPreflight.onChain.routeAuthority.toLowerCase() !== signer.address.toLowerCase()) {
+    return json(res, 503, {
+      error: "Configured route signer does not match the active factory route authority.",
+      code: "ROUTE_AUTHORITY_MISMATCH",
+    });
+  }
+
+  const createPreflight = await evaluateCreatePreflight({ walletAddress });
   if (!createPreflight.allowed) {
     return json(res, 403, {
       error: createPreflight.reasons?.[0] || "Creator is not eligible to launch.",
@@ -308,6 +429,7 @@ export async function routingCreateAuthorization(req, res) {
     deadline,
   });
 
+  const combinedPreflight = { ...createPreflight, ...onChainPreflight.onChain };
   await logRouteAuthorization({
     chainId,
     walletAddress,
@@ -319,14 +441,14 @@ export async function routingCreateAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/create-authorization", campaignRequest, preflight: createPreflight },
+    metadata: { endpoint: "/api/routing/create-authorization", campaignRequest, preflight: combinedPreflight },
   });
 
   return json(res, 200, {
     authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
     routeAuthority: signer.address,
     decision,
-    preflight: createPreflight,
+    preflight: combinedPreflight,
   });
 }
 

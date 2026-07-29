@@ -16,8 +16,8 @@ import type { SupportedChainId } from "@/lib/chainConfig";
 import { isEvmChainId } from "@/lib/chainConfig";
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-export const ACTIVE_BSC_TESTNET_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
-export const ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER = "0x3Fd82ACA84E43CEDEb6B8b577fd15A1Ce9eC4161";
+export const OBSOLETE_BSC_TESTNET_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
+export const OBSOLETE_BSC_TESTNET_PERMANENT_LP_LOCKER = "0x3Fd82ACA84E43CEDEb6B8b577fd15A1Ce9eC4161";
 
 type Artifact = { abi?: ethers.InterfaceAbi; contractName?: string } | ethers.InterfaceAbi;
 
@@ -31,12 +31,24 @@ function env(name: string): string {
 }
 
 function normalizeAddress(value: string): string {
-  return ADDRESS_RE.test(value) ? value : "";
+  return ADDRESS_RE.test(value) ? ethers.getAddress(value) : "";
 }
 
 function readAddress(chainId: SupportedChainId, perChainName: string, fallbackName?: string) {
   if (!isEvmChainId(chainId)) return "";
   return normalizeAddress(env(`${perChainName}_${chainId}`) || (fallbackName ? env(fallbackName) : ""));
+}
+
+function readCreationFactory(chainId: SupportedChainId) {
+  const configured = readAddress(chainId, "VITE_FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS");
+  if (
+    Number(chainId) === 97 &&
+    configured &&
+    configured.toLowerCase() === OBSOLETE_BSC_TESTNET_FACTORY.toLowerCase()
+  ) {
+    return "";
+  }
+  return configured;
 }
 
 export type BnbContractKey =
@@ -127,7 +139,7 @@ const requiredContracts = new Set<BnbContractKey>([
 
 export function getBnbContractAddresses(chainId: SupportedChainId): BnbContractAddresses {
   return {
-    launchFactory: Number(chainId) === 97 ? ACTIVE_BSC_TESTNET_FACTORY : readAddress(chainId, "VITE_FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
+    launchFactory: readCreationFactory(chainId),
     launchCampaignImplementation: readAddress(chainId, "VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS"),
     treasuryRouter: readAddress(chainId, "VITE_TREASURY_ROUTER_ADDRESS"),
     treasuryVault: readAddress(chainId, "VITE_TREASURY_VAULT_ADDRESS", "VITE_TREASURY_VAULT_ADDRESS"),
@@ -137,7 +149,7 @@ export function getBnbContractAddresses(chainId: SupportedChainId): BnbContractA
     creatorRegistry: readAddress(chainId, "VITE_CREATOR_REGISTRY_ADDRESS"),
     riskRegistry: readAddress(chainId, "VITE_RISK_REGISTRY_ADDRESS"),
     graduationOracle: readAddress(chainId, "VITE_GRADUATION_ORACLE_ADDRESS"),
-    permanentLpLocker: Number(chainId) === 97 ? ACTIVE_BSC_TESTNET_PERMANENT_LP_LOCKER : readAddress(chainId, "VITE_PERMANENT_LP_LOCKER_ADDRESS"),
+    permanentLpLocker: readAddress(chainId, "VITE_PERMANENT_LP_LOCKER_ADDRESS"),
     voteTreasury: readAddress(chainId, "VITE_VOTE_TREASURY_ADDRESS", "VITE_VOTE_TREASURY_ADDRESS"),
     topazRouter: readAddress(chainId, "VITE_TOPAZ_ROUTER_ADDRESS"),
     topazFactory: readAddress(chainId, "VITE_TOPAZ_FACTORY_ADDRESS"),

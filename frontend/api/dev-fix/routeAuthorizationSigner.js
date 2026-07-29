@@ -15,6 +15,8 @@ function loadEthers() {
 
 const ethers = loadEthers();
 
+const OBSOLETE_BSC_TESTNET_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
+
 export const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 export const SCHEDULED_CREATE_AUTH_TYPES = [
   "string",
@@ -51,6 +53,20 @@ function toBigInt(value, label) {
   }
 }
 
+function assertCreationFactoryAllowed(chainId, factory) {
+  const normalizedChainId = toBigInt(chainId, "chainId");
+  const normalizedFactory = ethers.getAddress(factory);
+  if (
+    normalizedChainId === 97n &&
+    normalizedFactory.toLowerCase() === OBSOLETE_BSC_TESTNET_FACTORY.toLowerCase()
+  ) {
+    throw new Error(
+      "The obsolete BSC Testnet scheduled-slot factory is support-only and cannot receive new creation authorizations.",
+    );
+  }
+  return { normalizedChainId, normalizedFactory };
+}
+
 export function hashCampaignRequest(request) {
   return ethers.keccak256(
     coder.encode(REQUEST_HASH_TYPES, [
@@ -78,11 +94,12 @@ export function buildCreateAuthorizationDigest({
   finalizeRouteProfile = finalizeRouteProfileId,
   deadline,
 }) {
+  const { normalizedChainId, normalizedFactory } = assertCreationFactoryAllowed(chainId, factory);
   return ethers.keccak256(
     coder.encode(CREATE_AUTH_TYPES, [
       "MWZ_CREATE_ROUTE_AUTH",
-      toBigInt(chainId, "chainId"),
-      ethers.getAddress(factory),
+      normalizedChainId,
+      normalizedFactory,
       ethers.getAddress(creator),
       requestHash,
       Number(tradeRouteProfile),
@@ -110,7 +127,7 @@ export function buildScheduledCreateAuthorizationDigest({
   metadataHash,
   reservationVersion,
   authorizationNonce,
-  factoryGeneration = 2,
+  factoryGeneration = 3,
   campaignGeneration = 2,
   tradeRouteProfileId,
   tradeRouteProfile = tradeRouteProfileId,
@@ -118,11 +135,12 @@ export function buildScheduledCreateAuthorizationDigest({
   finalizeRouteProfile = finalizeRouteProfileId,
   deadline,
 }) {
+  const { normalizedChainId, normalizedFactory } = assertCreationFactoryAllowed(chainId, factory);
   return ethers.keccak256(
     coder.encode(SCHEDULED_CREATE_AUTH_TYPES, [
       "MWZ_CREATE_SCHEDULED_V2_AUTH",
-      toBigInt(chainId, "chainId"),
-      ethers.getAddress(factory),
+      normalizedChainId,
+      normalizedFactory,
       ethers.getAddress(creator),
       requestHash,
       toBigInt(launchAt, "launchAt"),
