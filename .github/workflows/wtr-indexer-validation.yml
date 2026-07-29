@@ -45,6 +45,7 @@ jobs:
           mkdir -p .github/validation
           cat > .github/validation/wtr-indexer-validation.txt <<EOF
           WTR indexer validation passed
+          validation_revision=topaz_pool_indexer_v1
           validated_source_sha=${GITHUB_SHA}
           node=20
           commands=npm_ci,test_wtr,typescript_build
