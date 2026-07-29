@@ -68,14 +68,6 @@ function formatLocalLaunch(seconds: number) {
   });
 }
 
-function formatCooldownDuration(seconds: number) {
-  const hours = Math.floor(Math.max(0, seconds) / 3600);
-  const minutes = Math.floor((Math.max(0, seconds) % 3600) / 60);
-  if (hours && minutes) return `${hours} hours ${minutes} minutes`;
-  if (hours) return `${hours} hours`;
-  return `${minutes} minutes`;
-}
-
 async function markDraftDeployment(input: {
   draftId: string;
   auth: any;
@@ -110,8 +102,8 @@ export default function PushDraftLive() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [scheduledEligibility, setScheduledEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
-  const [scheduledEligibilityError, setScheduledEligibilityError] = useState<string | null>(null);
+  const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
+  const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
   const [mode, setMode] = useState<"now" | "scheduled">("now");
   const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
@@ -153,36 +145,35 @@ export default function PushDraftLive() {
     () => getScheduledFactoryAddress(Number(draft?.chainId || 0), launchpad.factoryAddress),
     [draft?.chainId, launchpad.factoryAddress],
   );
+  const eligibilityFactoryAddress = scheduledFactoryAddress || launchpad.factoryAddress;
   const creatorTimeZone = useMemo(() => browserTimeZone(), []);
   const selectedLaunchDate = useMemo(() => new Date(launchAtInput), [launchAtInput]);
   const selectedLaunchValid = Number.isFinite(selectedLaunchDate.getTime());
 
   useEffect(() => {
-    if (mode !== "scheduled" || !draft || !wallet.signer || !wallet.account || !scheduledFactoryAddress || !selectedLaunchValid) {
-      setScheduledEligibility(null);
-      setScheduledEligibilityError(null);
+    if (!draft || draftIsSolana || !wallet.signer || !wallet.account || !eligibilityFactoryAddress) {
+      setCreatorEligibility(null);
+      setCreatorEligibilityError(null);
       return;
     }
 
-    const launchAt = Math.floor(selectedLaunchDate.getTime() / 1000);
     let cancelled = false;
     const timer = window.setTimeout(() => {
       readScheduledCreatorLaunchEligibility({
         signer: wallet.signer!,
         chainId: Number(draft.chainId),
-        factoryAddress: scheduledFactoryAddress,
-        launchAt,
+        factoryAddress: eligibilityFactoryAddress,
       })
         .then((result) => {
           if (!cancelled) {
-            setScheduledEligibility(result);
-            setScheduledEligibilityError(null);
+            setCreatorEligibility(result);
+            setCreatorEligibilityError(null);
           }
         })
         .catch((error) => {
           if (!cancelled) {
-            setScheduledEligibility(null);
-            setScheduledEligibilityError(String(error?.message || error || "Could not check scheduled launch eligibility."));
+            setCreatorEligibility(null);
+            setCreatorEligibilityError(String(error?.message || error || "Could not check creator deployment eligibility."));
           }
         });
     }, 250);
@@ -191,7 +182,7 @@ export default function PushDraftLive() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [mode, draft, wallet.signer, wallet.account, scheduledFactoryAddress, selectedLaunchDate, selectedLaunchValid]);
+  }, [draft, draftIsSolana, wallet.signer, wallet.account, eligibilityFactoryAddress]);
 
   const deploy = async () => {
     if (!draft) return;
@@ -202,6 +193,7 @@ export default function PushDraftLive() {
     if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
     if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
+    if (!eligibilityFactoryAddress) return toast.error("The corrected LaunchFactory is not configured for this network.");
     if (mode === "scheduled" && !scheduledFactoryAddress) {
       return toast.error("Scheduled LaunchFactory is not configured for this network.");
     }
@@ -211,30 +203,35 @@ export default function PushDraftLive() {
 
     setSubmitting(true);
     try {
+      const eligibility = await readScheduledCreatorLaunchEligibility({
+        signer: wallet.signer,
+        chainId: Number(draft.chainId),
+        factoryAddress: eligibilityFactoryAddress,
+      });
+      setCreatorEligibility(eligibility);
+      if (!eligibility.allowed) {
+        const now = Math.floor(Date.now() / 1000);
+        if (eligibility.cooldownEndsAt > now) {
+          throw new Error(
+            `This creator wallet cannot deploy or arm another campaign until ${formatLocalLaunch(eligibility.cooldownEndsAt)}. ` +
+              "The selected trading-open time does not affect this cooldown.",
+          );
+        }
+        if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
+          throw new Error("This creator wallet has reached its deployed, non-graduated campaign limit.");
+        }
+        throw new Error("This creator wallet cannot deploy or arm another campaign right now.");
+      }
+
       let scheduledLaunchAt: number | null = null;
       if (mode === "scheduled") {
         const launchAt = Math.floor(new Date(launchAtInput).getTime() / 1000);
         const now = Math.floor(Date.now() / 1000);
         if (!Number.isInteger(launchAt) || launchAt < now + 5 * 60) {
-          throw new Error("Choose a launch time at least five minutes in the future.");
+          throw new Error("Choose a trading-open time at least five minutes in the future.");
         }
         if (launchAt > now + 30 * 24 * 60 * 60) {
           throw new Error("Scheduled launches cannot be more than 30 days away.");
-        }
-
-        const eligibility = await readScheduledCreatorLaunchEligibility({
-          signer: wallet.signer,
-          chainId: Number(draft.chainId),
-          factoryAddress: scheduledFactoryAddress,
-          launchAt,
-        });
-        setScheduledEligibility(eligibility);
-        if (!eligibility.allowed) {
-          throw new Error(
-            eligibility.earliestLaunchAt > launchAt
-              ? `Choose ${formatLocalLaunch(eligibility.earliestLaunchAt)} or later in ${creatorTimeZone}.`
-              : "This creator wallet is not eligible for the selected scheduled launch.",
-          );
         }
         scheduledLaunchAt = launchAt;
       }
@@ -314,7 +311,13 @@ export default function PushDraftLive() {
     );
   }
 
-  const blocked = submitting || !DRAFT_PUSH_LIVE_ENABLED || draftIsSolana || !canPushLive(draft.status) || (mode === "scheduled" && scheduledEligibility?.allowed === false);
+  const blocked =
+    submitting ||
+    !DRAFT_PUSH_LIVE_ENABLED ||
+    draftIsSolana ||
+    !canPushLive(draft.status) ||
+    creatorEligibility?.allowed === false ||
+    Boolean(creatorEligibilityError);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -352,6 +355,28 @@ export default function PushDraftLive() {
           disabled={submitting}
         />
 
+        <div className="mwz-card mt-5 p-4">
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Creator deployment eligibility</div>
+          {creatorEligibility?.allowed ? (
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-green-300">Eligible to deploy or arm now.</p>
+              <p className="text-xs text-muted-foreground">
+                On-chain live campaigns: {creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}
+              </p>
+            </div>
+          ) : creatorEligibility ? (
+            <div className="mt-2 space-y-1 text-sm text-orange-300">
+              {creatorEligibility.cooldownEndsAt > Math.floor(Date.now() / 1000) ? (
+                <p>Creator cooldown active. Another campaign may be deployed or armed after {formatLocalLaunch(creatorEligibility.cooldownEndsAt)} ({creatorTimeZone}).</p>
+              ) : (
+                <p>This creator wallet cannot deploy or arm another campaign right now.</p>
+              )}
+              <p className="text-xs text-muted-foreground">The selected trading-open time does not affect creator deployment eligibility.</p>
+            </div>
+          ) : null}
+          {creatorEligibilityError ? <p className="mt-2 text-sm text-orange-300">{creatorEligibilityError}</p> : null}
+        </div>
+
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <button
             type="button"
@@ -379,12 +404,8 @@ export default function PushDraftLive() {
             <Input
               type="datetime-local"
               value={launchAtInput}
-              onChange={(event) => {
-                setLaunchAtInput(event.target.value);
-                setScheduledEligibility(null);
-                setScheduledEligibilityError(null);
-              }}
-              min={toLocalInputValue(new Date(Math.max(Date.now() + 5 * 60 * 1000, Number(scheduledEligibility?.earliestLaunchAt || 0) * 1000)))}
+              onChange={(event) => setLaunchAtInput(event.target.value)}
+              min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
               max={toLocalInputValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))}
               className="mt-2 max-w-md"
               disabled={submitting}
@@ -397,37 +418,11 @@ export default function PushDraftLive() {
                 <p>
                   On-chain UTC time: <span className="text-foreground">{selectedLaunchDate.toISOString().replace("T", " ").slice(0, 16)} UTC</span>
                 </p>
-              </div>
-            ) : null}
-            {scheduledEligibility?.allowed ? (
-              <p className="mt-3 text-sm text-green-300">
-                Eligible at this launch time. You will sign and pay gas now; the deployed contract blocks trading until the selected time.
-              </p>
-            ) : scheduledEligibility && scheduledEligibility.earliestLaunchAt ? (
-              <div className="mt-3 space-y-2 border border-orange-400/30 bg-orange-500/5 p-3 text-sm text-orange-200">
-                <p className="font-medium">
-                  Earliest next launch: {formatLocalLaunch(scheduledEligibility.earliestLaunchAt)} ({creatorTimeZone}).
+                <p className="pt-1 text-orange-200">
+                  This timestamp controls only when trading opens. It is not reserved, queued, or made exclusive to this campaign.
                 </p>
-                {scheduledEligibility.cooldownAnchorAt ? (
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Cooldown starts from this wallet&apos;s latest {scheduledEligibility.lastScheduledLaunchAt >= scheduledEligibility.lastRecordedLaunchAt ? "scheduled" : "recorded"} launch on {formatLocalLaunch(scheduledEligibility.cooldownAnchorAt)}. Creator launches must be {formatCooldownDuration(scheduledEligibility.cooldownSeconds)} apart.
-                  </p>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mwz-button h-9 font-retro text-xs"
-                  onClick={() => {
-                    setLaunchAtInput(toLocalInputValue(new Date(scheduledEligibility.earliestLaunchAt * 1000)));
-                    setScheduledEligibility(null);
-                    setScheduledEligibilityError(null);
-                  }}
-                >
-                  Use earliest allowed time
-                </Button>
               </div>
             ) : null}
-            {scheduledEligibilityError ? <p className="mt-3 text-sm text-orange-300">{scheduledEligibilityError}</p> : null}
           </div>
         ) : null}
 
