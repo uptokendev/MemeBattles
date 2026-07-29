@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "test": "mocha --timeout 1000000 v4-create-acceptance.cjs railway-v4-onchain-decoders.cjs",
-    "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs"
+    "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs",
+    "devnet:bootstrap": "node devnet-protocol-state.cjs bootstrap",
+    "devnet:verify": "node devnet-protocol-state.cjs verify",
+    "devnet:check": "node --check devnet-protocol-state.cjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.30.1",
