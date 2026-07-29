@@ -25,6 +25,7 @@ jobs:
       ENABLE_GRADUATION_HANDOFF_RECONCILER: "1"
       GRADUATION_HANDOFF_MAX_CAMPAIGNS: "100"
       CONFIRMATIONS: "1"
+      WTR_RECONCILIATION_REVISION: "2"
     steps:
       - uses: actions/checkout@v4
         with:
