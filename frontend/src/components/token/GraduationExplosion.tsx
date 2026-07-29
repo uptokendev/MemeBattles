@@ -25,14 +25,15 @@ export function GraduationExplosion({
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!active || !campaignAddress) return;
+    const stageJustChanged = Number(transitionAt || 0) > 0;
+    if ((!active && !stageJustChanged) || !campaignAddress) return;
     let alreadyShown = false;
     try {
       alreadyShown = window.sessionStorage.getItem(storageKey) === "1";
     } catch {
       alreadyShown = false;
     }
-    if (alreadyShown && !transitionAt) return;
+    if (alreadyShown && !stageJustChanged) return;
 
     setVisible(true);
     try {
