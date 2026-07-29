@@ -1,5 +1,7 @@
 WTR indexer validation passed
-validation_revision=topaz_pool_indexer_v1
-validated_source_sha=eaebbacbe0aec5322b5b90c98ad99e8ca77a6e95
+validation_revision=topaz_pool_indexer_v2
+validated_source_sha=434396bdcaf87849fd91b9b35aec00613b035393
 node=20
-commands=npm_ci,test_wtr,typescript_build
+install_status=0
+test_status=0
+build_status=0
