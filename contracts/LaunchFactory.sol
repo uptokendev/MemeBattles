@@ -53,6 +53,7 @@ contract LaunchFactory is Ownable {
     error CreatorNotEligible();
     error RiskNotEligible();
     error UnknownCampaign();
+    error GraduationAlreadyRecorded();
     error ScheduledAuthorizationRequired();
     error InvalidLaunchAt();
     error LaunchAtTooFar();
@@ -117,8 +118,9 @@ contract LaunchFactory is Ownable {
     uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
     uint8 public constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
     uint8 public constant ROUTE_PROFILE_OG_LINKED = 2;
-    uint32 public constant FACTORY_GENERATION = 2;
+    uint32 public constant FACTORY_GENERATION = 3;
     uint32 public constant CAMPAIGN_GENERATION = 2;
+    uint256 public constant MIN_SCHEDULE_DELAY = 5 minutes;
     uint256 public constant MAX_SCHEDULE_WINDOW = 30 days;
 
     LaunchConfig public config;
@@ -160,11 +162,9 @@ contract LaunchFactory is Ownable {
 
     CampaignInfo[] private _campaigns;
     mapping(address => bool) public isCampaign;
+    mapping(address => bool) public campaignGraduationRecorded;
     mapping(bytes32 => bool) public usedCreateRouteAuthorizations;
     mapping(address => mapping(uint256 => bool)) public usedAuthorizationNonces;
-    mapping(address => uint256) public reservedScheduledLiveCount;
-    mapping(address => uint256) public lastScheduledLaunchTimestamp;
-    mapping(address => bool) public campaignUsesScheduledLaunchSlot;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -207,13 +207,6 @@ contract LaunchFactory is Ownable {
     event SecurityDefaultsLockedEnabled();
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
     event CampaignGraduated(address indexed campaign, address indexed creator, address indexed lpToken, address locker);
-    event ScheduledCreatorLaunchReserved(
-        address indexed creator,
-        address indexed campaign,
-        uint256 launchAt,
-        uint256 reservedLiveCount
-    );
-    event ScheduledCreatorLaunchReleased(address indexed creator, address indexed campaign, uint256 reservedLiveCount);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -347,14 +340,12 @@ contract LaunchFactory is Ownable {
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
         address lockedLpReceiver = address(permanentLpLocker);
 
-        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender, uint256(schedule.launchAt));
+        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
         if (campaignGraduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
-        if (req.graduationTarget != 0 && !isGraduationTargetAllowed(campaignGraduationTarget)) {
-            revert UnsupportedGraduationTarget();
-        }
+        if (!isGraduationTargetAllowed(campaignGraduationTarget)) revert UnsupportedGraduationTarget();
         uint256 creatorBuyLockUntil = uint256(schedule.launchAt) + creatorBuyLockDuration;
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
@@ -393,19 +384,10 @@ contract LaunchFactory is Ownable {
         string memory metadataURI = "";
 
         if (address(creatorRegistry) != address(0)) {
-            if (schedule.reservationVersion != 0) {
-                reservedScheduledLiveCount[msg.sender] += 1;
-                lastScheduledLaunchTimestamp[msg.sender] = uint256(schedule.launchAt);
-                campaignUsesScheduledLaunchSlot[campaignAddr] = true;
-                emit ScheduledCreatorLaunchReserved(
-                    msg.sender,
-                    campaignAddr,
-                    uint256(schedule.launchAt),
-                    reservedScheduledLiveCount[msg.sender]
-                );
-            } else {
-                creatorRegistry.recordLaunch(msg.sender);
-            }
+            // Immediate and scheduled deployments are both irreversible creator
+            // launch actions. The registry records the current block timestamp,
+            // never the future trading-open timestamp.
+            creatorRegistry.recordLaunch(msg.sender);
         }
 
         _campaigns.push(
@@ -444,6 +426,9 @@ contract LaunchFactory is Ownable {
 
     function notifyCampaignGraduated(address campaignCreator, address lpToken) external {
         if (!isCampaign[msg.sender]) revert UnknownCampaign();
+        if (campaignGraduationRecorded[msg.sender]) revert GraduationAlreadyRecorded();
+        campaignGraduationRecorded[msg.sender] = true;
+
         if (lpToken != address(0) && !permanentLpLocker.registeredLpToken(lpToken)) {
             address tokenAddr = address(LaunchCampaign(payable(msg.sender)).token());
             address wrappedNative = ITopazRouter02(router).WETH();
@@ -458,17 +443,7 @@ contract LaunchFactory is Ownable {
                 lockedLpAmount
             );
         }
-        if (campaignUsesScheduledLaunchSlot[msg.sender]) {
-            campaignUsesScheduledLaunchSlot[msg.sender] = false;
-            if (reservedScheduledLiveCount[campaignCreator] > 0) {
-                reservedScheduledLiveCount[campaignCreator] -= 1;
-            }
-            emit ScheduledCreatorLaunchReleased(
-                campaignCreator,
-                msg.sender,
-                reservedScheduledLiveCount[campaignCreator]
-            );
-        } else if (address(creatorRegistry) != address(0)) {
+        if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
         }
         emit CampaignGraduated(msg.sender, campaignCreator, lpToken, address(permanentLpLocker));
@@ -574,43 +549,38 @@ contract LaunchFactory is Ownable {
         LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
     }
 
-    function creatorLaunchEligibilityAt(address creator, uint256 launchTimestamp)
+    /// @notice Returns whether the creator may perform an irreversible deploy/arm
+    /// action in the current block. launchAt is intentionally not an input.
+    function creatorLaunchEligibility(address creator)
         public
         view
-        returns (bool allowed, uint256 earliestLaunchTimestamp, uint256 currentLiveCount, uint256 maxLiveBonding)
+        returns (bool allowed, uint256 cooldownEndsAt, uint256 currentLiveCount, uint256 maxLiveBonding)
     {
-        earliestLaunchTimestamp = block.timestamp;
-        currentLiveCount = reservedScheduledLiveCount[creator];
+        cooldownEndsAt = block.timestamp;
 
         if (address(creatorRegistry) == address(0)) {
-            return (launchTimestamp >= earliestLaunchTimestamp, earliestLaunchTimestamp, currentLiveCount, type(uint256).max);
+            return (true, cooldownEndsAt, 0, type(uint256).max);
         }
 
         CreatorRegistry.CreatorProfile memory profile = creatorRegistry.getCreatorProfile(creator);
         CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
-        currentLiveCount += profile.liveBondingCount;
+        currentLiveCount = profile.liveBondingCount;
         maxLiveBonding = rules.maxLiveBonding;
 
         if (profile.lastLaunchTimestamp != 0) {
-            uint256 registryEarliest = profile.lastLaunchTimestamp + rules.cooldownSeconds;
-            if (registryEarliest > earliestLaunchTimestamp) earliestLaunchTimestamp = registryEarliest;
-        }
-
-        uint256 reservedLaunchTimestamp = lastScheduledLaunchTimestamp[creator];
-        if (reservedLaunchTimestamp != 0) {
-            uint256 scheduledEarliest = reservedLaunchTimestamp + rules.cooldownSeconds;
-            if (scheduledEarliest > earliestLaunchTimestamp) earliestLaunchTimestamp = scheduledEarliest;
+            uint256 registryCooldownEnd = profile.lastLaunchTimestamp + rules.cooldownSeconds;
+            if (registryCooldownEnd > cooldownEndsAt) cooldownEndsAt = registryCooldownEnd;
         }
 
         allowed =
             !profile.restricted &&
             !profile.manualReviewRequired &&
             currentLiveCount < maxLiveBonding &&
-            launchTimestamp >= earliestLaunchTimestamp;
+            block.timestamp >= cooldownEndsAt;
     }
 
-    function canCreatorLaunchAt(address creator, uint256 launchTimestamp) external view returns (bool) {
-        (bool allowed,,,) = creatorLaunchEligibilityAt(creator, launchTimestamp);
+    function canCreatorLaunch(address creator) external view returns (bool) {
+        (bool allowed,,,) = creatorLaunchEligibility(creator);
         return allowed;
     }
 
@@ -618,13 +588,13 @@ contract LaunchFactory is Ownable {
         return _campaigns.length;
     }
 
-    function _enforceCreatorEligibility(address creator, uint256 launchTimestamp)
+    function _enforceCreatorEligibility(address creator)
         internal
         view
         returns (uint256 lockDuration, uint256 buyCapWei, uint256 maxClusterWallets)
     {
         if (address(creatorRegistry) == address(0)) return (0, 0, 0);
-        (bool allowed,,,) = creatorLaunchEligibilityAt(creator, launchTimestamp);
+        (bool allowed,,,) = creatorLaunchEligibility(creator);
         if (!allowed) revert CreatorNotEligible();
         CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
         return (rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
@@ -696,7 +666,7 @@ contract LaunchFactory is Ownable {
     }
 
     function _validateScheduledRequest(ScheduledCampaignRequest calldata req) internal view {
-        if (req.launchAt < block.timestamp) revert InvalidLaunchAt();
+        if (uint256(req.launchAt) < block.timestamp + MIN_SCHEDULE_DELAY) revert InvalidLaunchAt();
         if (uint256(req.launchAt) > block.timestamp + MAX_SCHEDULE_WINDOW) revert LaunchAtTooFar();
         if (req.draftReferenceHash == bytes32(0)) revert MissingDraftReference();
         if (req.normalizedTickerHash == bytes32(0)) revert MissingTickerHash();
