@@ -82,7 +82,7 @@ jobs:
           fi
           cat > .github/validation/wtr-indexer-validation.txt <<EOF
           WTR indexer validation ${result}
-          validation_revision=topaz_pool_indexer_v3
+          validation_revision=market_continuity_v4
           validated_source_sha=${GITHUB_SHA}
           node=20
           install_status=${{ steps.validate.outputs.install_status }}
