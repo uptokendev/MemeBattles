@@ -117,12 +117,10 @@ function topazCandles(
   metric: UnifiedChartMetric,
   denomination: UnifiedChartDenomination,
   bnbUsd: number,
-  graduationTimeMs: number,
 ): CandleRow[] {
   const supply = postBurnSupply(state);
   return (rows || [])
-    .filter((row) => Number(row.source_mask || 0) & 2)
-    .filter((row) => new Date(row.bucket_start).getTime() >= graduationTimeMs)
+    .filter((row) => (Number(row.source_mask || 0) & 2) === 2)
     .map((row) => {
       const timestamp = Math.floor(new Date(row.bucket_start).getTime() / 1000);
       const multiplier = metric === "marketcap" ? supply : 1;
@@ -190,7 +188,6 @@ export function UnifiedMarketChart({
   }, [liveBnbUsd]);
   const bnbUsd = liveBnbUsd && liveBnbUsd > 0 ? liveBnbUsd : lastUsdRef.current;
   const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
-  const graduationTimeMs = graduationMarker?.time ? new Date(graduationMarker.time).getTime() : Number.MAX_SAFE_INTEGER;
 
   const data = useMemo(() => {
     if (!bnbUsd && denomination === "USD") return [];
@@ -202,10 +199,9 @@ export function UnifiedMarketChart({
       metric,
       denomination,
       bnbUsd || 1,
-      graduationTimeMs,
     );
     return mergeCandleRows(bonding, dex);
-  }, [bnbUsd, curvePoints, denomination, graduationTimeMs, intervalSeconds, marketCandles, marketState, metric]);
+  }, [bnbUsd, curvePoints, denomination, intervalSeconds, marketCandles, marketState, metric]);
 
   useEffect(() => {
     const element = containerRef.current;
