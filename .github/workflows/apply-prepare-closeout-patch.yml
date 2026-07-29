@@ -34,6 +34,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Escape source template placeholders
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'scripts/apply-prepare-closeout-patch.mjs';
+          let source = fs.readFileSync(file, 'utf8');
+          source = source.replace(
+            'const root = process.cwd();',
+            'const root = process.cwd();\nconst JUST_CREATED_DRAFT_CACHE_PREFIX = "${JUST_CREATED_DRAFT_CACHE_PREFIX}";\nconst draftId = "${draftId}";',
+          );
+          fs.writeFileSync(file, source);
+          NODE
+
       - name: Apply targeted patch
         run: node scripts/apply-prepare-closeout-patch.mjs
 
