@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ethers } from "ethers";
 import { LAUNCH_CAMPAIGN_ABI } from "../abis.js";
-import { classifyTopazMarket, graduationEventSnapshot } from "../marketContinuity.js";
+
+process.env.DATABASE_URL ||= "postgresql://postgres:postgres@127.0.0.1:5432/postgres";
+process.env.ABLY_API_KEY ||= "test.test";
+process.env.BSC_RPC_HTTP_97 ||= "http://127.0.0.1:8545";
+process.env.ENABLE_GRADUATION_HANDOFF_RECONCILER = "0";
+
+const { classifyTopazMarket, graduationEventSnapshot } = await import("../marketContinuity.js");
 
 test("CampaignFinalized ABI matches the current full graduation event", () => {
   const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
