@@ -7,7 +7,10 @@ on:
     paths:
       - Anchor.toml
       - programs/memewarzone_solana/**
+      - config/solana/**
       - scripts/solana/**
+      - tests/solana/devnet-protocol-state.cjs
+      - tests/solana/package.json
       - docs/solana-devnet-deployment-runbook.md
       - .github/workflows/solana-devnet-readiness.yml
   workflow_dispatch:
@@ -48,6 +51,14 @@ jobs:
             node scripts/solana/check-devnet-readiness.mjs --allow-placeholder
           fi
 
+      - name: Check deployment and bootstrap scripts
+        shell: bash
+        run: |
+          node --check scripts/solana/check-devnet-readiness.mjs
+          node --check scripts/solana/prepare-devnet-deployment.mjs
+          node --check tests/solana/devnet-protocol-state.cjs
+          node -e 'const m=require("./config/solana/devnet-generation-v1.json"); if(m.settings.buyFeeBps!==200 || m.settings.sellFeeBps!==200) process.exit(1)'
+
       - name: Reject committed Solana keypairs
         shell: bash
         run: |
@@ -60,5 +71,7 @@ jobs:
         shell: bash
         run: |
           grep -q 'SOLANA_CREATE_AUTH_ENABLED=false' docs/solana-devnet-deployment-runbook.md
+          grep -q 'SOLANA_ROUTE_SIGNER_SECRET_KEY' docs/solana-devnet-deployment-runbook.md
           grep -q 'security defaults are locked' docs/solana-devnet-deployment-runbook.md
           grep -q 'Direct Create remains blocked' docs/solana-devnet-deployment-runbook.md
+          grep -q 'npm --prefix tests/solana run devnet:bootstrap' docs/solana-devnet-deployment-runbook.md
