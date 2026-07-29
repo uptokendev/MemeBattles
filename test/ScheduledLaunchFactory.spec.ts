@@ -3,6 +3,9 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { ethers, network } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
+const FACTORY_GENERATION = 3;
+const CAMPAIGN_GENERATION = 2;
+
 const baseCampaign = (overrides: Record<string, unknown> = {}) => ({
   name: "Scheduled Token",
   symbol: "SCH",
@@ -73,8 +76,8 @@ async function signScheduledCreate(
         request.metadataHash,
         request.reservationVersion,
         request.authorizationNonce,
-        2,
-        2,
+        FACTORY_GENERATION,
+        CAMPAIGN_GENERATION,
         tradeRouteProfile,
         finalizeRouteProfile,
         deadline,
@@ -150,8 +153,8 @@ describe("Scheduled LaunchFactory generation", function () {
         request.metadataHash,
         1n,
         1n,
-        2n,
-        2n,
+        BigInt(FACTORY_GENERATION),
+        BigInt(CAMPAIGN_GENERATION),
       );
 
     const info = await factory.getCampaign(0n);
