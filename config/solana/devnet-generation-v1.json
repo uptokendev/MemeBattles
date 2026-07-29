@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "network": "solana-devnet",
+  "name": "memewarzone-solana-devnet-generation-v1",
+  "generationIdSeed": "memewarzone-solana-devnet-generation-v1",
+  "riskClusterIdSeed": "memewarzone-solana-devnet-acceptance-cluster-v1",
+  "settings": {
+    "clusterKind": 1,
+    "allowedGraduationTierMask": 1,
+    "economicsVersion": 1,
+    "curveKind": 1,
+    "tokenTotalSupply": "1000000000000",
+    "tokenDecimals": 6,
+    "curveSupplyBps": 8000,
+    "liquidityTokenBps": 1000,
+    "basePriceLamports": "1000",
+    "priceSlopeLamports": "10",
+    "buyFeeBps": 200,
+    "sellFeeBps": 200,
+    "finalizeFeeBps": 200,
+    "creatorPostFinalizeBps": 2000,
+    "liquidityPostFinalizeBps": 8000,
+    "dexAdapter": 1,
+    "tradeRouteProfileSeed": "memewarzone-solana-trade-route-profile-v1",
+    "finalizeRouteProfileSeed": "memewarzone-solana-finalize-route-profile-v1",
+    "treasuryProfileSeed": "memewarzone-solana-treasury-profile-v1",
+    "dexProfileSeed": "memewarzone-solana-meteora-damm-v2-profile-v1",
+    "oracleProfileSeed": "memewarzone-solana-oracle-profile-v1",
+    "activeCreation": true,
+    "supportEnabled": true,
+    "routeAuthorizationRequired": true,
+    "authorizedTradingRequired": true
+  },
+  "clusterProfile": {
+    "size": 1,
+    "riskLevel": 1,
+    "restricted": false
+  },
+  "pauseFlags": {
+    "paused": false,
+    "createPaused": false,
+    "buyPaused": true,
+    "sellPaused": true,
+    "graduationPaused": true,
+    "claimsPaused": true
+  }
+}

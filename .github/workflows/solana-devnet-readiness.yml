@@ -1,0 +1,77 @@
+name: Solana Devnet Readiness
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - Anchor.toml
+      - programs/memewarzone_solana/**
+      - config/solana/**
+      - scripts/solana/**
+      - tests/solana/devnet-protocol-state.cjs
+      - tests/solana/package.json
+      - docs/solana-devnet-deployment-runbook.md
+      - .github/workflows/solana-devnet-readiness.yml
+  workflow_dispatch:
+    inputs:
+      enforce_permanent_program_id:
+        description: Fail when the placeholder program ID is still active
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-devnet-readiness-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    name: Static deployment readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check repository deployment boundary
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.enforce_permanent_program_id }}" == "true" ]]; then
+            node scripts/solana/check-devnet-readiness.mjs
+          else
+            node scripts/solana/check-devnet-readiness.mjs --allow-placeholder
+          fi
+
+      - name: Check deployment and bootstrap scripts
+        shell: bash
+        run: |
+          node --check scripts/solana/check-devnet-readiness.mjs
+          node --check scripts/solana/prepare-devnet-deployment.mjs
+          node --check tests/solana/devnet-protocol-state.cjs
+          node -e 'const m=require("./config/solana/devnet-generation-v1.json"); if(m.settings.buyFeeBps!==200 || m.settings.sellFeeBps!==200) process.exit(1)'
+
+      - name: Reject committed Solana keypairs
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)(id|deployer|upgrade-authority|memewarzone_solana-keypair)\.json$'; then
+            echo "A Solana private key file appears to be tracked." >&2
+            exit 1
+          fi
+
+      - name: Verify operator documentation
+        shell: bash
+        run: |
+          grep -q 'SOLANA_CREATE_AUTH_ENABLED=false' docs/solana-devnet-deployment-runbook.md
+          grep -q 'SOLANA_ROUTE_SIGNER_SECRET_KEY' docs/solana-devnet-deployment-runbook.md
+          grep -q 'security defaults are locked' docs/solana-devnet-deployment-runbook.md
+          grep -q 'Direct Create remains blocked' docs/solana-devnet-deployment-runbook.md
+          grep -q 'npm --prefix tests/solana run devnet:bootstrap' docs/solana-devnet-deployment-runbook.md
