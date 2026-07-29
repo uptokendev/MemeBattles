@@ -1,6 +1,6 @@
 WTR frontend validation passed
-validation_revision=unified_chart_topaz_trading_v3
-validated_source_sha=20d3cb0a4fdf3eb3e95a1c3af2df54e2f5c57879
+validation_revision=unified_chart_topaz_trading_v5
+validated_source_sha=6ff078075921c8ec72392f05e52b0d7c7ea37cea
 node=20
 patch_status=0
 install_status=0
