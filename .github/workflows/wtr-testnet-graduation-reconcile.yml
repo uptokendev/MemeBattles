@@ -1,0 +1,91 @@
+name: WTR testnet graduation reconcile
+
+on:
+  push:
+    branches:
+      - agent/war-trade-room-continuity-foundation
+    paths:
+      - .github/workflows/wtr-testnet-graduation-reconcile.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wtr-testnet-graduation-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BSC_RPC_HTTP_97: ${{ secrets.BSC_RPC_URL }}
+      ABLY_API_KEY: test.test
+      ENABLE_GRADUATION_HANDOFF_RECONCILER: "1"
+      GRADUATION_HANDOFF_MAX_CAMPAIGNS: "100"
+      CONFIRMATIONS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/war-trade-room-continuity-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Confirm testnet secret posture
+        id: posture
+        shell: bash
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$BSC_RPC_HTTP_97" ]; then
+            echo "status=missing_secrets" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          if [ "${{ secrets.CHAIN_ID }}" != "97" ]; then
+            echo "status=wrong_chain" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "status=ready" >> "$GITHUB_OUTPUT"
+
+      - name: Install and build realtime indexer
+        run: |
+          npm ci --prefix realtime-indexer --no-audit --no-fund
+          npm --prefix realtime-indexer run build
+
+      - name: Reconcile graduated testnet campaigns
+        id: reconcile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          node realtime-indexer/dist/jobs/reconcileGraduationsOnce.js > /tmp/wtr-reconcile.log 2>&1
+          status=$?
+          tail -n 1 /tmp/wtr-reconcile.log > /tmp/wtr-reconcile-result.json
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Publish sanitized reconciliation result
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .github/validation
+          if [ -f /tmp/wtr-reconcile-result.json ]; then
+            cp /tmp/wtr-reconcile-result.json .github/validation/wtr-testnet-reconciliation.json
+          else
+            cat > .github/validation/wtr-testnet-reconciliation.json <<EOF
+          {"ok":false,"status":"${{ steps.posture.outputs.status }}","note":"Reconciliation did not run."}
+          EOF
+          fi
+          git config user.name "MemeWarzone Validation Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/validation/wtr-testnet-reconciliation.json
+          git commit -m "ops(wtr): record testnet graduation reconciliation"
+          git push origin HEAD:agent/war-trade-room-continuity-foundation
+
+      - name: Fail when reconciliation failed
+        if: steps.reconcile.outputs.status != '0'
+        run: exit 1
