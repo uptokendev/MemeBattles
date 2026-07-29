@@ -10,6 +10,7 @@ describe("scheduled testnet deployment scripts", function () {
   const treasuryMigration = readScript("deploy-minimal-treasury-router-v2.ts");
   const stagedFactory = readScript("deploy-scheduled-test-factory.ts");
   const activation = readScript("activate-scheduled-test-factory.ts");
+  const containment = readScript("contain-obsolete-scheduled-factory.ts");
   const correctedFactory = readScript("deploy-creator-arm-cooldown-factory.ts");
   const correctedActivation = readScript("activate-creator-arm-cooldown-factory.ts");
 
@@ -49,6 +50,16 @@ describe("scheduled testnet deployment scripts", function () {
     expect(activation).to.include("writeFrontendEnv(nextDeployment");
   });
 
+  it("contains the obsolete factory by pausing creation only and writes evidence", async () => {
+    expect(containment).to.include("TESTNET_CHAIN_ID = 97n");
+    expect(containment).to.include("factory.setCreatePaused(true)");
+    expect(containment).to.not.include("setGlobalPaused(true)");
+    expect(containment).to.include("Existing campaign trading and graduation must remain supported");
+    expect(containment).to.include("bscTestnet.obsolete-scheduled-factory-containment.json");
+    expect(containment).to.include("lockerMustRemainAuthorized: true");
+    expect(containment).to.include("launchRecorderMustRemainAuthorized: true");
+  });
+
   it("stages the corrected generation 3 factory disabled and preserves old support", async () => {
     expect(correctedFactory).to.include("campaignImplementation");
     expect(correctedFactory).to.include("factory remains disabled");
@@ -74,6 +85,7 @@ describe("scheduled testnet deployment scripts", function () {
       expect(source).to.include("net.chainId === MAINNET_CHAIN_ID");
       expect(source).to.include("TESTNET_CHAIN_ID = 97n");
     }
+    expect(containment).to.include("connected.chainId !== TESTNET_CHAIN_ID");
     expect(correctedFactory).to.include("TESTNET_CHAIN_ID = 97n");
     expect(correctedFactory).to.include("net.chainId !== TESTNET_CHAIN_ID");
     expect(correctedActivation).to.include("Number(network.chainId) !== 97");
