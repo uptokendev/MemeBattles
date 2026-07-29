@@ -50,7 +50,11 @@ jobs:
         working-directory: frontend
       - run: node --check api/dev-fix/draft-deploy.js
         working-directory: frontend
+      - run: node --check api/dev-fix/route-auth.js
+        working-directory: frontend
       - run: node --check api/dev-fix/routeAuthorizationSigner.js
+        working-directory: frontend
+      - run: node --check api/server.mjs
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
