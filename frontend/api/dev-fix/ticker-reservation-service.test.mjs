@@ -8,6 +8,7 @@ import {
   isBlockingReservationStatus,
   mapTickerReservationRow,
   normalizeTicker,
+  promoteTickerReservation,
   sha256Hex,
   withTickerReservationTransaction,
 } from "./ticker-reservation-service.js";
@@ -122,4 +123,68 @@ test("rolls back and releases a failed database transaction", async () => {
 
   assert.deepEqual(calls, ["begin", "work", "rollback"]);
   assert.equal(released, true);
+});
+
+test("recovers a missing canonical reservation for an existing published draft", async () => {
+  const calls = [];
+  const draftId = "5e7db730-d2fc-44e0-a2fd-dc26c9d7d37c";
+  const creatorWallet = "0x13ad79765e14927df2c554d9662bbe539e89c8e8";
+
+  const db = {
+    async query(sql, params = []) {
+      const text = String(sql).replace(/\s+/g, " ").trim();
+      calls.push({ text, params });
+
+      if (text.includes("insert into public.ticker_reservations")) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: params[0],
+            draft_id: params[1],
+            creator_wallet: params[2],
+            chain_id: params[3],
+            cluster: params[4],
+            original_ticker: params[5],
+            normalized_ticker: params[6],
+            ticker_hash: params[7],
+            reservation_id_hash: params[8],
+            status: params[9],
+            reserved_at: new Date().toISOString(),
+            published_at: params[10]?.toISOString?.() || null,
+            expires_at: params[11]?.toISOString?.() || null,
+            grace_end_at: params[12]?.toISOString?.() || null,
+            renewal_count: 0,
+            reservation_version: 1,
+            metadata: JSON.parse(params[13]),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }],
+        };
+      }
+
+      if (text.includes("select * from public.ticker_reservations")) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      return { rowCount: 0, rows: [] };
+    },
+  };
+
+  const reservation = await promoteTickerReservation(db, {
+    draftId,
+    creatorWallet,
+    chainId: 97,
+    ticker: "TSM",
+    publishedAt: new Date("2026-07-28T22:09:04.146Z"),
+  });
+
+  assert.equal(reservation.draftId, draftId);
+  assert.equal(reservation.creatorWallet, creatorWallet);
+  assert.equal(reservation.chainId, 97);
+  assert.equal(reservation.cluster, "bsc-testnet");
+  assert.equal(reservation.normalizedTicker, "TSM");
+  assert.equal(reservation.status, TICKER_RESERVATION_STATUS.PREPARE_MODE_RESERVED);
+  assert.equal(reservation.reservationVersion, "1");
+  assert.ok(calls.some(({ text }) => text.includes("insert into public.ticker_reservations")));
+  assert.ok(calls.some(({ text }) => text.includes("insert into public.ticker_reservation_events")));
 });
