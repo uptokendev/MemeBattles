@@ -7,8 +7,9 @@ const SCHEDULED_FACTORY_ABI = [
   "function globalPaused() view returns (bool)",
   "function createPaused() view returns (bool)",
   "function creatorRegistry() view returns (address)",
-  "function lastScheduledLaunchTimestamp(address creator) view returns (uint256)",
-  "function creatorLaunchEligibilityAt(address creator,uint256 launchTimestamp) view returns (bool allowed,uint256 earliestLaunchTimestamp,uint256 currentLiveCount,uint256 maxLiveBonding)",
+  "function FACTORY_GENERATION() view returns (uint32)",
+  "function CAMPAIGN_GENERATION() view returns (uint32)",
+  "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
   "function createScheduledCampaignAuthorized(((string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint256 graduationTarget) campaign,uint64 launchAt,bytes32 draftReferenceHash,bytes32 normalizedTickerHash,bytes32 metadataHash,uint64 reservationVersion,uint256 authorizationNonce) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
   "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI,string metadataURI)",
   "error NotLive()",
@@ -37,6 +38,8 @@ const CREATOR_REGISTRY_ABI = [
 ] as const;
 
 const FACTORY_INTERFACE = new ethers.Interface(SCHEDULED_FACTORY_ABI);
+const EXPECTED_FACTORY_GENERATION = 3;
+const EXPECTED_CAMPAIGN_GENERATION = 2;
 
 async function parseApiJson(res: Response) {
   const json = await res.json().catch(() => ({}));
@@ -95,27 +98,20 @@ function errorName(error: any) {
 function friendlyFactoryError(error: any) {
   const name = errorName(error);
   const messages: Record<string, string> = {
-    NotLive: "The scheduled LaunchFactory is not live.",
+    NotLive: "The corrected LaunchFactory is not live.",
     Paused: "Scheduled deployment is paused by the factory.",
     CreatePaused: "New campaign creation is currently paused.",
-    CreatorNotEligible: "This creator wallet is not eligible for another launch yet. Check the on-chain cooldown and live-campaign limit.",
+    CreatorNotEligible: "This creator wallet cannot deploy or arm another campaign yet. The selected trading-open time does not affect the cooldown.",
     RiskNotEligible: "The creator wallet is blocked by the on-chain risk rules.",
     RouteAuthorityZero: "The scheduled factory route authority is not configured.",
     RouteAuthorizationExpired: "The scheduled deployment authorization expired. Try again.",
-    InvalidRouteAuthorization: "The scheduled route authorization does not match this factory. Refresh and try again.",
+    InvalidRouteAuthorization: "The scheduled route authorization does not match this factory generation. Refresh and try again.",
     RouteAuthorizationReplayed: "This scheduled deployment authorization was already used. Refresh and try again.",
-    InvalidLaunchAt: "The selected launch time is no longer in the future.",
-    LaunchAtTooFar: "The selected launch time is more than 30 days away.",
+    InvalidLaunchAt: "Choose a trading-open time at least five minutes in the future.",
+    LaunchAtTooFar: "The selected trading-open time is more than 30 days away.",
     UnsupportedGraduationTarget: "The selected graduation tier is not allowed by this factory.",
   };
   return messages[name] || String(error?.shortMessage || error?.reason || error?.message || "Scheduled deployment failed.");
-}
-
-function formatRemaining(seconds: number) {
-  const total = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  return hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
 }
 
 function browserTimeZone() {
@@ -132,20 +128,22 @@ function formatLocalTimestamp(seconds: number) {
 
 export type ScheduledCreatorLaunchEligibility = {
   allowed: boolean;
-  earliestLaunchAt: number;
+  canArmNow: boolean;
+  cooldownEndsAt: number;
   currentLiveCount: number;
   maxLiveBonding: number;
   cooldownSeconds: number;
   lastRecordedLaunchAt: number;
-  lastScheduledLaunchAt: number;
-  cooldownAnchorAt: number;
+  restricted: boolean;
+  manualReviewRequired: boolean;
+  factoryGeneration: number;
+  campaignGeneration: number;
 };
 
 export async function readScheduledCreatorLaunchEligibility(input: {
   signer: JsonRpcSigner;
   chainId: number;
   factoryAddress: string;
-  launchAt: number;
 }): Promise<ScheduledCreatorLaunchEligibility> {
   const provider = input.signer.provider;
   if (!provider) throw new Error("Wallet provider is unavailable.");
@@ -159,14 +157,25 @@ export async function readScheduledCreatorLaunchEligibility(input: {
   const factory = new Contract(input.factoryAddress, SCHEDULED_FACTORY_ABI, provider) as any;
   try {
     const creator = await input.signer.getAddress();
-    const [result, registryAddressRaw, lastScheduledRaw] = await Promise.all([
-      factory.creatorLaunchEligibilityAt(creator, input.launchAt),
+    const [result, registryAddressRaw, factoryGenerationRaw, campaignGenerationRaw] = await Promise.all([
+      factory.creatorLaunchEligibility(creator),
       factory.creatorRegistry(),
-      factory.lastScheduledLaunchTimestamp(creator),
+      factory.FACTORY_GENERATION(),
+      factory.CAMPAIGN_GENERATION(),
     ]);
+
+    const factoryGeneration = Number(factoryGenerationRaw ?? 0);
+    const campaignGeneration = Number(campaignGenerationRaw ?? 0);
+    if (factoryGeneration !== EXPECTED_FACTORY_GENERATION || campaignGeneration !== EXPECTED_CAMPAIGN_GENERATION) {
+      throw new Error(
+        `The configured factory is generation ${factoryGeneration}/${campaignGeneration}; expected ${EXPECTED_FACTORY_GENERATION}/${EXPECTED_CAMPAIGN_GENERATION}.`,
+      );
+    }
 
     let cooldownSeconds = 0;
     let lastRecordedLaunchAt = 0;
+    let restricted = false;
+    let manualReviewRequired = false;
     const registryAddress = String(registryAddressRaw || "");
     if (ethers.isAddress(registryAddress) && registryAddress !== ethers.ZeroAddress) {
       const registry = new Contract(registryAddress, CREATOR_REGISTRY_ABI, provider) as any;
@@ -175,25 +184,29 @@ export async function readScheduledCreatorLaunchEligibility(input: {
         registry.getCreatorRules(creator),
       ]);
       lastRecordedLaunchAt = Number(profile.lastLaunchTimestamp ?? profile[3] ?? 0);
+      restricted = Boolean(profile.restricted ?? profile[4]);
+      manualReviewRequired = Boolean(profile.manualReviewRequired ?? profile[5]);
       cooldownSeconds = Number(rules.cooldownSeconds ?? rules[1] ?? 0);
     }
 
-    const lastScheduledLaunchAt = Number(lastScheduledRaw ?? 0);
-    const cooldownAnchorAt = Math.max(lastRecordedLaunchAt, lastScheduledLaunchAt);
+    const allowed = Boolean(result.allowed ?? result[0]);
     return {
-      allowed: Boolean(result.allowed ?? result[0]),
-      earliestLaunchAt: Number(result.earliestLaunchTimestamp ?? result[1] ?? 0),
+      allowed,
+      canArmNow: allowed,
+      cooldownEndsAt: Number(result.cooldownEndsAt ?? result[1] ?? 0),
       currentLiveCount: Number(result.currentLiveCount ?? result[2] ?? 0),
       maxLiveBonding: Number(result.maxLiveBonding ?? result[3] ?? 0),
       cooldownSeconds,
       lastRecordedLaunchAt,
-      lastScheduledLaunchAt,
-      cooldownAnchorAt,
+      restricted,
+      manualReviewRequired,
+      factoryGeneration,
+      campaignGeneration,
     };
   } catch (error: any) {
     const text = String(error?.shortMessage || error?.message || error || "");
     if (text.toLowerCase().includes("could not decode") || text.toLowerCase().includes("no data present")) {
-      throw new Error("The active scheduled factory does not support future cooldown reservations yet. Refresh after the scheduled-factory upgrade is deployed.");
+      throw new Error("The configured creation factory still uses the obsolete scheduled-slot model. New deployments are blocked until the corrected factory is active.");
     }
     throw error;
   }
@@ -214,42 +227,42 @@ async function assertScheduledFactoryReady(input: {
   const code = await provider.getCode(input.factoryAddress);
   if (!code || code === "0x") throw new Error("The configured scheduled factory has no contract code.");
 
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isInteger(input.launchAt) || input.launchAt < now + 5 * 60) {
+    throw new Error("Choose a trading-open time at least five minutes in the future.");
+  }
+  if (input.launchAt > now + 30 * 24 * 60 * 60) {
+    throw new Error("The selected trading-open time is more than 30 days away.");
+  }
+
   const factory = new Contract(input.factoryAddress, SCHEDULED_FACTORY_ABI, input.signer) as any;
   const [live, globalPaused, createPaused] = await Promise.all([
     factory.live(),
     factory.globalPaused(),
     factory.createPaused(),
   ]);
-  if (!live) throw new Error("The scheduled LaunchFactory is not live.");
+  if (!live) throw new Error("The corrected LaunchFactory is not live.");
   if (globalPaused) throw new Error("Scheduled deployment is paused by the factory.");
   if (createPaused) throw new Error("New campaign creation is currently paused.");
 
-  const creator = await input.signer.getAddress();
-  const eligibility = await readScheduledCreatorLaunchEligibility(input);
+  const eligibility = await readScheduledCreatorLaunchEligibility({
+    signer: input.signer,
+    chainId: input.chainId,
+    factoryAddress: input.factoryAddress,
+  });
   if (!eligibility.allowed) {
-    const registryAddress = String(await factory.creatorRegistry());
-    if (ethers.isAddress(registryAddress) && registryAddress !== ethers.ZeroAddress) {
-      const registry = new Contract(registryAddress, CREATOR_REGISTRY_ABI, provider) as any;
-      const [profile, rules] = await Promise.all([
-        registry.getCreatorProfile(creator),
-        registry.getCreatorRules(creator),
-      ]);
-      if (profile.restricted) throw new Error("This creator wallet is restricted by the on-chain CreatorRegistry.");
-      if (profile.manualReviewRequired) throw new Error("This creator wallet requires manual review before another launch.");
-      if (eligibility.currentLiveCount >= eligibility.maxLiveBonding || BigInt(profile.liveBondingCount) >= BigInt(rules.maxLiveBonding)) {
-        throw new Error("This creator wallet has reached its combined live and scheduled campaign limit.");
-      }
+    if (eligibility.restricted) throw new Error("This creator wallet is restricted by the on-chain CreatorRegistry.");
+    if (eligibility.manualReviewRequired) throw new Error("This creator wallet requires manual review before another launch.");
+    if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
+      throw new Error("This creator wallet has reached its deployed, non-graduated campaign limit.");
     }
-
-    if (eligibility.earliestLaunchAt > input.launchAt) {
-      const remaining = Math.max(0, eligibility.earliestLaunchAt - Math.floor(Date.now() / 1000));
+    if (eligibility.cooldownEndsAt > now) {
       throw new Error(
-        "Selected launch time is before the creator launch slot opens at " +
-          formatLocalTimestamp(eligibility.earliestLaunchAt) +
-          ". Choose that time or later (" + formatRemaining(remaining) + " from now).",
+        `This creator wallet cannot deploy or arm another campaign until ${formatLocalTimestamp(eligibility.cooldownEndsAt)}. ` +
+          "Choosing a later trading-open time does not bypass this cooldown.",
       );
     }
-    throw new Error("This creator wallet is not eligible for the selected scheduled launch.");
+    throw new Error("This creator wallet cannot deploy or arm another campaign right now.");
   }
 
   return factory;
@@ -281,6 +294,12 @@ export async function deployScheduledDraftCampaignV2(input: {
   const scheduledRequest = json.scheduledRequest;
   const authorization = json.authorization;
   if (!scheduledRequest || !authorization) throw new Error("Scheduled launch authorization response is incomplete.");
+  if (Number(authorization.factoryGeneration || 0) !== EXPECTED_FACTORY_GENERATION) {
+    throw new Error("The server returned an authorization for the wrong factory generation.");
+  }
+  if (Number(authorization.campaignGeneration || 0) !== EXPECTED_CAMPAIGN_GENERATION) {
+    throw new Error("The server returned an authorization for the wrong campaign generation.");
+  }
 
   const request = {
     campaign: {
