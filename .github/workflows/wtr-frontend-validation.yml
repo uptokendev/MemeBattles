@@ -1,0 +1,108 @@
+name: WTR frontend validation
+
+on:
+  push:
+    branches:
+      - agent/war-trade-room-continuity-foundation
+    paths:
+      - .github/workflows/wtr-frontend-validation.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wtr-frontend-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/war-trade-room-continuity-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply or verify Token Details continuity patch
+        id: patch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .github/validation
+          : > /tmp/wtr-frontend.log
+          if grep -q 'useUnifiedMarket' frontend/src/pages/TokenDetails.tsx; then
+            echo "Token Details continuity patch already applied." >> /tmp/wtr-frontend.log
+            patch_status=0
+          else
+            node frontend/scripts/apply-wtr-token-details.mjs >> /tmp/wtr-frontend.log 2>&1
+            patch_status=$?
+          fi
+          install_status=99
+          build_status=99
+
+          if [ "$patch_status" -eq 0 ]; then
+            npm ci --prefix frontend --no-audit --no-fund >> /tmp/wtr-frontend.log 2>&1
+            install_status=$?
+          fi
+          if [ "$patch_status" -eq 0 ] && [ "$install_status" -eq 0 ]; then
+            npm --prefix frontend run build >> /tmp/wtr-frontend.log 2>&1
+            build_status=$?
+          fi
+
+          overall_status=0
+          if [ "$patch_status" -ne 0 ] || [ "$install_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then
+            overall_status=1
+          fi
+
+          echo "patch_status=$patch_status" >> "$GITHUB_OUTPUT"
+          echo "install_status=$install_status" >> "$GITHUB_OUTPUT"
+          echo "build_status=$build_status" >> "$GITHUB_OUTPUT"
+          echo "overall_status=$overall_status" >> "$GITHUB_OUTPUT"
+          if [ "$overall_status" -ne 0 ]; then
+            tail -n 220 /tmp/wtr-frontend.log > .github/validation/wtr-frontend-validation-failure.log
+          else
+            rm -f .github/validation/wtr-frontend-validation-failure.log
+          fi
+          exit "$overall_status"
+
+      - name: Publish frontend validation result
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.patch.outputs.overall_status }}" = "0" ]; then
+            result=passed
+          else
+            result=failed
+          fi
+          mkdir -p .github/validation
+          cat > .github/validation/wtr-frontend-validation.txt <<EOF
+          WTR frontend validation ${result}
+          validation_revision=unified_chart_topaz_trading_v5
+          validated_source_sha=${GITHUB_SHA}
+          node=20
+          patch_status=${{ steps.patch.outputs.patch_status }}
+          install_status=${{ steps.patch.outputs.install_status }}
+          build_status=${{ steps.patch.outputs.build_status }}
+          EOF
+          git config user.name "MemeWarzone Validation Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/src/pages/TokenDetails.tsx .github/validation/wtr-frontend-validation.txt
+          if [ -f .github/validation/wtr-frontend-validation-failure.log ]; then
+            git add .github/validation/wtr-frontend-validation-failure.log
+          else
+            git rm -f .github/validation/wtr-frontend-validation-failure.log 2>/dev/null || true
+          fi
+          git commit -m "ci(wtr): record frontend validation result"
+          git push origin HEAD:agent/war-trade-room-continuity-foundation
+
+      - name: Fail workflow when validation failed
+        if: steps.patch.outputs.overall_status != '0'
+        run: exit 1

@@ -18,10 +18,22 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
-import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
+import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
+import { GraduationExplosion } from "@/components/token/GraduationExplosion";
+import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
+import {
+  ensureTopazSellAllowance,
+  executeTopazBuy,
+  executeTopazSell,
+  quoteTopazBuy,
+  quoteTopazSell,
+  resolveVerifiedTopazRoute,
+  solveNativeForExactTokens,
+  solveTokensForExactNative,
+} from "@/lib/topazV2Trade";
 import { TokenComments } from "@/components/token/TokenComments";
 import { TokenWarRoom } from "@/components/token/TokenWarRoom";
 import { AthBar } from "@/components/token/AthBar";
@@ -607,6 +619,8 @@ const TokenDetails = () => {
   const [approvePending, setApprovePending] = useState(false);
   const [bnbBalanceWei, setBnbBalanceWei] = useState<bigint | null>(null);
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
+  const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
+  const [topazSlippageBps, setTopazSlippageBps] = useState(100);
 
   // Fetch maker profiles for displayed trades (best-effort; do not block UI)
   useEffect(() => {
@@ -1009,6 +1023,13 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
   }, [combinedCurvePointsSafe]);
 
+  const unifiedMarket = useUnifiedMarket({
+    campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+    chainId: chainIdForStorage,
+    resolution: marketResolution,
+    enabled: hasValidCampaignAddress,
+  });
+
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
   hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
@@ -1391,7 +1412,21 @@ const bnbUsd = useMemo(() => {
     // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
-    const next: TxRow[] = [...combinedCurvePointsSafe]
+    const transactionPoints: any[] = unifiedMarket.enabled && unifiedMarket.trades.length
+      ? unifiedMarket.trades.map((trade) => ({
+          type: trade.side,
+          from: trade.wallet,
+          to: trade.recipient || trade.campaignAddress,
+          tokensWei: BigInt(trade.tokenAmountRaw || "0"),
+          nativeWei: BigInt(trade.nativeAmountRaw || "0"),
+          pricePerToken: Number(trade.priceBnb || 0),
+          timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
+          txHash: trade.txHash,
+          blockNumber: trade.blockNumber,
+          logIndex: trade.logIndex,
+        }))
+      : combinedCurvePointsSafe;
+    const next: TxRow[] = [...transactionPoints]
   .slice(-50)
   .reverse()
   .map((p: any, idx: number) => {
@@ -1421,20 +1456,19 @@ const bnbUsd = useMemo(() => {
   });
 
 setTxs(next);
-  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics]);
+  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics, unifiedMarket.enabled, unifiedMarket.trades]);
 
-  // DexScreener gating: only show external DEX chart after graduation / finalize.
-  // Prefer explicit flags when available; older deployments can fall back to sold supply.
+  // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
+  // Prefer verified backend state; retain the on-chain fallback while rollout flags are disabled.
   const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
-  const isGraduated = hasLaunchFlag
+  const contractGraduated = hasLaunchFlag
     ? Boolean((metrics as any)?.launched) || (typeof (metrics as any)?.finalizedAt === "bigint" ? (metrics as any).finalizedAt > 0n : Number((metrics as any)?.finalizedAt ?? 0) > 0)
     : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
-
-  const dexTokenAddress = isGraduated ? (campaign?.token ?? "") : "";
-
-  const { url: chartUrl, baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
-    useDexScreenerChart(dexTokenAddress);
-  const isDexStage = isGraduated;
+  const verifiedMarketStage = unifiedMarket.state?.marketStage;
+  const isDexStage = verifiedMarketStage
+    ? ["TOPAZ_PENDING", "TOPAZ_ACTIVE", "TOPAZ_DEGRADED"].includes(verifiedMarketStage)
+    : contractGraduated;
+  const isTopazTradingActive = verifiedMarketStage === "TOPAZ_ACTIVE" && Boolean(unifiedMarket.state?.tradingEnabled);
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:
@@ -1526,9 +1560,7 @@ setTxs(next);
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
-
-    // LIVE: best-effort liquidity (BNB-equivalent) from DexScreener.
-    return formatBnb(dexLiquidityBnb ?? null);
+    return formatBnb(Number(unifiedMarket.summary?.liquidity_bnb ?? NaN));
   })()
 
   const liquidityDisplay = useMemo(() => {
@@ -1545,8 +1577,8 @@ setTxs(next);
   }, [displayDenom, liquidityValue, bnbUsdPrice, bnbUsdLoading]);
 ;
 
-  const chartTitle = isDexStage ? "DEX chart" : "";
-  const stagePill = isDexStage ? "Graduated" : "Bonding";
+  const chartTitle = "";
+  const stagePill = isTopazTradingActive ? "Graduated · Topaz" : isDexStage ? "Graduating" : "Bonding";
 
   // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
   useEffect(() => {
@@ -1557,7 +1589,83 @@ setTxs(next);
         setQuoteError(null);
 
         if (isDexStage) {
-          setQuoteWei(null);
+          if (!isTopazTradingActive || !campaign?.campaign || !campaign?.token) {
+            setQuoteWei(null);
+            setQuoteError(unifiedMarket.state?.lastError || "Topaz market verification is still in progress.");
+            return;
+          }
+          setQuoteLoading(true);
+          const resolved = await resolveVerifiedTopazRoute({
+            provider: readProvider,
+            campaignAddress: campaign.campaign,
+            expectedTokenAddress: campaign.token,
+            chainId: chainIdForStorage,
+          });
+          if (tradeInputDenom === "BNB") {
+            const targetNativeWei = parseBnbAmountWei(tradeAmount);
+            setEffectiveBnbWei(targetNativeWei);
+            if (targetNativeWei <= 0n) {
+              setEffectiveTokenWei(0n);
+              setQuoteWei(null);
+              return;
+            }
+            if (tradeTab === "buy") {
+              const quote = await quoteTopazBuy({ provider: readProvider, resolved, nativeAmountInRaw: targetNativeWei, slippageBps: topazSlippageBps });
+              if (!cancelled) {
+                setEffectiveTokenWei(quote.amountOutRaw);
+                setQuoteWei(targetNativeWei);
+              }
+              return;
+            }
+            const tokenInputWei = await solveTokensForExactNative({
+              provider: readProvider,
+              resolved,
+              targetNativeOutRaw: targetNativeWei,
+              initialTokenHighRaw: tokenBalanceWei && tokenBalanceWei > 0n ? tokenBalanceWei : 10n ** 24n,
+            });
+            const quote = await quoteTopazSell({ provider: readProvider, resolved, tokenAmountInRaw: tokenInputWei, slippageBps: topazSlippageBps });
+            if (!cancelled) {
+              setEffectiveTokenWei(tokenInputWei);
+              setEffectiveBnbWei(quote.amountOutRaw);
+              setQuoteWei(quote.amountOutRaw);
+            }
+            return;
+          }
+          const tokenInputWei = parseTokenAmountWei(tradeAmount);
+          setEffectiveTokenWei(tokenInputWei);
+          if (tokenInputWei <= 0n) {
+            setEffectiveBnbWei(0n);
+            setQuoteWei(null);
+            return;
+          }
+          if (tradeTab === "buy") {
+            let initialNativeHighRaw = 10n ** 15n;
+            try {
+              const lastPriceWei = ethers.parseUnits(String(unifiedMarket.summary?.last_price_bnb || "0"), 18);
+              const estimate = (tokenInputWei * lastPriceWei) / 10n ** 18n;
+              if (estimate > 0n) initialNativeHighRaw = estimate * 2n;
+            } catch {
+              // Binary-search expansion handles an unavailable spot price.
+            }
+            const nativeInputWei = await solveNativeForExactTokens({
+              provider: readProvider,
+              resolved,
+              targetTokenOutRaw: tokenInputWei,
+              initialNativeHighRaw,
+            });
+            const quote = await quoteTopazBuy({ provider: readProvider, resolved, nativeAmountInRaw: nativeInputWei, slippageBps: topazSlippageBps });
+            if (!cancelled) {
+              setEffectiveBnbWei(nativeInputWei);
+              setEffectiveTokenWei(quote.amountOutRaw);
+              setQuoteWei(nativeInputWei);
+            }
+            return;
+          }
+          const quote = await quoteTopazSell({ provider: readProvider, resolved, tokenAmountInRaw: tokenInputWei, slippageBps: topazSlippageBps });
+          if (!cancelled) {
+            setEffectiveBnbWei(quote.amountOutRaw);
+            setQuoteWei(quote.amountOutRaw);
+          }
           return;
         }
         if (!campaign?.campaign) {
@@ -1648,17 +1756,74 @@ setTxs(next);
       cancelled = true;
       clearTimeout(t);
     };
-  }, [readProvider, campaign?.campaign, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage]);
+  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
 
     if (isDexStage) {
-      toast({
-        title: "Token is graduated",
-        description: "This token is trading on DEX now. Use DexScreener / PancakeSwap.",
-      });
-      if (dexBaseUrl) window.open(dexBaseUrl, "_blank", "noopener,noreferrer");
+      if (!isTopazTradingActive || !campaign?.token) {
+        toast({
+          title: "Topaz market is not ready",
+          description: unifiedMarket.state?.lastError || "The verified Topaz route is still being reconciled.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!wallet.signer || !wallet.account) {
+        toast({ title: "Connect wallet", description: "Please connect your wallet to trade." });
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
+      }
+      try {
+        setTradePending(true);
+        const resolved = await resolveVerifiedTopazRoute({
+          provider: readProvider,
+          campaignAddress: campaign.campaign,
+          expectedTokenAddress: campaign.token,
+          chainId: chainIdForStorage,
+        });
+        if (tradeTab === "buy") {
+          const nativeAmountInRaw = tradeInputDenom === "BNB" ? parseBnbAmountWei(tradeAmount) : effectiveBnbWei;
+          if (nativeAmountInRaw <= 0n) throw new Error("Enter a valid BNB or token amount.");
+          if (bnbBalanceWei != null && nativeAmountInRaw > bnbBalanceWei) throw new Error("Insufficient BNB balance.");
+          const quote = await quoteTopazBuy({ provider: readProvider, resolved, nativeAmountInRaw, slippageBps: topazSlippageBps });
+          toast({ title: "Submitting Topaz buy", description: `Minimum received: ${formatTokenFromWei(quote.minimumOutRaw)} ${tokenData.ticker}.` });
+          const tx = await executeTopazBuy({ signer: wallet.signer, recipient: wallet.account, quote });
+          const receipt = await tx.wait();
+          toast({ title: "Buy confirmed", description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed." });
+        } else {
+          const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
+          if (tokenAmountInRaw <= 0n) throw new Error("Enter a valid token or BNB amount.");
+          if (tokenBalanceWei != null && tokenAmountInRaw > tokenBalanceWei) throw new Error(`Insufficient ${tokenData.ticker} balance.`);
+          const quote = await quoteTopazSell({ provider: readProvider, resolved, tokenAmountInRaw, slippageBps: topazSlippageBps });
+          const approval = await ensureTopazSellAllowance({ signer: wallet.signer, owner: wallet.account, resolved, tokenAmountRaw: tokenAmountInRaw });
+          if (approval) {
+            setApprovePending(true);
+            toast({ title: "Approval required", description: `Approving the verified Topaz router for ${tokenData.ticker}...` });
+            await approval.wait();
+            setApprovePending(false);
+          }
+          toast({ title: "Submitting Topaz sell", description: `Minimum received: ${formatBnbFromWei(quote.minimumOutRaw)}.` });
+          const tx = await executeTopazSell({ signer: wallet.signer, recipient: wallet.account, quote });
+          const receipt = await tx.wait();
+          toast({ title: "Sell confirmed", description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed." });
+        }
+        await unifiedMarket.refresh();
+        const [bnbBal, tokenBal] = await Promise.all([
+          readProvider.getBalance(wallet.account),
+          (new Contract(campaign.token, TOKEN_ABI, readProvider) as any).balanceOf(wallet.account),
+        ]);
+        setBnbBalanceWei(bnbBal);
+        setTokenBalanceWei(tokenBal);
+        setTradeAmount("0");
+      } catch (e: any) {
+        console.error("[TokenDetails] Topaz trade failed", e);
+        toast({ title: "Trade failed", description: e?.shortMessage || e?.message || "Topaz trade failed.", variant: "destructive" });
+      } finally {
+        setApprovePending(false);
+        setTradePending(false);
+      }
       return;
     }
 
@@ -1877,6 +2042,11 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
   return (
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
+      <GraduationExplosion
+        campaignAddress={campaign?.campaign}
+        active={isTopazTradingActive}
+        transitionAt={unifiedMarket.stageTransition?.to === "TOPAZ_ACTIVE" ? unifiedMarket.stageTransition.at : null}
+      />
       <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[220px]">
         <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[220px]">
           <div className="relative min-h-[180px] bg-muted/20 xl:min-h-[220px] overflow-hidden">
@@ -2195,52 +2365,37 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   </div>
                 )}
 
-                {!isDexStage && (
-                  <AthBar
-                    currentLabel={marketCapUsdLabel ?? undefined}
-                    storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
-                    className="w-full md:w-auto md:max-w-[320px]"
-                  />
-                )}
-
-                {isDexStage && dexBaseUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                    onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    DexScreener
-                  </Button>
-                )}
+                <AthBar
+                  currentLabel={marketCapUsdLabel ?? undefined}
+                  storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
+                  className="w-full md:w-auto md:max-w-[320px]"
+                />
               </div>
             </div>
 
             <div className="flex-1 min-h-0">
-              {isDexStage ? (
-                chartUrl ? (
-                  <iframe
-                    src={chartUrl}
-                    title={`${tokenData.ticker} chart`}
-                    className="w-full h-full min-h-[260px] border-0"
-                    allow="clipboard-write; clipboard-read; encrypted-media;"
+              <div className="w-full h-full min-h-[260px]">
+                {unifiedMarket.enabled ? (
+                  <UnifiedMarketChart
+                    curvePoints={curvePointsForUi}
+                    marketCandles={unifiedMarket.candles}
+                    marketState={unifiedMarket.state}
+                    graduationMarker={unifiedMarket.graduationMarker}
+                    resolution={marketResolution}
+                    onResolutionChange={setMarketResolution}
+                    denomination={displayDenom}
+                    loading={unifiedMarket.loading}
+                    error={unifiedMarket.error}
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full min-h-[260px] text-xs text-muted-foreground p-4">
-                    DexScreener data is not available yet.
-                  </div>
-                )
-              ) : (
-                <div className="w-full h-full min-h-[260px]">
                   <CurvePriceChart
                     campaignAddress={campaign?.campaign}
                     curvePointsOverride={curvePointsForUi}
                     loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
                     errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
                   />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </Card>
 
@@ -2603,7 +2758,23 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
                         </Button>
                       </div>
-                      <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Slippage:
+                        {isDexStage ? (
+                          <select
+                            value={topazSlippageBps}
+                            onChange={(event) => setTopazSlippageBps(Number(event.target.value))}
+                            className="h-6 rounded border border-border bg-background px-1 text-[10px] text-foreground"
+                          >
+                            <option value={50}>0.50%</option>
+                            <option value={100}>1.00%</option>
+                            <option value={200}>2.00%</option>
+                            <option value={300}>3.00%</option>
+                          </select>
+                        ) : (
+                          <span>{SLIPPAGE_PCT}%</span>
+                        )}
+                      </label>
                     </div>
                     <div className="relative">
                       <input
@@ -2638,7 +2809,11 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      <p>Token is graduated. Trade on DEX.</p>
+                      isTopazTradingActive && quoteWei != null ? (
+                        <p>Topaz execution · minimum received is protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.</p>
+                      ) : (
+                        <p>Topaz market verification is in progress. Your bonding history remains visible.</p>
+                      )
                     ) : quoteWei != null ? (
                       <p>
                         You will pay ~{formatBnbFromWei(quoteWei)} (max{" "}
@@ -2655,10 +2830,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <Button
                     onClick={handlePlaceTrade}
-                    disabled={tradePending || approvePending || quoteLoading || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    disabled={tradePending || approvePending || quoteLoading || (isDexStage && !isTopazTradingActive) || (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)}
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
+                    {tradePending ? "Processing..." : "Buy"}
                   </Button>
                 </TabsContent>
 
@@ -2676,7 +2851,23 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
                         </Button>
                       </div>
-                      <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                        Slippage:
+                        {isDexStage ? (
+                          <select
+                            value={topazSlippageBps}
+                            onChange={(event) => setTopazSlippageBps(Number(event.target.value))}
+                            className="h-6 rounded border border-border bg-background px-1 text-[10px] text-foreground"
+                          >
+                            <option value={50}>0.50%</option>
+                            <option value={100}>1.00%</option>
+                            <option value={200}>2.00%</option>
+                            <option value={300}>3.00%</option>
+                          </select>
+                        ) : (
+                          <span>{SLIPPAGE_PCT}%</span>
+                        )}
+                      </label>
                     </div>
                     <div className="relative">
                       <input
@@ -2754,7 +2945,11 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      <p>Token is graduated. Trade on DEX.</p>
+                      isTopazTradingActive && quoteWei != null ? (
+                        <p>Topaz execution · minimum received is protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.</p>
+                      ) : (
+                        <p>Topaz market verification is in progress. Your bonding history remains visible.</p>
+                      )
                     ) : quoteWei != null ? (
                       <p>
                         You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})
@@ -2766,10 +2961,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <Button
                     onClick={handlePlaceTrade}
-                    disabled={tradePending || approvePending || quoteLoading || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    disabled={tradePending || approvePending || quoteLoading || (isDexStage && !isTopazTradingActive) || (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)}
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}
+                    {tradePending ? "Processing..." : "Sell"}
                   </Button>
                 </TabsContent>
               </Tabs>

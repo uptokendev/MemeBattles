@@ -92,5 +92,16 @@ export const ENV = {
   AIRDROP_WEIGHT_TIER_STEP_BNB: Number(process.env.AIRDROP_WEIGHT_TIER_STEP_BNB || "1"),
   AIRDROP_MAX_WEIGHT_TIER: Number(process.env.AIRDROP_MAX_WEIGHT_TIER || "25"),
 
-  PORT: Number(process.env.PORT || "3000")
+  // War Trade Room market-continuity rollout. The handoff reconciler is safe to run
+  // before the public API/chart/trading flags because it only verifies and records state.
+  ENABLE_GRADUATION_HANDOFF_RECONCILER: String(process.env.ENABLE_GRADUATION_HANDOFF_RECONCILER || "1") === "1",
+  GRADUATION_HANDOFF_INTERVAL_MS: Number(process.env.GRADUATION_HANDOFF_INTERVAL_MS || "30000"),
+  GRADUATION_HANDOFF_MAX_CAMPAIGNS: Number(process.env.GRADUATION_HANDOFF_MAX_CAMPAIGNS || "100"),
+  ENABLE_UNIFIED_MARKET_API: String(process.env.ENABLE_UNIFIED_MARKET_API || "0") === "1",
+  ENABLE_TOPAZ_POOL_INDEXER: String(process.env.ENABLE_TOPAZ_POOL_INDEXER || "0") === "1",
+  ENABLE_UNIFIED_MARKET_CHART: String(process.env.ENABLE_UNIFIED_MARKET_CHART || "0") === "1",
+  ENABLE_TOPAZ_QUOTES: String(process.env.ENABLE_TOPAZ_QUOTES || "0") === "1",
+  ENABLE_TOPAZ_TRADING: String(process.env.ENABLE_TOPAZ_TRADING || "0") === "1",
+
+  PORT: Number(process.env.PORT || "3000"),
 };
