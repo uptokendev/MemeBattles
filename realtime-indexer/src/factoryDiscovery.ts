@@ -5,8 +5,7 @@ import { LAUNCH_FACTORY_ABI } from "./abis.js";
 import { buildFactoryInventory, type SupportedFactory } from "./factoryInventory.js";
 
 const FACTORY_IFACE = new ethers.Interface(LAUNCH_FACTORY_ABI);
-const CAMPAIGN_CREATED = FACTORY_IFACE.getEvent("CampaignCreated");
-if (!CAMPAIGN_CREATED) throw new Error("CampaignCreated missing from LAUNCH_FACTORY_ABI");
+const CAMPAIGN_CREATED = FACTORY_IFACE.getEvent("CampaignCreated")!;
 
 function parseRpcList(value: string): string[] {
   return String(value || "")
