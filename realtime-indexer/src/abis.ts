@@ -1,9 +1,26 @@
+export const CAMPAIGN_CREATED_EVENT_V3 =
+  "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI,string metadataURI)";
+
+export const CAMPAIGN_CREATED_EVENT_V2 =
+  "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI)";
+
+export const CAMPAIGN_CREATED_EVENT_LEGACY =
+  "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol)";
+
 export const LAUNCH_FACTORY_ABI = [
-  // events
-  "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol)",
+  CAMPAIGN_CREATED_EVENT_V3,
   "event CampaignGraduated(address indexed campaign,address indexed creator,address indexed lpToken,address locker)",
 
-  // view helpers for robust campaign discovery (avoids missing events due to RPC log issues)
+  // Current generation registry shape. metadataURI was inserted before the
+  // social/link fields, so createdAt is tuple index 10 rather than index 9.
+  "function campaignsCount() view returns (uint256)",
+  "function getCampaign(uint256 id) view returns (tuple(address campaign,address token,address creator,string name,string symbol,string logoURI,string metadataURI,string xAccount,string website,string extraLink,uint64 createdAt))",
+  "function router() view returns (address)"
+];
+
+export const LEGACY_LAUNCH_FACTORY_ABI = [
+  CAMPAIGN_CREATED_EVENT_LEGACY,
+  "event CampaignGraduated(address indexed campaign,address indexed creator,address indexed lpToken,address locker)",
   "function campaignsCount() view returns (uint256)",
   "function getCampaign(uint256 id) view returns (tuple(address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt))",
   "function router() view returns (address)"
