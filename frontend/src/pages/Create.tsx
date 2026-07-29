@@ -10,7 +10,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
 import { getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContracts";
-import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
+import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { apiFetch } from "@/lib/apiBase";
@@ -81,15 +81,6 @@ function cacheDraftLogo(draftId: string, logoUrl: string) {
   if (typeof window === "undefined" || !draftId || !logoUrl) return;
   try {
     window.sessionStorage.setItem(`mwz:draft-logo:${draftId}`, logoUrl);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function clearJustCreatedDraftCache(draftId: string) {
-  if (typeof window === "undefined" || !draftId) return;
-  try {
-    window.sessionStorage.removeItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`);
   } catch {
     // Ignore storage failures.
   }
@@ -340,27 +331,11 @@ const Create = () => {
         xUrl: formData.twitter || null,
         telegramUrl: formData.telegram || null,
         discordUrl: formData.discord || null,
+        docs: formData.otherLink ? [formData.otherLink] : [],
         otherUrl: formData.otherLink || null,
+        graduationTargetWei: graduationTargetWei.toString(),
         visibility: "private",
-      } as any);
-
-      try {
-        const promotionAuth = await createDraftAuth(draft.id);
-
-        await saveDraftPromotion(draft.id, {
-          auth: promotionAuth,
-          websiteUrl: formData.website || "",
-          xUrl: formData.twitter || "",
-          telegramUrl: formData.telegram || "",
-          discordUrl: formData.discord || "",
-          docs: formData.otherLink ? [formData.otherLink] : [],
-          visibility: "private",
-        });
-      } catch (promotionError) {
-        console.warn("[Create] Failed to seed promotion social links", promotionError);
-      }
-
-      clearJustCreatedDraftCache(draft.id);
+      });
       cacheDraftLogo(draft.id, logoUrl);
       toast.success(isSolanaCreator ? "Solana draft signed and saved. No gas spent." : "Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);

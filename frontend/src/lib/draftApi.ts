@@ -560,6 +560,8 @@ export type CampaignDraft = {
   deployTxHash: string | null;
   archivedAt: string | null;
   deployedAt: string | null;
+  graduationTargetWei: string;
+  scheduledLaunchAt?: string | null;
   createdAt: string;
   updatedAt: string;
   tickerReservation?: TickerReservation | null;
@@ -622,6 +624,8 @@ export type PrepareDraftBundle = {
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
 const JUST_CREATED_DRAFT_CACHE_TTL_MS = 5 * 60 * 1000;
 const DRAFT_READ_IN_FLIGHT = new Map<string, Promise<PrepareDraftBundle>>();
+const DRAFT_READ_RESULT_CACHE = new Map<string, { bundle: PrepareDraftBundle; cachedAt: number }>();
+const DRAFT_READ_RESULT_CACHE_TTL_MS = 10_000;
 
 function emptyPromotion(draftId: string): CampaignDraftPromotion {
   return {
@@ -647,10 +651,14 @@ function emptyPopularity(): DraftPopularity {
   return { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0, armedCount: 0, popularityPercentage: 0, heatLabel: "Cold", rankingScore: 0 };
 }
 
-function cacheJustCreatedDraft(draft: CampaignDraft) {
+function cacheJustCreatedDraft(bundle: PrepareDraftBundle) {
+  const draft = bundle?.draft;
   if (typeof window === "undefined" || !draft?.id) return;
   try {
-    window.sessionStorage.setItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`, JSON.stringify({ draft, cachedAt: Date.now() }));
+    window.sessionStorage.setItem(
+      `${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`,
+      JSON.stringify({ bundle, cachedAt: Date.now() }),
+    );
   } catch {}
 }
 
@@ -668,10 +676,13 @@ function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null 
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { draft?: CampaignDraft; cachedAt?: number };
-    if (!parsed?.draft || parsed.draft.id !== draftId) return null;
+    const parsed = JSON.parse(raw) as { bundle?: PrepareDraftBundle; draft?: CampaignDraft; cachedAt?: number };
     if (!parsed.cachedAt || Date.now() - parsed.cachedAt > JUST_CREATED_DRAFT_CACHE_TTL_MS) return null;
-    return { draft: parsed.draft, promotion: emptyPromotion(draftId), popularity: emptyPopularity() };
+    if (parsed.bundle?.draft?.id === draftId) return parsed.bundle;
+    if (parsed.draft?.id === draftId) {
+      return { draft: parsed.draft, promotion: emptyPromotion(draftId), popularity: emptyPopularity() };
+    }
+    return null;
   } catch {
     try {
       window.sessionStorage.removeItem(key);
@@ -692,7 +703,11 @@ export type CreateDraftInput = {
   logoUrl?: string | null;
   websiteUrl?: string | null;
   xUrl?: string | null;
+  telegramUrl?: string | null;
+  discordUrl?: string | null;
+  docs?: string[];
   otherUrl?: string | null;
+  graduationTargetWei?: string;
   visibility?: DraftVisibility;
 };
 
@@ -743,7 +758,13 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
     ...(json.draft as CampaignDraft),
     tickerReservation: (json.tickerReservation as TickerReservation | null | undefined) ?? json.draft?.tickerReservation ?? null,
   };
-  cacheJustCreatedDraft(draft);
+  const bundle: PrepareDraftBundle = {
+    draft,
+    promotion: (json.promotion as CampaignDraftPromotion | undefined) || emptyPromotion(draft.id),
+    popularity: (json.popularity as DraftPopularity | undefined) || emptyPopularity(),
+    viewer: json.viewer,
+  };
+  cacheJustCreatedDraft(bundle);
   return draft;
 }
 
@@ -770,6 +791,12 @@ export async function fetchCampaignDraft(draftId: string, viewer?: string | null
   if (justCreatedBundle) return justCreatedBundle;
 
   const readKey = `${draftId}:${normalizeWallet(viewer || "") || "public"}`;
+  const cachedResult = DRAFT_READ_RESULT_CACHE.get(readKey);
+  if (cachedResult && Date.now() - cachedResult.cachedAt <= DRAFT_READ_RESULT_CACHE_TTL_MS) {
+    return cachedResult.bundle;
+  }
+  if (cachedResult) DRAFT_READ_RESULT_CACHE.delete(readKey);
+
   const existing = DRAFT_READ_IN_FLIGHT.get(readKey);
   if (existing) return existing;
 
@@ -778,9 +805,15 @@ export async function fetchCampaignDraft(draftId: string, viewer?: string | null
     const res = await fetch(url, { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
 
-    if (res.ok) return json as PrepareDraftBundle;
+    if (res.ok) {
+      const bundle = json as PrepareDraftBundle;
+      DRAFT_READ_RESULT_CACHE.set(readKey, { bundle, cachedAt: Date.now() });
+      return bundle;
+    }
     if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
-      return retryPrivateReadWithAuth(url, viewer, json, draftId);
+      const bundle = await retryPrivateReadWithAuth(url, viewer, json, draftId);
+      DRAFT_READ_RESULT_CACHE.set(readKey, { bundle, cachedAt: Date.now() });
+      return bundle;
     }
     throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
   })();

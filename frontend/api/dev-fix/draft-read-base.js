@@ -66,6 +66,8 @@ function mapDraftRow(row) {
     deployTxHash: row.deploy_tx_hash ?? row.deployTxHash ?? null,
     archivedAt: row.archived_at ?? row.archivedAt ?? null,
     deployedAt: row.deployed_at ?? row.deployedAt ?? null,
+    graduationTargetWei: String(row.graduation_target_wei ?? row.graduationTargetWei ?? 30_000n * 10n ** 18n),
+    scheduledLaunchAt: row.scheduled_launch_at ?? row.scheduledLaunchAt ?? null,
     createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
   };

@@ -49,6 +49,7 @@ import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { TokenSafetyRouteOverlay } from "@/components/token/TokenSafetyRouteOverlay";
+import { ScheduledTokenAccessRoute } from "@/components/token/ScheduledTokenAccessRoute";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
@@ -172,7 +173,7 @@ function AppShellLayout({
           <Route path="/squads" element={<SquadLeaderboard />} />
           <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
           <Route path="/r/:code" element={<RecruiterReferral />} />
-          <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSafetyRouteOverlay /></>} />
+          <Route path="/token/:campaignAddress" element={<ScheduledTokenAccessRoute><TokenDetails /><TokenSafetyRouteOverlay /></ScheduledTokenAccessRoute>} />
           <Route path="/playbook" element={<Playbook />} />
           <Route path="/docs" element={<Playbook />} />
           <Route path="/status" element={<Status />} />

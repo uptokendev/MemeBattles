@@ -26,6 +26,9 @@ const PUBLIC_DISCOVERY_STATUSES = new Set([
 ]);
 const VISIBILITIES = new Set(["public", "unlisted", "private"]);
 const ZERO = { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0 };
+const DEFAULT_GRADUATION_TARGET_WEI = 30_000n * 10n ** 18n;
+const TEST_GRADUATION_TARGET_WEI = 6n * 10n ** 18n;
+const STANDARD_GRADUATION_TARGETS = new Set([15_000n, 30_000n, 50_000n].map((value) => value * 10n ** 18n));
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -65,6 +68,20 @@ function cleanUrl(value) {
 function cleanStringArray(value, maxItems = 12, maxLen = 600) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => cleanText(item, maxLen)).filter(Boolean).slice(0, maxItems);
+}
+
+function normalizeDraftGraduationTarget(chainId, value) {
+  let target = DEFAULT_GRADUATION_TARGET_WEI;
+  if (value != null && String(value).trim()) {
+    try {
+      target = BigInt(String(value));
+    } catch {
+      throw new TickerReservationError("Invalid graduation target.", { code: "INVALID_GRADUATION_TARGET", httpStatus: 400 });
+    }
+  }
+  if (STANDARD_GRADUATION_TARGETS.has(target)) return target.toString();
+  if (Number(chainId) === 97 && target === TEST_GRADUATION_TARGET_WEI) return target.toString();
+  throw new TickerReservationError("Unsupported graduation target for this chain.", { code: "INVALID_GRADUATION_TARGET", httpStatus: 400 });
 }
 
 function slugify(value) {
@@ -201,6 +218,8 @@ function mapDraftRow(row) {
     deployTxHash: row.deploy_tx_hash ?? row.deployTxHash ?? null,
     archivedAt: row.archived_at ?? row.archivedAt ?? null,
     deployedAt: row.deployed_at ?? row.deployedAt ?? null,
+    graduationTargetWei: String(row.graduation_target_wei ?? row.graduationTargetWei ?? DEFAULT_GRADUATION_TARGET_WEI),
+    scheduledLaunchAt: row.scheduled_launch_at ?? row.scheduledLaunchAt ?? null,
     createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
   };
@@ -374,6 +393,7 @@ export async function drafts(req, res) {
   if (!ticker) return json(res, 400, { error: "Draft ticker is required." });
 
   const visibility = VISIBILITIES.has(body.visibility) ? body.visibility : "private";
+  const graduationTargetWei = normalizeDraftGraduationTarget(chainId, body.graduationTargetWei);
   const now = new Date().toISOString();
   const pool = await getPool();
 
@@ -392,7 +412,7 @@ export async function drafts(req, res) {
         }
 
         const inserted = await db.query(
-          "insert into campaign_drafts (chain_id, creator_wallet, name, ticker, description, category, logo_url, website_url, x_url, other_url, slug, status, visibility) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12) returning *",
+          "insert into campaign_drafts (chain_id, creator_wallet, name, ticker, description, category, logo_url, website_url, x_url, other_url, graduation_target_wei, slug, status, visibility) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft',$13) returning *",
           [
             chainId,
             creatorWallet,
@@ -404,6 +424,7 @@ export async function drafts(req, res) {
             cleanUrl(body.websiteUrl) || null,
             cleanUrl(body.xUrl) || null,
             cleanUrl(body.otherUrl) || null,
+            graduationTargetWei,
             makeSlug(name, ticker),
             visibility,
           ],
@@ -418,9 +439,24 @@ export async function drafts(req, res) {
           ticker,
           published: visibility === "public",
         });
-        await db.query("insert into campaign_draft_promotion (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
+        const promotionRes = await db.query(
+          "insert into campaign_draft_promotion (draft_id, telegram_url, discord_url, x_url, website_url, docs, updated_at) values ($1,$2,$3,$4,$5,$6::jsonb,now()) on conflict (draft_id) do update set telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, updated_at = now() returning *",
+          [
+            draft.id,
+            cleanUrl(body.telegramUrl),
+            cleanUrl(body.discordUrl),
+            cleanUrl(body.xUrl),
+            cleanUrl(body.websiteUrl),
+            JSON.stringify(cleanStringArray(body.docs, 8, 500)),
+          ],
+        );
         await db.query("insert into campaign_draft_metrics (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
-        return { draft, tickerReservation };
+        return {
+          draft,
+          promotion: mapPromotionRow(promotionRes.rows[0], draft.id),
+          popularity: popularityFromMetrics(ZERO),
+          tickerReservation,
+        };
       });
       return json(res, 201, created);
     } catch (error) {
@@ -461,13 +497,27 @@ export async function drafts(req, res) {
     deployTxHash: null,
     archivedAt: null,
     deployedAt: null,
+    graduationTargetWei,
+    scheduledLaunchAt: null,
     createdAt: now,
     updatedAt: now,
   };
   store.drafts.set(draft.id, draft);
-  store.promotions.set(draft.id, defaultPromotion(draft.id, now));
+  store.promotions.set(draft.id, {
+    ...defaultPromotion(draft.id, now),
+    telegramUrl: cleanUrl(body.telegramUrl),
+    discordUrl: cleanUrl(body.discordUrl),
+    xUrl: cleanUrl(body.xUrl),
+    websiteUrl: cleanUrl(body.websiteUrl),
+    docs: cleanStringArray(body.docs, 8, 500),
+    publishedAt: null,
+  });
   store.metrics.set(draft.id, { ...ZERO });
-  return json(res, 201, { draft });
+  return json(res, 201, {
+    draft,
+    promotion: store.promotions.get(draft.id),
+    popularity: popularityFromMetrics(ZERO),
+  });
 }
 
 export async function draftById(req, res) {

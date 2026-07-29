@@ -12,7 +12,7 @@ import { fetchCampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getChainLabel, isSolanaChainId } from "@/lib/chainConfig";
-import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel } from "@/lib/graduationTiers";
+import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel, isSupportedGraduationTarget } from "@/lib/graduationTiers";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import {
@@ -115,7 +115,16 @@ export default function PushDraftLive() {
     setLoading(true);
     fetchCampaignDraft(draftId, viewerWallet)
       .then((data) => {
-        if (!cancelled) setBundle(data);
+        if (cancelled) return;
+        setBundle(data);
+        try {
+          const persistedTarget = BigInt(String(data.draft.graduationTargetWei || DEFAULT_GRADUATION_TARGET_WEI));
+          if (isSupportedGraduationTarget(Number(data.draft.chainId), persistedTarget)) {
+            setGraduationTargetWei(persistedTarget);
+          }
+        } catch {
+          setGraduationTargetWei(DEFAULT_GRADUATION_TARGET_WEI);
+        }
       })
       .catch((err) => toast.error(err?.message || "Draft not found"))
       .finally(() => {

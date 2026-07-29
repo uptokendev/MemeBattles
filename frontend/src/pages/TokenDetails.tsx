@@ -36,6 +36,7 @@ import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import { fetchPublicCampaignLifecycleDrafts } from "@/lib/scheduledLaunchApi";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -687,6 +688,16 @@ const TokenDetails = () => {
 
         const param = campaignAddress.trim();
         const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
+        const lifecycleDrafts = isAddress
+          ? await fetchPublicCampaignLifecycleDrafts({ chainId: chainIdForStorage, limit: 500 }).catch(() => [])
+          : [];
+        const lifecycleDraft = isAddress
+          ? lifecycleDrafts.find((item) => {
+              const needle = param.toLowerCase();
+              return String(item.campaignAddress || "").toLowerCase() === needle
+                || String(item.tokenAddress || "").toLowerCase() === needle;
+            })
+          : null;
 
         let match = isAddress
           ? campaigns.find((c) => {
@@ -699,7 +710,8 @@ const TokenDetails = () => {
           : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
 
         if (!match && isAddress) {
-          match = await buildCampaignFromAddress(param, readProvider, chainIdForStorage);
+          const directCampaignAddress = String(lifecycleDraft?.campaignAddress || param);
+          match = await buildCampaignFromAddress(directCampaignAddress, readProvider, chainIdForStorage);
         }
 
         if (!match) {
