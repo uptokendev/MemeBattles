@@ -56,6 +56,8 @@ jobs:
         working-directory: frontend
       - run: node --check api/server.mjs
         working-directory: frontend
+      - run: node --test api/dev-fix/route-authorization-signer.test.mjs
+        working-directory: frontend
       - run: npm run build
         working-directory: frontend
       - run: npm run lint
