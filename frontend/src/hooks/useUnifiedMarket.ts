@@ -98,7 +98,6 @@ export function useUnifiedMarket(input: {
       return;
     }
     const requestId = ++requestRef.current;
-    setLoading((current) => current && !state);
     try {
       const [nextState, nextSummary, nextTrades, nextCandles] = await Promise.all([
         fetchMarketState(campaignAddress, input.chainId, signal),
@@ -126,7 +125,7 @@ export function useUnifiedMarket(input: {
     } finally {
       if (requestId === requestRef.current && !signal?.aborted) setLoading(false);
     }
-  }, [campaignAddress, enabled, input.chainId, resolution, state]);
+  }, [campaignAddress, enabled, input.chainId, resolution]);
 
   const scheduleRefresh = useCallback((delay = 120) => {
     if (!enabled) return;
