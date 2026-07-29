@@ -1,0 +1,295 @@
+name: WTR Continuity Bootstrap
+
+on:
+  push:
+    branches:
+      - agent/war-trade-room-continuity-foundation
+    paths:
+      - .github/workflows/wtr-continuity-bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wtr-continuity-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  wire-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/war-trade-room-continuity-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Wire market continuity into runtime
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected patch target not found in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          Path("realtime-indexer/src/abis.ts").write_text('''export const LAUNCH_FACTORY_ABI = [
+            "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol)",
+            "event CampaignGraduated(address indexed campaign,address indexed creator,address indexed lpToken,address locker)",
+            "function campaignsCount() view returns (uint256)",
+            "function getCampaign(uint256 id) view returns (tuple(address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt))",
+            "function router() view returns (address)"
+          ];
+
+          export const LAUNCH_CAMPAIGN_ABI = [
+            "event TokensPurchased(address indexed buyer,uint256 amountOut,uint256 cost)",
+            "event TokensSold(address indexed seller,uint256 amountIn,uint256 payout)",
+            "event CampaignFinalized(address indexed caller,address indexed pair,uint256 graduationBalance,uint256 graduationOvershoot,uint256 liquidityTokens,uint256 liquidityBnb,uint256 liquidityLp,uint256 protocolFee,uint256 creatorPayout,uint256 burnedUnsoldTokens,uint256 burnedUnusedLpTokens,uint256 finalCurvePrice,uint256 initialDexPrice,uint256 postBurnTotalSupply)",
+            "function feeRecipient() view returns (address)",
+            "function token() view returns (address)",
+            "function router() view returns (address)",
+            "function factory() view returns (address)",
+            "function launched() view returns (bool)",
+            "function getGraduationState() view returns (address dexPair,uint256 finalCurvePrice,uint256 initialDexPrice,uint256 graduatedLiquidityTokens,uint256 graduatedLiquidityBnb,uint256 graduatedLiquidityLp,uint256 burnedUnsoldTokens,uint256 burnedUnusedLpTokens,uint256 postBurnTotalSupply,uint256 graduationBalance,uint256 graduationOvershoot)"
+          ];
+
+          export const TOPAZ_ROUTER_ADAPTER_ABI = [
+            "function topazRouter() view returns (address)",
+            "function poolFactory() view returns (address)",
+            "function WETH() view returns (address)"
+          ];
+
+          export const TOPAZ_PRODUCTION_ROUTER_ABI = [
+            "function defaultFactory() view returns (address)",
+            "function weth() view returns (address)"
+          ];
+
+          export const TOPAZ_FACTORY_ABI = [
+            "function getPool(address tokenA,address tokenB,bool stable) view returns (address pool)",
+            "function getFee(address pool,bool stable) view returns (uint256)",
+            "function getFee(address pool) view returns (uint256)"
+          ];
+
+          export const TOPAZ_POOL_ABI = [
+            "event Swap(address indexed sender,uint256 amount0In,uint256 amount1In,uint256 amount0Out,uint256 amount1Out,address indexed to)",
+            "event Sync(uint256 reserve0,uint256 reserve1)",
+            "function token0() view returns (address)",
+            "function token1() view returns (address)",
+            "function stable() view returns (bool)",
+            "function getReserves() view returns (uint256 reserve0,uint256 reserve1,uint256 blockTimestampLast)",
+            "function fee() view returns (uint256)",
+            "function swapFee() view returns (uint256)"
+          ];
+
+          export const TREASURY_ROUTER_ABI = [
+            "event RouteExecuted(uint8 indexed kind,uint8 indexed profile,uint256 amountIn,uint256 leagueAmount,uint256 recruiterAmount,uint256 airdropAmount,uint256 squadAmount,uint256 protocolAmount)"
+          ];
+
+          export const UP_VOTE_TREASURY_ABI = [
+            "event VoteCast(address indexed campaign,address indexed voter,address indexed asset,uint256 amountPaid,bytes32 meta)"
+          ];
+          ''')
+
+          replace_once(
+              "realtime-indexer/src/env.ts",
+              '  AIRDROP_MAX_WEIGHT_TIER: Number(process.env.AIRDROP_MAX_WEIGHT_TIER || "25"),\n\n  PORT:',
+              '  AIRDROP_MAX_WEIGHT_TIER: Number(process.env.AIRDROP_MAX_WEIGHT_TIER || "25"),\n\n'
+              '  // War Trade Room market-continuity rollout flags. Keep disabled until the matching stage is accepted.\n'
+              '  ENABLE_UNIFIED_MARKET_API: String(process.env.ENABLE_UNIFIED_MARKET_API || "0") === "1",\n'
+              '  ENABLE_TOPAZ_POOL_INDEXER: String(process.env.ENABLE_TOPAZ_POOL_INDEXER || "0") === "1",\n'
+              '  ENABLE_UNIFIED_MARKET_CHART: String(process.env.ENABLE_UNIFIED_MARKET_CHART || "0") === "1",\n'
+              '  ENABLE_TOPAZ_QUOTES: String(process.env.ENABLE_TOPAZ_QUOTES || "0") === "1",\n'
+              '  ENABLE_TOPAZ_TRADING: String(process.env.ENABLE_TOPAZ_TRADING || "0") === "1",\n\n'
+              '  PORT:'
+          )
+
+          replace_once(
+              "realtime-indexer/package.json",
+              '    "test:phase4-7": "tsx --test src/tests/phase4-phase7.test.ts"',
+              '    "test:phase4-7": "tsx --test src/tests/phase4-phase7.test.ts",\n'
+              '    "test:wtr": "tsx --test src/tests/marketContinuity.test.ts"'
+          )
+
+          replace_once(
+              "realtime-indexer/src/indexer.ts",
+              'import { upsertRewardEvent } from "./rewards/ingest.js";\n',
+              'import { upsertRewardEvent } from "./rewards/ingest.js";\n'
+              'import { reconcileGraduationHandoff } from "./marketContinuity.js";\n'
+          )
+
+          replace_once(
+              "realtime-indexer/src/indexer.ts",
+              '        chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,logo_uri,is_active\n'
+              '     )\n'
+              '     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)',
+              '        chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,logo_uri,\n'
+              '        is_active,bonding_active,support_enabled,indexing_enabled,market_stage\n'
+              '     )\n'
+              '     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,true,true,true,\'BONDING\')'
+          )
+
+          replace_once(
+              "realtime-indexer/src/indexer.ts",
+              '            is_active=true,\n'
+              '            updated_at=now()`',
+              '            is_active=case when public.campaigns.graduated_at_chain is null then true else false end,\n'
+              '            bonding_active=case when public.campaigns.graduated_at_chain is null then true else false end,\n'
+              '            support_enabled=true,\n'
+              '            indexing_enabled=true,\n'
+              '            market_stage=case\n'
+              '              when public.campaigns.graduated_at_chain is null then \'BONDING\'\n'
+              '              else public.campaigns.market_stage\n'
+              '            end,\n'
+              '            updated_at=now()`'
+          )
+
+          old_graduated = '''async function setCampaignGraduated(
+            chainId: number,
+            campaign: string,
+            graduatedBlock: number,
+            graduatedAt: Date,
+            txHash: string
+          ) {
+            await pool.query(
+              `update public.campaigns
+                 set is_active=false,
+                     graduated_block=$3,
+                     graduated_at_chain=$4,
+                     meta = coalesce(meta,'{}'::jsonb) || jsonb_build_object('graduatedTx', $5),
+                     updated_at=now()
+               where chain_id=$1 and campaign_address=$2`,
+              [chainId, campaign.toLowerCase(), graduatedBlock, graduatedAt, txHash.toLowerCase()]
+            );
+          }'''
+          new_graduated = '''async function setCampaignGraduated(
+            chainId: number,
+            campaign: string,
+            graduatedBlock: number,
+            graduatedAt: Date,
+            txHash: string
+          ) {
+            const normalizedCampaign = campaign.toLowerCase();
+            await pool.query(
+              `update public.campaigns
+                 set is_active=false,
+                     bonding_active=false,
+                     support_enabled=true,
+                     indexing_enabled=true,
+                     market_stage='TOPAZ_PENDING',
+                     launched=true,
+                     graduated_block=$3,
+                     graduated_at_chain=$4,
+                     meta = coalesce(meta,'{}'::jsonb) || jsonb_build_object('graduatedTx', $5),
+                     updated_at=now()
+               where chain_id=$1 and campaign_address=$2`,
+              [chainId, normalizedCampaign, graduatedBlock, graduatedAt, txHash.toLowerCase()]
+            );
+
+            await pool.query(
+              `insert into public.campaign_market_state(
+                 chain_id,campaign_address,token_address,factory_address,market_stage,
+                 graduation_tx_hash,graduation_block,graduation_time,pool_verified,indexing_enabled,
+                 created_at,updated_at
+               )
+               select
+                 c.chain_id,c.campaign_address,coalesce(c.token_address,''),c.factory_address,'TOPAZ_PENDING',
+                 $3,$4,$5,false,true,now(),now()
+               from public.campaigns c
+               where c.chain_id=$1 and c.campaign_address=$2
+               on conflict (chain_id,campaign_address) do update set
+                 market_stage='TOPAZ_PENDING',
+                 graduation_tx_hash=excluded.graduation_tx_hash,
+                 graduation_block=excluded.graduation_block,
+                 graduation_time=excluded.graduation_time,
+                 pool_verified=false,
+                 indexing_enabled=true,
+                 last_error=null,
+                 updated_at=now()`,
+              [chainId, normalizedCampaign, txHash.toLowerCase(), graduatedBlock, graduatedAt]
+            );
+          }'''
+          replace_once("realtime-indexer/src/indexer.ts", old_graduated, new_graduated)
+
+          replace_once(
+              "realtime-indexer/src/indexer.ts",
+              '        and is_active=true\n',
+              '        and bonding_active=true\n'
+              '        and support_enabled=true\n'
+              '        and indexing_enabled=true\n'
+          )
+
+          replace_once(
+              "realtime-indexer/src/indexer.ts",
+              '        // Graduation marker for league categories\n'
+              '        await setCampaignGraduated(chainId, campaign, log.blockNumber, new Date(tsSec * 1000), txHash);',
+              '        // Close bonding while keeping the campaign supported, then verify the exact Topaz route.\n'
+              '        const graduationTime = new Date(tsSec * 1000);\n'
+              '        await setCampaignGraduated(chainId, campaign, log.blockNumber, graduationTime, txHash);\n'
+              '        const handoff = await reconcileGraduationHandoff({\n'
+              '          provider,\n'
+              '          chainId,\n'
+              '          campaignAddress: campaign,\n'
+              '          txHash,\n'
+              '          blockNumber: log.blockNumber,\n'
+              '          blockTime: graduationTime,\n'
+              '          args: parsed.args,\n'
+              '        });\n'
+              '        console.log("[wtr] graduation handoff", handoff);'
+          )
+
+          replace_once(
+              "realtime-indexer/src/server.ts",
+              'import { getSquadAllocationPreview } from "./rewards/squads.js";\n',
+              'import { getSquadAllocationPreview } from "./rewards/squads.js";\n'
+              'import { registerMarketContinuityRoutes } from "./marketApi.js";\n'
+          )
+
+          replace_once(
+              "realtime-indexer/src/server.ts",
+              'app.use(cors(corsOptions));\napp.options("*", cors(corsOptions));\n',
+              'app.use(cors(corsOptions));\napp.options("*", cors(corsOptions));\n'
+              'registerMarketContinuityRoutes(app);\n'
+          )
+
+          replace_once(
+              "realtime-indexer/src/marketContinuity.ts",
+              '          stable,\n          feeBps,',
+              '          stable === false ? false : null,\n          feeBps,'
+          )
+          PY
+
+      - name: Install indexer dependencies
+        working-directory: realtime-indexer
+        run: npm ci
+
+      - name: Run WTR regression tests
+        working-directory: realtime-indexer
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          ABLY_API_KEY: test.test
+          BSC_RPC_HTTP_97: http://127.0.0.1:8545
+        run: npm run test:wtr
+
+      - name: Build realtime indexer
+        working-directory: realtime-indexer
+        run: npm run build
+
+      - name: Commit validated runtime wiring
+        shell: bash
+        run: |
+          rm .github/workflows/wtr-continuity-bootstrap.yml
+          git diff --check
+          git config user.name "MemeWarzone Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(wtr): wire graduation market continuity foundation"
+          git push origin HEAD:agent/war-trade-room-continuity-foundation
