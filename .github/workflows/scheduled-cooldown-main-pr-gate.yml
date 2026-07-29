@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - frontend/src/__trigger-scheduled-cooldown-deployment.ts
+      - .github/deployment-gates/scheduled-cooldown-pr-runner.txt
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   deploy-verify-publish:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/fix-scheduled-cooldown-timezone'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/scheduled-cooldown-deploy-runner'
     name: deploy, verify and publish BSC Testnet replacement
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -29,7 +29,7 @@ jobs:
       QA_CREATOR_ADDRESS: 0x13ad79765e14927df2c554d9662bbe539e89c8e8
 
     steps:
-      - name: Checkout exact approved branch
+      - name: Checkout exact approved feature branch
         uses: actions/checkout@v4
         with:
           repository: uptokendev/MemeBattles
