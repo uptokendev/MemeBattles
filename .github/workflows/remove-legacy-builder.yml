@@ -4,18 +4,22 @@ on:
   push:
     branches:
       - agent/remove-legacy-builder
+  pull_request:
+    branches:
+      - devpostgrad
 
 permissions:
   contents: write
 
 jobs:
   cleanup:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/remove-legacy-builder'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out branch
+      - name: Check out cleanup branch
         uses: actions/checkout@v4
         with:
+          ref: agent/remove-legacy-builder
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -49,9 +53,7 @@ jobs:
                 return value.toLowerCase().includes('lovable') ? undefined : value;
               }
               if (Array.isArray(value)) {
-                return value
-                  .map(prune)
-                  .filter((entry) => entry !== undefined);
+                return value.map(prune).filter((entry) => entry !== undefined);
               }
               if (value && typeof value === 'object') {
                 const next = {};
@@ -185,12 +187,8 @@ jobs:
           cd ..
           rm .github/workflows/remove-legacy-builder.yml
 
-          if git grep -in lovable -- . ':!*.md' ':!package-lock.json' ':!deno.lock'; then
-            echo "Legacy builder references remain in source files."
-            exit 1
-          fi
-          if git grep -in lovable -- frontend/package.json frontend/package-lock.json frontend/deno.lock frontend/README.md frontend/vite.config.ts; then
-            echo "Legacy builder references remain in dependency or documentation files."
+          if git grep -in lovable; then
+            echo "Legacy builder references remain in the repository."
             exit 1
           fi
 
