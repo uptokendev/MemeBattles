@@ -18,9 +18,16 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   const V2Factory = await ethers.getContractFactory("MockV2Factory");
   const v2factory = await V2Factory.deploy();
 
+  // Deploy a real wrapped-native mock so the W15 direct-mint fallback can
+  // wrap native + transfer into a pair without going through the router.
+  const Wbnb = await ethers.getContractFactory("MockWBNB");
+  const wbnb = await Wbnb.deploy();
+
   const Router = await ethers.getContractFactory("MockRouter");
-  // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
-  const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
+  const router = await Router.deploy(
+    await v2factory.getAddress(),
+    await wbnb.getAddress()
+  );
 
   const Factory = await ethers.getContractFactory("LaunchFactory");
   const factory = await Factory.deploy(await router.getAddress(), await lpReceiver.getAddress());

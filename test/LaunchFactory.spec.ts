@@ -50,6 +50,8 @@ describe("LaunchFactory", function () {
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await expect(factory.connect(creator).createCampaign(req as any)).to.be.revertedWithCustomError(factory, "NotLive");
@@ -95,6 +97,8 @@ describe("LaunchFactory", function () {
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await expect(factory.connect(creator).createCampaign(bad as any)).to.be.revertedWithCustomError(
@@ -152,6 +156,8 @@ describe("LaunchFactory", function () {
       // Keep the initial buy small enough to avoid selling out the curve supply, which would
       // auto-finalize and drain the campaign's BNB balance.
       initialBuyBnbWei: ethers.parseEther("0.1"),
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await expect(
@@ -198,6 +204,8 @@ describe("LaunchFactory", function () {
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
       initialBuyBnbWei: ethers.parseEther("1.01"),
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await expect(
@@ -290,6 +298,8 @@ describe("LaunchFactory", function () {
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await expect(factory.connect(creator).createCampaign(reqBase as any)).to.be.revertedWithCustomError(factory, "ParamTooHigh");
