@@ -1,5 +1,6 @@
 name: Creator cluster protection CI
 
+# Validation trigger: install-time protection and featured image hydration.
 on:
   pull_request:
     paths:
