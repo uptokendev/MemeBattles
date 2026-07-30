@@ -331,65 +331,61 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
   }
 
   if (!creatorClusterFundingDetectorConfigured()) {
-    return {
-      linked: false,
-      available: false,
-      funding: null,
-      clusterId: null,
-      error: "Creator-funding indexer is disabled.",
-      provider: "rpc_indexer",
-    };
+    throw new Error("Creator-funding indexer is disabled.");
   }
 
+  let funding;
   try {
-    const funding = await findIndexedFunding({
+    funding = await findIndexedFunding({
       chainId: Number(chainId),
       creator,
       wallet,
       launchAt,
     });
-
-    if (funding) {
-      try {
-        const persisted = await persistDirectFundingCluster({ chainId, creator, wallet, funding });
-        return {
-          linked: true,
-          available: true,
-          funding,
-          clusterId: persisted.clusterId,
-          walletCount: persisted.walletCount,
-          provider: "rpc_indexer",
-        };
-      } catch (error) {
-        return {
-          linked: true,
-          available: false,
-          funding,
-          clusterId: null,
-          error: String(error?.message || error),
-          provider: "rpc_indexer",
-        };
-      }
-    }
-
-    const health = await readIndexerHealth(Number(chainId));
-    return {
-      linked: false,
-      available: Boolean(health.available),
-      funding: null,
-      clusterId: null,
-      error: health.error,
-      provider: "rpc_indexer",
-      indexer: health,
-    };
   } catch (error) {
-    return {
-      linked: false,
-      available: false,
-      funding: null,
-      clusterId: null,
-      error: String(error?.message || error),
-      provider: "rpc_indexer",
-    };
+    throw new Error(`Creator-funding evidence lookup failed: ${error?.message || error}`);
   }
+
+  if (funding) {
+    try {
+      const persisted = await persistDirectFundingCluster({ chainId, creator, wallet, funding });
+      return {
+        linked: true,
+        available: true,
+        funding,
+        clusterId: persisted.clusterId,
+        walletCount: persisted.walletCount,
+        provider: "rpc_indexer",
+      };
+    } catch (error) {
+      return {
+        linked: true,
+        available: false,
+        funding,
+        clusterId: null,
+        error: String(error?.message || error),
+        provider: "rpc_indexer",
+      };
+    }
+  }
+
+  let health;
+  try {
+    health = await readIndexerHealth(Number(chainId));
+  } catch (error) {
+    throw new Error(`Creator-funding indexer health lookup failed: ${error?.message || error}`);
+  }
+  if (!health.available) {
+    throw new Error(health.error || "Creator-funding indexer is not current.");
+  }
+
+  return {
+    linked: false,
+    available: true,
+    funding: null,
+    clusterId: null,
+    error: null,
+    provider: "rpc_indexer",
+    indexer: health,
+  };
 }
