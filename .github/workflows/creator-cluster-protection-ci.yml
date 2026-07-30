@@ -8,28 +8,35 @@ on:
       - "frontend/api/dev-fix/route-auth.js"
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/scripts/run-contract-sync-worker.mjs"
+      - "frontend/scripts/run-creator-funding-indexer.mjs"
+      - "frontend/package.json"
       - "frontend/src/lib/apiBase.ts"
       - "frontend/src/lib/launchpadClient.ts"
       - "frontend/src/lib/recruiterApi.ts"
       - "frontend/src/components/token/CreatorProtectionDialog.tsx"
       - "frontend/src/App.tsx"
       - "db/migrations/20260730_000001_creator_cluster_buy_reservations.sql"
+      - "db/migrations/20260730_000002_creator_funding_indexer.sql"
       - ".github/workflows/creator-cluster-protection-ci.yml"
   push:
     branches:
       - "agent/fix-creator-cluster-buy-protection"
+      - "agent/fix-bsc-cluster-explorer-provider"
     paths:
       - "frontend/api/dev-fix/security-current-time.js"
       - "frontend/api/dev-fix/creator-cluster-detector.js"
       - "frontend/api/dev-fix/route-auth.js"
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/scripts/run-contract-sync-worker.mjs"
+      - "frontend/scripts/run-creator-funding-indexer.mjs"
+      - "frontend/package.json"
       - "frontend/src/lib/apiBase.ts"
       - "frontend/src/lib/launchpadClient.ts"
       - "frontend/src/lib/recruiterApi.ts"
       - "frontend/src/components/token/CreatorProtectionDialog.tsx"
       - "frontend/src/App.tsx"
       - "db/migrations/20260730_000001_creator_cluster_buy_reservations.sql"
+      - "db/migrations/20260730_000002_creator_funding_indexer.sql"
       - ".github/workflows/creator-cluster-protection-ci.yml"
 
 permissions:
@@ -55,6 +62,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Check creator funding indexer syntax
+        run: node --check scripts/run-creator-funding-indexer.mjs
 
       - name: Test creator cluster protection
         run: node --test api/dev-fix/creator-cluster-protection.test.mjs
