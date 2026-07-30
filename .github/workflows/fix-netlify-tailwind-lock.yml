@@ -1,6 +1,12 @@
 name: Regenerate frontend Tailwind lock
 
 on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - frontend/package.json
+      - .github/workflows/fix-netlify-tailwind-lock.yml
   push:
     branches:
       - agent/fix-netlify-tailwind-and-worker-config
@@ -13,6 +19,7 @@ permissions:
 
 jobs:
   regenerate:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
