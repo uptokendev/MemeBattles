@@ -10,6 +10,7 @@ import {
   isFollowingCampaign,
   unfollowCampaign,
 } from "@/lib/followApi";
+import { useLaunchpad } from "@/lib/launchpadClient";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
@@ -50,6 +51,11 @@ function timeAgoFromUnix(seconds?: number): string {
   return `${d}d ago`;
 }
 
+function usefulCampaignImage(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
+}
+
 export function CampaignCard({
   vm,
   chainIdForStorage,
@@ -62,6 +68,7 @@ export function CampaignCard({
   const navigate = useNavigate();
   const wallet = useWallet();
   const { toast } = useToast();
+  const { fetchCampaignLogoURI } = useLaunchpad();
   const [followBusy, setFollowBusy] = useState(false);
   const [followed, setFollowed] = useState(false);
   const addr = String(vm.campaignAddress ?? "").trim();
@@ -70,6 +77,32 @@ export function CampaignCard({
   const canOpenProfile = creatorAddr.length > 0;
   const progress = Math.max(0, Math.min(100, Number(vm.progressPct ?? 0)));
   const statusLabel = vm.isDexTrading ? "DEX" : "LIVE";
+  const [campaignImage, setCampaignImage] = useState(() => {
+    const resolved = resolveImageUri(vm.logoURI);
+    return usefulCampaignImage(resolved) ? resolved : "";
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const supplied = resolveImageUri(vm.logoURI);
+    if (usefulCampaignImage(supplied)) {
+      setCampaignImage(supplied);
+      return () => { cancelled = true; };
+    }
+
+    setCampaignImage("");
+    if (!addr) return () => { cancelled = true; };
+
+    void fetchCampaignLogoURI(addr)
+      .then((uri) => {
+        if (cancelled) return;
+        const resolved = resolveImageUri(uri);
+        if (usefulCampaignImage(resolved)) setCampaignImage(resolved);
+      })
+      .catch(() => undefined);
+
+    return () => { cancelled = true; };
+  }, [addr, vm.logoURI, fetchCampaignLogoURI]);
 
   const openProfile = () => {
     if (!canOpenProfile) return;
@@ -152,11 +185,16 @@ export function CampaignCard({
         <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black">
           <div className="absolute inset-0 mwz-stat-grid opacity-30 z-10 pointer-events-none" />
           <img
-            src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
+            src={campaignImage || "/placeholder.svg"}
             alt={vm.name}
             className="h-full w-full object-cover bg-black transition-transform duration-300 group-hover:scale-[1.03]"
             draggable={false}
             loading="lazy"
+            onError={(event) => {
+              const image = event.currentTarget;
+              if (image.src.endsWith("/placeholder.svg")) return;
+              setCampaignImage("");
+            }}
           />
           <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_45%,rgba(0,0,0,0.62))]" />
           <div className="absolute left-2 top-2 z-30 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success shadow-[0_0_12px_rgba(57,255,79,0.14)]">
