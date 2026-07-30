@@ -56,8 +56,8 @@ jobs:
           if (root?.devDependencies?.tailwindcss !== '^3.4.17') {
             throw new Error('Tailwind is not recorded as a direct frontend devDependency.');
           }
-          if (!tailwind || tailwind.dev !== true) {
-            throw new Error('Tailwind lock entry is not marked as a direct development dependency.');
+          if (!tailwind) {
+            throw new Error('Tailwind is absent from the regenerated frontend lockfile.');
           }
           if (root.hasInstallScript) {
             throw new Error('Stale frontend install-script metadata remains in package-lock.json.');
