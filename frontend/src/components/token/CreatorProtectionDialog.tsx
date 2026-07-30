@@ -25,6 +25,12 @@ type CreatorProtectionDetail = {
   error?: string | null;
 };
 
+const TIER_RULES = [
+  { tier: 1, name: "New", lock: "24 hours", cap: "0.25 BNB" },
+  { tier: 2, name: "Trusted", lock: "6 hours", cap: "1 BNB" },
+  { tier: 3, name: "Proven", lock: "1 hour", cap: "3 BNB" },
+] as const;
+
 function formatBnb(raw?: string | null): string {
   try {
     const wei = BigInt(String(raw || "0"));
@@ -85,7 +91,7 @@ export function CreatorProtectionDialog() {
       };
     }
 
-    if (detail?.relationship === "confirmed_cluster" || code === "CREATOR_CLUSTER_BUY_LOCKED") {
+    if (detail?.relationship === "confirmed_cluster" || detail?.relationship === "direct_creator_funding" || code === "CREATOR_CLUSTER_BUY_LOCKED") {
       return {
         title: "Creator-Linked Wallet",
         body: `This wallet is linked to the ${tierLabel} campaign creator. Creator-linked wallets cannot buy this campaign during the creator protection period.`,
@@ -100,14 +106,9 @@ export function CreatorProtectionDialog() {
     };
   }, [detail]);
 
-  const openTierRules = () => {
-    window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
-    setDetail(null);
-  };
-
   return (
     <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
-      <DialogContent className="max-w-md border-amber-500/35 bg-card/95 backdrop-blur-xl">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto border-amber-500/35 bg-card/95 backdrop-blur-xl">
         <DialogHeader>
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-500/35 bg-amber-500/10">
             <ShieldAlert className="h-6 w-6 text-amber-300" />
@@ -116,10 +117,33 @@ export function CreatorProtectionDialog() {
           <DialogDescription className="space-y-3 text-left text-sm leading-6 text-muted-foreground">
             <span className="block">{copy.body}</span>
             {copy.note ? <span className="block rounded-xl border border-border/60 bg-muted/20 p-3 text-foreground/85">{copy.note}</span> : null}
+            <span className="block rounded-xl border border-amber-500/25 bg-black/30 p-3">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Creator protection rules</span>
+              <span className="grid gap-2">
+                {TIER_RULES.map((rule) => {
+                  const active = Number(detail?.tierNumber || 1) === rule.tier;
+                  return (
+                    <span
+                      key={rule.tier}
+                      className={`grid grid-cols-[auto_1fr] gap-x-3 rounded-lg border px-3 py-2 ${
+                        active
+                          ? "border-amber-400/60 bg-amber-500/10 text-foreground"
+                          : "border-border/45 bg-muted/10 text-muted-foreground"
+                      }`}
+                    >
+                      <span className="font-semibold">Tier {rule.tier}</span>
+                      <span>{rule.name}: {rule.lock} buy lock, then {rule.cap} shared creator-cluster cap.</span>
+                    </span>
+                  );
+                })}
+              </span>
+              <span className="mt-2 block text-xs text-muted-foreground">
+                These limits apply only to the creator&apos;s own campaign. Linked wallets can trade unrelated campaigns normally.
+              </span>
+            </span>
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button type="button" variant="secondary" onClick={openTierRules}>View Tier Rules</Button>
+        <DialogFooter>
           <Button type="button" onClick={() => setDetail(null)}>Understood</Button>
         </DialogFooter>
       </DialogContent>
