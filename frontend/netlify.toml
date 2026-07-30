@@ -6,6 +6,10 @@
   functions = "netlify/no-functions"
 
 [build.environment]
+  # Vite and its React plugin are build tools and intentionally remain
+  # devDependencies. Include them even when the Netlify UI sets NODE_ENV=production.
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--include=dev"
   VITE_ENABLE_WAR_ROOM = "true"
   VITE_ENABLE_POSTGRAD = "false"
   VITE_ENABLE_POSTGRAD_ARENA = "false"
