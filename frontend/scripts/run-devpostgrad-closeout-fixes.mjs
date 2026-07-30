@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 await import(`${pathToFileURL(path.resolve(here, "apply-devpostgrad-closeout-fixes.mjs")).href}?run=${Date.now()}`);
+await import(`${pathToFileURL(path.resolve(here, "apply-featured-draft-logo-fix.mjs")).href}?run=${Date.now()}`);
 
 const upvotePath = path.resolve(here, "../src/components/token/UpvoteDialog.tsx");
 const original = fs.readFileSync(upvotePath, "utf8");
