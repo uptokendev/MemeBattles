@@ -185,6 +185,7 @@ jobs:
           npm run lint
 
           cd ..
+          rm -f repomix-output.xml
           rm .github/workflows/remove-legacy-builder.yml
 
           if git grep -in lovable; then
