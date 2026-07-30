@@ -9,7 +9,7 @@ export type ScheduledLaunchCountdownProps = {
   chainId?: number | null;
   campaignAddress?: string | null;
   contractDeployed?: boolean;
-  variant?: "hero" | "compact";
+  variant?: "hero" | "compact" | "pill";
   className?: string;
 };
 
@@ -89,6 +89,23 @@ export function ScheduledLaunchCountdown({
   const remaining = remainingParts(launchSeconds, nowMs);
   const local = formatLaunchLocal(launchSeconds);
   const utc = formatLaunchUtc(launchSeconds);
+
+  if (variant === "pill") {
+    const countdown = `${remaining.days}D ${pad(remaining.hours)}:${pad(remaining.minutes)}:${pad(remaining.seconds)}`;
+    return (
+      <div
+        className={cn(
+          "mwz-chip mwz-chip-active inline-flex items-center gap-2 px-4 py-2 text-xs",
+          className,
+        )}
+        title={`${local} · ${utc}`}
+      >
+        <span className={cn("h-1.5 w-1.5 rounded-full", launched ? "bg-green-300" : "animate-pulse bg-orange-300")} />
+        <Clock3 className="h-3.5 w-3.5" />
+        <span>{launched ? "Trading is live" : reached ? "Confirming launch" : `Launch in ${countdown}`}</span>
+      </div>
+    );
+  }
 
   if (variant === "compact") {
     return (
