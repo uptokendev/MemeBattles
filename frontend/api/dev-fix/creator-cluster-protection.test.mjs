@@ -7,6 +7,7 @@ process.env.PG_DISABLE_SSL ||= "1";
 
 const security = await import("./security-current-time.js");
 const detector = await import("./creator-cluster-detector.js");
+const indexer = await import("../../scripts/run-creator-funding-indexer.mjs");
 
 const read = (relativePath) => readFile(new URL(relativePath, import.meta.url), "utf8");
 
@@ -43,70 +44,78 @@ test("route authorization reserves before signing", async () => {
   assert.match(source, /CREATOR_CLUSTER_BUY_CAP_EXCEEDED|capReservation\.code/);
 });
 
-test("BNB creator funding uses BscScan before Etherscan V2", () => {
-  const mainnet = detector.resolveCreatorClusterExplorerConfig(56, {
-    BSCSCAN_API_KEY: "bsc-key",
-    ETHERSCAN_API_KEY: "eth-key",
-  });
-  assert.deepEqual(mainnet, {
-    provider: "bscscan",
-    apiKey: "bsc-key",
-    apiUrl: "https://api.bscscan.com/api",
-    usesChainId: false,
-  });
+test("RPC indexer recognizes only monitored direct native funding", () => {
+  const creator = "0x1111111111111111111111111111111111111111";
+  const wallet = "0x2222222222222222222222222222222222222222";
+  const activeCreators = new Set([creator]);
+  const base = {
+    hash: `0x${"a".repeat(64)}`,
+    from: creator,
+    to: wallet,
+    input: "0x",
+    value: "0x16345785d8a0000",
+  };
 
-  const testnet = detector.resolveCreatorClusterExplorerConfig(97, {
-    BSC_SCAN_API_KEY: "bsc-test-key",
-    ETHERSCAN_API_KEY: "eth-key",
-  });
-  assert.equal(testnet.provider, "bscscan");
-  assert.equal(testnet.apiUrl, "https://api-testnet.bscscan.com/api");
-  assert.equal(testnet.usesChainId, false);
+  const candidate = indexer.creatorFundingCandidate(base, activeCreators, 1n);
+  assert.equal(candidate.creator, creator);
+  assert.equal(candidate.wallet, wallet);
+  assert.equal(candidate.valueWei, 100_000_000_000_000_000n);
+
+  assert.equal(indexer.creatorFundingCandidate({ ...base, input: "0x1234" }, activeCreators, 1n), null);
+  assert.equal(
+    indexer.creatorFundingCandidate(
+      { ...base, from: "0x3333333333333333333333333333333333333333" },
+      activeCreators,
+      1n,
+    ),
+    null,
+  );
+  assert.equal(indexer.creatorFundingCandidate({ ...base, value: "0x0" }, activeCreators, 1n), null);
 });
 
-test("Etherscan V2 remains an explicit fallback when no BscScan key exists", () => {
-  const fallback = detector.resolveCreatorClusterExplorerConfig(97, {
-    ETHERSCAN_API_KEY: "eth-key",
-    ETHERSCAN_V2_API_URL: "https://example.test/v2/api",
-  });
-  assert.deepEqual(fallback, {
-    provider: "etherscan_v2",
-    apiKey: "eth-key",
-    apiUrl: "https://example.test/v2/api",
-    usesChainId: true,
-  });
-  assert.equal(detector.resolveCreatorClusterExplorerConfig(97, {}), null);
-});
-
-test("direct creator funding is detected, persisted, and synchronized", async () => {
-  const [securitySource, detectorSource] = await Promise.all([
+test("creator funding detection uses persisted RPC evidence, not explorer APIs", async () => {
+  const [securitySource, detectorSource, indexerSource, packageSource, migrationSource] = await Promise.all([
     read("./security-current-time.js"),
     read("./creator-cluster-detector.js"),
+    read("../../scripts/run-creator-funding-indexer.mjs"),
+    read("../../package.json"),
+    read("../../../db/migrations/20260730_000002_creator_funding_indexer.sql"),
   ]);
 
   assert.equal(typeof security.creatorClusterFundingDetectorConfigured, "function");
-  assert.equal(typeof detector.resolveCreatorClusterExplorerConfig, "function");
+  assert.equal(typeof detector.persistDirectFundingCluster, "function");
   assert.match(securitySource, /detectDirectCreatorFunding/);
   assert.match(securitySource, /relationship = directCreator[\s\S]*direct_creator_funding/);
   assert.match(securitySource, /creatorDatabaseClusterId/);
-  assert.match(securitySource, /public\.cluster_members/);
   assert.match(
     securitySource,
     /if \(!directCreator && !onChainClusterMatch && !databaseClusterMatch\)[\s\S]*detectDirectCreatorFunding/,
-    "the literal creator lock must not depend on an explorer request",
+    "the literal creator lock must not depend on the indexer lookup",
   );
-  assert.match(detectorSource, /ETHERSCAN_API_KEY/);
-  assert.match(detectorSource, /BSCSCAN_API_KEY/);
-  assert.match(detectorSource, /https:\/\/api\.bscscan\.com\/api/);
-  assert.match(detectorSource, /https:\/\/api-testnet\.bscscan\.com\/api/);
-  assert.match(detectorSource, /https:\/\/api\.etherscan\.io\/v2\/api/);
-  assert.match(detectorSource, /from !== creatorLower \|\| to !== walletLower/);
-  assert.match(detectorSource, /CREATOR_CLUSTER_MIN_FUNDING_WEI/);
+
+  assert.match(detectorSource, /public\.creator_funding_edges/);
+  assert.match(detectorSource, /public\.creator_funding_indexer_state/);
+  assert.match(detectorSource, /CREATOR_CLUSTER_MAX_INDEXER_AGE_SECONDS/);
+  assert.match(detectorSource, /CREATOR_CLUSTER_MAX_INDEXER_LAG_BLOCKS/);
   assert.match(detectorSource, /public\.wallet_clusters/);
   assert.match(detectorSource, /public\.cluster_members/);
   assert.match(detectorSource, /public\.wallet_risk_profiles/);
   assert.match(detectorSource, /set-wallet-cluster/);
   assert.match(detectorSource, /set-cluster-risk/);
+  assert.doesNotMatch(detectorSource, /ETHERSCAN_API_KEY|BSCSCAN_API_KEY|api\.etherscan|api\.bscscan/);
+
+  assert.match(indexerSource, /eth_getBlockByNumber/);
+  assert.match(indexerSource, /"finalized"/);
+  assert.match(indexerSource, /eth_getTransactionReceipt/);
+  assert.match(indexerSource, /public\.campaign_drafts/);
+  assert.match(indexerSource, /public\.campaigns/);
+  assert.match(indexerSource, /pg_try_advisory_lock/);
+  assert.match(indexerSource, /on conflict \(chain_id, tx_hash\)/);
+  assert.match(packageSource, /worker:creator-funding-indexer/);
+  assert.match(migrationSource, /create table if not exists public\.creator_funding_indexer_state/);
+  assert.match(migrationSource, /create table if not exists public\.creator_funding_edges/);
+  assert.match(migrationSource, /enable row level security/);
+  assert.match(migrationSource, /revoke all on table public\.creator_funding_edges from anon, authenticated/);
 });
 
 test("contract sync worker uses the database terminal status", async () => {
