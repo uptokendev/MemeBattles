@@ -174,7 +174,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
     if (item.graduatedAtChain || item.isDexTrading) return null;
     try {
       const campaign = new Contract(item.campaignAddress, CAMPAIGN_ABI, provider) as any;
-      if (Boolean(await campaign.launched())) return null;
+      if (await campaign.launched()) return null;
 
       const tokenAddress = isAddress(item.tokenAddress) ? String(item.tokenAddress).toLowerCase() : await safeString(() => campaign.token());
       const token = isAddress(tokenAddress) ? new Contract(tokenAddress, TOKEN_ABI, provider) as any : null;
