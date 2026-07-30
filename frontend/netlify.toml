@@ -1,5 +1,7 @@
 [build]
-  command = "cd .. && npm ci && npm run compile:frontend-abis && cd frontend && npm run build"
+  # Netlify is a static frontend deploy. Contract compilation and ABI generation
+  # run in the repository CI and the resulting frontend ABIs are committed.
+  command = "npm run build"
   publish = "dist"
   functions = "netlify/no-functions"
 
