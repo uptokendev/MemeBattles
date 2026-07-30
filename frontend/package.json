@@ -2,6 +2,7 @@
   "name": "memewarzone-frontend",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "npm@10.9.2",
   "type": "module",
   "scripts": {
     "start": "node scripts/run-devpostgrad-closeout-fixes.mjs && node --import ./api/load-local-env.mjs api/server.mjs",
