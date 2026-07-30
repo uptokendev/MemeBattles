@@ -5,6 +5,11 @@ const DEFAULT_LOOKBACK_DAYS = 30;
 const DEFAULT_MIN_FUNDING_WEI = 100_000_000_000_000n; // 0.0001 BNB
 const DEFAULT_TX_LIMIT = 100;
 const EXPLORER_TIMEOUT_MS = 6_000;
+const ETHERSCAN_V2_API_URL = "https://api.etherscan.io/v2/api";
+const BSCSCAN_API_URLS = new Map([
+  [56, "https://api.bscscan.com/api"],
+  [97, "https://api-testnet.bscscan.com/api"],
+]);
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim();
@@ -17,21 +22,47 @@ function positiveInt(value, fallback, max = Number.MAX_SAFE_INTEGER) {
   return Math.min(max, Math.trunc(parsed));
 }
 
-function explorerApiKey() {
-  return String(
-    process.env.ETHERSCAN_API_KEY ||
-      process.env.BSCSCAN_API_KEY ||
-      process.env.BSC_SCAN_API_KEY ||
-      "",
-  ).trim();
+function firstConfigured(env, ...keys) {
+  for (const key of keys) {
+    const value = String(env?.[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
 }
 
-export function creatorClusterFundingDetectorConfigured() {
-  return Boolean(explorerApiKey());
+export function resolveCreatorClusterExplorerConfig(chainId, env = process.env) {
+  const normalizedChainId = Number(chainId);
+  const bscScanKey = firstConfigured(env, "BSCSCAN_API_KEY", "BSC_SCAN_API_KEY");
+
+  if (BSCSCAN_API_URLS.has(normalizedChainId) && bscScanKey) {
+    return {
+      provider: "bscscan",
+      apiKey: bscScanKey,
+      apiUrl:
+        firstConfigured(env, `BSCSCAN_API_URL_${normalizedChainId}`, "BSCSCAN_API_URL") ||
+        BSCSCAN_API_URLS.get(normalizedChainId),
+      usesChainId: false,
+    };
+  }
+
+  const etherscanKey = firstConfigured(env, "ETHERSCAN_API_KEY");
+  if (etherscanKey) {
+    return {
+      provider: "etherscan_v2",
+      apiKey: etherscanKey,
+      apiUrl: firstConfigured(env, "ETHERSCAN_V2_API_URL") || ETHERSCAN_V2_API_URL,
+      usesChainId: true,
+    };
+  }
+
+  return null;
 }
 
-function explorerApiUrl() {
-  return String(process.env.ETHERSCAN_V2_API_URL || "https://api.etherscan.io/v2/api").trim();
+export function creatorClusterFundingDetectorConfigured(chainId = null) {
+  if (chainId !== null && chainId !== undefined && chainId !== "") {
+    return Boolean(resolveCreatorClusterExplorerConfig(chainId));
+  }
+  return Boolean(firstConfigured(process.env, "BSCSCAN_API_KEY", "BSC_SCAN_API_KEY", "ETHERSCAN_API_KEY"));
 }
 
 function fundingLookbackSeconds() {
@@ -52,13 +83,16 @@ function transactionLimit() {
 }
 
 async function fetchNormalTransactions({ chainId, address }) {
-  const apiKey = explorerApiKey();
-  if (!apiKey) {
-    return { available: false, transactions: [], error: "Explorer API key is not configured." };
+  const explorer = resolveCreatorClusterExplorerConfig(chainId);
+  if (!explorer) {
+    const error = BSCSCAN_API_URLS.has(Number(chainId))
+      ? "BscScan API key is not configured for BNB creator-cluster detection."
+      : "Explorer API key is not configured.";
+    return { available: false, transactions: [], error, provider: null };
   }
 
-  const url = new URL(explorerApiUrl());
-  url.searchParams.set("chainid", String(chainId));
+  const url = new URL(explorer.apiUrl);
+  if (explorer.usesChainId) url.searchParams.set("chainid", String(chainId));
   url.searchParams.set("module", "account");
   url.searchParams.set("action", "txlist");
   url.searchParams.set("address", address);
@@ -67,7 +101,7 @@ async function fetchNormalTransactions({ chainId, address }) {
   url.searchParams.set("page", "1");
   url.searchParams.set("offset", String(transactionLimit()));
   url.searchParams.set("sort", "desc");
-  url.searchParams.set("apikey", apiKey);
+  url.searchParams.set("apikey", explorer.apiKey);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), EXPLORER_TIMEOUT_MS);
@@ -77,21 +111,22 @@ async function fetchNormalTransactions({ chainId, address }) {
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error(`Explorer request failed (${response.status}).`);
+      throw new Error(`${explorer.provider} request failed (${response.status}).`);
     }
 
     const payload = await response.json().catch(() => ({}));
     const result = Array.isArray(payload?.result) ? payload.result : [];
     const noTransactions = String(payload?.message || "").toLowerCase().includes("no transactions");
     if (String(payload?.status) !== "1" && !noTransactions) {
-      throw new Error(String(payload?.result || payload?.message || "Explorer transaction lookup failed."));
+      throw new Error(String(payload?.result || payload?.message || `${explorer.provider} transaction lookup failed.`));
     }
-    return { available: true, transactions: result, error: null };
+    return { available: true, transactions: result, error: null, provider: explorer.provider };
   } catch (error) {
     return {
       available: false,
       transactions: [],
-      error: String(error?.name === "AbortError" ? "Explorer request timed out." : error?.message || error),
+      error: String(error?.name === "AbortError" ? `${explorer.provider} request timed out.` : error?.message || error),
+      provider: explorer.provider,
     };
   } finally {
     clearTimeout(timer);
@@ -320,12 +355,19 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
   const creator = normalizeAddress(creatorAddress);
   const wallet = normalizeAddress(walletAddress);
   if (!creator || !wallet || creator.toLowerCase() === wallet.toLowerCase()) {
-    return { linked: false, available: true, funding: null, clusterId: null };
+    return { linked: false, available: true, funding: null, clusterId: null, provider: null };
   }
 
   const lookup = await fetchNormalTransactions({ chainId, address: wallet });
   if (!lookup.available) {
-    return { linked: false, available: false, funding: null, clusterId: null, error: lookup.error };
+    return {
+      linked: false,
+      available: false,
+      funding: null,
+      clusterId: null,
+      error: lookup.error,
+      provider: lookup.provider,
+    };
   }
 
   const funding = directFundingTransaction({
@@ -334,7 +376,9 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
     wallet,
     launchAt,
   });
-  if (!funding) return { linked: false, available: true, funding: null, clusterId: null };
+  if (!funding) {
+    return { linked: false, available: true, funding: null, clusterId: null, provider: lookup.provider };
+  }
 
   try {
     const persisted = await persistDirectFundingCluster({ chainId, creator, wallet, funding });
@@ -344,6 +388,7 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
       funding,
       clusterId: persisted.clusterId,
       walletCount: persisted.walletCount,
+      provider: lookup.provider,
     };
   } catch (error) {
     return {
@@ -352,6 +397,7 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
       funding,
       clusterId: null,
       error: String(error?.message || error),
+      provider: lookup.provider,
     };
   }
 }
