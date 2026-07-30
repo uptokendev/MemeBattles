@@ -9,6 +9,7 @@ on:
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/scripts/run-contract-sync-worker.mjs"
       - "frontend/scripts/run-creator-funding-indexer.mjs"
+      - "frontend/scripts/run-creator-funding-worker.mjs"
       - "frontend/package.json"
       - "frontend/src/lib/apiBase.ts"
       - "frontend/src/lib/launchpadClient.ts"
@@ -29,6 +30,7 @@ on:
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/scripts/run-contract-sync-worker.mjs"
       - "frontend/scripts/run-creator-funding-indexer.mjs"
+      - "frontend/scripts/run-creator-funding-worker.mjs"
       - "frontend/package.json"
       - "frontend/src/lib/apiBase.ts"
       - "frontend/src/lib/launchpadClient.ts"
@@ -63,8 +65,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Check creator funding indexer syntax
-        run: node --check scripts/run-creator-funding-indexer.mjs
+      - name: Check creator funding worker syntax
+        run: |
+          node --check scripts/run-creator-funding-worker.mjs
+          node --check scripts/run-creator-funding-indexer.mjs
 
       - name: Test creator cluster protection
         run: node --test api/dev-fix/creator-cluster-protection.test.mjs
