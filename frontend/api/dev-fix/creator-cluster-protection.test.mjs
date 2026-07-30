@@ -42,6 +42,27 @@ test("route authorization reserves before signing", async () => {
   assert.match(source, /CREATOR_CLUSTER_BUY_CAP_EXCEEDED|capReservation\.code/);
 });
 
+test("legacy campaigns bypass only the new cluster-specific layer", async () => {
+  const source = await read("./security-current-time.js");
+
+  assert.match(source, /isLegacyProtectionInterfaceUnavailable/);
+  assert.match(source, /legacyCampaign:\s*true/);
+  assert.match(source, /source:\s*"legacy_campaign"/);
+  assert.match(source, /nestedRevertData\(error\)/);
+  assert.match(source, /if \(nestedRevertData\(error\)\) return false/);
+});
+
+test("cap accounting fails closed cleanly", async () => {
+  const source = await read("./security-current-time.js");
+  const connectIndex = source.indexOf("client = await pool.connect()");
+  const catchIndex = source.indexOf("CREATOR_CLUSTER_CAP_CHECK_UNAVAILABLE", connectIndex);
+
+  assert.match(source, /const RESERVATION_GRACE_SECONDS = 2 \* 60/);
+  assert.ok(connectIndex >= 0, "database connection must be inside the guarded reservation path");
+  assert.ok(catchIndex > connectIndex, "database failures must return a structured creator protection denial");
+  assert.match(source, /client\?\.release\(\)/);
+});
+
 test("custom contract reverts cannot be classified as missing methods", async () => {
   const source = await read("../../src/lib/launchpadClient.ts");
   const start = source.indexOf("export function isUnsupportedContractMethod");
