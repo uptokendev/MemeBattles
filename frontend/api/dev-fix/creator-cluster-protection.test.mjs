@@ -48,10 +48,13 @@ test("direct creator funding is detected, persisted, and synchronized", async ()
     read("./creator-cluster-detector.js"),
   ]);
 
+  assert.equal(typeof security.creatorClusterFundingDetectorConfigured, "function");
   assert.match(securitySource, /detectDirectCreatorFunding/);
   assert.match(securitySource, /relationship = directCreator[\s\S]*direct_creator_funding/);
   assert.match(securitySource, /creatorDatabaseClusterId/);
   assert.match(securitySource, /public\.cluster_members/);
+  assert.match(detectorSource, /ETHERSCAN_API_KEY/);
+  assert.match(detectorSource, /BSCSCAN_API_KEY/);
   assert.match(detectorSource, /https:\/\/api\.etherscan\.io\/v2\/api/);
   assert.match(detectorSource, /from !== creatorLower \|\| to !== walletLower/);
   assert.match(detectorSource, /CREATOR_CLUSTER_MIN_FUNDING_WEI/);
