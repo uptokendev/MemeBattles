@@ -2,7 +2,7 @@
 
 The MemeWarzone web application and API gateway for the BNB and Solana launch, trading, security, rewards and graduated-market flows.
 
-The frontend is maintained directly in this repository and does not require external visual-builder tooling.
+The frontend is maintained directly in this repository and does not require external visual-builder tooling. No component-tagging or builder runtime is part of the application.
 
 ## Stack
 
