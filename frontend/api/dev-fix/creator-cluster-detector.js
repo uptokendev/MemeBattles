@@ -3,8 +3,8 @@ import { pool } from "../../server/db.js";
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const DEFAULT_MIN_FUNDING_WEI = 100_000_000_000_000n; // 0.0001 BNB
-const DEFAULT_TX_LIMIT = 100;
-const EXPLORER_TIMEOUT_MS = 6_000;
+const DEFAULT_MAX_INDEXER_AGE_SECONDS = 30;
+const DEFAULT_MAX_INDEXER_LAG_BLOCKS = 20;
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim();
@@ -15,23 +15,6 @@ function positiveInt(value, fallback, max = Number.MAX_SAFE_INTEGER) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.min(max, Math.trunc(parsed));
-}
-
-function explorerApiKey() {
-  return String(
-    process.env.ETHERSCAN_API_KEY ||
-      process.env.BSCSCAN_API_KEY ||
-      process.env.BSC_SCAN_API_KEY ||
-      "",
-  ).trim();
-}
-
-export function creatorClusterFundingDetectorConfigured() {
-  return Boolean(explorerApiKey());
-}
-
-function explorerApiUrl() {
-  return String(process.env.ETHERSCAN_V2_API_URL || "https://api.etherscan.io/v2/api").trim();
 }
 
 function fundingLookbackSeconds() {
@@ -47,92 +30,110 @@ function minimumFundingWei() {
   }
 }
 
-function transactionLimit() {
-  return positiveInt(process.env.CREATOR_CLUSTER_EXPLORER_TX_LIMIT, DEFAULT_TX_LIMIT, 1_000);
+function maximumIndexerAgeSeconds() {
+  return positiveInt(
+    process.env.CREATOR_CLUSTER_MAX_INDEXER_AGE_SECONDS,
+    DEFAULT_MAX_INDEXER_AGE_SECONDS,
+    10 * 60,
+  );
 }
 
-async function fetchNormalTransactions({ chainId, address }) {
-  const apiKey = explorerApiKey();
-  if (!apiKey) {
-    return { available: false, transactions: [], error: "Explorer API key is not configured." };
-  }
+function maximumIndexerLagBlocks() {
+  return positiveInt(
+    process.env.CREATOR_CLUSTER_MAX_INDEXER_LAG_BLOCKS,
+    DEFAULT_MAX_INDEXER_LAG_BLOCKS,
+    10_000,
+  );
+}
 
-  const url = new URL(explorerApiUrl());
-  url.searchParams.set("chainid", String(chainId));
-  url.searchParams.set("module", "account");
-  url.searchParams.set("action", "txlist");
-  url.searchParams.set("address", address);
-  url.searchParams.set("startblock", "0");
-  url.searchParams.set("endblock", "999999999");
-  url.searchParams.set("page", "1");
-  url.searchParams.set("offset", String(transactionLimit()));
-  url.searchParams.set("sort", "desc");
-  url.searchParams.set("apikey", apiKey);
+export function creatorClusterFundingDetectorConfigured() {
+  const disabled = String(process.env.CREATOR_CLUSTER_INDEXER_DISABLED || "").trim().toLowerCase();
+  return !["1", "true", "yes", "on"].includes(disabled);
+}
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), EXPLORER_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      headers: { accept: "application/json" },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`Explorer request failed (${response.status}).`);
-    }
+async function readIndexerHealth(chainId) {
+  const { rows } = await pool.query(
+    `select chain_id,
+            status,
+            last_processed_block,
+            latest_finalized_block,
+            last_processed_at,
+            updated_at,
+            error
+       from public.creator_funding_indexer_state
+      where chain_id = $1
+      limit 1`,
+    [Number(chainId)],
+  );
 
-    const payload = await response.json().catch(() => ({}));
-    const result = Array.isArray(payload?.result) ? payload.result : [];
-    const noTransactions = String(payload?.message || "").toLowerCase().includes("no transactions");
-    if (String(payload?.status) !== "1" && !noTransactions) {
-      throw new Error(String(payload?.result || payload?.message || "Explorer transaction lookup failed."));
-    }
-    return { available: true, transactions: result, error: null };
-  } catch (error) {
+  const row = rows[0];
+  if (!row) {
     return {
       available: false,
-      transactions: [],
-      error: String(error?.name === "AbortError" ? "Explorer request timed out." : error?.message || error),
+      error: `Creator-funding indexer has not initialized for chain ${Number(chainId)}.`,
+      status: "missing",
+      lagBlocks: null,
+      ageSeconds: null,
     };
-  } finally {
-    clearTimeout(timer);
   }
+
+  const processedBlock = Number(row.last_processed_block || 0);
+  const latestBlock = Number(row.latest_finalized_block || processedBlock);
+  const lagBlocks = Math.max(0, latestBlock - processedBlock);
+  const lastProcessedAt = row.last_processed_at || row.updated_at;
+  const ageSeconds = lastProcessedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(lastProcessedAt).getTime()) / 1000))
+    : Number.POSITIVE_INFINITY;
+  const healthyStatus = ["healthy", "running"].includes(String(row.status || "").toLowerCase());
+  const available =
+    healthyStatus &&
+    ageSeconds <= maximumIndexerAgeSeconds() &&
+    lagBlocks <= maximumIndexerLagBlocks();
+
+  return {
+    available,
+    status: String(row.status || "unknown"),
+    processedBlock,
+    latestBlock,
+    lagBlocks,
+    ageSeconds,
+    error: available
+      ? null
+      : String(
+          row.error ||
+            `Creator-funding indexer is not current (status=${row.status || "unknown"}, lag=${lagBlocks}, age=${ageSeconds}s).`,
+        ),
+  };
 }
 
-function directFundingTransaction({ transactions, creator, wallet, launchAt }) {
-  const creatorLower = creator.toLowerCase();
-  const walletLower = wallet.toLowerCase();
+async function findIndexedFunding({ chainId, creator, wallet, launchAt }) {
   const now = Math.floor(Date.now() / 1000);
   const baseline = Number(launchAt || now);
   const earliest = Math.max(0, baseline - fundingLookbackSeconds());
-  const minWei = minimumFundingWei();
+  const { rows } = await pool.query(
+    `select tx_hash,
+            block_number,
+            extract(epoch from block_timestamp)::bigint as timestamp,
+            value_wei::text as value_wei
+       from public.creator_funding_edges
+      where chain_id = $1
+        and lower(creator_wallet) = lower($2)
+        and lower(funded_wallet) = lower($3)
+        and block_timestamp >= to_timestamp($4)
+        and value_wei >= $5::numeric
+      order by block_number desc
+      limit 1`,
+    [Number(chainId), creator, wallet, earliest, minimumFundingWei().toString()],
+  );
 
-  for (const tx of transactions) {
-    const from = String(tx?.from || "").toLowerCase();
-    const to = String(tx?.to || "").toLowerCase();
-    const timestamp = Number(tx?.timeStamp || tx?.timestamp || 0);
-    const input = String(tx?.input || "0x").toLowerCase();
-    let valueWei = 0n;
-    try {
-      valueWei = BigInt(String(tx?.value || "0"));
-    } catch {
-      continue;
-    }
-
-    if (String(tx?.isError || "0") !== "0") continue;
-    if (from !== creatorLower || to !== walletLower) continue;
-    if (timestamp < earliest || timestamp > now) continue;
-    if (input !== "0x" && input !== "") continue;
-    if (valueWei < minWei) continue;
-
-    return {
-      txHash: String(tx?.hash || "").toLowerCase() || null,
-      blockNumber: Number(tx?.blockNumber || 0) || null,
-      timestamp,
-      valueWei: valueWei.toString(),
-    };
-  }
-
-  return null;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    txHash: String(row.tx_hash || "").toLowerCase() || null,
+    blockNumber: Number(row.block_number || 0) || null,
+    timestamp: Number(row.timestamp || 0),
+    valueWei: String(row.value_wei || "0"),
+  };
 }
 
 async function existingCreatorCluster(client, creator) {
@@ -172,17 +173,23 @@ async function queueClusterSyncJob(client, { jobType, target, payload }) {
   );
 }
 
-async function persistDirectFundingCluster({ chainId, creator, wallet, funding }) {
+export async function persistDirectFundingCluster({ chainId, creator, wallet, funding }) {
+  const normalizedCreator = normalizeAddress(creator);
+  const normalizedWallet = normalizeAddress(wallet);
+  if (!normalizedCreator || !normalizedWallet || normalizedCreator.toLowerCase() === normalizedWallet.toLowerCase()) {
+    throw new Error("Invalid creator-funding relationship.");
+  }
+
   const client = await pool.connect();
   try {
     await client.query("begin");
     await client.query(
       "select pg_advisory_xact_lock(hashtext($1)::bigint)",
-      [`creator-funding:${chainId}:${creator.toLowerCase()}`],
+      [`creator-funding:${Number(chainId)}:${normalizedCreator.toLowerCase()}`],
     );
 
-    const priorCluster = await existingCreatorCluster(client, creator);
-    const clusterId = priorCluster || `creator-funding:${chainId}:${creator.toLowerCase()}`;
+    const priorCluster = await existingCreatorCluster(client, normalizedCreator);
+    const clusterId = priorCluster || `creator-funding:${Number(chainId)}:${normalizedCreator.toLowerCase()}`;
 
     await client.query(
       `insert into public.wallet_clusters (
@@ -200,8 +207,8 @@ async function persistDirectFundingCluster({ chainId, creator, wallet, funding }
     );
 
     for (const member of [
-      { wallet: creator, relationship: "creator" },
-      { wallet, relationship: "direct_creator_funding" },
+      { wallet: normalizedCreator, relationship: "creator" },
+      { wallet: normalizedWallet, relationship: "direct_creator_funding" },
     ]) {
       await client.query(
         `insert into public.cluster_members (
@@ -246,7 +253,7 @@ async function persistDirectFundingCluster({ chainId, creator, wallet, funding }
                else public.creator_profiles.cluster_id
              end,
              updated_at = now()`,
-      [creator.toLowerCase(), clusterId],
+      [normalizedCreator.toLowerCase(), clusterId],
     );
 
     const clusterResult = await client.query(
@@ -278,23 +285,23 @@ async function persistDirectFundingCluster({ chainId, creator, wallet, funding }
         clusterId,
         JSON.stringify({
           chainId: Number(chainId),
-          creator: creator.toLowerCase(),
-          wallet: wallet.toLowerCase(),
+          creator: normalizedCreator.toLowerCase(),
+          wallet: normalizedWallet.toLowerCase(),
           ...funding,
         }),
-        funding.txHash || "",
+        funding?.txHash || "",
       ],
     );
 
     await queueClusterSyncJob(client, {
       jobType: "set-wallet-cluster",
-      target: creator,
-      payload: { walletAddress: creator, clusterId },
+      target: normalizedCreator,
+      payload: { walletAddress: normalizedCreator, clusterId },
     });
     await queueClusterSyncJob(client, {
       jobType: "set-wallet-cluster",
-      target: wallet,
-      payload: { walletAddress: wallet, clusterId },
+      target: normalizedWallet,
+      payload: { walletAddress: normalizedWallet, clusterId },
     });
     await queueClusterSyncJob(client, {
       jobType: "set-cluster-risk",
@@ -320,38 +327,65 @@ export async function detectDirectCreatorFunding({ chainId, creatorAddress, wall
   const creator = normalizeAddress(creatorAddress);
   const wallet = normalizeAddress(walletAddress);
   if (!creator || !wallet || creator.toLowerCase() === wallet.toLowerCase()) {
-    return { linked: false, available: true, funding: null, clusterId: null };
+    return { linked: false, available: true, funding: null, clusterId: null, provider: "rpc_indexer" };
   }
 
-  const lookup = await fetchNormalTransactions({ chainId, address: wallet });
-  if (!lookup.available) {
-    return { linked: false, available: false, funding: null, clusterId: null, error: lookup.error };
+  if (!creatorClusterFundingDetectorConfigured()) {
+    throw new Error("Creator-funding indexer is disabled.");
   }
 
-  const funding = directFundingTransaction({
-    transactions: lookup.transactions,
-    creator,
-    wallet,
-    launchAt,
-  });
-  if (!funding) return { linked: false, available: true, funding: null, clusterId: null };
-
+  let funding;
   try {
-    const persisted = await persistDirectFundingCluster({ chainId, creator, wallet, funding });
-    return {
-      linked: true,
-      available: true,
-      funding,
-      clusterId: persisted.clusterId,
-      walletCount: persisted.walletCount,
-    };
+    funding = await findIndexedFunding({
+      chainId: Number(chainId),
+      creator,
+      wallet,
+      launchAt,
+    });
   } catch (error) {
-    return {
-      linked: true,
-      available: false,
-      funding,
-      clusterId: null,
-      error: String(error?.message || error),
-    };
+    throw new Error(`Creator-funding evidence lookup failed: ${error?.message || error}`);
   }
+
+  if (funding) {
+    try {
+      const persisted = await persistDirectFundingCluster({ chainId, creator, wallet, funding });
+      return {
+        linked: true,
+        available: true,
+        funding,
+        clusterId: persisted.clusterId,
+        walletCount: persisted.walletCount,
+        provider: "rpc_indexer",
+      };
+    } catch (error) {
+      return {
+        linked: true,
+        available: false,
+        funding,
+        clusterId: null,
+        error: String(error?.message || error),
+        provider: "rpc_indexer",
+      };
+    }
+  }
+
+  let health;
+  try {
+    health = await readIndexerHealth(Number(chainId));
+  } catch (error) {
+    throw new Error(`Creator-funding indexer health lookup failed: ${error?.message || error}`);
+  }
+  if (!health.available) {
+    throw new Error(health.error || "Creator-funding indexer is not current.");
+  }
+
+  return {
+    linked: false,
+    available: true,
+    funding: null,
+    clusterId: null,
+    error: null,
+    provider: "rpc_indexer",
+    indexer: health,
+  };
 }

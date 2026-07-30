@@ -113,7 +113,7 @@ async function readGraduatedCampaigns(chainId: number): Promise<CampaignCardVM[]
     const checked = await Promise.all(batch.map(async (campaign) => {
       try {
         const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, provider) as any;
-        if (!Boolean(await contract.launched())) return null;
+        if (!(await contract.launched())) return null;
         return {
           campaignAddress: campaign.campaign,
           tokenAddress: isAddress(campaign.token) ? String(campaign.token).toLowerCase() : null,
