@@ -1,9 +1,14 @@
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
 import { getQuery, json, readJson } from "../../server/http.js";
+import {
+  creatorClusterFundingDetectorConfigured,
+  detectDirectCreatorFunding,
+} from "./creator-cluster-detector.js";
 import * as legacySecurity from "./security.js";
 
 export * from "./security.js";
+export { creatorClusterFundingDetectorConfigured };
 
 const CAMPAIGN_PROTECTION_ABI = [
   "function creator() view returns (address)",
@@ -11,6 +16,7 @@ const CAMPAIGN_PROTECTION_ABI = [
   "function creatorBuyCapWei() view returns (uint256)",
   "function creatorBoughtWei() view returns (uint256)",
   "function riskRegistry() view returns (address)",
+  "function launchAt() view returns (uint64)",
 ];
 
 const RISK_REGISTRY_ABI = [
@@ -95,12 +101,13 @@ async function readOnchainCreatorProtection({ chainId, campaignAddress, walletAd
 
   const provider = new ethers.JsonRpcProvider(rpcUrl, Number(chainId), { staticNetwork: true });
   const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_PROTECTION_ABI, provider);
-  const [creatorRaw, lockUntilRaw, capWeiRaw, boughtWeiRaw, riskRegistryRaw] = await Promise.all([
+  const [creatorRaw, lockUntilRaw, capWeiRaw, boughtWeiRaw, riskRegistryRaw, launchAtRaw] = await Promise.all([
     campaign.creator(),
     campaign.creatorBuyLockUntil(),
     campaign.creatorBuyCapWei(),
     campaign.creatorBoughtWei(),
     campaign.riskRegistry(),
+    campaign.launchAt(),
   ]);
 
   const creator = normalizeAddress(creatorRaw);
@@ -124,6 +131,7 @@ async function readOnchainCreatorProtection({ chainId, campaignAddress, walletAd
     creatorBuyLockUntil: Number(lockUntilRaw),
     creatorBuyCapWei: BigInt(capWeiRaw).toString(),
     creatorBoughtWei: BigInt(boughtWeiRaw).toString(),
+    launchAt: Number(launchAtRaw),
     riskRegistry: riskRegistry || null,
     buyerClusterId,
     creatorClusterId,
@@ -174,25 +182,51 @@ export async function evaluateTradePreflight({ walletAddress, campaignAddress, c
     const onChain = await readOnchainCreatorProtection({ chainId, campaignAddress: campaign, walletAddress: wallet });
     const creatorProfile = await legacySecurity.evaluateCreatePreflight({ walletAddress: onChain.creator });
     const { tier, tierNumber } = formatTierLabel(creatorProfile?.tier || creatorProfile?.creator?.tier);
-    const dbBuyerClusterId = String(base?.walletRisk?.clusterId || base?.cluster?.id || "").trim() || null;
-    const dbCreatorClusterId = String(creatorProfile?.creator?.clusterId || creatorProfile?.cluster?.id || "").trim() || null;
+    let dbBuyerClusterId = String(base?.walletRisk?.clusterId || base?.cluster?.id || "").trim() || null;
+    let dbCreatorClusterId = String(creatorProfile?.creator?.clusterId || creatorProfile?.cluster?.id || "").trim() || null;
     const directCreator = wallet.toLowerCase() === onChain.creator.toLowerCase();
     const onChainClusterMatch = Boolean(
       onChain.buyerClusterId &&
       onChain.creatorClusterId &&
       onChain.buyerClusterId === onChain.creatorClusterId,
     );
-    const databaseClusterMatch = Boolean(
+    let databaseClusterMatch = Boolean(
       dbBuyerClusterId &&
       dbCreatorClusterId &&
       dbBuyerClusterId === dbCreatorClusterId,
     );
-    const creatorLinked = directCreator || onChainClusterMatch || databaseClusterMatch;
+    let fundingDetection = null;
+
+    if (!directCreator && !onChainClusterMatch && !databaseClusterMatch) {
+      fundingDetection = await detectDirectCreatorFunding({
+        chainId: Number(chainId),
+        creatorAddress: onChain.creator,
+        walletAddress: wallet,
+        launchAt: onChain.launchAt,
+      });
+      if (fundingDetection?.linked && fundingDetection?.clusterId) {
+        dbBuyerClusterId = fundingDetection.clusterId;
+        dbCreatorClusterId = fundingDetection.clusterId;
+        databaseClusterMatch = true;
+      }
+    }
+
+    const directFundingMatch = Boolean(fundingDetection?.linked);
+    const creatorLinked = directCreator || onChainClusterMatch || databaseClusterMatch || directFundingMatch;
     const lockActive = onChain.creatorBuyLockUntil > Math.floor(Date.now() / 1000);
     const unlockAt = onChain.creatorBuyLockUntil > 0
       ? new Date(onChain.creatorBuyLockUntil * 1000).toISOString()
       : null;
-    const relationship = directCreator ? "creator" : creatorLinked ? "confirmed_cluster" : null;
+    const relationship = directCreator
+      ? "creator"
+      : directFundingMatch
+        ? "direct_creator_funding"
+        : creatorLinked
+          ? "confirmed_cluster"
+          : null;
+    const detectorWarning = !creatorLinked && fundingDetection && !fundingDetection.available
+      ? `Direct creator-funding detection is unavailable: ${fundingDetection.error || "unknown explorer error"}`
+      : null;
 
     const protection = {
       code: creatorLinked && lockActive ? (directCreator ? "CREATOR_BUY_LOCKED" : "CREATOR_CLUSTER_BUY_LOCKED") : null,
@@ -205,18 +239,53 @@ export async function evaluateTradePreflight({ walletAddress, campaignAddress, c
       creatorBuyLockUntil: onChain.creatorBuyLockUntil,
       creatorBuyCapWei: onChain.creatorBuyCapWei,
       creatorBoughtWei: onChain.creatorBoughtWei,
+      launchAt: onChain.launchAt,
       buyerClusterId: onChain.buyerClusterId || dbBuyerClusterId,
       creatorClusterId: onChain.creatorClusterId || dbCreatorClusterId,
-      source: onChainClusterMatch ? "onchain" : databaseClusterMatch ? "database" : directCreator ? "creator_address" : "none",
+      buyerDatabaseClusterId: dbBuyerClusterId,
+      creatorDatabaseClusterId: dbCreatorClusterId,
+      directFunding: fundingDetection?.funding || null,
+      detectorAvailable: fundingDetection ? Boolean(fundingDetection.available) : creatorClusterFundingDetectorConfigured(),
+      source: onChainClusterMatch
+        ? "onchain"
+        : databaseClusterMatch
+          ? directFundingMatch ? "direct_funding" : "database"
+          : directFundingMatch
+            ? "direct_funding"
+            : directCreator
+              ? "creator_address"
+              : "none",
     };
 
+    if (directFundingMatch && !fundingDetection.available && !lockActive) {
+      return {
+        ...base,
+        allowed: false,
+        code: "CREATOR_CLUSTER_CHECK_UNAVAILABLE",
+        reasons: ["A direct creator-funding relationship was detected but could not be persisted safely. Trading authorization was not issued."],
+        creatorProtection: {
+          ...protection,
+          code: "CREATOR_CLUSTER_CHECK_UNAVAILABLE",
+          error: fundingDetection.error || "Cluster persistence failed.",
+        },
+      };
+    }
+
     if (!creatorLinked || !lockActive) {
-      return { ...base, creatorProtection: protection };
+      return {
+        ...base,
+        warnings: detectorWarning
+          ? [...(Array.isArray(base?.warnings) ? base.warnings : []), detectorWarning]
+          : base?.warnings || [],
+        creatorProtection: protection,
+      };
     }
 
     const reason = directCreator
       ? `Tier ${tierNumber} creators cannot buy their own campaign until ${unlockAt}.`
-      : `This wallet is linked to the Tier ${tierNumber} campaign creator and cannot buy this campaign until ${unlockAt}.`;
+      : relationship === "direct_creator_funding"
+        ? `This wallet received BNB directly from the Tier ${tierNumber} campaign creator and cannot buy this campaign until ${unlockAt}.`
+        : `This wallet is linked to the Tier ${tierNumber} campaign creator and cannot buy this campaign until ${unlockAt}.`;
 
     return {
       ...base,
@@ -291,8 +360,12 @@ export async function reserveCreatorClusterBuyAuthorization({
     };
   }
 
-  const creatorClusterId = String(protection.creatorClusterId || "").trim();
-  const clusterKey = creatorClusterId || `creator:${creatorWallet.toLowerCase()}`;
+  const databaseClusterId = String(
+    protection.creatorDatabaseClusterId ||
+      protection.creatorClusterId ||
+      "",
+  ).trim();
+  const clusterKey = databaseClusterId || `creator:${creatorWallet.toLowerCase()}`;
   let client = null;
 
   try {
@@ -315,13 +388,16 @@ export async function reserveCreatorClusterBuyAuthorization({
          from public.curve_trades ct
          left join public.wallet_risk_profiles wrp
            on lower(wrp.wallet_address) = lower(ct.wallet)
+         left join public.cluster_members cm
+           on lower(cm.wallet_address) = lower(ct.wallet)
+          and cm.cluster_id = $4
         where ct.chain_id = $1
           and lower(ct.campaign_address) = lower($2)
           and lower(ct.side) = 'buy'
           and lower(ct.wallet) <> lower($3)
           and $4 <> ''
-          and wrp.cluster_id = $4`,
-      [Number(chainId), campaign, creatorWallet, creatorClusterId],
+          and (wrp.cluster_id = $4 or cm.cluster_id = $4)`,
+      [Number(chainId), campaign, creatorWallet, databaseClusterId],
     );
 
     const reservationResult = await client.query(
