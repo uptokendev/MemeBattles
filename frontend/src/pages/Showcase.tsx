@@ -3,7 +3,8 @@ import { ChainFeedSwitch } from "@/components/common/ChainFeedSwitch";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
-import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
+import { GraduatedCampaignGrid } from "@/components/home/GraduatedCampaignGrid";
+import { SafeFeaturedCampaigns } from "@/components/home/SafeFeaturedCampaigns";
 import { HeaderBand } from "@/components/home/HeaderBand";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { ContentContainer } from "@/components/layout/ContentContainer";
@@ -28,6 +29,7 @@ const Showcase = () => {
   }, [query]);
 
   const isDraftRow = effectiveQuery.tab === "drafts";
+  const isGraduatedRow = effectiveQuery.tab === "dex" || effectiveQuery.status === "graduated";
 
   return (
     <div className="mwz-launchpad-page h-full overflow-y-auto">
@@ -39,24 +41,29 @@ const Showcase = () => {
         <CampaignTickerBar className="-mt-12 !pt-0" />
 
         <div className="relative z-20 -mt-1 mb-2 md:-mt-2 md:mb-3">
-          <FeaturedCampaigns bare />
+          <SafeFeaturedCampaigns />
         </div>
 
         <div className="mwz-live-heading flex flex-col gap-3 pt-2 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
-              {isDraftRow ? "Prepare Mode" : ""}
+              {isDraftRow ? "Prepare Mode" : isGraduatedRow ? "DEX Campaigns" : ""}
             </div>
             <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-              {isDraftRow ? "Draft Campaigns" : "Explore Coins"}
+              {isDraftRow ? "Draft Campaigns" : isGraduatedRow ? "Graduated Coins" : "Explore Coins"}
             </h2>
-
           </div>
           <ChainFeedSwitch className="shrink-0 self-start md:self-auto" />
         </div>
 
         <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
-        {isDraftRow ? <DraftCampaignGrid query={effectiveQuery} /> : <CampaignGrid query={effectiveQuery} />}
+        {isDraftRow ? (
+          <DraftCampaignGrid query={effectiveQuery} />
+        ) : isGraduatedRow ? (
+          <GraduatedCampaignGrid query={effectiveQuery} />
+        ) : (
+          <CampaignGrid query={effectiveQuery} />
+        )}
       </ContentContainer>
     </div>
   );
