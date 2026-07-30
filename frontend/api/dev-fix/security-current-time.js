@@ -20,7 +20,7 @@ const RISK_REGISTRY_ABI = [
 const ZERO_CLUSTER = `0x${"0".repeat(64)}`;
 const BUY_EXACT_TOKENS_ACTION = 0;
 const BUY_EXACT_BNB_ACTION = 1;
-const RESERVATION_GRACE_SECONDS = 20 * 60;
+const RESERVATION_GRACE_SECONDS = 2 * 60;
 
 function firstCsvValue(value) {
   return String(value || "")
@@ -54,6 +54,30 @@ function formatTierLabel(tier) {
   return { tier: "New", tierNumber: 1 };
 }
 
+function nestedRevertData(error) {
+  const candidates = [
+    error?.data,
+    error?.error?.data,
+    error?.info?.error?.data,
+    error?.cause?.data,
+    error?.revert?.data,
+  ];
+  return candidates.find((value) =>
+    typeof value === "string" && /^0x[0-9a-f]+$/i.test(value) && value !== "0x"
+  ) || null;
+}
+
+function isLegacyProtectionInterfaceUnavailable(error) {
+  if (nestedRevertData(error)) return false;
+  const text = String(error?.shortMessage || error?.reason || error?.message || error || "").toLowerCase();
+  return (
+    text.includes("function selector was not recognized") ||
+    text.includes("no matching fragment") ||
+    text.includes("no data present") ||
+    (error?.code === "BAD_DATA" && text.includes("could not decode result data"))
+  );
+}
+
 export function isCreatorBuyAction(action) {
   const normalized = Number(action);
   return normalized === BUY_EXACT_TOKENS_ACTION || normalized === BUY_EXACT_BNB_ACTION;
@@ -80,6 +104,7 @@ async function readOnchainCreatorProtection({ chainId, campaignAddress, walletAd
   ]);
 
   const creator = normalizeAddress(creatorRaw);
+  if (!creator) throw new Error("Campaign returned an invalid creator address.");
   const riskRegistry = normalizeAddress(riskRegistryRaw);
   let buyerClusterId = null;
   let creatorClusterId = null;
@@ -201,6 +226,22 @@ export async function evaluateTradePreflight({ walletAddress, campaignAddress, c
       creatorProtection: protection,
     };
   } catch (error) {
+    if (isLegacyProtectionInterfaceUnavailable(error)) {
+      return {
+        ...base,
+        warnings: [
+          ...(Array.isArray(base?.warnings) ? base.warnings : []),
+          "Legacy campaign generation does not expose creator-cluster protection fields.",
+        ],
+        creatorProtection: {
+          code: null,
+          creatorLinked: false,
+          legacyCampaign: true,
+          source: "legacy_campaign",
+        },
+      };
+    }
+
     console.error("[security-current-time] creator cluster protection check failed", error);
     return {
       ...base,
@@ -237,11 +278,25 @@ export async function reserveCreatorClusterBuyAuthorization({
   const creatorWallet = normalizeAddress(protection.creatorWallet);
   const buyerWallet = normalizeAddress(walletAddress);
   const campaign = normalizeAddress(campaignAddress);
+  if (!creatorWallet || !buyerWallet || !campaign) {
+    return {
+      allowed: false,
+      status: 503,
+      code: "CREATOR_CLUSTER_CAP_CHECK_UNAVAILABLE",
+      error: "Creator-cluster cap protection received invalid campaign or wallet data.",
+      creatorProtection: {
+        ...protection,
+        code: "CREATOR_CLUSTER_CAP_CHECK_UNAVAILABLE",
+      },
+    };
+  }
+
   const creatorClusterId = String(protection.creatorClusterId || "").trim();
   const clusterKey = creatorClusterId || `creator:${creatorWallet.toLowerCase()}`;
-  const client = await pool.connect();
+  let client = null;
 
   try {
+    client = await pool.connect();
     await client.query("begin");
     await client.query("select pg_advisory_xact_lock(hashtext($1)::bigint)", [`${Number(chainId)}:${campaign.toLowerCase()}:${clusterKey}`]);
     await client.query(
@@ -345,10 +400,12 @@ export async function reserveCreatorClusterBuyAuthorization({
       },
     };
   } catch (error) {
-    try {
-      await client.query("rollback");
-    } catch {
-      // ignore rollback failures
+    if (client) {
+      try {
+        await client.query("rollback");
+      } catch {
+        // ignore rollback failures
+      }
     }
     console.error("[security-current-time] creator cluster cap reservation failed", error);
     return {
@@ -363,7 +420,7 @@ export async function reserveCreatorClusterBuyAuthorization({
       },
     };
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
