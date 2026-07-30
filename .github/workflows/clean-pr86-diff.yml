@@ -1,0 +1,69 @@
+name: Clean PR 86 diff
+
+on:
+  push:
+    branches:
+      - agent/remove-legacy-builder
+
+permissions:
+  contents: write
+
+jobs:
+  clean-diff:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/remove-legacy-builder
+          fetch-depth: 0
+
+      - name: Restore unrelated source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin devpostgrad
+          git checkout origin/devpostgrad -- \
+            frontend/api/dev-fix/security-current-time.js \
+            frontend/src/components/home/CampaignTickerBar.tsx \
+            frontend/src/components/home/DraftCampaignGrid.tsx \
+            frontend/src/components/home/SafeFeaturedCampaigns.tsx \
+            frontend/src/components/token/UpvoteDialog.tsx \
+            frontend/src/pages/Create.tsx \
+            frontend/src/pages/DraftPromotionSetup.tsx
+
+          rm .github/workflows/clean-pr86-diff.yml
+
+          if git grep -in lovable; then
+            echo "Forbidden legacy-builder references remain in the repository."
+            exit 1
+          fi
+
+          allowed_file=$(mktemp)
+          actual_file=$(mktemp)
+          cat > "$allowed_file" <<'EOF'
+          frontend/README.md
+          frontend/deno.lock
+          frontend/package-lock.json
+          frontend/package.json
+          frontend/vite.config.ts
+          frontend/yarn.lock
+          repomix-output.xml
+          EOF
+          git diff --name-only origin/devpostgrad | sort > "$actual_file"
+          sort -o "$allowed_file" "$allowed_file"
+          echo "Final PR paths:"
+          cat "$actual_file"
+          diff -u "$allowed_file" "$actual_file"
+
+      - name: Commit clean diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --cached --check
+          git commit -m "Remove unrelated build-script rewrites"
+          git push origin HEAD:agent/remove-legacy-builder
