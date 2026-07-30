@@ -1,0 +1,335 @@
+name: Apply showcase lifecycle fixes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-showcase-lifecycle-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-showcase-lifecycle-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-build-push-cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout devpostgrad
+        uses: actions/checkout@v4
+        with:
+          ref: devpostgrad
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply lifecycle, image and feed fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}: {old[:160]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          grid = "frontend/src/components/home/CampaignGrid.tsx"
+          replace_once(
+              grid,
+              'import { useEffect, useMemo, useRef, useState } from "react";\n',
+              'import { useEffect, useMemo, useRef, useState } from "react";\nimport { Contract } from "ethers";\n',
+          )
+          replace_once(
+              grid,
+              'import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";\n',
+              'import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";\nimport { getReadProvider } from "@/lib/readProvider";\nimport LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";\n\nconst CAMPAIGN_ABI = LaunchCampaignArtifact.abi;\n',
+          )
+          replace_once(
+              grid,
+              '''function matchesSearch(item: CampaignFeedItemApi, search: unknown) {
+            const q = normalizeSearch(search);
+            if (!q) return true;
+            return [item.name, item.symbol, item.campaignAddress, item.tokenAddress, item.creatorAddress]
+              .map((v) => String(v ?? "").toLowerCase())
+              .some((v) => v.includes(q));
+          }
+
+          ''',
+              '''function matchesSearch(item: CampaignFeedItemApi, search: unknown) {
+            const q = normalizeSearch(search);
+            if (!q) return true;
+            return [item.name, item.symbol, item.campaignAddress, item.tokenAddress, item.creatorAddress]
+              .map((v) => String(v ?? "").toLowerCase())
+              .some((v) => v.includes(q));
+          }
+
+          function hasUsableCampaignImage(value: unknown) {
+            const raw = String(value ?? "").trim();
+            return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
+          }
+
+          function requiresIndexedGraduationState(params: Record<string, any>) {
+            return String(params.tab || "").toLowerCase() === "dex" || String(params.status || "").toLowerCase() === "graduated";
+          }
+
+          function requiresLiveState(params: Record<string, any>) {
+            return String(params.tab || "").toLowerCase() === "ending" || String(params.status || "").toLowerCase() === "live";
+          }
+
+          ''',
+          )
+          old_onchain = '''async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+            const chainId = Number(params.chainId || 97);
+            const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
+            const cursor = Math.max(0, Number(params.cursor || 0));
+            const page = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
+              limit: Math.min(100, Math.max(limit, 48)),
+              cursor,
+            });
+            const mapped: CampaignFeedItemApi[] = page.campaigns
+              .map((row) => ({
+                chainId,
+                campaignAddress: row.campaign,
+                tokenAddress: row.token || null,
+                creatorAddress: row.creator || null,
+                name: row.name || null,
+                symbol: row.symbol || null,
+                logoUri: row.logoURI || null,
+                createdAtChain: row.createdAt ? String(row.createdAt) : null,
+                graduatedAtChain: null,
+                isDexTrading: false,
+                marketcapBnb: null,
+                votes24h: 0,
+                progressPct: null,
+                etaSec: null,
+              }))
+              .filter((item) => /^0x[a-f0-9]{40}$/.test(item.campaignAddress))
+              .filter((item) => matchesSearch(item, params.search));
+
+            const items = mapped.slice(0, limit);
+            return { items, nextCursor: page.nextCursor, pageSize: limit, updatedAt: new Date().toISOString(), source: items.length ? "onchain-factory-fallback" : "onchain-empty" };
+          }'''
+          new_onchain = '''async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+            const chainId = Number(params.chainId || 97);
+            const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
+            const cursor = Math.max(0, Number(params.cursor || 0));
+            const wantsGraduated = requiresIndexedGraduationState(params);
+            const wantsLive = requiresLiveState(params);
+            const page = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
+              limit: wantsGraduated ? 100 : Math.min(100, Math.max(limit, 48)),
+              cursor,
+            });
+            const provider = wantsGraduated || wantsLive ? getReadProvider(chainId as SupportedChainId) : null;
+            const candidates: CampaignFeedItemApi[] = page.campaigns
+              .map((row) => ({
+                chainId,
+                campaignAddress: row.campaign,
+                tokenAddress: row.token || null,
+                creatorAddress: row.creator || null,
+                name: row.name || null,
+                symbol: row.symbol || null,
+                logoUri: row.logoURI || null,
+                createdAtChain: row.createdAt ? String(row.createdAt) : null,
+                graduatedAtChain: null,
+                isDexTrading: false,
+                marketcapBnb: null,
+                votes24h: 0,
+                progressPct: null,
+                etaSec: null,
+              }))
+              .filter((item) => /^0x[a-f0-9]{40}$/.test(item.campaignAddress))
+              .filter((item) => matchesSearch(item, params.search));
+
+            const checked = provider
+              ? await Promise.all(candidates.map(async (item) => {
+                  try {
+                    const campaign = new Contract(item.campaignAddress, CAMPAIGN_ABI, provider);
+                    const launched = Boolean(await campaign.launched());
+                    if (wantsGraduated && !launched) return null;
+                    if (wantsLive && launched) return null;
+                    return {
+                      ...item,
+                      isDexTrading: launched,
+                      graduatedAtChain: launched ? new Date().toISOString() : null,
+                    } satisfies CampaignFeedItemApi;
+                  } catch (error) {
+                    console.warn("[CampaignGrid] campaign lifecycle read failed", item.campaignAddress, error);
+                    return null;
+                  }
+                }))
+              : candidates;
+
+            const mapped = checked.filter(Boolean) as CampaignFeedItemApi[];
+            const items = mapped.slice(0, limit);
+            return {
+              items,
+              nextCursor: wantsGraduated ? null : page.nextCursor,
+              pageSize: limit,
+              updatedAt: new Date().toISOString(),
+              source: wantsGraduated ? "onchain-graduated-state" : items.length ? "onchain-factory-fallback" : "onchain-empty",
+            };
+          }'''
+          replace_once(grid, old_onchain, new_onchain)
+          replace_once(grid, '        return !found?.logoUri;', '        return !hasUsableCampaignImage(found?.logoUri);')
+          replace_once(grid, '      const rawLogo = it.logoUri || logoCache[addr] || null;', '      const rawLogo = hasUsableCampaignImage(it.logoUri) ? it.logoUri : logoCache[addr] || null;')
+
+          featured = "frontend/src/components/home/FeaturedCampaigns.tsx"
+          replace_once(featured, '  graduatedAtChain?: string | null;\n  votes24h?: number | null;', '  graduatedAtChain?: string | null;\n  isDexTrading?: boolean;\n  votes24h?: number | null;')
+          replace_once(
+              featured,
+              '''function isEvmAddress(addr?: string | null) {
+            return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
+          }
+
+          ''',
+              '''function isEvmAddress(addr?: string | null) {
+            return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
+          }
+
+          function hasUsableFeaturedImage(value: unknown) {
+            const raw = String(value ?? "").trim();
+            return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
+          }
+
+          ''',
+          )
+          replace_once(featured, '    graduatedAtChain: src.graduatedAtChain ?? src.graduated_at_chain ?? null,\n    votes24h:', '    graduatedAtChain: src.graduatedAtChain ?? src.graduated_at_chain ?? null,\n    isDexTrading: Boolean(src.isDexTrading ?? src.is_dex_trading ?? src.status === "graduated"),\n    votes24h:')
+          replace_once(featured, '    params.set("status", "all");', '    params.set("status", "live");')
+          replace_once(featured, '    params.set("includeDrafts", "true");\n    params.set("status", "all");', '    params.set("includeDrafts", "true");')
+          replace_once(
+              featured,
+              '''async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
+            const campaigns = await apiFetch(`/api/campaigns?${buildFeedQuery(chainId, refetchNonce, "campaigns")}`, { cache: "no-store" as RequestCache });
+            const campaignJson = await campaigns.json().catch(() => null);
+            const campaignItems = getResponseItems(campaignJson);
+            const normalizedCampaigns = campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+            const onChain = await fetchOnChainFeaturedItems(chainId);
+
+            if (campaigns.ok && (normalizedCampaigns.length || onChain.length)) {
+              return mergeFeaturedItems(normalizedCampaigns, onChain).slice(0, 20);
+            }
+
+            const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, { cache: "no-store" as RequestCache });
+            const featuredJson = await featured.json().catch(() => null);
+            const featuredItems = getResponseItems(featuredJson);
+
+            if (featured.ok && featuredItems.length) {
+              return featuredItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+            }
+
+            if (onChain.length) return onChain;
+
+            if (!campaigns.ok || !featured.ok) {
+              throw new Error(String(campaignJson?.error || featuredJson?.error || "Failed to load featured"));
+            }
+
+            return [];
+          }''',
+              '''async function keepOnlyLiveFeaturedItems(items: FeaturedItemApi[], chainId: number): Promise<FeaturedItemApi[]> {
+            const provider = getReadProvider(chainId as any);
+            const checked = await Promise.all(items.map(async (item) => {
+              if (!isEvmAddress(item.campaignAddress)) return null;
+              if (item.graduatedAtChain || item.isDexTrading) return null;
+              try {
+                const campaign = new Contract(item.campaignAddress, CAMPAIGN_ABI, provider) as any;
+                return Boolean(await campaign.launched()) ? null : item;
+              } catch (error) {
+                console.warn("[FeaturedCampaigns] campaign lifecycle read failed; excluding from Featured", item.campaignAddress, error);
+                return null;
+              }
+            }));
+            return checked.filter(Boolean) as FeaturedItemApi[];
+          }
+
+          async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
+            const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, { cache: "no-store" as RequestCache });
+            const featuredJson = await featured.json().catch(() => null);
+            const featuredCandidates = getResponseItems(featuredJson).map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+            const liveFeatured = await keepOnlyLiveFeaturedItems(featuredCandidates, chainId);
+            if (featured.ok && liveFeatured.length) return liveFeatured.slice(0, 20);
+
+            const campaigns = await apiFetch(`/api/campaigns?${buildFeedQuery(chainId, refetchNonce, "campaigns")}`, { cache: "no-store" as RequestCache });
+            const campaignJson = await campaigns.json().catch(() => null);
+            const campaignCandidates = getResponseItems(campaignJson).map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+            const liveCampaigns = await keepOnlyLiveFeaturedItems(campaignCandidates, chainId);
+            if (campaigns.ok && liveCampaigns.length) return liveCampaigns.slice(0, 20);
+
+            const onChainCandidates = await fetchOnChainFeaturedItems(chainId);
+            const liveOnChain = await keepOnlyLiveFeaturedItems(onChainCandidates, chainId);
+            if (liveOnChain.length) return liveOnChain.slice(0, 20);
+
+            if (!campaigns.ok || !featured.ok) {
+              throw new Error(String(featuredJson?.error || campaignJson?.error || "Failed to load featured"));
+            }
+            return [];
+          }''',
+          )
+          replace_once(featured, '      const needsHydration = !item.name || item.name === "Unknown" || !item.symbol || !item.logoUri || !item.creatorAddress;', '      const needsHydration = !item.name || item.name === "Unknown" || !item.symbol || !hasUsableFeaturedImage(item.logoUri) || !item.creatorAddress;')
+          replace_once(featured, '      return !found?.logoUri;', '      return !hasUsableFeaturedImage(found?.logoUri);')
+          replace_once(featured, '      const rawLogo = it.logoUri || logoCache[addr] || null;', '      const rawLogo = hasUsableFeaturedImage(it.logoUri) ? it.logoUri : logoCache[addr] || null;')
+
+          campaigns_base = "frontend/api/campaigns-base.js"
+          replace_once(
+              campaigns_base,
+              "            or ($4::text = 'live' and c.is_active = true)\n",
+              "            or ($4::text = 'live' and c.is_active = true and c.graduated_at_chain is null)\n",
+          )
+          PY
+
+      - name: Verify focused source changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          grid = Path("frontend/src/components/home/CampaignGrid.tsx").read_text()
+          featured = Path("frontend/src/components/home/FeaturedCampaigns.tsx").read_text()
+          campaigns = Path("frontend/api/campaigns-base.js").read_text()
+          assert "onchain-graduated-state" in grid
+          assert "await campaign.launched()" in grid
+          assert "hasUsableCampaignImage" in grid
+          assert "keepOnlyLiveFeaturedItems" in featured
+          assert "excluding from Featured" in featured
+          assert "hasUsableFeaturedImage" in featured
+          assert "c.is_active = true and c.graduated_at_chain is null" in campaigns
+          PY
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Commit fixes to devpostgrad
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/home/CampaignGrid.tsx frontend/src/components/home/FeaturedCampaigns.tsx frontend/api/campaigns-base.js
+          git commit -m "Fix campaign images and graduated lifecycle feeds"
+          git push origin HEAD:devpostgrad
+
+      - name: Remove one-time workflow from main
+        if: success()
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          git rm .github/workflows/apply-showcase-lifecycle-fix.yml
+          git commit -m "Remove completed showcase lifecycle workflow"
+          git push origin HEAD:main
