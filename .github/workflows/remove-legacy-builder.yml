@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/remove-legacy-builder'
+    if: github.actor != 'github-actions[bot]' && (github.event_name == 'push' || github.head_ref == 'agent/remove-legacy-builder')
     runs-on: ubuntu-latest
     steps:
       - name: Check out cleanup branch
