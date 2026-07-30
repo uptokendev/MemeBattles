@@ -62,6 +62,14 @@ test("direct creator funding is detected, persisted, and synchronized", async ()
   assert.match(detectorSource, /set-cluster-risk/);
 });
 
+test("contract sync worker uses the database terminal status", async () => {
+  const source = await read("../../scripts/run-contract-sync-worker.mjs");
+  assert.match(source, /markJob\(job\.id, "succeeded"/);
+  assert.doesNotMatch(source, /markJob\(job\.id, "confirmed"/);
+  assert.match(source, /set-wallet-cluster/);
+  assert.match(source, /set-cluster-risk/);
+});
+
 test("legacy campaigns bypass only the new cluster-specific layer", async () => {
   const source = await read("./security-current-time.js");
 
