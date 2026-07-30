@@ -1,33 +1,34 @@
 export type SocialLinkKind = "x" | "telegram" | "discord" | "website" | "other";
 
+function stripProtocolAndHost(value: string, hosts: RegExp) {
+  return value
+    .trim()
+    .replace(/^https?:\/\/(www\.)?/i, "")
+    .replace(hosts, "")
+    .replace(/^@+/, "")
+    .replace(/^\/+/, "")
+    .split(/[/?#]/)[0];
+}
+
 function stripCommonSocialPrefix(value: string, kind: SocialLinkKind) {
-  let cleaned = value.trim();
-
-  cleaned = cleaned.replace(/^@+/, "").replace(/^\/+/, "");
-
   if (kind === "x") {
-    cleaned = cleaned
-      .replace(/^https?:\/\/(www\.)?/i, "")
-      .replace(/^(twitter\.com|x\.com)\//i, "")
-      .replace(/^@+/, "")
-      .split(/[/?#]/)[0];
+    return stripProtocolAndHost(value, /^(twitter\.com|x\.com)\//i);
   }
 
   if (kind === "telegram") {
-    cleaned = cleaned
-      .replace(/^https?:\/\/(www\.)?/i, "")
-      .replace(/^(t\.me|telegram\.me|telegram\.dog)\//i, "")
-      .replace(/^@+/, "")
-      .split(/[/?#]/)[0];
+    return stripProtocolAndHost(value, /^(t\.me|telegram\.me|telegram\.dog)\//i);
   }
 
-  return cleaned;
+  if (kind === "discord") {
+    return stripProtocolAndHost(value, /^(discord\.gg|discord\.com\/invite|discordapp\.com\/invite)\//i);
+  }
+
+  return value.trim().replace(/^\/+/, "");
 }
 
 export function normalizeSocialUrl(raw: string | null | undefined, kind: SocialLinkKind) {
   const value = String(raw || "").trim();
   if (!value) return "";
-  if (/^https?:\/\//i.test(value)) return value;
 
   if (kind === "x") {
     const handle = stripCommonSocialPrefix(value, "x");
@@ -40,10 +41,10 @@ export function normalizeSocialUrl(raw: string | null | undefined, kind: SocialL
   }
 
   if (kind === "discord") {
-    const cleaned = value.replace(/^\/+/, "");
-    if (/^(discord\.gg|discord\.com|discordapp\.com)\//i.test(cleaned)) return `https://${cleaned}`;
-    return cleaned;
+    const invite = stripCommonSocialPrefix(value, "discord");
+    return invite ? `https://discord.gg/${invite}` : "";
   }
 
+  if (/^https?:\/\//i.test(value)) return value;
   return `https://${value.replace(/^\/+/, "")}`;
 }
