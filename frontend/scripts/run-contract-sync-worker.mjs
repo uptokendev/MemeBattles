@@ -337,8 +337,8 @@ async function main() {
       const tx = await executeJob({ job, contracts });
       console.log(`[contract-sync] ${job.id} ${job.job_type} submitted ${tx.hash}`);
       const receipt = await tx.wait(confirmations);
-      await markJob(job.id, "confirmed", { txHash: receipt?.hash || tx.hash });
-      console.log(`[contract-sync] ${job.id} confirmed ${receipt?.hash || tx.hash}`);
+      await markJob(job.id, "succeeded", { txHash: receipt?.hash || tx.hash });
+      console.log(`[contract-sync] ${job.id} succeeded ${receipt?.hash || tx.hash}`);
     } catch (error) {
       const message = String(error?.shortMessage || error?.message || error);
       await markJob(job.id, "failed", { error: message.slice(0, 1000) });
