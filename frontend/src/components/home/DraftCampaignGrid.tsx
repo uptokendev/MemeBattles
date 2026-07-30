@@ -142,8 +142,9 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
 
     void (async () => {
       try {
-        const drafts = (await fetchPublicCampaignDrafts({ limit: 100 })) as CampaignDraftLifecycle[];
+        const drafts = (await fetchPublicCampaignDrafts({ chainId, limit: 50 })) as CampaignDraftLifecycle[];
         const candidates = drafts
+          .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => isDiscoverableDraft(draft, Date.now()))
           .slice(0, 24);
@@ -207,7 +208,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
         <div className="py-10 text-center text-sm text-muted-foreground">{error}</div>
       ) : !visible.length ? (
         <div className="py-10 text-center text-sm text-muted-foreground">
-          No public draft campaigns yet. Published Prepare Pages from every supported chain appear here.
+          No public draft campaigns yet. Published Prepare Pages and timed on-chain launches appear here.
         </div>
       ) : (
         <div className={gridClass}>

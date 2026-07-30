@@ -46,9 +46,7 @@ function getRpcUrl(chainId) {
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim();
-  if (!ethers.isAddress(raw)) return "";
-  const normalized = ethers.getAddress(raw);
-  return normalized === ethers.ZeroAddress ? "" : normalized;
+  return ethers.isAddress(raw) ? ethers.getAddress(raw) : "";
 }
 
 function normalizeClusterId(value) {
@@ -118,8 +116,7 @@ async function readOnchainCreatorProtection({ chainId, campaignAddress, walletAd
   let buyerClusterId = null;
   let creatorClusterId = null;
 
-  const directCreator = normalizeAddress(walletAddress).toLowerCase() === creator.toLowerCase();
-  if (riskRegistry && !directCreator) {
+  if (riskRegistry) {
     const registry = new ethers.Contract(riskRegistry, RISK_REGISTRY_ABI, provider);
     const [buyerRisk, creatorRisk] = await Promise.all([
       registry.getWalletRisk(walletAddress),
@@ -183,17 +180,11 @@ export async function evaluateTradePreflight({ walletAddress, campaignAddress, c
 
   try {
     const onChain = await readOnchainCreatorProtection({ chainId, campaignAddress: campaign, walletAddress: wallet });
-    const directCreator = wallet.toLowerCase() === onChain.creator.toLowerCase();
-    let creatorProfile = null;
-    try {
-      creatorProfile = await legacySecurity.evaluateCreatePreflight({ walletAddress: onChain.creator });
-    } catch (error) {
-      if (!directCreator) throw error;
-      console.warn("[security-current-time] creator profile lookup unavailable; enforcing direct creator lock from chain", error);
-    }
+    const creatorProfile = await legacySecurity.evaluateCreatePreflight({ walletAddress: onChain.creator });
     const { tier, tierNumber } = formatTierLabel(creatorProfile?.tier || creatorProfile?.creator?.tier);
     let dbBuyerClusterId = String(base?.walletRisk?.clusterId || base?.cluster?.id || "").trim() || null;
     let dbCreatorClusterId = String(creatorProfile?.creator?.clusterId || creatorProfile?.cluster?.id || "").trim() || null;
+    const directCreator = wallet.toLowerCase() === onChain.creator.toLowerCase();
     const onChainClusterMatch = Boolean(
       onChain.buyerClusterId &&
       onChain.creatorClusterId &&
