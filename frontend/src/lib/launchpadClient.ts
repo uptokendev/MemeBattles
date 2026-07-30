@@ -178,15 +178,30 @@ function toUnixSeconds(value: unknown): number | undefined {
   return seconds > 1_577_836_800 ? seconds : undefined;
 }
 
-function isUnsupportedContractMethod(error: unknown): boolean {
-  const text = String((error as any)?.shortMessage || (error as any)?.reason || (error as any)?.message || error || "").toLowerCase();
+function findNestedRevertData(error: unknown): string | null {
+  const value = error as any;
+  const candidates = [
+    value?.data,
+    value?.error?.data,
+    value?.info?.error?.data,
+    value?.cause?.data,
+    value?.revert?.data,
+  ];
+  return candidates.find((candidate) =>
+    typeof candidate === "string" && /^0x[0-9a-f]+$/i.test(candidate) && candidate !== "0x"
+  ) ?? null;
+}
+
+export function isUnsupportedContractMethod(error: unknown): boolean {
+  if (findNestedRevertData(error)) return false;
+  const value = error as any;
+  const text = String(value?.shortMessage || value?.reason || value?.message || value || "").toLowerCase();
   return (
-    text.includes("no data present") ||
-    text.includes("could not decode result data") ||
-    text.includes("missing revert data") ||
-    text.includes("execution reverted") ||
     text.includes("function selector was not recognized") ||
-    text.includes("invalid opcode")
+    text.includes("unknown function") ||
+    text.includes("no matching fragment") ||
+    text.includes("no data present") ||
+    (value?.code === "BAD_DATA" && text.includes("could not decode result data"))
   );
 }
 
@@ -777,7 +792,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       );
     } catch (error) {
       if (!isUnsupportedContractMethod(error)) throw error;
-      console.warn("[launchpadClient] Authorized buy unavailable; retrying legacy buyExactTokens", error);
+      console.warn("[launchpadClient] Authorized buy selector unavailable; retrying legacy buyExactTokens", error);
       tx = await campaign.buyExactTokens(amountWei, maxCostWei, { ...overrides, gasLimit: LEGACY_BUY_GAS_LIMIT });
     }
     const receipt = await tx.wait();
@@ -829,7 +844,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       );
     } catch (error) {
       if (!isUnsupportedContractMethod(error)) throw error;
-      console.warn("[launchpadClient] Authorized sell unavailable; retrying legacy sellExactTokens", error);
+      console.warn("[launchpadClient] Authorized sell selector unavailable; retrying legacy sellExactTokens", error);
       tx = await campaign.sellExactTokens(amountWei, minAmountWei, { ...overrides, gasLimit: LEGACY_SELL_GAS_LIMIT });
     }
     const receipt = await tx.wait();

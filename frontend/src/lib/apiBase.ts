@@ -309,6 +309,25 @@ async function buildTokenDetailsCampaignFallback(path: string): Promise<Response
   }
 }
 
+async function notifyCreatorProtectionResponse(res: Response): Promise<void> {
+  if (res.ok || typeof window === "undefined") return;
+  try {
+    const payload = await res.clone().json();
+    const preflight = payload?.preflight || null;
+    const protection = preflight?.creatorProtection || null;
+    const code = String(preflight?.code || protection?.code || payload?.code || "");
+    if (!code.startsWith("CREATOR_")) return;
+    window.dispatchEvent(new CustomEvent("mwz:creatorProtectionBlocked", {
+      detail: {
+        ...(protection || {}),
+        code,
+      },
+    }));
+  } catch {
+    // The caller still receives and handles the original error response.
+  }
+}
+
 export function apiUrl(path: string): string {
   if (isHttpUrl(path)) return path;
   const normalized = normalizePath(path);
@@ -334,6 +353,7 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       if (fallback) return fallback;
     }
     if (!res.ok && compatibilityFallback) return compatibilityFallback;
+    await notifyCreatorProtectionResponse(res);
     return res;
   } catch (error) {
     const fallback = await buildTokenDetailsCampaignFallback(path);

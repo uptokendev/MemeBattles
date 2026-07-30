@@ -13,10 +13,32 @@ type StoredRecruiterSession = {
   clientFingerprint: string;
 };
 
+export type CreatorProtectionPreflight = {
+  code?: string | null;
+  creatorWallet?: string | null;
+  creatorLinked?: boolean;
+  relationship?: string | null;
+  tier?: string | null;
+  tierNumber?: number | null;
+  unlockAt?: string | null;
+  creatorBuyLockUntil?: number | null;
+  creatorBuyCapWei?: string | null;
+  creatorBoughtWei?: string | null;
+  buyerClusterId?: string | null;
+  creatorClusterId?: string | null;
+  source?: string | null;
+  requestedWei?: string | null;
+  confirmedWei?: string | null;
+  reservedWei?: string | null;
+  remainingWei?: string | null;
+  error?: string | null;
+};
+
 export type LaunchpadPreflight = {
   allowed: boolean;
   reasons: string[];
   warnings: string[];
+  code?: string | null;
   schemaReady?: boolean;
   tier?: string;
   rules?: Record<string, unknown>;
@@ -24,6 +46,7 @@ export type LaunchpadPreflight = {
   walletRisk?: Record<string, unknown> | null;
   cluster?: Record<string, unknown> | null;
   campaign?: Record<string, unknown> | null;
+  creatorProtection?: CreatorProtectionPreflight | null;
   lookupErrors?: string[];
 };
 
@@ -69,6 +92,22 @@ function openTokenSafetyDropdown() {
     }
   } catch {
     // ignore
+  }
+}
+
+function showCreatorProtection(preflight: LaunchpadPreflight) {
+  try {
+    if (typeof window === "undefined") return;
+    const code = String(preflight?.code || preflight?.creatorProtection?.code || "");
+    if (!code.startsWith("CREATOR_")) return;
+    window.dispatchEvent(new CustomEvent("mwz:creatorProtectionBlocked", {
+      detail: {
+        ...(preflight.creatorProtection || {}),
+        code,
+      },
+    }));
+  } catch {
+    // The safety failure still throws below even if the dialog cannot render.
   }
 }
 
@@ -184,6 +223,7 @@ async function postPreflight(path: string, body: any): Promise<LaunchpadPrefligh
 
 function assertPreflightAllowed(preflight: LaunchpadPreflight): LaunchpadPreflight {
   if (!preflight?.allowed) {
+    showCreatorProtection(preflight);
     openTokenSafetyDropdown();
     throw new LaunchpadPreflightBlockedError(preflight);
   }
