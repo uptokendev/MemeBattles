@@ -4,7 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/run-devpostgrad-closeout-fixes.mjs",
     "start": "node scripts/run-devpostgrad-closeout-fixes.mjs && node --import ./api/load-local-env.mjs api/server.mjs",
     "dev": "node scripts/run-devpostgrad-closeout-fixes.mjs && node scripts/dev-hybrid.mjs",
     "dev:hybrid": "node scripts/run-devpostgrad-closeout-fixes.mjs && node scripts/dev-hybrid.mjs",
@@ -33,8 +32,8 @@
     "worker:creator-funding-indexer": "node --import ./api/load-local-env.mjs scripts/run-creator-funding-indexer.mjs",
     "check:weekly-airdrop": "node --check scripts/weekly-airdrop/config.mjs && node --check scripts/weekly-airdrop/candidates.mjs && node --check scripts/weekly-airdrop/materialize.mjs && node --check scripts/weekly-airdrop/chain.mjs && node --check scripts/weekly-airdrop/run-weekly-airdrop.mjs",
     "airdrop:weekly": "node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-weekly-airdrop.mjs",
-    "build": "node scripts/apply-draft-owner-auth-fix.mjs && node scripts/run-devpostgrad-closeout-fixes.mjs && vite build",
-    "build:dev": "node scripts/apply-draft-owner-auth-fix.mjs && node scripts/run-devpostgrad-closeout-fixes.mjs && vite build --mode development",
+    "build": "vite build",
+    "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test:wallet-discovery": "node --test src/lib/injectedProviderDiscovery.test.mjs",
     "preview": "vite preview",
