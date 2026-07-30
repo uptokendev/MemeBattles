@@ -27,7 +27,7 @@ export const tokenSchema = z.object({
     .string()
     .max(TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH, `Description must be less than ${TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH} characters`)
     .optional(),
-  website: z.string().url("Invalid URL").optional().or(z.literal("")),
+  website: socialInput,
   twitter: socialInput,
-  otherLink: z.string().url("Invalid URL").optional().or(z.literal("")),
+  otherLink: socialInput,
 });
