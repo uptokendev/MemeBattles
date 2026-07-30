@@ -1,29 +1,112 @@
 import { useEffect, useMemo, useState } from "react";
-import { Contract } from "ethers";
+import { Contract, type InterfaceAbi } from "ethers";
 import { CampaignCard, type CampaignCardVM } from "@/components/home/CampaignCard";
 import type { HomeQuery } from "@/components/home/CampaignGrid";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { apiFetch } from "@/lib/apiBase";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeedBase";
 import { getReadProvider } from "@/lib/readProvider";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 
-const CAMPAIGN_ABI = LaunchCampaignArtifact.abi;
+const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as InterfaceAbi;
 const PAGE_SIZE = 100;
 const MAX_CAMPAIGNS = 500;
 const READ_BATCH_SIZE = 12;
 
-async function readGraduatedCampaigns(chainId: number): Promise<CampaignCardVM[]> {
-  const provider = getReadProvider(chainId as any);
-  const campaigns: any[] = [];
+type CampaignCandidate = {
+  campaign: string;
+  token?: string | null;
+  creator?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+  logoURI?: string | null;
+  createdAt?: number;
+  votes24h?: number;
+};
+
+function isAddress(value: unknown) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(value ?? "").trim());
+}
+
+function toUnixSeconds(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric > 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : undefined;
+}
+
+async function readIndexedCandidates(chainId: number): Promise<CampaignCandidate[]> {
+  try {
+    const params = new URLSearchParams({
+      chainId: String(chainId),
+      limit: String(MAX_CAMPAIGNS),
+      cursor: "0",
+      tab: "trending",
+      sort: "created_desc",
+      status: "all",
+      _r: String(Date.now()),
+    });
+    const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" });
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(json?.items)) return [];
+    return json.items.map((item: any): CampaignCandidate | null => {
+      const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? "").toLowerCase();
+      if (!isAddress(campaign)) return null;
+      return {
+        campaign,
+        token: item?.tokenAddress ?? item?.token_address ?? null,
+        creator: item?.creatorAddress ?? item?.creator_address ?? null,
+        name: item?.name ?? null,
+        symbol: item?.symbol ?? null,
+        logoURI: item?.logoUri ?? item?.logo_uri ?? item?.logoURI ?? null,
+        createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain),
+        votes24h: Number(item?.votes24h ?? item?.votes_24h ?? 0),
+      };
+    }).filter(Boolean) as CampaignCandidate[];
+  } catch {
+    return [];
+  }
+}
+
+async function readActiveFactoryCandidates(chainId: number): Promise<CampaignCandidate[]> {
+  const campaigns: CampaignCandidate[] = [];
   let cursor: number | null = 0;
 
   while (cursor != null && campaigns.length < MAX_CAMPAIGNS) {
     const page = await fetchOnChainCampaignPage(chainId as any, { limit: PAGE_SIZE, cursor });
-    campaigns.push(...page.campaigns);
+    campaigns.push(...page.campaigns.map((campaign) => ({
+      campaign: String(campaign.campaign).toLowerCase(),
+      token: campaign.token || null,
+      creator: campaign.creator || null,
+      name: campaign.name || null,
+      symbol: campaign.symbol || null,
+      logoURI: campaign.logoURI || null,
+      createdAt: campaign.createdAt,
+      votes24h: 0,
+    })));
     cursor = page.nextCursor;
     if (!page.campaigns.length) break;
   }
 
+  return campaigns;
+}
+
+async function readGraduatedCampaigns(chainId: number): Promise<CampaignCardVM[]> {
+  const provider = getReadProvider(chainId as any);
+  const [indexed, activeFactory] = await Promise.all([
+    readIndexedCandidates(chainId),
+    readActiveFactoryCandidates(chainId),
+  ]);
+
+  const merged = new Map<string, CampaignCandidate>();
+  for (const candidate of [...indexed, ...activeFactory]) {
+    if (!isAddress(candidate.campaign)) continue;
+    const key = candidate.campaign.toLowerCase();
+    merged.set(key, { ...(merged.get(key) || {}), ...candidate, campaign: key });
+  }
+
+  const campaigns = Array.from(merged.values()).slice(0, MAX_CAMPAIGNS);
   const graduated: CampaignCardVM[] = [];
   for (let start = 0; start < campaigns.length; start += READ_BATCH_SIZE) {
     const batch = campaigns.slice(start, start + READ_BATCH_SIZE);
@@ -32,18 +115,18 @@ async function readGraduatedCampaigns(chainId: number): Promise<CampaignCardVM[]
         const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, provider) as any;
         if (!Boolean(await contract.launched())) return null;
         return {
-          campaignAddress: String(campaign.campaign).toLowerCase(),
-          tokenAddress: campaign.token ? String(campaign.token).toLowerCase() : null,
+          campaignAddress: campaign.campaign,
+          tokenAddress: isAddress(campaign.token) ? String(campaign.token).toLowerCase() : null,
           name: String(campaign.name || "Unknown"),
           symbol: String(campaign.symbol || ""),
           logoURI: String(campaign.logoURI || ""),
-          creator: campaign.creator ? String(campaign.creator).toLowerCase() : undefined,
-          createdAt: campaign.createdAt ? Number(campaign.createdAt) : undefined,
+          creator: isAddress(campaign.creator) ? String(campaign.creator).toLowerCase() : undefined,
+          createdAt: campaign.createdAt,
           marketCapUsdLabel: null,
           athLabel: null,
           progressPct: 100,
           isDexTrading: true,
-          votes24h: 0,
+          votes24h: Number(campaign.votes24h || 0),
         } satisfies CampaignCardVM;
       } catch (error) {
         console.warn("[GraduatedCampaignGrid] lifecycle read failed", campaign.campaign, error);
