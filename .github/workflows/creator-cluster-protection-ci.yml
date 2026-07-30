@@ -1,5 +1,6 @@
 name: Creator cluster protection CI
 
+# Temporary validation branch uses this workflow to prove the current devpostgrad closeout build.
 on:
   pull_request:
     paths:
