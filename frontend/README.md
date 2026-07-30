@@ -1,110 +1,47 @@
-# Welcome to your Lovable project
+# MemeWarzone Frontend
 
-## Project info
+The MemeWarzone web application and API gateway for the BNB and Solana launch, trading, security, rewards and graduated-market flows.
 
-**URL**: https://lovable.dev/projects/cf28b9bc-eb75-49fd-b9b7-033893ae4394
+The frontend is maintained directly in this repository and does not require external visual-builder tooling. No component-tagging or builder runtime is part of the application.
 
-## Project Structure
+## Stack
 
-This project follows a well-organized architecture for maintainability and scalability:
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS and shadcn/ui
+- Express API routes
+- PostgreSQL/Supabase
+- ethers for EVM integrations
 
-### Directory Structure
+## Local development
 
-```
-src/
-├── assets/              # Static assets (images, icons, fonts)
-├── components/          # Reusable UI components
-│   └── ui/             # shadcn-ui and custom UI components
-│       ├── effects/    # Visual effects (glitch, animations)
-│       ├── loaders/    # Loading indicators
-│       └── progress/   # Progress bar components
-├── constants/          # Application constants and configuration
-│   ├── navigation.ts   # Navigation configuration
-│   ├── processingStages.ts  # Token processing stages
-│   └── validation.ts   # Form validation rules
-├── hooks/              # Custom React hooks
-│   ├── useTokenForm.ts       # Token form state management
-│   └── useTokenProcessing.ts # Token processing state
-├── pages/              # Page components (routes)
-├── types/              # TypeScript type definitions
-│   ├── token.ts        # Token-related types
-│   └── profile.ts      # Profile-related types
-└── lib/                # Utility functions
+Requirements: Node.js 20+ and npm.
 
-```
-
-### Key Design Patterns
-
-- **Component Organization**: Large components are broken down into smaller, focused sub-components
-- **Custom Hooks**: Business logic is extracted into reusable custom hooks
-- **Type Safety**: All data structures have proper TypeScript interfaces
-- **Constants**: Magic numbers and configuration are centralized in constants files
-- **Code Documentation**: All files include JSDoc comments explaining their purpose
-
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/cf28b9bc-eb75-49fd-b9b7-033893ae4394) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm ci
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The hybrid development command starts the frontend and local API gateway. Environment values are loaded through the project environment files and deployment platform configuration.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Common commands
 
-**Use GitHub Codespaces**
+```bash
+npm run build
+npm run lint
+npm run api:start
+npm run worker:contract-sync
+npm run worker:creator-funding
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Deployment
 
-## What technologies are used for this project?
+Frontend and API services are deployed through the project-controlled GitHub, Netlify and Railway pipelines. Deployment configuration, secrets and chain RPC settings must remain outside client bundles.
 
-This project is built with:
+## Repository rules
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/cf28b9bc-eb75-49fd-b9b7-033893ae4394) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Keep security checks fail-closed.
+- Never expose service-role credentials or signing keys to the browser.
+- Keep BNB and Solana chain configuration explicit.
+- Run the relevant build, lint, contract and route tests before merging.

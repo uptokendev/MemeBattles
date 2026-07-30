@@ -66,7 +66,6 @@
         "npm:globals@^15.15.0",
         "npm:input-otp@^1.4.2",
         "npm:lightweight-charts@^5.1.0",
-        "npm:lovable-tagger@^1.1.11",
         "npm:lucide-react@0.462",
         "npm:motion@^12.23.24",
         "npm:next-themes@0.3",
