@@ -42,6 +42,26 @@ test("route authorization reserves before signing", async () => {
   assert.match(source, /CREATOR_CLUSTER_BUY_CAP_EXCEEDED|capReservation\.code/);
 });
 
+test("direct creator funding is detected, persisted, and synchronized", async () => {
+  const [securitySource, detectorSource] = await Promise.all([
+    read("./security-current-time.js"),
+    read("./creator-cluster-detector.js"),
+  ]);
+
+  assert.match(securitySource, /detectDirectCreatorFunding/);
+  assert.match(securitySource, /relationship = directCreator[\s\S]*direct_creator_funding/);
+  assert.match(securitySource, /creatorDatabaseClusterId/);
+  assert.match(securitySource, /public\.cluster_members/);
+  assert.match(detectorSource, /https:\/\/api\.etherscan\.io\/v2\/api/);
+  assert.match(detectorSource, /from !== creatorLower \|\| to !== walletLower/);
+  assert.match(detectorSource, /CREATOR_CLUSTER_MIN_FUNDING_WEI/);
+  assert.match(detectorSource, /public\.wallet_clusters/);
+  assert.match(detectorSource, /public\.cluster_members/);
+  assert.match(detectorSource, /public\.wallet_risk_profiles/);
+  assert.match(detectorSource, /set-wallet-cluster/);
+  assert.match(detectorSource, /set-cluster-risk/);
+});
+
 test("legacy campaigns bypass only the new cluster-specific layer", async () => {
   const source = await read("./security-current-time.js");
 
