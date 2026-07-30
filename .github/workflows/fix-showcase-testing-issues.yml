@@ -1,4 +1,5 @@
 name: Apply showcase testing fixes
+# trigger after workflow registration
 
 on:
   push:
