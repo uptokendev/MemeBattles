@@ -1,35 +1,18 @@
-import { defineConfig, loadEnv, type PluginOption } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
-const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
-
-function truthy(value: string | undefined) {
-  return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
-}
 
 function explicitlyFalse(value: string | undefined) {
   return FALSE_VALUES.has(String(value || "").trim().toLowerCase());
 }
 
-export default defineConfig(async ({ mode }) => {
+export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3001";
   const apiProxyTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
   const hmrEnabled = !explicitlyFalse(env.VITE_HMR);
-  const taggerEnabled = mode === "development" && truthy(env.VITE_ENABLE_LOVABLE_TAGGER);
-  const plugins: PluginOption[] = [react()];
-
-  if (taggerEnabled) {
-    try {
-      const packageName = "lovable-tagger";
-      const { componentTagger } = await import(/* @vite-ignore */ packageName);
-      plugins.push(componentTagger());
-    } catch (error) {
-      console.warn(`[vite] lovable tagger unavailable: ${String(error instanceof Error ? error.message : error)}`);
-    }
-  }
 
   console.log(`[vite] proxy /api -> ${apiProxyTarget}`);
   console.log(`[vite] hmr ${hmrEnabled ? "enabled" : "disabled"}`);
@@ -62,7 +45,7 @@ export default defineConfig(async ({ mode }) => {
         },
       },
     },
-    plugins,
+    plugins: [react()],
     resolve: {
       alias: [
         {

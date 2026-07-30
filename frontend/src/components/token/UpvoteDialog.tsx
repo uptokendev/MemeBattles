@@ -19,6 +19,19 @@ import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
 import { getBnbContractAddresses } from "@/lib/bnbContracts";
 
 const UPVOTE_USD_TARGET = 3;
+const UPVOTE_DISPLAY_DECIMALS = 6;
+const UPVOTE_DISPLAY_SCALE_WEI = 10n ** BigInt(18 - UPVOTE_DISPLAY_DECIMALS);
+
+function floorToDisplayPrecision(wei: bigint) {
+  return (wei / UPVOTE_DISPLAY_SCALE_WEI) * UPVOTE_DISPLAY_SCALE_WEI;
+}
+
+function formatDisplayBnb(wei: bigint) {
+  const formatted = ethers.formatEther(floorToDisplayPrecision(wei));
+  const [whole, fraction = ""] = formatted.split(".");
+  const trimmed = fraction.slice(0, UPVOTE_DISPLAY_DECIMALS).replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole;
+}
 
 const UPVOTE_ABI = [
   "function voteWithBNB(address campaign, bytes32 meta) payable",
@@ -103,9 +116,11 @@ export function UpvoteDialog({
     return m;
   }, [minAmountWei, oracleTargetWei, fallbackUsdTargetWei]);
 
+  const displayedMinWei = useMemo(() => floorToDisplayPrecision(effectiveMinWei), [effectiveMinWei]);
+
   const humanEffectiveMin = useMemo(() => {
     try {
-      return ethers.formatEther(effectiveMinWei);
+      return formatDisplayBnb(effectiveMinWei);
     } catch {
       return "—";
     }
@@ -158,11 +173,17 @@ useEffect(() => {
     }
   }, [amountBnb]);
 
+  const normalizedAmountWei = useMemo(() => {
+    if (amountWei == null) return null;
+    if (amountWei >= displayedMinWei && amountWei < effectiveMinWei) return effectiveMinWei;
+    return amountWei;
+  }, [amountWei, displayedMinWei, effectiveMinWei]);
+
   const tooLow = useMemo(() => {
     if (amountWei == null) return false;
     if (amountWei <= 0n) return false;
-    return amountWei < effectiveMinWei;
-  }, [amountWei, effectiveMinWei]);
+    return amountWei < displayedMinWei;
+  }, [amountWei, displayedMinWei]);
 
   // When the dialog opens, allow a one-time prefill to the effective minimum.
   useEffect(() => {
@@ -260,9 +281,9 @@ useEffect(() => {
     // If we haven't touched the input, keep it aligned with the effective minimum.
     if (amountWei != null && amountWei > 0n && amountWei < effectiveMinWei) {
       try {
-        const v = Number(ethers.formatEther(effectiveMinWei));
-        if (Number.isFinite(v) && v > 0) {
-          setAmountBnb(v.toFixed(6));
+        const display = formatDisplayBnb(effectiveMinWei);
+        if (display && display !== "0") {
+          setAmountBnb(display);
           setPrefilled(true);
         }
       } catch {
@@ -274,9 +295,9 @@ useEffect(() => {
     if (amountBnb.trim() !== "") return;
     if (effectiveMinWei <= 0n) return;
     try {
-      const v = Number(ethers.formatEther(effectiveMinWei));
-      if (!Number.isFinite(v) || v <= 0) return;
-      setAmountBnb(v.toFixed(6));
+      const display = formatDisplayBnb(effectiveMinWei);
+      if (!display || display === "0") return;
+      setAmountBnb(display);
       setPrefilled(true);
     } catch {
       // ignore
@@ -296,20 +317,21 @@ useEffect(() => {
   (async () => {
     try {
       // Parse value
-      let valueWei: bigint = 0n;
+      let parsedWei: bigint = 0n;
       try {
-        valueWei = ethers.parseEther(String(amountBnb || "0"));
+        parsedWei = ethers.parseEther(String(amountBnb || "0"));
       } catch {
         setEstTotalWei(null);
         setInsufficient(false);
         return;
       }
+      const valueWei = parsedWei >= displayedMinWei && parsedWei < effectiveMinWei ? effectiveMinWei : parsedWei;
       if (valueWei <= 0n) {
         setEstTotalWei(null);
         setInsufficient(false);
         return;
       }
-      if (valueWei < effectiveMinWei) {
+      if (parsedWei < displayedMinWei) {
         // Too low amount is handled elsewhere; don't flag as insufficient.
         setEstTotalWei(null);
         setInsufficient(false);
@@ -354,7 +376,7 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [open, wallet.provider, wallet.account, treasuryAddress, hasContractCode, enabled, amountBnb, effectiveMinWei, campaignAddress, balanceWei]);
+}, [open, wallet.provider, wallet.account, treasuryAddress, hasContractCode, enabled, amountBnb, effectiveMinWei, displayedMinWei, campaignAddress, balanceWei]);
 
   const canUpvote = Boolean(
     treasuryAddress &&
@@ -362,8 +384,8 @@ useEffect(() => {
       enabled &&
       campaignAddress &&
       wallet.provider &&
-      amountWei != null &&
-      amountWei > 0n &&
+      normalizedAmountWei != null &&
+      normalizedAmountWei > 0n &&
       !tooLow &&
       !insufficient
   );
@@ -397,18 +419,19 @@ useEffect(() => {
       }
 
       // Validate amount
-      let valueWei: bigint;
+      let parsedWei: bigint;
       try {
-        valueWei = ethers.parseEther(String(amountBnb));
+        parsedWei = ethers.parseEther(String(amountBnb));
       } catch {
         fail("Invalid amount", "Enter a valid BNB amount.");
       }
-      if (valueWei < effectiveMinWei) {
+      if (parsedWei < displayedMinWei) {
         fail(
           "Amount too low",
           `Minimum is ${humanEffectiveMin} BNB${minUsdLabel ? ` (~${minUsdLabel})` : ""} for 1 vote. UP Votes are priced at $${UPVOTE_USD_TARGET}.`
         );
       }
+      const valueWei = parsedWei < effectiveMinWei ? effectiveMinWei : parsedWei;
 
 
 // Check balance (value + estimated gas)
@@ -572,6 +595,10 @@ if (balanceWei != null) {
               Minimum is {humanEffectiveMin} BNB{minUsdLabel ? ` (~${minUsdLabel})` : ""}.
             </div>
           ) : null}
+
+          <div className="text-xs text-muted-foreground">
+            The field shows six decimals. When that displayed minimum is used, the transaction automatically sends the exact oracle minimum.
+          </div>
 
           <div className="text-xs text-muted-foreground">
             Off-chain cooldown & daily caps apply to keep the list fair.

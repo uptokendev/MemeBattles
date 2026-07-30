@@ -21,6 +21,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ContentContainer } from "@/components/layout/ContentContainer";
+import { normalizeSocialUrl } from "@/lib/socialLinks";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
@@ -231,9 +232,9 @@ const Create = () => {
         name: formData.name,
         ticker: formData.ticker,
         description: formData.description || undefined,
-        website: formData.website || undefined,
-        twitter: formData.twitter || undefined,
-        otherLink: formData.otherLink || undefined,
+        website: normalizeSocialUrl(formData.website, "website") || undefined,
+        twitter: normalizeSocialUrl(formData.twitter, "x") || undefined,
+        otherLink: normalizeSocialUrl(formData.otherLink, "other") || undefined,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -327,12 +328,12 @@ const Create = () => {
         description: formData.description || null,
         category: formData.category || "meme",
         logoUrl,
-        websiteUrl: formData.website || null,
-        xUrl: formData.twitter || null,
-        telegramUrl: formData.telegram || null,
-        discordUrl: formData.discord || null,
-        docs: formData.otherLink ? [formData.otherLink] : [],
-        otherUrl: formData.otherLink || null,
+        websiteUrl: normalizeSocialUrl(formData.website, "website") || null,
+        xUrl: normalizeSocialUrl(formData.twitter, "x") || null,
+        telegramUrl: normalizeSocialUrl(formData.telegram, "telegram") || null,
+        discordUrl: normalizeSocialUrl(formData.discord, "discord") || null,
+        docs: formData.otherLink ? [normalizeSocialUrl(formData.otherLink, "other")] : [],
+        otherUrl: normalizeSocialUrl(formData.otherLink, "other") || null,
         graduationTargetWei: graduationTargetWei.toString(),
         visibility: "private",
       });
@@ -374,9 +375,9 @@ const Create = () => {
         name: formData.name,
         symbol: normalizedTicker,
         logoURI: logoUrl,
-        xAccount: formData.twitter || "",
-        website: formData.website || "",
-        extraLink: formData.otherLink || "",
+        xAccount: normalizeSocialUrl(formData.twitter, "x"),
+        website: normalizeSocialUrl(formData.website, "website"),
+        extraLink: normalizeSocialUrl(formData.otherLink, "other"),
         graduationTargetWei,
       });
 
