@@ -6,6 +6,7 @@ process.env.DATABASE_URL ||= "postgresql://test:test@127.0.0.1:5432/test";
 process.env.PG_DISABLE_SSL ||= "1";
 
 const security = await import("./security-current-time.js");
+const detector = await import("./creator-cluster-detector.js");
 
 const read = (relativePath) => readFile(new URL(relativePath, import.meta.url), "utf8");
 
@@ -42,6 +43,41 @@ test("route authorization reserves before signing", async () => {
   assert.match(source, /CREATOR_CLUSTER_BUY_CAP_EXCEEDED|capReservation\.code/);
 });
 
+test("BNB creator funding uses BscScan before Etherscan V2", () => {
+  const mainnet = detector.resolveCreatorClusterExplorerConfig(56, {
+    BSCSCAN_API_KEY: "bsc-key",
+    ETHERSCAN_API_KEY: "eth-key",
+  });
+  assert.deepEqual(mainnet, {
+    provider: "bscscan",
+    apiKey: "bsc-key",
+    apiUrl: "https://api.bscscan.com/api",
+    usesChainId: false,
+  });
+
+  const testnet = detector.resolveCreatorClusterExplorerConfig(97, {
+    BSC_SCAN_API_KEY: "bsc-test-key",
+    ETHERSCAN_API_KEY: "eth-key",
+  });
+  assert.equal(testnet.provider, "bscscan");
+  assert.equal(testnet.apiUrl, "https://api-testnet.bscscan.com/api");
+  assert.equal(testnet.usesChainId, false);
+});
+
+test("Etherscan V2 remains an explicit fallback when no BscScan key exists", () => {
+  const fallback = detector.resolveCreatorClusterExplorerConfig(97, {
+    ETHERSCAN_API_KEY: "eth-key",
+    ETHERSCAN_V2_API_URL: "https://example.test/v2/api",
+  });
+  assert.deepEqual(fallback, {
+    provider: "etherscan_v2",
+    apiKey: "eth-key",
+    apiUrl: "https://example.test/v2/api",
+    usesChainId: true,
+  });
+  assert.equal(detector.resolveCreatorClusterExplorerConfig(97, {}), null);
+});
+
 test("direct creator funding is detected, persisted, and synchronized", async () => {
   const [securitySource, detectorSource] = await Promise.all([
     read("./security-current-time.js"),
@@ -49,12 +85,20 @@ test("direct creator funding is detected, persisted, and synchronized", async ()
   ]);
 
   assert.equal(typeof security.creatorClusterFundingDetectorConfigured, "function");
+  assert.equal(typeof detector.resolveCreatorClusterExplorerConfig, "function");
   assert.match(securitySource, /detectDirectCreatorFunding/);
   assert.match(securitySource, /relationship = directCreator[\s\S]*direct_creator_funding/);
   assert.match(securitySource, /creatorDatabaseClusterId/);
   assert.match(securitySource, /public\.cluster_members/);
+  assert.match(
+    securitySource,
+    /if \(!directCreator && !onChainClusterMatch && !databaseClusterMatch\)[\s\S]*detectDirectCreatorFunding/,
+    "the literal creator lock must not depend on an explorer request",
+  );
   assert.match(detectorSource, /ETHERSCAN_API_KEY/);
   assert.match(detectorSource, /BSCSCAN_API_KEY/);
+  assert.match(detectorSource, /https:\/\/api\.bscscan\.com\/api/);
+  assert.match(detectorSource, /https:\/\/api-testnet\.bscscan\.com\/api/);
   assert.match(detectorSource, /https:\/\/api\.etherscan\.io\/v2\/api/);
   assert.match(detectorSource, /from !== creatorLower \|\| to !== walletLower/);
   assert.match(detectorSource, /CREATOR_CLUSTER_MIN_FUNDING_WEI/);
