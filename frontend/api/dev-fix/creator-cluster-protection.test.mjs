@@ -57,14 +57,17 @@ test("custom contract reverts cannot be classified as missing methods", async ()
 });
 
 test("centered creator protection dialog is globally wired", async () => {
-  const [app, api, dialog] = await Promise.all([
+  const [app, api, apiBase, dialog] = await Promise.all([
     read("../../src/App.tsx"),
     read("../../src/lib/recruiterApi.ts"),
+    read("../../src/lib/apiBase.ts"),
     read("../../src/components/token/CreatorProtectionDialog.tsx"),
   ]);
 
   assert.match(app, /<CreatorProtectionDialog\s*\/>/);
   assert.match(api, /mwz:creatorProtectionBlocked/);
+  assert.match(apiBase, /notifyCreatorProtectionResponse/);
+  assert.match(apiBase, /mwz:creatorProtectionBlocked/);
   assert.match(dialog, /Creator-Linked Wallet/);
   assert.match(dialog, /Tier \$\{tierNumber\} Creator Buy Protection/);
   assert.doesNotMatch(dialog, /Switch wallet/i);
