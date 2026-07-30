@@ -8,6 +8,7 @@ import { resolveImageUri } from "@/lib/media";
 import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
@@ -29,6 +30,11 @@ type FeaturedItem = {
   isDexTrading?: boolean;
 };
 
+type FeaturedCard = FeaturedItem & {
+  mcapUsdLabel: string | null;
+  athUsdLabel: string;
+};
+
 function isAddress(value: unknown) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(value ?? "").trim());
 }
@@ -36,6 +42,36 @@ function isAddress(value: unknown) {
 function usefulImage(value: unknown) {
   const raw = String(value ?? "").trim();
   return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
+}
+
+function formatCompactUsd(value: number) {
+  if (!Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function getAthLabel(chainId: number, campaignAddress: string, currentUsd: number | null) {
+  if (typeof window === "undefined") return currentUsd != null ? formatCompactUsd(currentUsd) : "—";
+
+  try {
+    const key = `ath:${chainId}:${campaignAddress.toLowerCase()}:featured-v1`;
+    const storedRaw = window.localStorage.getItem(key);
+    const stored = storedRaw ? Number(storedRaw) : NaN;
+    const storedValue = Number.isFinite(stored) ? stored : 0;
+    const next = Math.max(storedValue, currentUsd ?? 0);
+
+    if (currentUsd != null && Number.isFinite(currentUsd) && currentUsd > storedValue) {
+      window.localStorage.setItem(key, String(currentUsd));
+    }
+
+    return next > 0 ? formatCompactUsd(next) : "—";
+  } catch {
+    return currentUsd != null ? formatCompactUsd(currentUsd) : "—";
+  }
 }
 
 function normalizeItem(raw: any, fallbackChainId: number): FeaturedItem | null {
@@ -111,6 +147,27 @@ async function loadOnChainCandidates(chainId: number): Promise<FeaturedItem[]> {
   }
 }
 
+async function hydrateMissingSummary(item: FeaturedItem): Promise<FeaturedItem> {
+  if (item.marketcapBnb != null && item.marketcapBnb !== "") return item;
+
+  try {
+    const response = await apiFetch(`/api/token/${item.campaignAddress}/summary?chainId=${item.chainId}`, {
+      cache: "no-store",
+    });
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !json) return item;
+
+    return {
+      ...item,
+      marketcapBnb: json.marketcapBnb ?? json.marketcap_bnb ?? item.marketcapBnb ?? null,
+      votes24h: Number(json.votes24h ?? json.votes_24h ?? item.votes24h ?? 0),
+      votesAllTime: Number(json.votesAllTime ?? json.votes_all_time ?? item.votesAllTime ?? 0),
+    };
+  } catch {
+    return item;
+  }
+}
+
 async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Promise<FeaturedItem[]> {
   const provider = getReadProvider(chainId as any);
   const checked = await Promise.all(items.slice(0, 100).map(async (item) => {
@@ -128,7 +185,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
         item.creatorAddress ? Promise.resolve(String(item.creatorAddress)) : safeString(() => campaign.creator(), ""),
       ]);
 
-      return {
+      return hydrateMissingSummary({
         ...item,
         tokenAddress: isAddress(tokenAddress) ? tokenAddress.toLowerCase() : item.tokenAddress,
         creatorAddress: isAddress(creatorAddress) ? creatorAddress.toLowerCase() : item.creatorAddress,
@@ -137,7 +194,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
         logoUri,
         isDexTrading: false,
         graduatedAtChain: null,
-      } satisfies FeaturedItem;
+      } satisfies FeaturedItem);
     } catch (error) {
       console.warn("[SafeFeaturedCampaigns] lifecycle verification failed", item.campaignAddress, error);
       return null;
@@ -149,6 +206,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
 export function SafeFeaturedCampaigns({ className = "" }: { className?: string }) {
   const navigate = useNavigate();
   const [chainId] = useSelectedFeedChainId();
+  const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<FeaturedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
@@ -181,7 +239,24 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
     return () => { cancelled = true; };
   }, [chainId, refresh]);
 
-  const cards = useMemo(() => items.slice().sort((a, b) => Number(b.votes24h || 0) - Number(a.votes24h || 0)).slice(0, 20), [items]);
+  const cards = useMemo<FeaturedCard[]>(() => {
+    return items
+      .slice()
+      .sort((a, b) => Number(b.votes24h || 0) - Number(a.votes24h || 0))
+      .slice(0, 20)
+      .map((item) => {
+        const mcapBnb = Number(item.marketcapBnb ?? NaN);
+        const mcapUsd = Number.isFinite(mcapBnb) && Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0
+          ? mcapBnb * Number(bnbUsd)
+          : null;
+
+        return {
+          ...item,
+          mcapUsdLabel: mcapUsd != null ? formatCompactUsd(mcapUsd) : null,
+          athUsdLabel: getAthLabel(item.chainId, item.campaignAddress, mcapUsd),
+        };
+      });
+  }, [items, bnbUsd]);
 
   return (
     <div className={`w-full ${className}`}>
@@ -190,7 +265,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           <ThumbsUp className="h-4 w-4" />
           Featured Campaigns
         </div>
-        <div className="hidden text-xs uppercase tracking-[0.16em] mwz-muted md:block">Live campaigns only</div>
+        <div className="hidden text-xs uppercase tracking-[0.16em] mwz-muted md:block">Live campaigns ranked by 24h UpVotes</div>
       </div>
 
       <div className="grid grid-flow-col grid-rows-2 auto-cols-[340px] gap-3 overflow-x-auto pb-1 pr-2 sm:auto-cols-[370px] lg:auto-cols-[392px]" style={{ scrollbarWidth: "none" }}>
@@ -204,7 +279,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           return (
             <div
               key={item.campaignAddress}
-              className="mwz-hud-frame group flex h-[150px] w-full cursor-pointer overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80"
+              className="mwz-hud-frame group flex h-[150px] w-full cursor-pointer overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
               role="button"
               tabIndex={0}
               onClick={() => navigate(`/token/${target}?chainId=${item.chainId}`)}
@@ -220,14 +295,25 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
                   <UpvoteDialog campaignAddress={item.campaignAddress} chainId={item.chainId} className="mwz-button mwz-button-active h-9 w-full text-[11px]" buttonVariant="ghost" buttonSize="sm" />
                 </div>
               </div>
-              <div className="flex min-w-0 flex-1 flex-col justify-between px-4 py-3">
+
+              <div className="flex h-[150px] min-w-0 flex-1 flex-col justify-between px-4 py-3">
                 <div className="min-w-0">
                   <div className="truncate text-[19px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{item.name || "Unknown"}</div>
-                  <div className="mt-1.5 truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-orange-300">{item.symbol ? `$${item.symbol}` : "—"}</div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-orange-300">{item.symbol ? `$${item.symbol}` : "—"}</span>
+                    <span className="shrink-0 text-[12px] font-semibold text-orange-300">{Number(item.votes24h || 0)} votes / 24h</span>
+                  </div>
                 </div>
-                <div className="rounded-sm border border-orange-400/20 bg-black/35 px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-orange-300/65">24h Upvotes</div>
-                  <div className="mt-1 text-[17px] font-bold text-foreground">{Number(item.votes24h || 0)}</div>
+
+                <div className="grid grid-cols-2 gap-3 text-[11px] leading-tight">
+                  <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                    <div className="uppercase tracking-[0.14em] text-orange-300/65">MCap</div>
+                    <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.mcapUsdLabel ?? "—"}</div>
+                  </div>
+                  <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                    <div className="uppercase tracking-[0.14em] text-orange-300/65">ATH</div>
+                    <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.athUsdLabel}</div>
+                  </div>
                 </div>
               </div>
             </div>
