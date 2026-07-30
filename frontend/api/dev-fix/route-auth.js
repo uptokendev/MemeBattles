@@ -1,7 +1,11 @@
 import { ethers } from "ethers";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
-import { evaluateCreatePreflight, evaluateTradePreflight } from "./security-current-time.js";
+import {
+  evaluateCreatePreflight,
+  evaluateTradePreflight,
+  reserveCreatorClusterBuyAuthorization,
+} from "./security-current-time.js";
 import {
   getRouteDecision,
   ROUTE_PROFILE_NAMES,
@@ -478,11 +482,11 @@ export async function routingTradeAuthorization(req, res) {
     return json(res, 400, { error: error.message });
   }
 
-  const tradePreflight = await evaluateTradePreflight({ walletAddress, campaignAddress, chainId });
+  const tradePreflight = await evaluateTradePreflight({ walletAddress, campaignAddress, chainId, action });
   if (!tradePreflight.allowed) {
     return json(res, 403, {
       error: tradePreflight.reasons?.[0] || "Wallet is not eligible to trade.",
-      code: "TRADE_PREFLIGHT_BLOCKED",
+      code: tradePreflight.code || "TRADE_PREFLIGHT_BLOCKED",
       preflight: tradePreflight,
     });
   }
@@ -490,6 +494,42 @@ export async function routingTradeAuthorization(req, res) {
   const { routeProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
   const validUntil = validUntilFromDeadline(deadline);
+  const capReservation = await reserveCreatorClusterBuyAuthorization({
+    preflight: tradePreflight,
+    chainId,
+    campaignAddress,
+    walletAddress,
+    action,
+    amount,
+    limit,
+    authorizationDeadline: deadline,
+  });
+
+  if (!capReservation.allowed) {
+    const blockedPreflight = {
+      ...tradePreflight,
+      allowed: false,
+      code: capReservation.code,
+      reasons: [capReservation.error, ...(tradePreflight.reasons || [])],
+      creatorProtection: capReservation.creatorProtection,
+    };
+    return json(res, capReservation.status || 403, {
+      error: capReservation.error,
+      code: capReservation.code,
+      preflight: blockedPreflight,
+    });
+  }
+
+  const authorizedPreflight = capReservation.reservation
+    ? {
+        ...tradePreflight,
+        creatorProtection: {
+          ...(tradePreflight.creatorProtection || {}),
+          reservation: capReservation.reservation,
+        },
+      }
+    : tradePreflight;
+
   const signature = await signTradeAuthorization({
     signer,
     chainId,
@@ -512,13 +552,13 @@ export async function routingTradeAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/trade-authorization", action, amount: amount.toString(), limit: limit.toString(), preflight: tradePreflight },
+    metadata: { endpoint: "/api/routing/trade-authorization", action, amount: amount.toString(), limit: limit.toString(), preflight: authorizedPreflight },
   });
 
   return json(res, 200, {
     authorization: { routeProfileId, validUntil, signature },
     routeAuthority: signer.address,
     decision,
-    preflight: tradePreflight,
+    preflight: authorizedPreflight,
   });
 }
