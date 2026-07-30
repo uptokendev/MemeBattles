@@ -50,6 +50,7 @@ import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { TokenSafetyRouteOverlay } from "@/components/token/TokenSafetyRouteOverlay";
 import { ScheduledTokenAccessRoute } from "@/components/token/ScheduledTokenAccessRoute";
+import { CreatorProtectionDialog } from "@/components/token/CreatorProtectionDialog";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
@@ -109,6 +110,7 @@ function AppShellLayout({
       <LiveStreamOverlay />
       <RewardUnlockFlight />
       <VictoryUnlockModal />
+      <CreatorProtectionDialog />
 
       <main
         className={[
