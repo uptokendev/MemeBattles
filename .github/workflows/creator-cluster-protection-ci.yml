@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "frontend/api/dev-fix/security-current-time.js"
+      - "frontend/api/dev-fix/creator-cluster-detector.js"
       - "frontend/api/dev-fix/route-auth.js"
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/src/lib/apiBase.ts"
@@ -18,6 +19,7 @@ on:
       - "agent/fix-creator-cluster-buy-protection"
     paths:
       - "frontend/api/dev-fix/security-current-time.js"
+      - "frontend/api/dev-fix/creator-cluster-detector.js"
       - "frontend/api/dev-fix/route-auth.js"
       - "frontend/api/dev-fix/creator-cluster-protection.test.mjs"
       - "frontend/src/lib/apiBase.ts"
