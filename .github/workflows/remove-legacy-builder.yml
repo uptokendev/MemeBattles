@@ -1,0 +1,206 @@
+name: Remove legacy builder integration
+
+on:
+  push:
+    branches:
+      - agent/remove-legacy-builder
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Remove legacy builder package and references
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd frontend
+
+          node <<'NODE'
+          import fs from 'node:fs';
+
+          const packagePath = 'package.json';
+          const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          packageJson.name = 'memewarzone-frontend';
+          delete packageJson.dependencies?.['lovable-tagger'];
+          delete packageJson.devDependencies?.['lovable-tagger'];
+          fs.writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+          const denoLockPath = 'deno.lock';
+          if (fs.existsSync(denoLockPath)) {
+            const lock = JSON.parse(fs.readFileSync(denoLockPath, 'utf8'));
+            const prune = (value) => {
+              if (typeof value === 'string') {
+                return value.toLowerCase().includes('lovable') ? undefined : value;
+              }
+              if (Array.isArray(value)) {
+                return value
+                  .map(prune)
+                  .filter((entry) => entry !== undefined);
+              }
+              if (value && typeof value === 'object') {
+                const next = {};
+                for (const [key, entry] of Object.entries(value)) {
+                  if (key.toLowerCase().includes('lovable')) continue;
+                  const pruned = prune(entry);
+                  if (pruned !== undefined) next[key] = pruned;
+                }
+                return next;
+              }
+              return value;
+            };
+            fs.writeFileSync(denoLockPath, `${JSON.stringify(prune(lock), null, 2)}\n`);
+          }
+          NODE
+
+          cat > vite.config.ts <<'EOF'
+          import { defineConfig, loadEnv } from "vite";
+          import react from "@vitejs/plugin-react-swc";
+          import path from "path";
+
+          const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
+
+          function explicitlyFalse(value: string | undefined) {
+            return FALSE_VALUES.has(String(value || "").trim().toLowerCase());
+          }
+
+          export default defineConfig(({ mode }) => {
+            const env = loadEnv(mode, process.cwd(), "");
+            const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3001";
+            const apiProxyTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
+            const hmrEnabled = !explicitlyFalse(env.VITE_HMR);
+
+            console.log(`[vite] proxy /api -> ${apiProxyTarget}`);
+            console.log(`[vite] hmr ${hmrEnabled ? "enabled" : "disabled"}`);
+
+            return {
+              server: {
+                host: "127.0.0.1",
+                port: 5173,
+                strictPort: true,
+                hmr: hmrEnabled,
+                watch: {
+                  ignored: [
+                    "**/.git/**",
+                    "**/.netlify/**",
+                    "**/node_modules/**",
+                    "**/dist/**",
+                    "**/build/**",
+                    "**/coverage/**",
+                    "**/api/**",
+                    "**/server/**",
+                    "**/scripts/**",
+                    "**/*.log",
+                  ],
+                },
+                proxy: {
+                  "/api": {
+                    target: apiProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                  },
+                },
+              },
+              plugins: [react()],
+              resolve: {
+                alias: [
+                  {
+                    find: "@",
+                    replacement: path.resolve(__dirname, "./src"),
+                  },
+                ],
+              },
+            };
+          });
+          EOF
+
+          cat > README.md <<'EOF'
+          # MemeWarzone Frontend
+
+          The MemeWarzone web application and API gateway for the BNB and Solana launch, trading, security, rewards and graduated-market flows.
+
+          ## Stack
+
+          - React 18
+          - TypeScript
+          - Vite
+          - Tailwind CSS and shadcn/ui
+          - Express API routes
+          - PostgreSQL/Supabase
+          - ethers for EVM integrations
+
+          ## Local development
+
+          Requirements: Node.js 20+ and npm.
+
+          ```bash
+          npm ci
+          npm run dev
+          ```
+
+          The hybrid development command starts the frontend and local API gateway. Environment values are loaded through the project environment files and deployment platform configuration.
+
+          ## Common commands
+
+          ```bash
+          npm run build
+          npm run lint
+          npm run api:start
+          npm run worker:contract-sync
+          npm run worker:creator-funding
+          ```
+
+          ## Deployment
+
+          Frontend and API services are deployed through the project-controlled GitHub, Netlify and Railway pipelines. Deployment configuration, secrets and chain RPC settings must remain outside client bundles.
+
+          ## Repository rules
+
+          - Keep security checks fail-closed.
+          - Never expose service-role credentials or signing keys to the browser.
+          - Keep BNB and Solana chain configuration explicit.
+          - Run the relevant build, lint, contract and route tests before merging.
+          EOF
+
+          npm install --package-lock-only --ignore-scripts
+          npm ci --ignore-scripts
+          npm run build
+          npm run lint
+
+          cd ..
+          rm .github/workflows/remove-legacy-builder.yml
+
+          if git grep -in lovable -- . ':!*.md' ':!package-lock.json' ':!deno.lock'; then
+            echo "Legacy builder references remain in source files."
+            exit 1
+          fi
+          if git grep -in lovable -- frontend/package.json frontend/package-lock.json frontend/deno.lock frontend/README.md frontend/vite.config.ts; then
+            echo "Legacy builder references remain in dependency or documentation files."
+            exit 1
+          fi
+
+      - name: Commit cleaned repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --cached --check
+          git commit -m "Remove legacy builder integration"
+          git push origin HEAD:agent/remove-legacy-builder
