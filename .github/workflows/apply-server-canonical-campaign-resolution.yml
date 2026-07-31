@@ -1,0 +1,60 @@
+name: Apply server canonical campaign resolution
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-server-canonical-campaign-resolution
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply canonical resolution patch
+        run: node .github/scripts/apply-server-canonical-campaign-resolution.mjs
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts --include=dev
+
+      - name: Run creator-cluster regression tests
+        working-directory: frontend
+        run: node --test api/dev-fix/creator-cluster-protection.test.mjs
+
+      - name: Check patched API syntax
+        working-directory: frontend
+        run: |
+          node --check api/dev-fix/security-current-time.js
+          node --check api/dev-fix/route-auth.js
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Commit verified fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/lib/launchpadClient.ts frontend/api/dev-fix/security-current-time.js frontend/api/dev-fix/route-auth.js frontend/api/dev-fix/creator-cluster-protection.test.mjs
+          git commit -m "Canonicalize token routes before trade authorization"
+          git push origin HEAD:agent/fix-server-canonical-campaign-resolution
