@@ -11,6 +11,7 @@ export * from "./security.js";
 export { creatorClusterFundingDetectorConfigured };
 
 const CAMPAIGN_PROTECTION_ABI = [
+  "function token() view returns (address)",
   "function creator() view returns (address)",
   "function creatorBuyLockUntil() view returns (uint256)",
   "function creatorBuyCapWei() view returns (uint256)",
@@ -82,6 +83,75 @@ function isLegacyProtectionInterfaceUnavailable(error) {
     text.includes("no data present") ||
     (error?.code === "BAD_DATA" && text.includes("could not decode result data"))
   );
+}
+
+async function verifyCampaignIdentity({ provider, campaignAddress, expectedTokenAddress = "" }) {
+  const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_PROTECTION_ABI, provider);
+  const [tokenRaw, creatorRaw] = await Promise.all([campaign.token(), campaign.creator()]);
+  const tokenAddress = normalizeAddress(tokenRaw);
+  const creatorAddress = normalizeAddress(creatorRaw);
+  if (!tokenAddress || !creatorAddress) {
+    throw new Error("Resolved campaign returned invalid token or creator data.");
+  }
+  const expectedToken = normalizeAddress(expectedTokenAddress);
+  if (expectedToken && tokenAddress.toLowerCase() !== expectedToken.toLowerCase()) {
+    throw new Error("Resolved campaign token does not match the submitted token address.");
+  }
+  return { campaignAddress: normalizeAddress(campaignAddress), tokenAddress, creatorAddress };
+}
+
+export async function resolveCanonicalTradeCampaignAddress({ chainId, campaignAddress }) {
+  const numericChainId = Number(chainId);
+  const submittedAddress = normalizeAddress(campaignAddress);
+  if (!submittedAddress || ![56, 97].includes(numericChainId)) {
+    throw new Error("Invalid campaign or token address for trade authorization.");
+  }
+
+  const rpcUrl = getRpcUrl(numericChainId);
+  if (!rpcUrl) throw new Error("RPC URL is not configured for campaign resolution.");
+  const provider = new ethers.JsonRpcProvider(rpcUrl, numericChainId, { staticNetwork: true });
+
+  try {
+    const direct = await verifyCampaignIdentity({ provider, campaignAddress: submittedAddress });
+    return { ...direct, submittedAddress, source: "campaign_contract" };
+  } catch {
+    // Token-based routes and stale callers intentionally fall through to DB resolution.
+  }
+
+  const result = await pool.query(
+    `with candidates as (
+       select 0 as priority, campaign_address, token_address
+         from public.campaigns
+        where chain_id = $1
+          and (lower(campaign_address) = lower($2) or lower(token_address) = lower($2))
+       union all
+       select 1 as priority, campaign_address, token_address
+         from public.campaign_drafts
+        where chain_id = $1
+          and archived_at is null
+          and campaign_address is not null
+          and (lower(campaign_address) = lower($2) or lower(token_address) = lower($2))
+     )
+     select campaign_address, token_address
+       from candidates
+      order by priority asc
+      limit 1`,
+    [numericChainId, submittedAddress],
+  );
+
+  const row = result.rows[0] || null;
+  const canonicalCampaign = normalizeAddress(row?.campaign_address);
+  const expectedToken = normalizeAddress(row?.token_address);
+  if (!canonicalCampaign) {
+    throw new Error("No canonical LaunchCampaign mapping exists for the submitted token address.");
+  }
+
+  const verified = await verifyCampaignIdentity({
+    provider,
+    campaignAddress: canonicalCampaign,
+    expectedTokenAddress: expectedToken || (submittedAddress.toLowerCase() === canonicalCampaign.toLowerCase() ? "" : submittedAddress),
+  });
+  return { ...verified, submittedAddress, source: "database_mapping" };
 }
 
 export function isCreatorBuyAction(action) {
@@ -171,12 +241,51 @@ export async function evaluateCreatePreflight({ walletAddress }) {
 }
 
 export async function evaluateTradePreflight({ walletAddress, campaignAddress, chainId = 97, action = BUY_EXACT_TOKENS_ACTION }) {
-  const base = await legacySecurity.evaluateTradePreflight({ walletAddress, campaignAddress, chainId });
   const wallet = normalizeAddress(walletAddress);
-  const campaign = normalizeAddress(campaignAddress);
+  const submittedCampaign = normalizeAddress(campaignAddress);
+  const numericChainId = Number(chainId);
+
+  if (!wallet || !submittedCampaign || ![56, 97].includes(numericChainId)) {
+    return legacySecurity.evaluateTradePreflight({ walletAddress, campaignAddress, chainId });
+  }
+
+  let resolution;
+  try {
+    resolution = await resolveCanonicalTradeCampaignAddress({
+      chainId: numericChainId,
+      campaignAddress: submittedCampaign,
+    });
+  } catch (error) {
+    const base = await legacySecurity.evaluateTradePreflight({
+      walletAddress,
+      campaignAddress: submittedCampaign,
+      chainId: numericChainId,
+    });
+    return {
+      ...base,
+      allowed: false,
+      code: "TRADE_CAMPAIGN_RESOLUTION_UNAVAILABLE",
+      reasons: ["The canonical LaunchCampaign contract could not be verified. Trading authorization was not issued."],
+      canonicalCampaignAddress: null,
+      submittedCampaignAddress: submittedCampaign,
+      campaignResolutionError: String(error?.shortMessage || error?.message || error),
+    };
+  }
+
+  const campaign = resolution.campaignAddress;
+  const legacyBase = await legacySecurity.evaluateTradePreflight({
+    walletAddress,
+    campaignAddress: campaign,
+    chainId: numericChainId,
+  });
+  const base = {
+    ...legacyBase,
+    canonicalCampaignAddress: campaign,
+    submittedCampaignAddress: submittedCampaign,
+    campaignResolutionSource: resolution.source,
+  };
 
   if (!isCreatorBuyAction(action)) return base;
-  if (!wallet || !campaign || ![56, 97].includes(Number(chainId))) return base;
 
   try {
     const onChain = await readOnchainCreatorProtection({ chainId, campaignAddress: campaign, walletAddress: wallet });

@@ -282,7 +282,10 @@ async function fetchDbCampaigns(chainId: number, limit = 500): Promise<CampaignI
   }
 }
 
-const CAMPAIGN_IDENTITY_ABI = ["function token() view returns (address)"] as const;
+const CAMPAIGN_IDENTITY_ABI = [
+  "function token() view returns (address)",
+  "function creator() view returns (address)",
+] as const;
 
 export async function resolveCanonicalCampaignAddress(
   submittedAddress: string,
@@ -292,25 +295,29 @@ export async function resolveCanonicalCampaignAddress(
   const normalized = normalizeAddress(submittedAddress);
   if (!normalized) throw new Error("Invalid campaign or token address");
 
-  try {
-    const candidate = new Contract(normalized, CAMPAIGN_IDENTITY_ABI, provider) as any;
-    const tokenAddress = normalizeAddress(await candidate.token());
-    if (tokenAddress) return normalized;
-  } catch {
-    // Public token URLs intentionally arrive here. Resolve them through the
-    // canonical campaign mirror before any safety check, signature, or write.
-  }
-
+  // Resolve through the canonical database mirror first. Public token URLs are
+  // expected here, and the database row carries the authoritative campaign/token pair.
   const campaigns = await fetchDbCampaigns(chainId, 500);
   const match = campaigns.find((campaign) =>
     normalizeAddress(campaign.campaign) === normalized ||
     normalizeAddress(campaign.token) === normalized
   );
   const canonicalCampaign = normalizeAddress(match?.campaign);
-  if (!canonicalCampaign) {
-    throw new Error("Could not resolve the canonical LaunchCampaign contract for this token.");
+  if (canonicalCampaign) return canonicalCampaign;
+
+  // A direct LaunchCampaign address may not be mirrored yet. Verify both token()
+  // and creator() so a non-campaign contract cannot be accepted by one weak probe.
+  try {
+    const candidate = new Contract(normalized, CAMPAIGN_IDENTITY_ABI, provider) as any;
+    const [tokenRaw, creatorRaw] = await Promise.all([candidate.token(), candidate.creator()]);
+    const tokenAddress = normalizeAddress(tokenRaw);
+    const creatorAddress = normalizeAddress(creatorRaw);
+    if (tokenAddress && creatorAddress) return normalized;
+  } catch {
+    // Fall through to a deterministic resolution error.
   }
-  return canonicalCampaign;
+
+  throw new Error("Could not resolve the canonical LaunchCampaign contract for this token.");
 }
 
 function isDecodeResultError(error: unknown): boolean {

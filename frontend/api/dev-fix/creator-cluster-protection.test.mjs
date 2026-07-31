@@ -154,7 +154,8 @@ test("token-based routes resolve to canonical campaign contracts before trading"
   ]);
 
   assert.match(clientSource, /export async function resolveCanonicalCampaignAddress/);
-  assert.match(clientSource, /await candidate\.token\(\)/);
+  assert.match(clientSource, /candidate\.token\(\)/);
+  assert.match(clientSource, /candidate\.creator\(\)/);
   assert.match(clientSource, /fetchDbCampaigns\(chainId, 500\)/);
 
   for (const operation of ["buyTokens", "sellTokens"]) {
@@ -173,6 +174,49 @@ test("token-based routes resolve to canonical campaign contracts before trading"
 
   assert.match(pageSource, /lifecycleCampaignAddress/);
   assert.match(pageSource, /campaign:\s*lifecycleCampaignAddress/);
+});
+
+test("server canonicalizes token routes before preflight, cap reservation, and signing", async () => {
+  const [securitySource, routeSource, clientSource] = await Promise.all([
+    read("./security-current-time.js"),
+    read("./route-auth.js"),
+    read("../../src/lib/launchpadClient.ts"),
+  ]);
+
+  assert.match(securitySource, /export async function resolveCanonicalTradeCampaignAddress/);
+  assert.match(securitySource, /public\.campaigns/);
+  assert.match(securitySource, /public\.campaign_drafts/);
+  assert.match(securitySource, /verifyCampaignIdentity/);
+  assert.match(securitySource, /canonicalCampaignAddress:\s*campaign/);
+  assert.match(securitySource, /campaignResolutionSource:\s*resolution\.source/);
+
+  const evaluateStart = securitySource.indexOf("export async function evaluateTradePreflight");
+  const evaluateEnd = securitySource.indexOf("export async function reserveCreatorClusterBuyAuthorization", evaluateStart);
+  const evaluateSource = securitySource.slice(evaluateStart, evaluateEnd);
+  const canonicalCampaignIndex = evaluateSource.indexOf("const campaign = resolution.campaignAddress;");
+  const canonicalPreflightIndex = evaluateSource.indexOf(
+    "const legacyBase = await legacySecurity.evaluateTradePreflight",
+    canonicalCampaignIndex,
+  );
+  assert.ok(
+    canonicalCampaignIndex >= 0 && canonicalPreflightIndex > canonicalCampaignIndex,
+    "the valid trade path must use the resolved campaign before reading campaign state",
+  );
+
+  const tradeStart = routeSource.indexOf("export async function routingTradeAuthorization");
+  const tradeSource = routeSource.slice(tradeStart);
+  assert.match(tradeSource, /const canonicalCampaignAddress = normalizeAddress\(tradePreflight\.canonicalCampaignAddress\)/);
+  assert.match(tradeSource, /reserveCreatorClusterBuyAuthorization\(\{[\s\S]*campaignAddress: canonicalCampaignAddress/);
+  assert.match(tradeSource, /signTradeAuthorization\(\{[\s\S]*campaignAddress: canonicalCampaignAddress/);
+
+  const resolverStart = clientSource.indexOf("export async function resolveCanonicalCampaignAddress");
+  const resolverEnd = clientSource.indexOf("function isDecodeResultError", resolverStart);
+  const resolverSource = clientSource.slice(resolverStart, resolverEnd);
+  assert.ok(
+    resolverSource.indexOf("fetchDbCampaigns(chainId, 500)") < resolverSource.indexOf("candidate.token()"),
+    "frontend must prefer the canonical DB mapping before probing an arbitrary contract",
+  );
+  assert.match(resolverSource, /candidate\.creator\(\)/);
 });
 
 test("custom contract reverts cannot be classified as missing methods", async () => {
