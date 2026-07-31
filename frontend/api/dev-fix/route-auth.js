@@ -491,13 +491,14 @@ export async function routingTradeAuthorization(req, res) {
     });
   }
 
+  const canonicalCampaignAddress = normalizeAddress(tradePreflight.canonicalCampaignAddress) || campaignAddress;
   const { routeProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
   const validUntil = validUntilFromDeadline(deadline);
   const capReservation = await reserveCreatorClusterBuyAuthorization({
     preflight: tradePreflight,
     chainId,
-    campaignAddress,
+    campaignAddress: canonicalCampaignAddress,
     walletAddress,
     action,
     amount,
@@ -533,7 +534,7 @@ export async function routingTradeAuthorization(req, res) {
   const signature = await signTradeAuthorization({
     signer,
     chainId,
-    campaignAddress,
+    campaignAddress: canonicalCampaignAddress,
     actor: walletAddress,
     routeProfileId,
     action,
@@ -547,7 +548,7 @@ export async function routingTradeAuthorization(req, res) {
     walletAddress,
     routeKind: "trade",
     routeProfileId,
-    campaignAddress,
+    campaignAddress: canonicalCampaignAddress,
     decision,
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
@@ -558,6 +559,7 @@ export async function routingTradeAuthorization(req, res) {
   return json(res, 200, {
     authorization: { routeProfileId, validUntil, signature },
     routeAuthority: signer.address,
+    canonicalCampaignAddress,
     decision,
     preflight: authorizedPreflight,
   });
