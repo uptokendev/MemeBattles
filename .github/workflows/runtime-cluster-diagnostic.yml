@@ -1,0 +1,83 @@
+name: Runtime cluster preflight diagnostic
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts --include=dev
+
+      - name: Probe campaign contract and live preflight
+        working-directory: frontend
+        env:
+          CAMPAIGN_ADDRESS: "0x05efafb9415e7765e178d5a3ca954b859444468e"
+          CREATOR_ADDRESS: "0x13ad79765e14927df2c554d9662bbe539e89c8e8"
+          LIVE_API_URL: "https://memebattles-frontend-7dcf.up.railway.app"
+          RPC_URL: "https://data-seed-prebsc-1-s1.binance.org:8545/"
+        run: |
+          node --input-type=module <<'NODE'
+          import { ethers } from 'ethers';
+
+          const campaignAddress = process.env.CAMPAIGN_ADDRESS;
+          const creatorAddress = process.env.CREATOR_ADDRESS;
+          const provider = new ethers.JsonRpcProvider(process.env.RPC_URL, 97, { staticNetwork: true });
+          const abi = [
+            'function creator() view returns (address)',
+            'function creatorBuyLockUntil() view returns (uint256)',
+            'function creatorBuyCapWei() view returns (uint256)',
+            'function creatorBoughtWei() view returns (uint256)',
+            'function riskRegistry() view returns (address)',
+            'function launchAt() view returns (uint64)',
+          ];
+          const contract = new ethers.Contract(campaignAddress, abi, provider);
+
+          for (const method of ['creator', 'creatorBuyLockUntil', 'creatorBuyCapWei', 'creatorBoughtWei', 'riskRegistry', 'launchAt']) {
+            try {
+              const value = await contract[method]();
+              console.log(`CONTRACT ${method}=`, value?.toString?.() ?? value);
+            } catch (error) {
+              console.log(`CONTRACT ${method} ERROR`, JSON.stringify({
+                code: error?.code,
+                shortMessage: error?.shortMessage,
+                message: error?.message,
+                data: error?.data,
+                nestedData: error?.info?.error?.data,
+              }));
+            }
+          }
+
+          const response = await fetch(`${process.env.LIVE_API_URL}/api/launchpad/preflight-buy`, {
+            method: 'POST',
+            headers: {
+              origin: 'https://memewarzonedev.netlify.app',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              walletAddress: creatorAddress,
+              campaignAddress,
+              chainId: 97,
+            }),
+          });
+          console.log('PREFLIGHT STATUS', response.status);
+          console.log('PREFLIGHT BODY', await response.text());
+          NODE
