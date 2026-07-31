@@ -722,6 +722,21 @@ const TokenDetails = () => {
           return;
         }
 
+const lifecycleCampaignAddress = String(
+  lifecycleDraft?.campaignAddress || (lifecycleDraft as any)?.campaign_address || "",
+).trim().toLowerCase();
+const lifecycleTokenAddress = String(
+  lifecycleDraft?.tokenAddress || (lifecycleDraft as any)?.token_address || "",
+).trim().toLowerCase();
+
+if (ethers.isAddress(lifecycleCampaignAddress)) {
+  match = {
+    ...match,
+    campaign: lifecycleCampaignAddress,
+    token: ethers.isAddress(lifecycleTokenAddress) ? lifecycleTokenAddress : match.token,
+  };
+}
+
 let displayMatch = match;
 displayMatch = await hydrateCampaignCreatorFromContract(displayMatch, readProvider);
 displayMatch = await hydrateCampaignMetadata(displayMatch, chainIdForStorage);

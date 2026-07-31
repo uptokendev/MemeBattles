@@ -282,6 +282,37 @@ async function fetchDbCampaigns(chainId: number, limit = 500): Promise<CampaignI
   }
 }
 
+const CAMPAIGN_IDENTITY_ABI = ["function token() view returns (address)"] as const;
+
+export async function resolveCanonicalCampaignAddress(
+  submittedAddress: string,
+  chainId: number,
+  provider: ethers.AbstractProvider,
+): Promise<string> {
+  const normalized = normalizeAddress(submittedAddress);
+  if (!normalized) throw new Error("Invalid campaign or token address");
+
+  try {
+    const candidate = new Contract(normalized, CAMPAIGN_IDENTITY_ABI, provider) as any;
+    const tokenAddress = normalizeAddress(await candidate.token());
+    if (tokenAddress) return normalized;
+  } catch {
+    // Public token URLs intentionally arrive here. Resolve them through the
+    // canonical campaign mirror before any safety check, signature, or write.
+  }
+
+  const campaigns = await fetchDbCampaigns(chainId, 500);
+  const match = campaigns.find((campaign) =>
+    normalizeAddress(campaign.campaign) === normalized ||
+    normalizeAddress(campaign.token) === normalized
+  );
+  const canonicalCampaign = normalizeAddress(match?.campaign);
+  if (!canonicalCampaign) {
+    throw new Error("Could not resolve the canonical LaunchCampaign contract for this token.");
+  }
+  return canonicalCampaign;
+}
+
 function isDecodeResultError(error: unknown): boolean {
   const anyError = error as any;
   return anyError?.code === "BAD_DATA" || String(anyError?.message ?? "").toLowerCase().includes("could not decode result data");
@@ -762,11 +793,16 @@ export function useLaunchpad(): LaunchpadAdapter {
   }, [getFactoryWrite, wallet.account, activeChainId, evmReadChainId, factoryAddress, signer, readProvider]);
 
   const buyTokens = useCallback(async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
-    const normalizedCampaign = normalizeAddress(campaignAddress);
-    if (!normalizedCampaign) throw new Error("Invalid campaign address");
+    const submittedAddress = normalizeAddress(campaignAddress);
+    if (!submittedAddress) throw new Error("Invalid campaign or token address");
     if (!signer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
 
+    const normalizedCampaign = await resolveCanonicalCampaignAddress(
+      submittedAddress,
+      Number(activeChainId),
+      readProvider,
+    );
     const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
     await fetchLaunchpadBuyPreflight(wallet.account, normalizedCampaign, activeChainId);
     const authResponse = await requestTradeAuthorization({
@@ -814,11 +850,16 @@ export function useLaunchpad(): LaunchpadAdapter {
   }, [signer, wallet.account, activeChainId, readProvider]);
 
   const sellTokens = useCallback(async (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => {
-    const normalizedCampaign = normalizeAddress(campaignAddress);
-    if (!normalizedCampaign) throw new Error("Invalid campaign address");
+    const submittedAddress = normalizeAddress(campaignAddress);
+    if (!submittedAddress) throw new Error("Invalid campaign or token address");
     if (!signer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
 
+    const normalizedCampaign = await resolveCanonicalCampaignAddress(
+      submittedAddress,
+      Number(activeChainId),
+      readProvider,
+    );
     const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
     await fetchLaunchpadSellPreflight(wallet.account, normalizedCampaign, activeChainId);
     const authResponse = await requestTradeAuthorization({
