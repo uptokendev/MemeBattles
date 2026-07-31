@@ -31,6 +31,7 @@ jobs:
         working-directory: frontend
         env:
           CAMPAIGN_ADDRESS: "0x05efafb9415e7765e178d5a3ca954b859444468e"
+          TOKEN_ADDRESS: "0x4bad555f0b2fa7c33146c2567c4875f299666a00"
           CREATOR_ADDRESS: "0x13ad79765e14927df2c554d9662bbe539e89c8e8"
           UNRELATED_ADDRESS: "0x000000000000000000000000000000000000dEaD"
           LIVE_API_URL: "https://memebattles-frontend-7dcf.up.railway.app"
@@ -52,31 +53,24 @@ jobs:
           const contract = new ethers.Contract(campaignAddress, abi, provider);
 
           for (const method of ['creator', 'creatorBuyLockUntil', 'creatorBuyCapWei', 'creatorBoughtWei', 'riskRegistry', 'launchAt']) {
-            try {
-              const value = await contract[method]();
-              console.log(`CONTRACT ${method}=`, value?.toString?.() ?? value);
-            } catch (error) {
-              console.log(`CONTRACT ${method} ERROR`, JSON.stringify({
-                code: error?.code,
-                shortMessage: error?.shortMessage,
-                message: error?.message,
-                data: error?.data,
-                nestedData: error?.info?.error?.data,
-              }));
-            }
+            const value = await contract[method]();
+            console.log(`CONTRACT ${method}=`, value?.toString?.() ?? value);
           }
 
-          for (const [label, walletAddress] of [
-            ['CREATOR', process.env.CREATOR_ADDRESS],
-            ['UNRELATED', process.env.UNRELATED_ADDRESS],
-          ]) {
+          const probes = [
+            ['CREATOR_CAMPAIGN', process.env.CREATOR_ADDRESS, process.env.CAMPAIGN_ADDRESS],
+            ['UNRELATED_CAMPAIGN', process.env.UNRELATED_ADDRESS, process.env.CAMPAIGN_ADDRESS],
+            ['CREATOR_TOKEN', process.env.CREATOR_ADDRESS, process.env.TOKEN_ADDRESS],
+            ['UNRELATED_TOKEN', process.env.UNRELATED_ADDRESS, process.env.TOKEN_ADDRESS],
+          ];
+          for (const [label, walletAddress, submittedAddress] of probes) {
             const response = await fetch(`${process.env.LIVE_API_URL}/api/launchpad/preflight-buy`, {
               method: 'POST',
               headers: {
                 origin: 'https://memewarzonedev.netlify.app',
                 'content-type': 'application/json',
               },
-              body: JSON.stringify({ walletAddress, campaignAddress, chainId: 97 }),
+              body: JSON.stringify({ walletAddress, campaignAddress: submittedAddress, chainId: 97 }),
             });
             console.log(`${label} PREFLIGHT STATUS`, response.status);
             console.log(`${label} PREFLIGHT BODY`, await response.text());
