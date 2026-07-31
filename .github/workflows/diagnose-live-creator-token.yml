@@ -1,0 +1,45 @@
+name: Diagnose live creator token route
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+  push:
+    branches:
+      - agent/diagnose-live-netlify-bundle
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify token route returns creator lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://memebattles-frontend-7dcf.up.railway.app'
+          TOKEN='0x4bad555f0b2fa7c33146c2567c4875f299666a00'
+          CREATOR='0x13ad79765e14927df2c554d9662bbe539e89c8e8'
+          BODY=$(curl -sS -w '\n%{http_code}' \
+            -H 'Origin: https://memewarzonedev.netlify.app' \
+            -H 'Content-Type: application/json' \
+            -d "{\"walletAddress\":\"$CREATOR\",\"campaignAddress\":\"$TOKEN\",\"chainId\":97}" \
+            "$API/api/launchpad/preflight-buy")
+          STATUS=$(printf '%s' "$BODY" | tail -n 1)
+          JSON=$(printf '%s' "$BODY" | sed '$d')
+          printf '%s\n' "$JSON"
+          echo "HTTP_STATUS=$STATUS"
+          JSON_BODY="$JSON" python - <<'PY'
+          import json, os
+          body=json.loads(os.environ['JSON_BODY'])
+          preflight=body.get('preflight', {})
+          print('CODE=', preflight.get('code'))
+          print('CANONICAL_CAMPAIGN=', preflight.get('canonicalCampaignAddress'))
+          print('RESOLUTION_SOURCE=', preflight.get('campaignResolutionSource'))
+          assert preflight.get('code') == 'CREATOR_BUY_LOCKED', preflight
+          assert preflight.get('canonicalCampaignAddress', '').lower() == '0x05efafb9415e7765e178d5a3ca954b859444468e'
+          assert preflight.get('campaignResolutionSource') == 'database_mapping'
+          PY
+          test "$STATUS" = '403'
