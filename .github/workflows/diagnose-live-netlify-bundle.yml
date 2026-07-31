@@ -15,7 +15,7 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect deployed HTML, bundle, and preflight behavior
+      - name: Inspect deployed HTML, bundle, campaign feed, and preflight behavior
         shell: bash
         run: |
           set -euo pipefail
@@ -50,6 +50,40 @@ jobs:
           else
             echo 'TOKEN_ROUTE_FIX_PRESENT=no'
           fi
+
+          echo '=== LIVE CAMPAIGN FEED ATS ROWS ==='
+          curl -fsSL -H 'Origin: https://memewarzonedev.netlify.app' \
+            "$API/api/campaigns?chainId=97&limit=500&tab=trending&sort=default&status=all" \
+            -o /tmp/campaigns.json
+          TOKEN="$TOKEN" CAMPAIGN="$CAMPAIGN" python - <<'PY'
+          import json, os
+          data=json.load(open('/tmp/campaigns.json'))
+          items=data.get('items', data if isinstance(data,list) else [])
+          token=os.environ['TOKEN'].lower(); campaign=os.environ['CAMPAIGN'].lower()
+          rows=[]
+          for item in items:
+              vals=[str(item.get(k,'')).lower() for k in ('campaignAddress','campaign_address','campaign','tokenAddress','token_address','token')]
+              if token in vals or campaign in vals or str(item.get('symbol','')).upper()=='ATS': rows.append(item)
+          print(json.dumps(rows, indent=2, sort_keys=True))
+          print('MATCH_COUNT=',len(rows))
+          PY
+
+          echo '=== LIVE DRAFT FEED ATS ROWS ==='
+          curl -fsSL -H 'Origin: https://memewarzonedev.netlify.app' \
+            "$API/api/drafts?chainId=97&limit=500&lifecycle=campaign" \
+            -o /tmp/drafts.json
+          TOKEN="$TOKEN" CAMPAIGN="$CAMPAIGN" python - <<'PY'
+          import json, os
+          data=json.load(open('/tmp/drafts.json'))
+          items=data.get('items', data if isinstance(data,list) else [])
+          token=os.environ['TOKEN'].lower(); campaign=os.environ['CAMPAIGN'].lower()
+          rows=[]
+          for item in items:
+              vals=[str(item.get(k,'')).lower() for k in ('campaignAddress','campaign_address','tokenAddress','token_address')]
+              if token in vals or campaign in vals or str(item.get('ticker','')).upper()=='ATS': rows.append(item)
+          print(json.dumps(rows, indent=2, sort_keys=True))
+          print('MATCH_COUNT=',len(rows))
+          PY
 
           echo '=== LIVE API WITH CAMPAIGN ==='
           curl -fsS -w '\nHTTP_STATUS=%{http_code}\n' \
