@@ -27,7 +27,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Apply canonical resolution patch
-        run: node .github/scripts/apply-server-canonical-campaign-resolution.mjs
+        run: |
+          node .github/scripts/apply-server-canonical-campaign-resolution.mjs
+          node .github/scripts/fix-canonical-resolution-tests.mjs
 
       - name: Install frontend dependencies
         working-directory: frontend
