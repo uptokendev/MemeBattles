@@ -147,6 +147,34 @@ test("cap accounting fails closed cleanly", async () => {
   assert.match(source, /client\?\.release\(\)/);
 });
 
+test("token-based routes resolve to canonical campaign contracts before trading", async () => {
+  const [clientSource, pageSource] = await Promise.all([
+    read("../../src/lib/launchpadClient.ts"),
+    read("../../src/pages/TokenDetails.tsx"),
+  ]);
+
+  assert.match(clientSource, /export async function resolveCanonicalCampaignAddress/);
+  assert.match(clientSource, /await candidate\.token\(\)/);
+  assert.match(clientSource, /fetchDbCampaigns\(chainId, 500\)/);
+
+  for (const operation of ["buyTokens", "sellTokens"]) {
+    const start = clientSource.indexOf("const " + operation + " = useCallback");
+    const endMarker = operation === "buyTokens" ? "const sellTokens = useCallback" : "const finalizeCampaign = useCallback";
+    const end = clientSource.indexOf(endMarker, start + 20);
+    const source = clientSource.slice(start, end > start ? end : undefined);
+    const resolveIndex = source.indexOf("await resolveCanonicalCampaignAddress(");
+    const contractIndex = source.indexOf("new Contract(normalizedCampaign");
+    const preflightIndex = source.indexOf(operation === "buyTokens" ? "fetchLaunchpadBuyPreflight" : "fetchLaunchpadSellPreflight");
+
+    assert.ok(resolveIndex >= 0, operation + " must resolve token URLs to the campaign contract");
+    assert.ok(contractIndex > resolveIndex, operation + " must resolve before constructing the write contract");
+    assert.ok(preflightIndex > resolveIndex, operation + " must resolve before protection preflight");
+  }
+
+  assert.match(pageSource, /lifecycleCampaignAddress/);
+  assert.match(pageSource, /campaign:\s*lifecycleCampaignAddress/);
+});
+
 test("custom contract reverts cannot be classified as missing methods", async () => {
   const source = await read("../../src/lib/launchpadClient.ts");
   const start = source.indexOf("export function isUnsupportedContractMethod");
