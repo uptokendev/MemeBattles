@@ -222,3 +222,5 @@ test("custom contract reverts cannot be classified as missing methods", async ()
           git add frontend/src/lib/launchpadClient.ts frontend/src/pages/TokenDetails.tsx frontend/api/dev-fix/creator-cluster-protection.test.mjs
           git commit -m "Resolve token routes to campaign contracts"
           git push origin HEAD:agent/fix-token-route-campaign-resolution
+
+# Triggered after PR creation so the controlled source patch runs on the review branch.
