@@ -141,7 +141,8 @@ const regression = `test("token-based routes resolve to canonical campaign contr
 
   for (const operation of ["buyTokens", "sellTokens"]) {
     const start = clientSource.indexOf("const " + operation + " = useCallback");
-    const end = clientSource.indexOf("const ", start + 20);
+    const endMarker = operation === "buyTokens" ? "const sellTokens = useCallback" : "const finalizeCampaign = useCallback";
+    const end = clientSource.indexOf(endMarker, start + 20);
     const source = clientSource.slice(start, end > start ? end : undefined);
     const resolveIndex = source.indexOf("await resolveCanonicalCampaignAddress(");
     const contractIndex = source.indexOf("new Contract(normalizedCampaign");
