@@ -1,0 +1,63 @@
+name: Diagnose live Netlify bundle
+
+on:
+  push:
+    branches:
+      - agent/diagnose-live-netlify-bundle
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect deployed HTML, bundle, and preflight behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE='https://memewarzonedev.netlify.app'
+          API='https://memebattles-frontend-7dcf.up.railway.app'
+          TOKEN='0x4bad555f0b2fa7c33146c2567c4875f299666a00'
+          CAMPAIGN='0x05efafb9415e7765e178d5a3ca954b859444468e'
+          WALLET='0x000000000000000000000000000000000000dEaD'
+
+          echo '=== LIVE HTML HEADERS ==='
+          curl -fsSIL -H 'Cache-Control: no-cache' "$SITE/?diagnostic=$(date +%s)" | sed -n '1,40p'
+
+          echo '=== LIVE HTML ==='
+          curl -fsSL -H 'Cache-Control: no-cache' "$SITE/?diagnostic=$(date +%s)" -o /tmp/index.html
+          sed -n '1,80p' /tmp/index.html
+
+          BUNDLE=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/index.html | head -n 1)
+          echo "LIVE_BUNDLE=$BUNDLE"
+          test -n "$BUNDLE"
+
+          curl -fsSL -H 'Cache-Control: no-cache' "$SITE$BUNDLE?diagnostic=$(date +%s)" -o /tmp/live.js
+          echo "LIVE_BUNDLE_BYTES=$(wc -c < /tmp/live.js)"
+
+          echo '=== RESOLVER MARKERS ==='
+          if grep -Fq 'Could not resolve the canonical LaunchCampaign contract for this token.' /tmp/live.js; then
+            echo 'CANONICAL_RESOLVER_PRESENT=yes'
+          else
+            echo 'CANONICAL_RESOLVER_PRESENT=no'
+          fi
+          if grep -Fq 'Invalid campaign or token address' /tmp/live.js; then
+            echo 'TOKEN_ROUTE_FIX_PRESENT=yes'
+          else
+            echo 'TOKEN_ROUTE_FIX_PRESENT=no'
+          fi
+
+          echo '=== LIVE API WITH CAMPAIGN ==='
+          curl -fsS -w '\nHTTP_STATUS=%{http_code}\n' \
+            -H 'Origin: https://memewarzonedev.netlify.app' \
+            -H 'Content-Type: application/json' \
+            -d "{\"walletAddress\":\"$WALLET\",\"campaignAddress\":\"$CAMPAIGN\",\"chainId\":97}" \
+            "$API/api/launchpad/preflight-buy"
+
+          echo '=== LIVE API WITH TOKEN ==='
+          curl -sS -w '\nHTTP_STATUS=%{http_code}\n' \
+            -H 'Origin: https://memewarzonedev.netlify.app' \
+            -H 'Content-Type: application/json' \
+            -d "{\"walletAddress\":\"$WALLET\",\"campaignAddress\":\"$TOKEN\",\"chainId\":97}" \
+            "$API/api/launchpad/preflight-buy"
