@@ -50,5 +50,19 @@ reports/topaz-graduation-testnet-*.md
 # Local archive accidentally created at repo root
 frontend.zip
 
-# OpenClaw agent workspaces (local to each dev)
+# ---------------------------------------------------------------------------
+# Local AI / coding-agent tooling (never push to the remote repo)
+# ---------------------------------------------------------------------------
 .openclaw/
+.grok/
+.agents/
+/agents/
+/agents.md
+AGENTS.md
+!frontend/api/AGENTS.md
+
+# Local agent workflow scripts (do not ignore GitHub CI under .github/workflows/)
+/workflows/
+
+# Confidential build planning docs (local only)
+docs/build_plans/
