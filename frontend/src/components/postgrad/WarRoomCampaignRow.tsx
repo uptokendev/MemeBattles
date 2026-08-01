@@ -85,14 +85,24 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const extraHref = resolveExternalHref(campaign.extraLink);
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
   const isDraft = metrics.status === "draft";
-  const statusLabel = metrics.status === "graduated" ? "Graduated" : metrics.status === "bonding" ? "Bonding" : "Draft";
-  const statusTone = metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : "default";
-  const chartSourceLabel = metrics.status === "graduated" ? "DEX chart" : metrics.status === "bonding" ? "Bonding chart" : "Chart";
   const rich = campaign as any;
+  const isScheduledDraft =
+    Boolean(rich.isScheduled) || String(rich.draftStatus || "").toLowerCase() === "scheduled";
+  const statusLabel =
+    metrics.status === "graduated"
+      ? "Graduated"
+      : metrics.status === "bonding"
+        ? "Bonding"
+        : isScheduledDraft
+          ? "Scheduled"
+          : "Draft";
+  const statusTone =
+    metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : isScheduledDraft ? "sponsored" : "default";
+  const chartSourceLabel = metrics.status === "graduated" ? "DEX chart" : metrics.status === "bonding" ? "Bonding chart" : "Chart";
   const promotionHref = String(rich.promotionHref || (rich.draftSlug ? `/prepare/${rich.draftSlug}` : rich.draftId ? `/drafts/${rich.draftId}` : ""));
   const draftDescription = String(rich.draftDescription || "No promotion description has been added yet.");
   const founderNote = String(rich.draftFounderNote || "No founder note has been added yet.");
-  const draftStatus = formatStatus(rich.draftStatus);
+  const draftStatus = formatStatus(rich.draftStatus || (isScheduledDraft ? "scheduled" : "draft"));
   const chainLabel = getChainLabel(Number(rich.chainId)) || `Chain ${Number(rich.chainId || 0) || "unknown"}`;
   const draftFollows = formatCompactNumber(rich.draftFollowCount);
   const draftOptIns = formatCompactNumber(rich.draftOptInCount);

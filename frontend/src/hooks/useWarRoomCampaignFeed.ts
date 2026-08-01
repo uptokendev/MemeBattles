@@ -5,14 +5,72 @@ import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
-import type { SupportedChainId } from "@/lib/chainConfig";
+import {
+  BNB_CHAIN_ID,
+  BNB_TESTNET_CHAIN_ID,
+  SOLANA_CHAIN_ID,
+  isEvmChainId,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
+import {
+  lifecycleByCampaign,
+  readCampaignLaunchAt,
+  timestampSeconds,
+  type CampaignDraftLifecycle,
+  fetchPublicCampaignLifecycleDrafts,
+} from "@/lib/scheduledLaunchApi";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
 export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "onchain" | "empty";
 
 const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
+
+/** Match Showcase: BNB feed toggle loads both mainnet + testnet prepare drafts. */
+function draftFeedChainIds(selectedChainId: number): number[] {
+  if (Number(selectedChainId) === SOLANA_CHAIN_ID) return [SOLANA_CHAIN_ID];
+  if (isEvmChainId(selectedChainId)) return [BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID];
+  return [Number(selectedChainId)];
+}
+
+function scheduledLaunchSeconds(draft: CampaignDraftLifecycle | CampaignDraft) {
+  return timestampSeconds((draft as CampaignDraftLifecycle).scheduledLaunchAt ?? (draft as any).tradingLaunchAt);
+}
+
+function isScheduledDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
+  return String(draft.status) === "scheduled";
+}
+
+/** Armed timed launches stay discoverable even when campaignAddress is already set. */
+function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
+  return isScheduledDraft(draft) && Boolean(draft.campaignAddress || scheduledLaunchSeconds(draft));
+}
+
+/** Same discoverability rules as Showcase DraftCampaignGrid. */
+function isDiscoverableDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
+  const status = String(draft.status);
+  if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
+  if (status === "scheduled") return isDiscoverableScheduledDraft(draft);
+  // Un-deployed prepare pages only (armed timed launches use status=scheduled).
+  return !draft.campaignAddress;
+}
+
+function isPreLaunchCampaign(input: {
+  launchAtSec?: number | null;
+  draftStatus?: string | null;
+  nowSec?: number;
+}) {
+  const now = input.nowSec ?? Math.floor(Date.now() / 1000);
+  if (String(input.draftStatus || "") === "scheduled") {
+    const launchAt = Number(input.launchAtSec || 0);
+    // Scheduled drafts stay non-tradeable until launchAt is known and has passed.
+    if (!Number.isFinite(launchAt) || launchAt <= 0) return true;
+    return launchAt > now;
+  }
+  const launchAt = Number(input.launchAtSec || 0);
+  return Number.isFinite(launchAt) && launchAt > now;
+}
 
 function toNumber(value: unknown): number | undefined {
   const n = Number(value);
@@ -85,16 +143,27 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   } as WarRoomCampaign;
 }
 
-function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number, bundle?: PrepareDraftBundle | null): WarRoomCampaign {
+function mapDraftToWarRoomCampaign(
+  draft: CampaignDraftLifecycle | CampaignDraft,
+  index: number,
+  bundle?: PrepareDraftBundle | null,
+): WarRoomCampaign {
   const draftSlug = String(draft.slug || "").trim();
   const promotionHref = draftSlug ? `/prepare/${draftSlug}` : `/drafts/${draft.id}`;
   const promotion = bundle?.promotion;
   const popularity = bundle?.popularity;
+  const launchAtSec = scheduledLaunchSeconds(draft);
+  const scheduled = isScheduledDraft(draft);
+  // Prefer real campaign address for armed timed launches so we can de-dupe against on-chain rows,
+  // but keep draft status so the row never opens a trade panel pre-launch.
+  const campaignKey = draft.campaignAddress
+    ? String(draft.campaignAddress).toLowerCase()
+    : `draft:${draft.id}`;
 
   return {
     id: 200000 + index,
     chainId: Number(draft.chainId),
-    campaign: `draft:${draft.id}`,
+    campaign: campaignKey,
     token: "",
     creator: String(draft.creatorWallet || "").toLowerCase(),
     name: String(draft.name || "Unknown"),
@@ -104,13 +173,15 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number, bundle?:
     xAccount: String(draft.xUrl || promotion?.xUrl || ""),
     website: String(draft.websiteUrl || promotion?.websiteUrl || ""),
     extraLink: String(draft.otherUrl || ""),
-    createdAt: toUnixSeconds(draft.createdAt),
+    createdAt: toUnixSeconds((draft as any).draftCreatedAt || draft.createdAt),
     status: "draft",
     isActive: false,
     isDexTrading: false,
+    isScheduled: scheduled,
+    launchAt: launchAtSec ?? undefined,
     draftId: draft.id,
     draftSlug,
-    draftStatus: draft.status,
+    draftStatus: scheduled ? "scheduled" : draft.status,
     draftVisibility: draft.visibility,
     draftCategory: draft.category,
     draftDescription: draft.description || promotion?.missionStatement || "No promotion description has been added yet.",
@@ -120,6 +191,7 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number, bundle?:
     draftOptInCount: safeCount(popularity?.armedCount),
     draftCommentCount: safeCount(popularity?.comments),
     promotionHref,
+    scheduledCampaignAddress: draft.campaignAddress ? String(draft.campaignAddress).toLowerCase() : null,
   } as WarRoomCampaign;
 }
 
@@ -136,11 +208,25 @@ function modeToCampaignTab(mode: WarRoomMode) {
 }
 
 function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, search: string) {
-  if (mode === "graduated" && !campaign.isDexTrading) return false;
-  if (mode !== "graduated" && mode !== "draft" && campaign.isDexTrading) return false;
+  const rich = campaign as any;
+  const preLaunch = isPreLaunchCampaign({
+    launchAtSec: rich.launchAt,
+    draftStatus: rich.draftStatus || rich.status,
+  });
+  const isDraftRow = rich.status === "draft" || preLaunch || Boolean(rich.draftId);
+
+  if (mode === "draft") {
+    if (!isDraftRow) return false;
+  } else if (mode === "graduated") {
+    if (!campaign.isDexTrading || isDraftRow || preLaunch) return false;
+  } else {
+    // Trending / New: live bonding only — never timed drafts or pre-launch armed campaigns.
+    if (isDraftRow || preLaunch || campaign.isDexTrading) return false;
+  }
+
   const query = search.trim().toLowerCase();
   if (!query) return true;
-  return [campaign.name, campaign.symbol, campaign.campaign, campaign.token, campaign.creator]
+  return [campaign.name, campaign.symbol, campaign.campaign, campaign.token, campaign.creator, rich.draftSlug]
     .some((value) => String(value ?? "").toLowerCase().includes(query));
 }
 
@@ -184,14 +270,34 @@ async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, sear
   return items.map((item: any, index: number) => normalizeApiCampaign(item, index));
 }
 
-async function fetchDraftCampaignsForWarRoom(chainId: number): Promise<WarRoomCampaign[]> {
+async function fetchDraftCampaignsForWarRoom(selectedChainId: number): Promise<WarRoomCampaign[]> {
   try {
-    const drafts = await fetchPublicCampaignDrafts({ chainId, limit: 100 });
-    const visibleDrafts = drafts
-      .filter((draft) => Number(draft.chainId) === Number(chainId))
+    const chainIds = draftFeedChainIds(selectedChainId);
+    // Prefer lifecycle listing (includes scheduledLaunchAt + armed campaignAddress).
+    // Fall back to the plain public drafts endpoint used by older environments.
+    const pages = await Promise.all(
+      chainIds.map(async (id) => {
+        try {
+          return await fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 200 });
+        } catch {
+          return (await fetchPublicCampaignDrafts({ chainId: id, limit: 100 })) as CampaignDraftLifecycle[];
+        }
+      }),
+    );
+
+    const seen = new Set<string>();
+    const visibleDrafts = pages
+      .flat()
+      .filter((draft) => {
+        const id = String(draft.id || "");
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .filter((draft) => chainIds.includes(Number(draft.chainId)))
       .filter((draft) => draft.visibility === "public")
-      .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
-      .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed");
+      .filter((draft) => isDiscoverableDraft(draft))
+      .slice(0, 80);
 
     const hydrated = await Promise.all(
       visibleDrafts.map(async (draft, index) => {
@@ -248,27 +354,82 @@ export function useWarRoomCampaignFeed({
           if (apiItems.length) feedSource = "campaign-api";
         }
 
+        // Lifecycle drafts always load (for draft tab + to demote pre-launch on-chain rows).
+        const draftItems = await fetchDraftCampaignsForWarRoom(chainId);
+        const lifecycleMap = lifecycleByCampaign(
+          draftItems
+            .map((item) => ({
+              id: String((item as any).draftId || ""),
+              chainId: Number((item as any).chainId || chainId),
+              campaignAddress: String((item as any).scheduledCampaignAddress || item.campaign || ""),
+              status: String((item as any).draftStatus || "draft") as any,
+              scheduledLaunchAt: (item as any).launchAt
+                ? new Date(Number((item as any).launchAt) * 1000).toISOString()
+                : null,
+            }))
+            .filter((item) => item.campaignAddress && !item.campaignAddress.startsWith("draft:")) as any,
+        );
+
+        // Also hydrate launchAt from lifecycle endpoint directly for richer scheduled metadata.
+        const lifecyclePages = await Promise.all(
+          draftFeedChainIds(chainId).map((id) =>
+            fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 200 }).catch(() => [] as CampaignDraftLifecycle[]),
+          ),
+        );
+        const lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
+
         const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, { limit: 100 }).catch(() => ({
           campaigns: [],
           nextCursor: null,
           total: 0,
         }));
-        const onChainBaseItems = onChainPage.campaigns
-          .map((campaign, index) => normalizeApiCampaign({
-            ...campaign,
-            chainId,
-            campaignAddress: campaign.campaign,
-            tokenAddress: campaign.token,
-            creatorAddress: campaign.creator,
-            logoUri: campaign.logoURI,
-            createdAtChain: campaign.createdAt,
-            status: "live",
-            isActive: true,
-            isDexTrading: false,
-          }, 500000 + index))
-          .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+        const nowSec = Math.floor(Date.now() / 1000);
+        const onChainBaseItems = await Promise.all(
+          onChainPage.campaigns.map(async (campaign, index) => {
+            const address = String(campaign.campaign || "").toLowerCase();
+            const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
+            const launchAtFromDraft = timestampSeconds(lifecycle?.scheduledLaunchAt || lifecycle?.tradingLaunchAt);
+            const launchAtOnChain =
+              launchAtFromDraft ??
+              (await readCampaignLaunchAt(chainId, address).catch(() => null));
+            const preLaunch = isPreLaunchCampaign({
+              launchAtSec: launchAtOnChain,
+              draftStatus: lifecycle?.status,
+              nowSec,
+            });
+
+            return normalizeApiCampaign({
+              ...campaign,
+              chainId,
+              campaignAddress: campaign.campaign,
+              tokenAddress: campaign.token,
+              creatorAddress: campaign.creator,
+              logoUri: campaign.logoURI,
+              createdAtChain: campaign.createdAt,
+              // Pre-launch armed campaigns must not look like live trade rows.
+              status: preLaunch ? "draft" : "live",
+              isActive: !preLaunch,
+              isDexTrading: false,
+              isScheduled: preLaunch || String(lifecycle?.status) === "scheduled",
+              launchAt: launchAtOnChain ?? undefined,
+              draftId: lifecycle?.id,
+              draftSlug: lifecycle?.slug,
+              draftStatus: preLaunch ? "scheduled" : lifecycle?.status,
+              promotionHref: lifecycle?.slug
+                ? `/prepare/${lifecycle.slug}`
+                : lifecycle?.id
+                  ? `/drafts/${lifecycle.id}`
+                  : undefined,
+            }, 500000 + index);
+          }),
+        );
+        const onChainFiltered = onChainBaseItems.filter((campaign) =>
+          matchesModeAndSearch(campaign, activeMode, search),
+        );
         const onChainItems = await Promise.all(
-          onChainBaseItems.map(async (campaign) => {
+          onChainFiltered.map(async (campaign) => {
+            // Skip expensive stats for draft/pre-launch rows.
+            if ((campaign as any).status === "draft") return campaign;
             const stats = await fetchOnChainCampaignStats({
               chainId: chainId as SupportedChainId,
               campaignAddress: campaign.campaign,
@@ -278,17 +439,65 @@ export function useWarRoomCampaignFeed({
           }),
         );
 
-        const draftItems = activeMode === "draft" ? await fetchDraftCampaignsForWarRoom(chainId) : [];
+        const draftItemsForMode = draftItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+        const apiItemsForMode = apiItems
+          .map((campaign) => {
+            const address = String(campaign.campaign || "").toLowerCase();
+            const lifecycle = lifecycleByAddress.get(address);
+            if (!lifecycle) return campaign;
+            const launchAt = timestampSeconds(lifecycle.scheduledLaunchAt || lifecycle.tradingLaunchAt);
+            const preLaunch = isPreLaunchCampaign({
+              launchAtSec: launchAt,
+              draftStatus: lifecycle.status,
+              nowSec,
+            });
+            if (!preLaunch) return campaign;
+            return {
+              ...campaign,
+              status: "draft",
+              isActive: false,
+              isDexTrading: false,
+              isScheduled: true,
+              launchAt: launchAt ?? undefined,
+              draftId: lifecycle.id,
+              draftSlug: lifecycle.slug,
+              draftStatus: "scheduled",
+              promotionHref: lifecycle.slug ? `/prepare/${lifecycle.slug}` : `/drafts/${lifecycle.id}`,
+            } as WarRoomCampaign;
+          })
+          .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+
         if (cancelled) return;
         const mergedMap = new Map<string, WarRoomCampaign>();
-        for (const campaign of [...onChainItems, ...apiItems, ...draftItems]) {
+        // Draft rows first so pre-launch metadata wins when de-duping against on-chain.
+        for (const campaign of [...draftItemsForMode, ...onChainItems, ...apiItemsForMode]) {
           if (!campaign.campaign) continue;
           const key = String(campaign.campaign).toLowerCase();
           const current = mergedMap.get(key);
-          mergedMap.set(key, current ? mergeWarRoomCampaign(current, campaign) : campaign);
+          if (!current) {
+            mergedMap.set(key, campaign);
+            continue;
+          }
+          // Prefer draft/pre-launch status over live trade status when either side is pre-launch.
+          const preferDraft =
+            (current as any).status === "draft" ||
+            (campaign as any).status === "draft" ||
+            (current as any).isScheduled ||
+            (campaign as any).isScheduled;
+          const merged = preferDraft
+            ? mergeWarRoomCampaign(
+                (current as any).status === "draft" ? current : campaign,
+                (current as any).status === "draft" ? campaign : current,
+              )
+            : mergeWarRoomCampaign(current, campaign);
+          if (preferDraft) {
+            (merged as any).status = "draft";
+            (merged as any).isActive = false;
+            (merged as any).isDexTrading = false;
+          }
+          mergedMap.set(key, merged);
         }
-        const merged = Array.from(mergedMap.values())
-          .filter((campaign: WarRoomCampaign) => campaign.campaign)
+        const merged = Array.from(mergedMap.values()).filter((campaign: WarRoomCampaign) => campaign.campaign);
         setCampaigns(merged);
         setSource(merged.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
       } catch (loadError) {

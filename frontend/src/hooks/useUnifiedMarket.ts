@@ -13,7 +13,11 @@ import {
 
 export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
-const ENABLE_UNIFIED_MARKET = String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1";
+// Chart composition is always available from bonding curve points.
+// Remote Topaz candles/trades only load when the market API flag is on (avoids 503 spam).
+const ENABLE_MARKET_API =
+  String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1" ||
+  String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
   return `${String(trade.txHash || "").toLowerCase()}:${Number(trade.logIndex ?? 0)}`;
@@ -72,14 +76,16 @@ export function useUnifiedMarket(input: {
 }) {
   const campaignAddress = String(input.campaignAddress || "").trim().toLowerCase();
   const resolution = input.resolution ?? "1m";
-  const enabled = (input.enabled ?? true) && ENABLE_UNIFIED_MARKET && /^0x[a-f0-9]{40}$/.test(campaignAddress);
+  // Chart is always "enabled" for a valid campaign so TokenDetails can render continuous history from curve points.
+  const enabled = (input.enabled ?? true) && /^0x[a-f0-9]{40}$/.test(campaignAddress);
+  const apiEnabled = enabled && ENABLE_MARKET_API;
 
   const [state, setState] = useState<MarketState | null>(null);
   const [summary, setSummary] = useState<MarketSummary | null>(null);
   const [trades, setTrades] = useState<MarketTrade[]>([]);
   const [candles, setCandles] = useState<MarketCandle[]>([]);
   const [graduationMarker, setGraduationMarker] = useState<any | null>(null);
-  const [loading, setLoading] = useState(enabled);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,13 +93,13 @@ export function useUnifiedMarket(input: {
   const [stageTransition, setStageTransition] = useState<{ from: string | null; to: string; at: number } | null>(null);
 
   const realtime = useAblyTokenChannel({
-    enabled,
+    enabled: apiEnabled,
     chainId: input.chainId,
     campaignAddress,
   });
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    if (!enabled) {
+    if (!apiEnabled) {
       setLoading(false);
       return;
     }
@@ -121,23 +127,24 @@ export function useUnifiedMarket(input: {
     } catch (caught: any) {
       if (caught?.name === "AbortError" || signal?.aborted) return;
       if (requestId !== requestRef.current) return;
-      setError(caught?.message || "Unified market data is temporarily unavailable.");
+      // Soft-fail: chart still works from bonding curve points.
+      setError(null);
     } finally {
       if (requestId === requestRef.current && !signal?.aborted) setLoading(false);
     }
-  }, [campaignAddress, enabled, input.chainId, resolution]);
+  }, [apiEnabled, campaignAddress, input.chainId, resolution]);
 
   const scheduleRefresh = useCallback((delay = 120) => {
-    if (!enabled) return;
+    if (!apiEnabled) return;
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
       void refresh();
     }, delay);
-  }, [enabled, refresh]);
+  }, [apiEnabled, refresh]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!apiEnabled) {
       setState(null);
       setSummary(null);
       setTrades([]);
@@ -152,11 +159,11 @@ export function useUnifiedMarket(input: {
     setLoading(true);
     void refresh(controller.signal);
     return () => controller.abort();
-  }, [enabled, refresh]);
+  }, [apiEnabled, refresh]);
 
   useEffect(() => {
     const channel = realtime.channel;
-    if (!enabled || !channel) return;
+    if (!apiEnabled || !channel) return;
 
     const onStage = (message: any) => {
       const data = message?.data || {};
@@ -200,7 +207,7 @@ export function useUnifiedMarket(input: {
       try { channel.unsubscribe("market_health_changed", onHealth); } catch { /* noop */ }
       try { realtime.client?.connection?.off?.("connected", onConnected); } catch { /* noop */ }
     };
-  }, [enabled, realtime.channel, realtime.client, scheduleRefresh]);
+  }, [apiEnabled, realtime.channel, realtime.client, scheduleRefresh]);
 
   useEffect(() => () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);

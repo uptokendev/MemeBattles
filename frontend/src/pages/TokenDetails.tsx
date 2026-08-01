@@ -21,7 +21,6 @@ import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
-import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
 import { GraduationExplosion } from "@/components/token/GraduationExplosion";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
@@ -1439,46 +1438,85 @@ const bnbUsd = useMemo(() => {
     };
   }, [readProvider, wallet.account, campaign?.token]);
 
-  // Build transactions table rows.
+  // Build transactions table rows from bonding curve history + any unified Topaz trades.
   useEffect(() => {
     if (!campaign) {
       setTxs([]);
       return;
     }
-    // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
-    const next: TxRow[] = [...combinedCurvePointsSafe]
-  .slice(-50)
-  .reverse()
-  .map((p: any, idx: number) => {
-    const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
-    const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
-    const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
+    const topazPoints = (unifiedMarket.trades || []).map((trade) => {
+      let tokensWei = 0n;
+      let nativeWei = 0n;
+      try {
+        tokensWei = BigInt(trade.tokenAmountRaw || "0");
+      } catch {
+        tokensWei = 0n;
+      }
+      try {
+        nativeWei = BigInt(trade.nativeAmountRaw || "0");
+      } catch {
+        nativeWei = 0n;
+      }
+      return {
+        type: trade.side,
+        from: trade.wallet,
+        tokensWei,
+        nativeWei,
+        pricePerToken: Number(trade.priceBnb || 0),
+        timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
+        txHash: trade.txHash,
+        blockNumber: trade.blockNumber,
+        logIndex: trade.logIndex,
+        source: trade.source,
+      };
+    });
 
-    const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
-    const priceStr = formatPriceBnb(priceNum);
+    // Prefer a de-duplicated union so bonding history survives after graduation.
+    const byKey = new Map<string, any>();
+    for (const point of [...combinedCurvePointsSafe, ...topazPoints]) {
+      const key = `${String(point.txHash || "").toLowerCase()}:${Number((point as any).logIndex ?? 0)}:${Number(point.timestamp || 0)}`;
+      if (!byKey.has(key)) byKey.set(key, point);
+    }
+    const tradePoints = Array.from(byKey.values()).sort(
+      (a, b) =>
+        Number(a.timestamp || 0) - Number(b.timestamp || 0) ||
+        Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||
+        Number((a as any).logIndex || 0) - Number((b as any).logIndex || 0),
+    );
 
-    const txHash = String(p.txHash ?? "");
-    const ts = Number(p.timestamp ?? 0);
-    const id = txHash || `${ts}-${idx}`;
+    const next: TxRow[] = tradePoints
+      .slice(-80)
+      .reverse()
+      .map((p: any, idx: number) => {
+        const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
+        const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
+        const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
 
-    return {
-      id,
-      time: formatAgo(ts),
-      type: (p.type ?? "buy") as "buy" | "sell",
-      amount: formatCompact(tokenAmount),
-      bnb: bnbStr,
-      price: priceStr,
-      mcap,
-      maker: shorten(p.from),
-      makerAddress: String(p.from ?? ""),
-      txHash,
-    };
-  });
+        const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
+        const priceStr = formatPriceBnb(priceNum);
 
-setTxs(next);
-  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics]);
+        const txHash = String(p.txHash ?? "");
+        const ts = Number(p.timestamp ?? 0);
+        const id = txHash || `${ts}-${idx}`;
+
+        return {
+          id,
+          time: formatAgo(ts),
+          type: (p.type ?? "buy") as "buy" | "sell",
+          amount: formatCompact(tokenAmount),
+          bnb: bnbStr,
+          price: priceStr,
+          mcap,
+          maker: shorten(p.from),
+          makerAddress: String(p.from ?? ""),
+          txHash,
+        };
+      });
+
+    setTxs(next);
+  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics, unifiedMarket.trades]);
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
@@ -2493,26 +2531,26 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
             <div className="flex-1 min-h-0">
               <div className="w-full h-full min-h-[260px]">
-                {unifiedMarket.enabled ? (
-                  <UnifiedMarketChart
-                    curvePoints={curvePointsForUi}
-                    marketCandles={unifiedMarket.candles}
-                    marketState={unifiedMarket.state}
-                    graduationMarker={unifiedMarket.graduationMarker}
-                    resolution={marketResolution}
-                    onResolutionChange={setMarketResolution}
-                    denomination={displayDenom}
-                    loading={unifiedMarket.loading}
-                    error={unifiedMarket.error}
-                  />
-                ) : (
-                  <CurvePriceChart
-                    campaignAddress={campaign?.campaign}
-                    curvePointsOverride={curvePointsForUi}
-                    loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
-                    errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
-                  />
-                )}
+                {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}
+                <UnifiedMarketChart
+                  curvePoints={curvePointsForUi}
+                  marketCandles={unifiedMarket.candles}
+                  marketState={unifiedMarket.state}
+                  graduationMarker={unifiedMarket.graduationMarker}
+                  resolution={marketResolution}
+                  onResolutionChange={setMarketResolution}
+                  denomination={displayDenom}
+                  loading={
+                    (curvePointsForUi?.length ?? 0) > 0
+                      ? false
+                      : liveCurveLoading || unifiedMarket.loading
+                  }
+                  error={
+                    (curvePointsForUi?.length ?? 0) > 0
+                      ? null
+                      : liveCurveError || unifiedMarket.error
+                  }
+                />
               </div>
             </div>
           </Card>

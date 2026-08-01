@@ -70,6 +70,16 @@ function getAgeSeconds(campaign: CampaignInfo) {
 
 export function getWarRoomCampaignStatus(campaign: CampaignInfo): WarRoomCampaignStatus {
   const rich = campaign as any;
+  // Pre-launch armed timed campaigns and prepare drafts must never look tradeable.
+  if (
+    rich.status === "draft" ||
+    rich.isScheduled === true ||
+    rich.draftStatus === "scheduled" ||
+    String(rich.campaign || "").startsWith("draft:") ||
+    Boolean(rich.draftId && rich.isActive === false)
+  ) {
+    return "draft";
+  }
   if (rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress || campaign.dexScreenerUrl) return "graduated";
   if (rich.status === "live" || rich.isActive === true) return "bonding";
   return "draft";
