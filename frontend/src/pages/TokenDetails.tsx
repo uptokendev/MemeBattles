@@ -1626,6 +1626,18 @@ setTxs(next);
             setQuoteError(unifiedMarket.state?.lastError || "Topaz market verification is still in progress.");
             return;
           }
+          // Avoid route RPC work until the user enters an amount.
+          const hasAmount =
+            tradeInputDenom === "BNB"
+              ? parseBnbAmountWei(tradeAmount) > 0n
+              : parseTokenAmountWei(tradeAmount) > 0n;
+          if (!hasAmount) {
+            setEffectiveTokenWei(0n);
+            setEffectiveBnbWei(0n);
+            setQuoteWei(null);
+            setQuoteError(null);
+            return;
+          }
           setQuoteLoading(true);
           const resolved = await resolveVerifiedTopazRoute({
             provider: readProvider,
