@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
 import { getQuery, json, readJson } from "../../server/http.js";
+import { getRpcUrls, getServerReadProvider } from "../lib/getServerReadProvider.js";
 import {
   creatorClusterFundingDetectorConfigured,
   detectDirectCreatorFunding,
@@ -29,20 +30,8 @@ const BUY_EXACT_TOKENS_ACTION = 0;
 const BUY_EXACT_BNB_ACTION = 1;
 const RESERVATION_GRACE_SECONDS = 2 * 60;
 
-function firstCsvValue(value) {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)[0] || "";
-}
-
 function getRpcUrl(chainId) {
-  const perChain = process.env[`BSC_RPC_HTTP_${chainId}`] || process.env[`VITE_PUBLIC_RPC_${chainId}`];
-  const direct = firstCsvValue(perChain);
-  if (direct) return direct;
-  if (Number(chainId) === 56) return firstCsvValue(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC);
-  if (Number(chainId) === 97) return firstCsvValue(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC);
-  return "";
+  return getRpcUrls(chainId)[0] || "";
 }
 
 function normalizeAddress(value) {
@@ -107,9 +96,8 @@ export async function resolveCanonicalTradeCampaignAddress({ chainId, campaignAd
     throw new Error("Invalid campaign or token address for trade authorization.");
   }
 
-  const rpcUrl = getRpcUrl(numericChainId);
-  if (!rpcUrl) throw new Error("RPC URL is not configured for campaign resolution.");
-  const provider = new ethers.JsonRpcProvider(rpcUrl, numericChainId, { staticNetwork: true });
+  if (!getRpcUrls(numericChainId).length) throw new Error("RPC URL is not configured for campaign resolution.");
+  const provider = await getServerReadProvider(numericChainId);
 
   try {
     const direct = await verifyCampaignIdentity({ provider, campaignAddress: submittedAddress });
@@ -166,10 +154,9 @@ export function requestedCreatorBuyWei({ action, amount, limit }) {
 }
 
 async function readOnchainCreatorProtection({ chainId, campaignAddress, walletAddress }) {
-  const rpcUrl = getRpcUrl(chainId);
-  if (!rpcUrl) throw new Error("RPC URL is not configured for creator-cluster protection.");
+  if (!getRpcUrls(chainId).length) throw new Error("RPC URL is not configured for creator-cluster protection.");
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl, Number(chainId), { staticNetwork: true });
+  const provider = await getServerReadProvider(chainId);
   const campaign = new ethers.Contract(campaignAddress, CAMPAIGN_PROTECTION_ABI, provider);
   const [creatorRaw, lockUntilRaw, capWeiRaw, boughtWeiRaw, riskRegistryRaw, launchAtRaw] = await Promise.all([
     campaign.creator(),

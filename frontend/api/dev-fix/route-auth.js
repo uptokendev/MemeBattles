@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { getRpcUrls, getServerReadProvider } from "../lib/getServerReadProvider.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
 import {
   evaluateCreatePreflight,
@@ -109,20 +110,8 @@ function validUntilFromDeadline(deadline) {
   return new Date(deadline * 1000).toISOString();
 }
 
-function firstCsvValue(value) {
-  return String(value || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)[0] || "";
-}
-
 function getRpcUrl(chainId) {
-  const perChain = process.env[`BSC_RPC_HTTP_${chainId}`] || process.env[`VITE_PUBLIC_RPC_${chainId}`];
-  const perChainFirst = firstCsvValue(perChain);
-  if (perChainFirst) return perChainFirst;
-  if (chainId === 56) return firstCsvValue(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC);
-  if (chainId === 97) return firstCsvValue(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC);
-  return "";
+  return getRpcUrls(chainId)[0] || "";
 }
 
 function getFactoryAddressFromEnv(chainId) {
@@ -193,11 +182,12 @@ function routeSignerUnavailable(res) {
 }
 
 async function readOnchainRouteAuthority({ chainId, factoryAddress }) {
-  const rpcUrl = getRpcUrl(chainId);
-  if (!rpcUrl || !factoryAddress) return { routeAuthority: null, error: "Missing RPC URL or factory address" };
+  if (!getRpcUrls(chainId).length || !factoryAddress) {
+    return { routeAuthority: null, error: "Missing RPC URL or factory address" };
+  }
 
   try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    const provider = await getServerReadProvider(chainId);
     const factory = new ethers.Contract(factoryAddress, FACTORY_ROUTE_AUTHORITY_ABI, provider);
     const routeAuthority = await factory.routeAuthority();
     return { routeAuthority: ethers.getAddress(routeAuthority), error: null };
@@ -207,11 +197,12 @@ async function readOnchainRouteAuthority({ chainId, factoryAddress }) {
 }
 
 async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAddress }) {
-  const rpcUrl = getRpcUrl(chainId);
-  if (!rpcUrl) return { ok: false, status: 503, code: "CREATE_RPC_NOT_CONFIGURED", error: "RPC URL is missing for this chain." };
+  if (!getRpcUrls(chainId).length) {
+    return { ok: false, status: 503, code: "CREATE_RPC_NOT_CONFIGURED", error: "RPC URL is missing for this chain." };
+  }
 
   try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    const provider = await getServerReadProvider(chainId);
     const code = await provider.getCode(factoryAddress);
     if (!code || code === "0x") {
       return { ok: false, status: 409, code: "CREATE_FACTORY_CODE_MISSING", error: "The configured creation factory has no contract code." };

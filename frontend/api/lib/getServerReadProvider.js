@@ -7,95 +7,167 @@ import { ethers } from "ethers";
  * - We DISABLE batching (batchMaxCount: 1) because public BSC endpoints
  *   often rate-limit when getLogs requests are batched.
  * - We set staticNetwork to avoid extra "detectNetwork" chatter.
- *
- * RPC selection logic adapted from:
- *   - api/dev-fix/route-auth.js:getRpcUrl
- *   - api/league.js
+ * - Primary env RPCs are tried first; built-in public fallbacks are used when
+ *   the configured endpoint returns 5xx/timeouts (common on free public RPCs).
  *
  * Supports env vars:
- *   BSC_RPC_HTTP_${chainId}
+ *   BSC_RPC_HTTP_${chainId}  (CSV allowed)
  *   VITE_PUBLIC_RPC_${chainId}
- *   BSC_RPC_HTTP / VITE_BSC_MAINNET_RPC etc. as fallbacks.
+ *   BSC_RPC_HTTP / VITE_BSC_MAINNET_RPC / VITE_BSC_TESTNET_RPC
  */
 
 const providerCache = new Map();
 
+const PUBLIC_FALLBACKS = {
+  56: [
+    "https://bsc-dataseed.binance.org",
+    "https://bsc-dataseed1.binance.org",
+    "https://bsc-dataseed2.binance.org",
+  ],
+  97: [
+    "https://data-seed-prebsc-1-s1.binance.org:8545",
+    "https://data-seed-prebsc-2-s1.binance.org:8545",
+    "https://bsc-testnet.bnbchain.org",
+  ],
+};
+
 function networkName(chainId) {
-  return chainId === 56 ? "bsc" : "bsc-testnet";
+  return Number(chainId) === 56 ? "bsc" : "bsc-testnet";
 }
 
-function firstCsvValue(value) {
+function csvValues(value) {
   return String(value || "")
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean)[0] || "";
+    .filter(Boolean);
 }
 
-function getRpcUrl(chainId) {
-  // Primary: per-chain explicit
-  const perChain =
-    process.env[`BSC_RPC_HTTP_${chainId}`] ||
-    process.env[`VITE_PUBLIC_RPC_${chainId}`];
+function firstCsvValue(value) {
+  return csvValues(value)[0] || "";
+}
 
-  const perChainFirst = firstCsvValue(perChain);
-  if (perChainFirst) return perChainFirst;
+function uniqueUrls(urls) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of urls) {
+    const url = String(raw || "").trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
 
-  if (chainId === 56) {
-    return firstCsvValue(
-      process.env.BSC_RPC_HTTP_56 ||
-      process.env.VITE_BSC_MAINNET_RPC ||
-      process.env.BSC_RPC_HTTP
+/**
+ * Ordered RPC candidates for a chain: configured env first, then public fallbacks.
+ */
+export function getRpcUrls(chainId) {
+  const id = Number(chainId);
+  const configured = [
+    ...csvValues(process.env[`BSC_RPC_HTTP_${id}`]),
+    ...csvValues(process.env[`VITE_PUBLIC_RPC_${id}`]),
+  ];
+
+  if (id === 56) {
+    configured.push(
+      ...csvValues(process.env.BSC_RPC_HTTP_56),
+      ...csvValues(process.env.VITE_BSC_MAINNET_RPC),
+      ...csvValues(process.env.BSC_RPC_HTTP),
     );
+  } else if (id === 97) {
+    configured.push(
+      ...csvValues(process.env.BSC_RPC_HTTP_97),
+      ...csvValues(process.env.VITE_BSC_TESTNET_RPC),
+      ...csvValues(process.env.BSC_RPC_HTTP),
+    );
+  } else {
+    configured.push(...csvValues(process.env.BSC_RPC_HTTP));
   }
 
-  if (chainId === 97) {
-    return firstCsvValue(
-      process.env.BSC_RPC_HTTP_97 ||
-      process.env.VITE_BSC_TESTNET_RPC ||
-      process.env.BSC_RPC_HTTP
-    );
+  return uniqueUrls([...configured, ...(PUBLIC_FALLBACKS[id] || [])]);
+}
+
+/** @deprecated Prefer getRpcUrls / getServerReadProvider with failover. */
+export function getRpcUrl(chainId) {
+  return getRpcUrls(chainId)[0] || "";
+}
+
+function makeProvider(url, chainId) {
+  const network = ethers.Network.from(Number(chainId));
+  network.name = networkName(chainId);
+  return new ethers.JsonRpcProvider(url, network, {
+    staticNetwork: network,
+    batchMaxCount: 1,
+    batchStallTime: 0,
+  });
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return String(url || "").slice(0, 48);
   }
-
-  // Last resort fallback from league.js style
-  const fallback = String(process.env.BSC_RPC_HTTP || "").trim();
-  if (fallback) return fallback;
-
-  return "";
 }
 
 /**
  * Returns a read-only provider for server-side on-chain reads.
- * Uses the exact same configuration decisions as the browser getReadProvider.
+ * Probes candidates until one answers eth_blockNumber successfully.
  */
-export function getServerReadProvider(chainId) {
+export async function getServerReadProvider(chainId) {
   const numChainId = Number(chainId);
   if (!Number.isFinite(numChainId)) {
     throw new Error(`Invalid chainId for getServerReadProvider: ${chainId}`);
   }
 
   const cached = providerCache.get(numChainId);
-  if (cached) return cached;
-
-  const url = getRpcUrl(numChainId);
-  if (!url) {
-    throw new Error(`Missing RPC URL for chainId=${numChainId} (check BSC_RPC_HTTP_${numChainId} or VITE_PUBLIC_RPC_${numChainId})`);
+  if (cached) {
+    try {
+      await cached.provider.getBlockNumber();
+      return cached.provider;
+    } catch {
+      providerCache.delete(numChainId);
+    }
   }
 
-  const network = ethers.Network.from(numChainId);
-  network.name = networkName(numChainId);
+  const urls = getRpcUrls(numChainId);
+  if (!urls.length) {
+    throw new Error(
+      `Missing RPC URL for chainId=${numChainId} (set BSC_RPC_HTTP_${numChainId} or VITE_PUBLIC_RPC_${numChainId})`,
+    );
+  }
 
-  const provider = new ethers.JsonRpcProvider(
-    url,
-    network,
-    {
-      staticNetwork: network,
-      batchMaxCount: 1,
-      batchStallTime: 0,
+  const errors = [];
+  for (const url of urls) {
+    const provider = makeProvider(url, numChainId);
+    try {
+      await provider.getBlockNumber();
+      providerCache.set(numChainId, { provider, url });
+      return provider;
+    } catch (error) {
+      errors.push(`${hostOf(url)}: ${String(error?.shortMessage || error?.message || error)}`);
+      try {
+        provider.destroy?.();
+      } catch {
+        // ignore
+      }
     }
-  );
+  }
 
-  providerCache.set(numChainId, provider);
-  return provider;
+  throw new Error(
+    `All RPC endpoints failed for chainId=${numChainId}. Tried: ${errors.join(" | ")}`,
+  );
 }
 
-export { getRpcUrl };
+/**
+ * Sync helper for call sites that already hold a URL string.
+ * Prefer getServerReadProvider for create/deploy eligibility.
+ */
+export function getServerReadProviderForUrl(chainId, url) {
+  if (!url) {
+    throw new Error(`Missing RPC URL for chainId=${chainId}`);
+  }
+  return makeProvider(url, Number(chainId));
+}
+
+export { firstCsvValue };

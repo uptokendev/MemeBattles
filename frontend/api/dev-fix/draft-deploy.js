@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { json, readJson } from "../../server/http.js";
+import { getRpcUrls, getServerReadProvider } from "../lib/getServerReadProvider.js";
 import { draftDeploy as baseDraftDeploy } from "./draft-deploy-base.js";
 import { solanaCreateAuthorizationV4 } from "./solana-create-authorization-v4.js";
 
@@ -39,21 +40,6 @@ function configuredScheduledFactory(chainId) {
   return address;
 }
 
-function firstCsvValue(value) {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)[0] || "";
-}
-
-function rpcUrlForChain(chainId) {
-  return firstCsvValue(
-    process.env[`BSC_RPC_HTTP_${chainId}`] ||
-      process.env[`VITE_PUBLIC_RPC_${chainId}`] ||
-      (Number(chainId) === 97 ? process.env.VITE_BSC_TESTNET_RPC : process.env.VITE_BSC_MAINNET_RPC),
-  );
-}
-
 function routeSignerAddress() {
   const privateKey = String(
     process.env.ROUTE_AUTHORITY_PRIVATE_KEY ||
@@ -70,8 +56,7 @@ function routeSignerAddress() {
 }
 
 async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, walletAddress }) {
-  const rpcUrl = rpcUrlForChain(chainId);
-  if (!rpcUrl) {
+  if (!getRpcUrls(chainId).length) {
     return { ok: false, status: 503, code: "SCHEDULED_CREATE_RPC_NOT_CONFIGURED", error: "RPC URL is missing for scheduled creation." };
   }
   if (!ethers.isAddress(walletAddress)) {
@@ -79,7 +64,7 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
   }
 
   try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    const provider = await getServerReadProvider(chainId);
     const code = await provider.getCode(factoryAddress);
     if (!code || code === "0x") {
       return { ok: false, status: 409, code: "SCHEDULED_CREATE_FACTORY_CODE_MISSING", error: "The configured scheduled factory has no contract code." };
