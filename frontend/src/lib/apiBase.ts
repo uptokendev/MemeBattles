@@ -309,6 +309,15 @@ async function buildTokenDetailsCampaignFallback(path: string): Promise<Response
   }
 }
 
+// Only open the global creator-protection dialog for intentional creator/cluster
+// trade blocks. Infrastructure UNAVAILABLE codes must not spam visitors on page
+// load from TokenSafety / passive preflight probes.
+const CREATOR_PROTECTION_DIALOG_CODES = new Set([
+  "CREATOR_BUY_LOCKED",
+  "CREATOR_CLUSTER_BUY_LOCKED",
+  "CREATOR_CLUSTER_BUY_CAP_EXCEEDED",
+]);
+
 async function notifyCreatorProtectionResponse(res: Response): Promise<void> {
   if (res.ok || typeof window === "undefined") return;
   try {
@@ -316,7 +325,7 @@ async function notifyCreatorProtectionResponse(res: Response): Promise<void> {
     const preflight = payload?.preflight || null;
     const protection = preflight?.creatorProtection || null;
     const code = String(preflight?.code || protection?.code || payload?.code || "");
-    if (!code.startsWith("CREATOR_")) return;
+    if (!CREATOR_PROTECTION_DIALOG_CODES.has(code)) return;
     window.dispatchEvent(new CustomEvent("mwz:creatorProtectionBlocked", {
       detail: {
         ...(protection || {}),

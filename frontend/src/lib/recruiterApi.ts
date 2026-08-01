@@ -99,6 +99,9 @@ function showCreatorProtection(preflight: LaunchpadPreflight) {
   try {
     if (typeof window === "undefined") return;
     const code = String(preflight?.code || preflight?.creatorProtection?.code || "");
+    // Active trade attempts may still surface infrastructure unavailability so the
+    // user knows MetaMask was not opened. Passive global apiFetch notifier no longer
+    // fires UNAVAILABLE for passive TokenDetails probes.
     if (!code.startsWith("CREATOR_")) return;
     window.dispatchEvent(new CustomEvent("mwz:creatorProtectionBlocked", {
       detail: {

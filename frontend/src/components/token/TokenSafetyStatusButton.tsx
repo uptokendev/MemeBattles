@@ -90,6 +90,11 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     try {
       const nextStatus = await adapter.getStatus();
       setStatus(nextStatus);
+      if (!walletAddress || !campaign) {
+        setBuyPreflight(null);
+        setSellPreflight(null);
+        return;
+      }
       const sides: TradeSide[] = ["buy", "sell"];
       const [nextBuy, nextSell] = await Promise.all(
         sides.map((side) => adapter.preflightTrade({ side, walletAddress, campaignAddress: campaign })),
@@ -110,6 +115,13 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
         const nextStatus = await adapter.getStatus();
         if (cancelled) return;
         setStatus(nextStatus);
+        if (!walletAddress || !campaign) {
+          if (!cancelled) {
+            setBuyPreflight(null);
+            setSellPreflight(null);
+          }
+          return;
+        }
         const [nextBuy, nextSell] = await Promise.all([
           adapter.preflightTrade({ side: "buy", walletAddress, campaignAddress: campaign }),
           adapter.preflightTrade({ side: "sell", walletAddress, campaignAddress: campaign }),

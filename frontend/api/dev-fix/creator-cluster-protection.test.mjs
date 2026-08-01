@@ -245,6 +245,9 @@ test("centered creator protection dialog is globally wired", async () => {
   assert.match(api, /mwz:creatorProtectionBlocked/);
   assert.match(apiBase, /notifyCreatorProtectionResponse/);
   assert.match(apiBase, /mwz:creatorProtectionBlocked/);
+  assert.match(apiBase, /CREATOR_PROTECTION_DIALOG_CODES/);
+  assert.match(apiBase, /CREATOR_CLUSTER_BUY_LOCKED/);
+  assert.doesNotMatch(apiBase, /if \(!code\.startsWith\("CREATOR_"\)\) return;/);
   assert.match(dialog, /Creator-Linked Wallet/);
   assert.match(dialog, /Tier \$\{tierNumber\} Creator Buy Protection/);
   assert.doesNotMatch(dialog, /Switch wallet/i);

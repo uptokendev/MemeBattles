@@ -66,6 +66,11 @@ export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: 
       const nextStatus = await adapter.getStatus();
       setStatus(nextStatus);
 
+      if (!connectedWallet || !campaign) {
+        setBuyPreflight(null);
+        setSellPreflight(null);
+        return;
+      }
       const [nextBuy, nextSell] = await Promise.all([
         adapter.preflightTrade({ side: "buy", walletAddress: connectedWallet, campaignAddress: campaign }),
         adapter.preflightTrade({ side: "sell", walletAddress: connectedWallet, campaignAddress: campaign }),
@@ -86,6 +91,17 @@ export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: 
         const nextStatus = await adapter.getStatus();
         if (cancelled) return;
         setStatus(nextStatus);
+
+        // Without a connected wallet, only campaign adapter status is needed.
+        // Wallet preflight is deferred until connect so visitors never get
+        // creator-protection dialogs from passive page loads.
+        if (!connectedWallet || !campaign) {
+          if (!cancelled) {
+            setBuyPreflight(null);
+            setSellPreflight(null);
+          }
+          return;
+        }
 
         const [nextBuy, nextSell] = await Promise.all([
           adapter.preflightTrade({ side: "buy", walletAddress: connectedWallet, campaignAddress: campaign }),

@@ -2,8 +2,6 @@ import { apiFetch } from "@/lib/apiBase";
 import type { LaunchpadAdapter, LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
 import { normalizeEvmAddress } from "@/features/launchpad/adapters";
 
-const CAMPAIGN_ONLY_WALLET = "0x0000000000000000000000000000000000000001";
-
 async function readJson<T>(path: string, fallback: T, init?: RequestInit): Promise<T> {
   try {
     const response = await apiFetch(path, {
@@ -97,14 +95,25 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
         };
       }
 
+      // Passive TokenDetails safety UI must not hit preflight with a dummy wallet.
+      // That path was spamming creator-protection dialogs for every visitor.
+      if (!wallet) {
+        return {
+          allowed: true,
+          chain: "bnb",
+          side,
+          reasons: [],
+          warnings: ["Connect a BNB wallet to run wallet-specific creator and cluster protection checks."],
+        };
+      }
+
       const endpoint = side === "buy" ? "/api/launchpad/preflight-buy" : "/api/launchpad/preflight-sell";
-      const campaignOnly = !wallet;
       const payload = await postJson<any>(
         endpoint,
-        { walletAddress: wallet || CAMPAIGN_ONLY_WALLET, campaignAddress: campaign },
+        { walletAddress: wallet, campaignAddress: campaign },
         { preflight: null },
       );
-      return normalizePreflight(payload, side, { campaignOnly });
+      return normalizePreflight(payload, side, { campaignOnly: false });
     },
   };
 }
