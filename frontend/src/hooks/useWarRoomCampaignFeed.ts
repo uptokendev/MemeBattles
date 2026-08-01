@@ -273,31 +273,44 @@ async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, sear
 async function fetchDraftCampaignsForWarRoom(selectedChainId: number): Promise<WarRoomCampaign[]> {
   try {
     const chainIds = draftFeedChainIds(selectedChainId);
-    // Prefer lifecycle listing (includes scheduledLaunchAt + armed campaignAddress).
-    // Fall back to the plain public drafts endpoint used by older environments.
-    const pages = await Promise.all(
-      chainIds.map(async (id) => {
-        try {
-          return await fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 200 });
-        } catch {
-          return (await fetchPublicCampaignDrafts({ chainId: id, limit: 100 })) as CampaignDraftLifecycle[];
-        }
-      }),
-    );
+    // Match Showcase: public drafts are the primary discovery source
+    // (promotion_published + ready_to_launch + scheduled).
+    // lifecycle=campaign only returns armed/scheduled campaign rows — merge it
+    // for launchAt metadata, never use it as the sole source.
+    const [publicPages, lifecyclePages] = await Promise.all([
+      Promise.all(
+        chainIds.map((id) =>
+          fetchPublicCampaignDrafts({ chainId: id, limit: 100 }).catch(() => [] as CampaignDraft[]),
+        ),
+      ),
+      Promise.all(
+        chainIds.map((id) =>
+          fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 200 }).catch(
+            () => [] as CampaignDraftLifecycle[],
+          ),
+        ),
+      ),
+    ]);
 
-    const seen = new Set<string>();
-    const visibleDrafts = pages
-      .flat()
-      .filter((draft) => {
-        const id = String(draft.id || "");
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      })
+    const byId = new Map<string, CampaignDraftLifecycle>();
+    for (const draft of [...publicPages.flat(), ...lifecyclePages.flat()]) {
+      const id = String(draft?.id || "");
+      if (!id) continue;
+      const current = byId.get(id);
+      byId.set(id, current ? ({ ...current, ...draft } as CampaignDraftLifecycle) : (draft as CampaignDraftLifecycle));
+    }
+
+    const visibleDrafts = Array.from(byId.values())
       .filter((draft) => chainIds.includes(Number(draft.chainId)))
-      .filter((draft) => draft.visibility === "public")
+      .filter((draft) => draft.visibility === "public" || !draft.visibility)
+      .filter((draft) => String(draft.status) !== "deployed" && String(draft.status) !== "archived")
       .filter((draft) => isDiscoverableDraft(draft))
-      .slice(0, 80);
+      .sort((a, b) =>
+        String((b as any).draftCreatedAt || b.createdAt || "").localeCompare(
+          String((a as any).draftCreatedAt || a.createdAt || ""),
+        ),
+      )
+      .slice(0, 100);
 
     const hydrated = await Promise.all(
       visibleDrafts.map(async (draft, index) => {
