@@ -386,7 +386,11 @@ export function UnifiedMarketChart({
         <div ref={containerRef} className="absolute inset-0" />
         {!hasData && (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">
-            {loading ? "Loading complete market history…" : error || "Waiting for the first market trade…"}
+            {loading
+              ? "Loading trade history…"
+              : error
+                ? error
+                : "No trade history loaded yet. Bonding curve and Topaz swaps will appear here once recovered."}
           </div>
         )}
       </div>

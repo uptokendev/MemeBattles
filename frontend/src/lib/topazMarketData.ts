@@ -1,6 +1,8 @@
 import { Contract, ethers } from "ethers";
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
+import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
 import { resolveVerifiedTopazRoute, type TopazResolvedRoute } from "@/lib/topazV2Trade";
+import type { SupportedChainId } from "@/lib/chainConfig";
 
 const POOL_ABI = [
   "function token0() view returns (address)",
@@ -14,9 +16,6 @@ const CAMPAIGN_ABI = [
   "function getGraduationState() view returns (address dexPair,uint256 finalCurvePrice,uint256 initialDexPrice,uint256 graduatedLiquidityTokens,uint256 graduatedLiquidityBnb,uint256 graduatedLiquidityLp,uint256 burnedUnsoldTokens,uint256 burnedUnusedLpTokens,uint256 postBurnTotalSupply,uint256 graduationBalance,uint256 graduationOvershoot)",
   "function token() view returns (address)",
 ] as const;
-
-const DEFAULT_LOOKBACK_BLOCKS = 800;
-const LOG_CHUNK_SIZE = 40;
 
 export type TopazMarketSnapshot = {
   resolved: TopazResolvedRoute;
@@ -92,51 +91,6 @@ export function normalizeTopazSwap(
   return null;
 }
 
-function isRateLimitError(error: unknown): boolean {
-  const message = String((error as any)?.shortMessage || (error as any)?.message || error || "").toLowerCase();
-  const code = String((error as any)?.error?.code ?? (error as any)?.code ?? "");
-  return (
-    code === "-32005" ||
-    message.includes("limit exceeded") ||
-    message.includes("rate limit") ||
-    message.includes("too many requests")
-  );
-}
-
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function getLogsChunked(
-  provider: ethers.Provider,
-  filter: { address: string; topics: string[]; fromBlock: number; toBlock: number },
-  signal?: AbortSignal,
-): Promise<ethers.Log[]> {
-  const out: ethers.Log[] = [];
-  for (let start = filter.fromBlock; start <= filter.toBlock; start += LOG_CHUNK_SIZE) {
-    if (signal?.aborted) break;
-    const end = Math.min(filter.toBlock, start + LOG_CHUNK_SIZE - 1);
-    try {
-      const logs = await provider.getLogs({
-        address: filter.address,
-        topics: filter.topics,
-        fromBlock: start,
-        toBlock: end,
-      });
-      out.push(...logs);
-    } catch (error) {
-      if (isRateLimitError(error)) {
-        // Back off once then stop — better partial history than a request storm.
-        await sleep(300);
-        break;
-      }
-      // Public RPCs often reject large ranges; keep partial history.
-    }
-    await sleep(40);
-  }
-  return out;
-}
-
 export async function fetchTopazMarketSnapshot(input: {
   provider: ethers.Provider;
   campaignAddress: string;
@@ -189,36 +143,22 @@ export async function fetchTopazMarketSnapshot(input: {
       ? priceBnb * toNumberFromWei(postBurnSupplyRaw)
       : 0;
 
-  const latest = await input.provider.getBlockNumber();
-  const lookback = Math.max(500, Math.min(input.lookbackBlocks ?? DEFAULT_LOOKBACK_BLOCKS, 12_000));
-  const fromBlock = Math.max(0, latest - lookback);
   const iface = new ethers.Interface(POOL_ABI);
   const swapTopic = iface.getEvent("Swap")!.topicHash;
-  const logs = await getLogsChunked(
-    input.provider,
-    {
-      address: resolved.pairAddress,
-      topics: [swapTopic],
-      fromBlock,
-      toBlock: latest,
-    },
+  const logs = await scanContractLogs({
+    chainId: input.chainId as SupportedChainId,
+    address: resolved.pairAddress,
+    topics: [swapTopic],
+    lookbackBlocks: input.lookbackBlocks ?? 3_000,
+    chunkSize: 80,
+    signal: input.signal,
+  });
+
+  const blockTimes = await getBlockTimestamps(
+    input.chainId as SupportedChainId,
+    logs.map((log) => Number(log.blockNumber || 0)),
     input.signal,
   );
-
-  const blockTimes = new Map<number, number>();
-  const uniqueBlocks = Array.from(new Set(logs.map((log) => Number(log.blockNumber || 0)).filter((n) => n > 0))).slice(
-    -40,
-  );
-  // Sequential block-time reads — parallel getBlock storms exhaust browser RPC sockets.
-  for (const blockNumber of uniqueBlocks) {
-    if (input.signal?.aborted) break;
-    try {
-      const block = await input.provider.getBlock(blockNumber);
-      if (block?.timestamp) blockTimes.set(blockNumber, Number(block.timestamp));
-    } catch {
-      // ignore
-    }
-  }
 
   const trades: CurveTradePoint[] = [];
   for (const log of logs) {

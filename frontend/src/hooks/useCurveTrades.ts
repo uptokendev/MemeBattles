@@ -2,21 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/chainConfig";
-import { getReadProvider } from "@/lib/readProvider";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
+import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
+import { loadCachedTradeHistory, saveCachedTradeHistory } from "@/lib/tradeHistoryCache";
 
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production-dca0.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
-// Browser eth_getLogs is intentionally opt-in. Historical recovery belongs in
-// the server-side indexer, where ranges can be split, retried and persisted.
-const ENABLE_ONCHAIN_TRADE_FALLBACK =
-  String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
-  String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() !== "1";
-// Public RPCs rate-limit getLogs hard (-32005). Keep windows tiny and never parallel-storm.
-const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 600;
-const ONCHAIN_FALLBACK_CHUNK_SIZE = 40;
-const onChainFallbackAttempted = new Set<string>();
 
 type RealtimeChannel = any;
 
@@ -135,76 +127,6 @@ async function fetchJson(url: string, signal?: AbortSignal) {
   return r.json();
 }
 
-function isRateLimitError(error: unknown): boolean {
-  const message = String((error as any)?.shortMessage || (error as any)?.message || error || "").toLowerCase();
-  const code = String((error as any)?.error?.code ?? (error as any)?.code ?? "");
-  return (
-    code === "-32005" ||
-    message.includes("limit exceeded") ||
-    message.includes("rate limit") ||
-    message.includes("too many requests") ||
-    message.includes("exceeded the quota")
-  );
-}
-
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function getLogsAdaptive(
-  provider: ethers.Provider,
-  params: { address: string; topics?: (string | string[] | null)[] },
-  fromBlock: number,
-  toBlock: number,
-  signal?: AbortSignal,
-  depth = 0,
-): Promise<ethers.Log[]> {
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-  try {
-    return await provider.getLogs({ ...params, fromBlock, toBlock } as any);
-  } catch (error) {
-    if (isRateLimitError(error)) {
-      if (depth >= 2) return [];
-      await sleep(250 * (depth + 1));
-      return getLogsAdaptive(provider, params, fromBlock, toBlock, signal, depth + 1);
-    }
-    const span = toBlock - fromBlock + 1;
-    // Do not recurse aggressively — that multiplies RPC calls and trips -32005.
-    if (span <= 10 || depth >= 3) return [];
-    const middle = Math.floor((fromBlock + toBlock) / 2);
-    const left = await getLogsAdaptive(provider, params, fromBlock, middle, signal, depth + 1);
-    const right = await getLogsAdaptive(provider, params, middle + 1, toBlock, signal, depth + 1);
-    return left.concat(right);
-  }
-}
-
-async function getLogsChunked(
-  provider: ethers.Provider,
-  params: { address: string; topics?: (string | string[] | null)[] },
-  fromBlock: number,
-  toBlock: number,
-  signal?: AbortSignal,
-) {
-  const logs: ethers.Log[] = [];
-
-  for (let start = fromBlock; start <= toBlock; start += ONCHAIN_FALLBACK_CHUNK_SIZE) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const end = Math.min(toBlock, start + ONCHAIN_FALLBACK_CHUNK_SIZE - 1);
-    try {
-      const chunk = await getLogsAdaptive(provider, params, start, end, signal);
-      logs.push(...chunk);
-    } catch (error) {
-      if (isRateLimitError(error)) break;
-      // Keep partial history on hard RPC failures.
-      break;
-    }
-    // Tiny pacing so public RPCs do not immediately rate-limit the next chunk.
-    await sleep(40);
-  }
-
-  return logs;
-}
-
 async function fetchOnChainTradeSnapshot(
   campaignAddress: string,
   chainId: SupportedChainId,
@@ -212,7 +134,6 @@ async function fetchOnChainTradeSnapshot(
   signal?: AbortSignal,
 ): Promise<CurveTradePoint[]> {
   if (!ethers.isAddress(campaignAddress)) return [];
-  const provider = getReadProvider(chainId) as ethers.Provider;
   const iface = new ethers.Interface(CAMPAIGN_ABI);
   const buyEvent = iface.getEvent("TokensPurchased");
   const sellEvent = iface.getEvent("TokensSold");
@@ -220,27 +141,24 @@ async function fetchOnChainTradeSnapshot(
   const sellTopic = sellEvent?.topicHash;
   if (!buyTopic || !sellTopic) return [];
 
-  const latest = await provider.getBlockNumber();
-  const fromBlock = Math.max(0, latest - ONCHAIN_FALLBACK_LOOKBACK_BLOCKS);
   const address = campaignAddress.toLowerCase();
-
-  // Sequential topic scans — parallel buy+sell getLogs doubles rate-limit hits.
-  const buyLogs = await getLogsChunked(provider, { address, topics: [buyTopic] }, fromBlock, latest, signal);
-  const sellLogs = await getLogsChunked(provider, { address, topics: [sellTopic] }, fromBlock, latest, signal);
-
-  const blockTimeCache = new Map<number, number>();
-  const timestampForBlock = async (blockNumber: number) => {
-    if (blockTimeCache.has(blockNumber)) return blockTimeCache.get(blockNumber) || 0;
-    try {
-      const block = await provider.getBlock(blockNumber);
-      const ts = Number(block?.timestamp ?? 0);
-      blockTimeCache.set(blockNumber, ts);
-      return ts;
-    } catch {
-      blockTimeCache.set(blockNumber, 0);
-      return 0;
-    }
-  };
+  // Multi-RPC sequential scans for bonding history (older graduated tokens often need this).
+  const buyLogs = await scanContractLogs({
+    chainId,
+    address,
+    topics: [buyTopic],
+    lookbackBlocks: 4_000,
+    chunkSize: 100,
+    signal,
+  });
+  const sellLogs = await scanContractLogs({
+    chainId,
+    address,
+    topics: [sellTopic],
+    lookbackBlocks: 4_000,
+    chunkSize: 100,
+    signal,
+  });
 
   const allLogs = [...buyLogs, ...sellLogs]
     .sort((a, b) => {
@@ -249,22 +167,27 @@ async function fetchOnChainTradeSnapshot(
     })
     .slice(-limit);
 
+  const timestamps = await getBlockTimestamps(
+    chainId,
+    allLogs.map((log) => Number(log.blockNumber || 0)),
+    signal,
+  );
+
   const out: CurveTradePoint[] = [];
-
   for (const log of allLogs) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
+    if (signal?.aborted) break;
     try {
       const parsed = iface.parseLog(log);
       if (!parsed) continue;
-
       const isSell = parsed.name === "TokensSold";
       const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
       const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
       const tokens = numberFromWei(tokensWei, 18);
       const bnb = numberFromWei(nativeWei, 18);
       const pricePerToken = tokens > 0 ? bnb / tokens : 0;
-      const timestamp = await timestampForBlock(log.blockNumber);
+      const blockNumber = Number(log.blockNumber ?? 0);
+      const timestamp = timestamps.get(blockNumber) || 0;
+      if (!timestamp) continue;
 
       out.push({
         type: isSell ? "sell" : "buy",
@@ -275,11 +198,11 @@ async function fetchOnChainTradeSnapshot(
         pricePerToken,
         timestamp,
         txHash: String(log.transactionHash || "").toLowerCase(),
-        blockNumber: Number(log.blockNumber ?? 0),
+        blockNumber,
         logIndex: Number(log.index ?? 0),
       });
     } catch {
-      // Ignore malformed legacy logs; a partial chart is better than a blank chart.
+      // ignore malformed logs
     }
   }
 
@@ -316,9 +239,29 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
   }, [campaignAddress, canLoadTrades, chainId, limit]);
 
-  const applySnapshot = useCallback((rows: any[]) => {
+  const applySnapshot = useCallback((rows: any[], options?: { replaceEmpty?: boolean }) => {
     const next: CurveTradePoint[] = (rows || [])
       .map((r: any) => {
+        // Already-normalized CurveTradePoint (on-chain path).
+        if ((typeof r?.tokensWei === "bigint" || typeof r?.tokensWei === "string") && r?.txHash && r?.type) {
+          try {
+            return {
+              type: String(r.type || "").toLowerCase() === "sell" ? "sell" : "buy",
+              from: String(r.from || "").toLowerCase(),
+              to: String(r.to || campaignAddress || "").toLowerCase(),
+              tokensWei: typeof r.tokensWei === "bigint" ? r.tokensWei : BigInt(String(r.tokensWei || "0")),
+              nativeWei: typeof r.nativeWei === "bigint" ? r.nativeWei : BigInt(String(r.nativeWei || "0")),
+              pricePerToken: Number(r.pricePerToken || 0),
+              timestamp: Number(r.timestamp || 0),
+              txHash: String(r.txHash || "").toLowerCase(),
+              blockNumber: Number(r.blockNumber || 0),
+              logIndex: Number(r.logIndex || 0),
+            } satisfies CurveTradePoint;
+          } catch {
+            return null;
+          }
+        }
+
         const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
         const txHash = String(r.tx_hash || r.txHash || "");
         const logIndex = Number(r.log_index ?? r.logIndex ?? 0);
@@ -343,11 +286,22 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           logIndex,
         } satisfies CurveTradePoint;
       })
-      .filter((t) => /^0x[a-f0-9]{64}$/i.test(t.txHash) && Number.isFinite(t.blockNumber));
+      .filter((t): t is CurveTradePoint => Boolean(t) && /^0x[a-f0-9]{64}$/i.test(String(t?.txHash || "")) && Number.isFinite(Number(t?.blockNumber)));
 
-    setPoints((prev) => mergeTrades(prev, next));
+    // Never wipe existing history with an empty fetch (RPC flakes / rate limits).
+    if (!next.length && !options?.replaceEmpty) {
+      return 0;
+    }
+
+    setPoints((prev) => {
+      const merged = next.length ? mergeTrades(prev, next) : prev;
+      if (campaignAddress && merged.length) {
+        saveCachedTradeHistory(chainId, campaignAddress, merged);
+      }
+      return merged;
+    });
     return next.length;
-  }, [campaignAddress]);
+  }, [campaignAddress, chainId]);
 
   const pullSnapshot = useCallback(async (signal?: AbortSignal, forceOnChainReconcile = false) => {
     if (!canLoadTrades || !campaignAddress) {
@@ -362,63 +316,49 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       if (!initialLoadedRef.current) setLoading(true);
 
-      const fallbackKey = `${chainId}:${String(campaignAddress).toLowerCase()}`;
-      const tryOnChainOnce = async () => {
-        if (onChainFallbackAttempted.has(fallbackKey) && !forceOnChainReconcile && !ENABLE_ONCHAIN_TRADE_FALLBACK) {
+      const tryOnChain = async () => {
+        try {
+          return await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+        } catch (error) {
+          if (!isAbortError(error)) {
+            console.warn("[useCurveTrades] on-chain trade recovery failed", error);
+          }
           return [] as CurveTradePoint[];
         }
-        onChainFallbackAttempted.add(fallbackKey);
-        return fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
       };
 
       if (!apiTradesUrl) {
-        if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
-          const fallbackRows = await tryOnChainOnce();
-          applySnapshot(fallbackRows);
-          setError(null);
-        } else {
-          setError(null);
-        }
+        const fallbackRows = await tryOnChain();
+        applySnapshot(fallbackRows);
+        setError(null);
         initialLoadedRef.current = true;
         return;
       }
 
       try {
         const rows = await fetchJson(apiTradesUrl, signal);
-        const apiRows = Array.isArray(rows) ? rows : [];
+        const apiRows = Array.isArray(rows) ? rows : Array.isArray((rows as any)?.items) ? (rows as any).items : [];
         applySnapshot(apiRows);
-        // Only probe chain when indexer is empty (or explicitly enabled) — and only once per campaign.
-        if ((apiRows.length === 0 || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) && !signal?.aborted) {
-          try {
-            const fallbackRows = await tryOnChainOnce();
-            if (fallbackRows.length) applySnapshot(fallbackRows);
-          } catch (fallbackError) {
-            if (!isAbortError(fallbackError) && apiRows.length === 0) {
-              console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
-            }
-          }
+        // If indexer is empty or force reconcile, recover bonding history from chain.
+        if ((apiRows.length === 0 || forceOnChainReconcile) && !signal?.aborted) {
+          const fallbackRows = await tryOnChain();
+          if (fallbackRows.length) applySnapshot(fallbackRows);
         }
         setError(null);
         initialLoadedRef.current = true;
       } catch (apiError: any) {
         if (isAbortError(apiError)) return;
         console.warn("[useCurveTrades] trade API failed; trying on-chain recovery", apiError);
-        try {
-          const fallbackRows = await tryOnChainOnce();
-          applySnapshot(fallbackRows);
-          setError(null);
-        } catch (fallbackError) {
-          if (!isAbortError(fallbackError)) {
-            console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
-            setError(null);
-          }
-        }
+        const fallbackRows = await tryOnChain();
+        applySnapshot(fallbackRows);
+        setError(null);
         initialLoadedRef.current = true;
       }
     } catch (error: any) {
       if (!isAbortError(error)) {
         console.warn("[useCurveTrades] trade snapshot failed", error);
-        setError("Trade history is temporarily unavailable.");
+        // Keep cached points visible; do not hard-error the chart empty.
+        setError(null);
         initialLoadedRef.current = true;
       }
     } finally {
@@ -433,8 +373,10 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     const prev = prevCampaignRef.current;
     if (curr !== prev) {
       prevCampaignRef.current = curr;
-      setPoints([]);
-      setLoading(canLoadTrades);
+      // Seed from session cache immediately so reload is not blank while network runs.
+      const cached = curr ? loadCachedTradeHistory(chainId, curr) : [];
+      setPoints(cached);
+      setLoading(canLoadTrades && cached.length === 0);
       setError(null);
       initialLoadedRef.current = false;
     }
@@ -451,7 +393,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       clearInterval(timer);
       ac.abort();
     };
-  }, [canLoadTrades, campaignAddress, pullSnapshot, reconcileMs]);
+  }, [canLoadTrades, campaignAddress, chainId, pullSnapshot, reconcileMs]);
 
   useEffect(() => {
     if (!canLoadTrades || !campaignAddress) return;

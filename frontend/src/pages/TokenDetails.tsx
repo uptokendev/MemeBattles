@@ -1137,12 +1137,15 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     topazMarket.pairAddress,
   ]);
 
-  // Continuous market trade stream: bonding curve history + on-chain Topaz swaps + API trades.
+  // Continuous market trade stream: bonding curve history + on-chain Topaz swaps + API trades + local session fills.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
     const byKey = new Map<string, CurveTradePoint>();
     const add = (point: CurveTradePoint) => {
-      const key = `${String(point.txHash || "").toLowerCase()}:${Number(point.logIndex ?? 0)}`;
-      if (!byKey.has(key)) byKey.set(key, point);
+      const tx = String(point.txHash || "").toLowerCase();
+      if (!/^0x[a-f0-9]{64}$/.test(tx)) return;
+      const key = `${tx}:${Number(point.logIndex ?? 0)}`;
+      // Prefer richer later sources (Topaz pool / local fill) over sparse rows.
+      byKey.set(key, point);
     };
     for (const point of curvePointsForUi) add(point);
     for (const point of topazMarket.trades) add(point);
