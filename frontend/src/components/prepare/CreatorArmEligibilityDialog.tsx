@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { Clock3, Layers, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +21,8 @@ export type CreatorArmEligibilityDialogDetail = {
   message?: string | null;
 };
 
+const EVENT_NAME = "mwz:creatorArmBlocked";
+
 function formatLocal(seconds?: number | null) {
   if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return null;
   return new Date(seconds * 1000).toLocaleString(undefined, {
@@ -30,6 +33,12 @@ function formatLocal(seconds?: number | null) {
     minute: "2-digit",
     timeZoneName: "short",
   });
+}
+
+/** Fire from deploy flows so the dialog can mount at app root (same pattern as creator protection). */
+export function emitCreatorArmBlocked(detail: CreatorArmEligibilityDialogDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail }));
 }
 
 export function CreatorArmEligibilityDialog({
@@ -114,7 +123,7 @@ export function CreatorArmEligibilityDialog({
               </span>
             </span>
 
-            {detail?.message && detail.reason !== "generic" ? (
+            {detail?.message ? (
               <span className="block text-xs text-muted-foreground">{detail.message}</span>
             ) : null}
           </DialogDescription>
@@ -129,7 +138,31 @@ export function CreatorArmEligibilityDialog({
   );
 }
 
-/** Map eligibility / API errors into dialog content. Returns null for unrelated failures. */
+/** App-root host so the dialog always mounts even when the deploy page state is messy. */
+export function CreatorArmEligibilityDialogHost() {
+  const [detail, setDetail] = useState<CreatorArmEligibilityDialogDetail | null>(null);
+
+  useEffect(() => {
+    const onBlocked = (event: Event) => {
+      const next = (event as CustomEvent<CreatorArmEligibilityDialogDetail>).detail;
+      if (next) setDetail(next);
+    };
+    window.addEventListener(EVENT_NAME, onBlocked as EventListener);
+    return () => window.removeEventListener(EVENT_NAME, onBlocked as EventListener);
+  }, []);
+
+  return (
+    <CreatorArmEligibilityDialog
+      detail={detail}
+      open={Boolean(detail)}
+      onOpenChange={(open) => {
+        if (!open) setDetail(null);
+      }}
+    />
+  );
+}
+
+/** Map eligibility / API / on-chain errors into dialog content. */
 export function classifyCreatorArmBlock(input: {
   mode?: "now" | "scheduled" | null;
   eligibility?: {
@@ -141,12 +174,16 @@ export function classifyCreatorArmBlock(input: {
     manualReviewRequired?: boolean;
   } | null;
   errorMessage?: string | null;
+  errorCode?: string | null;
 }): CreatorArmEligibilityDialogDetail | null {
   const now = Math.floor(Date.now() / 1000);
   const eligibility = input.eligibility;
   const text = String(input.errorMessage || "").toLowerCase();
+  const code = String(input.errorCode || "").toUpperCase();
 
-  if (eligibility && eligibility.allowed === false) {
+  const fromEligibility = (): CreatorArmEligibilityDialogDetail | null => {
+    if (!eligibility) return null;
+    // Prefer concrete block reasons even if a stale allowed=true is left in state.
     if (eligibility.restricted) {
       return { reason: "restricted", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
     }
@@ -154,48 +191,92 @@ export function classifyCreatorArmBlock(input: {
       return { reason: "manual_review", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
     }
     if (Number(eligibility.currentLiveCount) >= Number(eligibility.maxLiveBonding) && Number(eligibility.maxLiveBonding) > 0) {
-      return { reason: "live_limit", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
+      // Only treat as live-limit block when not allowed, or error text also points at limits.
+      if (eligibility.allowed === false || text.includes("live") || text.includes("limit")) {
+        return { reason: "live_limit", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
+      }
     }
     if (Number(eligibility.cooldownEndsAt) > now) {
-      return {
-        reason: "cooldown",
-        mode: input.mode,
-        cooldownEndsAt: Number(eligibility.cooldownEndsAt),
-        ...counts(eligibility),
-        message: input.errorMessage,
-      };
+      if (eligibility.allowed === false || looksLikeCooldownError(text, code)) {
+        return {
+          reason: "cooldown",
+          mode: input.mode,
+          cooldownEndsAt: Number(eligibility.cooldownEndsAt),
+          ...counts(eligibility),
+          message: input.errorMessage,
+        };
+      }
     }
-    return { reason: "generic", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
-  }
+    if (eligibility.allowed === false) {
+      return { reason: "generic", mode: input.mode, ...counts(eligibility), message: input.errorMessage };
+    }
+    return null;
+  };
 
-  if (!text) return null;
+  const eligibilityHit = fromEligibility();
+  if (eligibilityHit) return eligibilityHit;
 
-  if (text.includes("live campaign limit") || text.includes("live-limit") || text.includes("maxlive") || text.includes("live bonding")) {
-    return { reason: "live_limit", mode: input.mode, message: input.errorMessage };
+  if (looksLikeLiveLimitError(text, code)) {
+    return { reason: "live_limit", mode: input.mode, ...counts(eligibility || {}), message: input.errorMessage };
   }
-  if (text.includes("cooldown") || text.includes("cannot deploy or arm another") || text.includes("cannot arm another")) {
+  if (looksLikeCooldownError(text, code)) {
     const isoMatch = String(input.errorMessage || "").match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
-    let cooldownEndsAt: number | null = null;
+    let cooldownEndsAt: number | null = Number(eligibility?.cooldownEndsAt || 0) || null;
     if (isoMatch) {
       const ms = Date.parse(isoMatch[0]);
       if (Number.isFinite(ms)) cooldownEndsAt = Math.floor(ms / 1000);
     }
-    return { reason: "cooldown", mode: input.mode, cooldownEndsAt, message: input.errorMessage };
+    return {
+      reason: "cooldown",
+      mode: input.mode,
+      cooldownEndsAt,
+      ...counts(eligibility || {}),
+      message: input.errorMessage,
+    };
   }
-  if (text.includes("restricted")) {
+  if (text.includes("restricted") || code.includes("RESTRICT")) {
     return { reason: "restricted", mode: input.mode, message: input.errorMessage };
   }
-  if (text.includes("manual review")) {
+  if (text.includes("manual review") || code.includes("MANUAL_REVIEW")) {
     return { reason: "manual_review", mode: input.mode, message: input.errorMessage };
   }
 
   return null;
 }
 
+function looksLikeCooldownError(text: string, code: string) {
+  return (
+    text.includes("cooldown") ||
+    text.includes("cannot deploy or arm another") ||
+    text.includes("cannot arm another") ||
+    text.includes("creatornoteligible") ||
+    text.includes("creator not eligible") ||
+    text.includes("not eligible") ||
+    text.includes("24h between") ||
+    text.includes("24 hours between") ||
+    code.includes("COOLDOWN") ||
+    code.includes("CREATOR_NOT_ELIGIBLE") ||
+    code.includes("CREATE_ONCHAIN_ELIGIBILITY") ||
+    code.includes("SCHEDULED_CREATE_ONCHAIN_ELIGIBILITY")
+  );
+}
+
+function looksLikeLiveLimitError(text: string, code: string) {
+  return (
+    text.includes("live campaign limit") ||
+    text.includes("live-limit") ||
+    text.includes("maxlive") ||
+    text.includes("live bonding") ||
+    text.includes("live limit") ||
+    code.includes("LIVE_LIMIT") ||
+    code.includes("CREATORLIVELIMIT")
+  );
+}
+
 function counts(eligibility: {
-  currentLiveCount?: number;
-  maxLiveBonding?: number;
-  cooldownEndsAt?: number;
+  currentLiveCount?: number | null;
+  maxLiveBonding?: number | null;
+  cooldownEndsAt?: number | null;
 }) {
   return {
     currentLiveCount: Number(eligibility.currentLiveCount ?? 0),

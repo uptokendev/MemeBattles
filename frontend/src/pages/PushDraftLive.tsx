@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GraduationTierSelector } from "@/components/launchpad/GraduationTierSelector";
 import {
-  CreatorArmEligibilityDialog,
   classifyCreatorArmBlock,
+  emitCreatorArmBlocked,
   type CreatorArmEligibilityDialogDetail,
 } from "@/components/prepare/CreatorArmEligibilityDialog";
 import { useWallet } from "@/contexts/WalletContext";
@@ -109,15 +109,13 @@ export default function PushDraftLive() {
   const [submitting, setSubmitting] = useState(false);
   const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
   const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
-  const [armBlockDetail, setArmBlockDetail] = useState<CreatorArmEligibilityDialogDetail | null>(null);
-  const [armBlockOpen, setArmBlockOpen] = useState(false);
   const [mode, setMode] = useState<"now" | "scheduled">("now");
   const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
 
   const showArmBlock = (detail: CreatorArmEligibilityDialogDetail) => {
-    setArmBlockDetail(detail);
-    setArmBlockOpen(true);
+    // App-root host listens for this event (more reliable than page-local Dialog state).
+    emitCreatorArmBlocked(detail);
   };
 
   const viewerWallet = wallet.account || solanaWallet.solanaAccount || null;
@@ -214,12 +212,14 @@ export default function PushDraftLive() {
     }
 
     setSubmitting(true);
+    let latestEligibility: ScheduledCreatorLaunchEligibility | null = creatorEligibility;
     try {
       const eligibility = await readScheduledCreatorLaunchEligibility({
         signer: wallet.signer,
         chainId: Number(draft.chainId),
         factoryAddress: eligibilityFactoryAddress,
       });
+      latestEligibility = eligibility;
       setCreatorEligibility(eligibility);
       if (!eligibility.allowed) {
         const now = Math.floor(Date.now() / 1000);
@@ -239,7 +239,11 @@ export default function PushDraftLive() {
             mode,
             eligibility,
             errorMessage: message,
-          }) || { reason: "generic", mode, message },
+          }) || { reason: "generic", mode, message, ...{
+            cooldownEndsAt: eligibility.cooldownEndsAt,
+            currentLiveCount: eligibility.currentLiveCount,
+            maxLiveBonding: eligibility.maxLiveBonding,
+          } },
         );
         return;
       }
@@ -316,13 +320,30 @@ export default function PushDraftLive() {
       toast.success(`${selectedTier} campaign is live.`);
       navigate(`/token/${created.tokenAddress || created.campaignAddress}`);
     } catch (err: any) {
-      const message = String(err?.shortMessage || err?.reason || err?.message || "Draft deployment failed.");
+      const message = String(
+        err?.shortMessage ||
+          err?.reason ||
+          err?.info?.error?.message ||
+          err?.data?.message ||
+          err?.message ||
+          "Draft deployment failed.",
+      );
+      const code = String(err?.code || err?.data?.code || err?.error?.code || err?.preflight?.code || "");
       const classified = classifyCreatorArmBlock({
         mode,
-        eligibility: creatorEligibility,
+        eligibility: latestEligibility,
         errorMessage: message,
+        errorCode: code,
       });
       if (classified) {
+        // Prefer fresh eligibility timestamps when the chain only returns CreatorNotEligible.
+        if (classified.reason === "cooldown" && !classified.cooldownEndsAt && latestEligibility?.cooldownEndsAt) {
+          classified.cooldownEndsAt = latestEligibility.cooldownEndsAt;
+        }
+        if (classified.reason === "live_limit" && latestEligibility) {
+          classified.currentLiveCount = latestEligibility.currentLiveCount;
+          classified.maxLiveBonding = latestEligibility.maxLiveBonding;
+        }
         showArmBlock(classified);
       } else {
         toast.error(message);
@@ -351,14 +372,6 @@ export default function PushDraftLive() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <CreatorArmEligibilityDialog
-        detail={armBlockDetail}
-        open={armBlockOpen}
-        onOpenChange={(open) => {
-          setArmBlockOpen(open);
-          if (!open) setArmBlockDetail(null);
-        }}
-      />
       <div className="mwz-card p-5 md:p-7">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>

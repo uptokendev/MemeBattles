@@ -51,6 +51,7 @@ import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { TokenSafetyRouteOverlay } from "@/components/token/TokenSafetyRouteOverlay";
 import { ScheduledTokenAccessRoute } from "@/components/token/ScheduledTokenAccessRoute";
 import { CreatorProtectionDialog } from "@/components/token/CreatorProtectionDialog";
+import { CreatorArmEligibilityDialogHost } from "@/components/prepare/CreatorArmEligibilityDialog";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
@@ -111,6 +112,7 @@ function AppShellLayout({
       <RewardUnlockFlight />
       <VictoryUnlockModal />
       <CreatorProtectionDialog />
+      <CreatorArmEligibilityDialogHost />
 
       <main
         className={[
