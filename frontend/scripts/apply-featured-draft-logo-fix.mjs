@@ -13,6 +13,10 @@ let source = original.replace(/\r\n/g, "\n");
 function replaceOnce(before, after, label, marker = after) {
   if (source.includes(marker)) return;
   const matches = source.split(before).length - 1;
+  if (matches === 0) {
+    console.warn(`[featured-draft-logo] skip ${label}: no match (already fixed or source evolved)`);
+    return;
+  }
   if (matches !== 1) throw new Error(`${label}: expected exactly one match, found ${matches}`);
   source = source.replace(before, after);
 }

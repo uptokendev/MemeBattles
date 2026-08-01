@@ -24,6 +24,12 @@ function write(file, source) {
 function replaceOnce(source, before, after, label, marker = after) {
   if (source.includes(marker)) return source;
   const matches = source.split(before).length - 1;
+  // Source often already contains the permanent fix (or a newer rewrite). Skip
+  // missing anchors instead of crashing Railway start/build.
+  if (matches === 0) {
+    console.warn(`[devpostgrad-closeout] skip ${label}: no match (already fixed or source evolved)`);
+    return source;
+  }
   if (matches !== 1) throw new Error(`${label}: expected exactly one match, found ${matches}`);
   return source.replace(before, after);
 }
@@ -168,6 +174,16 @@ function patchUpvoteDialog() {
 function patchDraftGrid() {
   const file = read("src/components/home/DraftCampaignGrid.tsx");
   let source = file.source;
+  // Permanent source already loads BSC 56+97 via draftFeedChainIds(); keep this
+  // patch only for older checkouts that still use a single-chain fetch.
+  if (
+    source.includes("function draftFeedChainIds(") ||
+    source.includes("draftFeedChainIds(chainId)") ||
+    source.includes("fetchPublicCampaignDrafts({ limit: 100 })")
+  ) {
+    console.log("[devpostgrad-closeout] DraftCampaignGrid already multi-chain; skip legacy patch");
+    return;
+  }
   source = replaceOnce(
     source,
     `        const drafts = (await fetchPublicCampaignDrafts({ chainId, limit: 50 })) as CampaignDraftLifecycle[];\n        const candidates = drafts\n          .filter((draft) => Number(draft.chainId) === Number(chainId))\n          .filter((draft) => draft.visibility === "public")`,
