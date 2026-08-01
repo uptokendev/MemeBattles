@@ -207,8 +207,6 @@ export default function PushDraftLive() {
         signer: wallet.signer,
         chainId: Number(draft.chainId),
         factoryAddress: eligibilityFactoryAddress,
-        // Immediate deploy keeps arm-time cooldown; timed arms skip it (live-cap still applies).
-        enforceArmCooldown: mode === "now",
       });
       setCreatorEligibility(eligibility);
       if (!eligibility.allowed) {
@@ -216,16 +214,14 @@ export default function PushDraftLive() {
         if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
           throw new Error(
             `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). ` +
-              "Graduate an existing live campaign before another deploy/arm. This on-chain cap blocks mass multi-deploy (not the draft list).",
+              "Graduate an existing live campaign before another deploy/arm. Tier 1 max is 3 concurrent live campaigns (including timed arms).",
           );
         }
         if (eligibility.cooldownEndsAt > now) {
           throw new Error(
-            mode === "now"
-              ? `Creator arm cooldown active until ${formatLocalLaunch(eligibility.cooldownEndsAt)}. ` +
-                "Immediate deploy waits 24h after any previous arm/deploy. Use Deploy with countdown for additional future launches (still limited by live campaign cap)."
-              : `This creator wallet cannot arm another campaign until ${formatLocalLaunch(eligibility.cooldownEndsAt)}. ` +
-                "If this is a timed arm on the corrected factory, upgrade registry/factory so timed arms skip arm-time cooldown.",
+            `Creator arm cooldown active until ${formatLocalLaunch(eligibility.cooldownEndsAt)}. ` +
+              "Both immediate deploy and timed arm share the same 24h cooldown after any on-chain deploy. " +
+              "Prepare as many drafts as you want now; arm at most one every 24 hours (and at most 3 live for Tier 1).",
           );
         }
         throw new Error("This creator wallet cannot deploy or arm another campaign right now.");

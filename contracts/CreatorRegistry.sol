@@ -88,19 +88,12 @@ contract CreatorRegistry is Ownable {
         emit CreatorManualReviewUpdated(creator, required);
     }
 
-    /// @notice Records an immediate (or default) launch. Enforces tier live-cap and arm-time cooldown.
     function recordLaunch(address creator) external onlyLaunchRecorder {
-        _assertCanLaunch(creator, true);
-        _recordLaunch(creator);
-    }
-
-    /// @notice Records a future timed arm. Enforces tier live-cap and risk gates, but NOT arm-time cooldown.
-    /// @dev Mass multi-arm is still bounded by maxLiveBonding (3/5/10). Cooldown remains for immediate deploys
-    ///      because recordLaunch updates lastLaunchTimestamp; scheduled arms also stamp lastLaunchTimestamp so
-    ///      an immediate deploy right after a timed arm still waits out the cooldown.
-    function recordScheduledLaunch(address creator) external onlyLaunchRecorder {
-        _assertCanLaunch(creator, false);
-        _recordLaunch(creator);
+        _assertCanLaunch(creator);
+        CreatorProfile storage profile = _profiles[creator];
+        profile.liveBondingCount += 1;
+        profile.lastLaunchTimestamp = block.timestamp;
+        emit CreatorLaunchRecorded(creator, profile.liveBondingCount, block.timestamp);
     }
 
     function recordGraduation(address creator) external onlyLaunchRecorder {
@@ -113,34 +106,12 @@ contract CreatorRegistry is Ownable {
     }
 
     function canLaunch(address creator) external view returns (bool) {
-        return _canLaunch(creator, true);
-    }
-
-    /// @notice Whether the creator may arm a future timed campaign now (live-cap only, no arm cooldown).
-    function canLaunchScheduled(address creator) external view returns (bool) {
-        return _canLaunch(creator, false);
-    }
-
-    function _recordLaunch(address creator) internal {
-        CreatorProfile storage profile = _profiles[creator];
-        profile.liveBondingCount += 1;
-        profile.lastLaunchTimestamp = block.timestamp;
-        emit CreatorLaunchRecorded(creator, profile.liveBondingCount, block.timestamp);
-    }
-
-    function _canLaunch(address creator, bool enforceCooldown) internal view returns (bool) {
         if (creator == address(0)) return false;
         CreatorProfile memory profile = _profiles[creator];
         CreatorRules memory rules = getCreatorRules(creator);
         if (profile.restricted || profile.manualReviewRequired) return false;
         if (profile.liveBondingCount >= rules.maxLiveBonding) return false;
-        if (
-            enforceCooldown &&
-            profile.lastLaunchTimestamp != 0 &&
-            block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds
-        ) {
-            return false;
-        }
+        if (profile.lastLaunchTimestamp != 0 && block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds) return false;
         return true;
     }
 
@@ -158,20 +129,14 @@ contract CreatorRegistry is Ownable {
         return _rulesForTier(tier);
     }
 
-    function _assertCanLaunch(address creator, bool enforceCooldown) internal view {
+    function _assertCanLaunch(address creator) internal view {
         if (creator == address(0)) revert CreatorZero();
         CreatorProfile memory profile = _profiles[creator];
         CreatorRules memory rules = getCreatorRules(creator);
         if (profile.restricted) revert CreatorRestricted();
         if (profile.manualReviewRequired) revert CreatorManualReview();
         if (profile.liveBondingCount >= rules.maxLiveBonding) revert CreatorLiveLimit();
-        if (
-            enforceCooldown &&
-            profile.lastLaunchTimestamp != 0 &&
-            block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds
-        ) {
-            revert CreatorCooldown();
-        }
+        if (profile.lastLaunchTimestamp != 0 && block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds) revert CreatorCooldown();
     }
 
     function _effectiveTier(CreatorTier tier) internal pure returns (CreatorTier) {

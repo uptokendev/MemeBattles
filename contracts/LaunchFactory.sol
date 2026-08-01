@@ -340,9 +340,7 @@ contract LaunchFactory is Ownable {
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
         address lockedLpReceiver = address(permanentLpLocker);
 
-        bool timedArm = uint256(schedule.launchAt) > block.timestamp;
-        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) =
-            _enforceCreatorEligibility(msg.sender, !timedArm);
+        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
@@ -386,14 +384,10 @@ contract LaunchFactory is Ownable {
         string memory metadataURI = "";
 
         if (address(creatorRegistry) != address(0)) {
-            // Immediate deploys enforce arm-time cooldown. Future timed arms skip
-            // arm-time cooldown but still consume liveBondingCount (mass-deploy
-            // bound). Both stamp lastLaunchTimestamp at the arm block.
-            if (timedArm) {
-                creatorRegistry.recordScheduledLaunch(msg.sender);
-            } else {
-                creatorRegistry.recordLaunch(msg.sender);
-            }
+            // Immediate and scheduled deployments are both irreversible creator
+            // launch actions. The registry records the current block timestamp,
+            // never the future trading-open timestamp.
+            creatorRegistry.recordLaunch(msg.sender);
         }
 
         _campaigns.push(
@@ -555,38 +549,10 @@ contract LaunchFactory is Ownable {
         LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
     }
 
-    /// @notice Whether the creator may perform an immediate deploy/arm in this block.
-    /// @dev Arm-time cooldown applies. For future timed arms use creatorScheduledArmEligibility.
+    /// @notice Returns whether the creator may perform an irreversible deploy/arm
+    /// action in the current block. launchAt is intentionally not an input.
     function creatorLaunchEligibility(address creator)
         public
-        view
-        returns (bool allowed, uint256 cooldownEndsAt, uint256 currentLiveCount, uint256 maxLiveBonding)
-    {
-        return _creatorEligibility(creator, true);
-    }
-
-    /// @notice Whether the creator may arm a future timed campaign now.
-    /// @dev Skips arm-time cooldown; still enforces maxLiveBonding / risk gates.
-    function creatorScheduledArmEligibility(address creator)
-        public
-        view
-        returns (bool allowed, uint256 cooldownEndsAt, uint256 currentLiveCount, uint256 maxLiveBonding)
-    {
-        return _creatorEligibility(creator, false);
-    }
-
-    function canCreatorLaunch(address creator) external view returns (bool) {
-        (bool allowed,,,) = creatorLaunchEligibility(creator);
-        return allowed;
-    }
-
-    function canCreatorArmScheduled(address creator) external view returns (bool) {
-        (bool allowed,,,) = creatorScheduledArmEligibility(creator);
-        return allowed;
-    }
-
-    function _creatorEligibility(address creator, bool enforceCooldown)
-        internal
         view
         returns (bool allowed, uint256 cooldownEndsAt, uint256 currentLiveCount, uint256 maxLiveBonding)
     {
@@ -606,25 +572,29 @@ contract LaunchFactory is Ownable {
             if (registryCooldownEnd > cooldownEndsAt) cooldownEndsAt = registryCooldownEnd;
         }
 
-        bool cooldownClear = !enforceCooldown || block.timestamp >= cooldownEndsAt;
         allowed =
             !profile.restricted &&
             !profile.manualReviewRequired &&
             currentLiveCount < maxLiveBonding &&
-            cooldownClear;
+            block.timestamp >= cooldownEndsAt;
+    }
+
+    function canCreatorLaunch(address creator) external view returns (bool) {
+        (bool allowed,,,) = creatorLaunchEligibility(creator);
+        return allowed;
     }
 
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
     }
 
-    function _enforceCreatorEligibility(address creator, bool enforceCooldown)
+    function _enforceCreatorEligibility(address creator)
         internal
         view
         returns (uint256 lockDuration, uint256 buyCapWei, uint256 maxClusterWallets)
     {
         if (address(creatorRegistry) == address(0)) return (0, 0, 0);
-        (bool allowed,,,) = _creatorEligibility(creator, enforceCooldown);
+        (bool allowed,,,) = creatorLaunchEligibility(creator);
         if (!allowed) revert CreatorNotEligible();
         CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
         return (rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
