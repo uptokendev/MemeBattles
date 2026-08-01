@@ -623,6 +623,8 @@ const TokenDetails = () => {
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
+  /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
+  const [localTopazTrades, setLocalTopazTrades] = useState<CurveTradePoint[]>([]);
 
   // Fetch maker profiles for displayed trades (best-effort; do not block UI)
   useEffect(() => {
@@ -637,19 +639,21 @@ const TokenDetails = () => {
       )
     );
 
-    const missing = uniq.filter((a) => makerProfiles[a] === undefined).slice(0, 30);
+    // Cap profiles and never depend on makerProfiles state (that caused request storms).
+    const missing = uniq.filter((a) => makerProfiles[a] === undefined).slice(0, 8);
     if (!missing.length) return;
 
     let cancelled = false;
     (async () => {
       for (const addr of missing) {
+        if (cancelled) return;
         try {
           const p = await fetchUserProfile(chainIdNum, addr);
           if (cancelled) return;
-          setMakerProfiles((prev) => ({ ...prev, [addr]: p }));
+          setMakerProfiles((prev) => (prev[addr] !== undefined ? prev : { ...prev, [addr]: p }));
         } catch {
           if (cancelled) return;
-          setMakerProfiles((prev) => ({ ...prev, [addr]: null }));
+          setMakerProfiles((prev) => (prev[addr] !== undefined ? prev : { ...prev, [addr]: null }));
         }
       }
     })();
@@ -657,7 +661,8 @@ const TokenDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [txs, wallet.chainId, makerProfiles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txs, wallet.chainId]);
 
   // Fetch creator profile (best-effort; do not block UI)
   useEffect(() => {
@@ -1059,6 +1064,11 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
   }, [combinedCurvePointsSafe]);
 
+  // Reset optimistic Topaz fills when switching campaigns.
+  useEffect(() => {
+    setLocalTopazTrades([]);
+  }, [resolvedCampaignAddress]);
+
   const unifiedMarket = useUnifiedMarket({
     campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
     chainId: chainIdForStorage,
@@ -1094,6 +1104,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     };
     for (const point of curvePointsForUi) add(point);
     for (const point of topazMarket.trades) add(point);
+    for (const point of localTopazTrades) add(point);
     for (const trade of unifiedMarket.trades || []) {
       let tokensWei = 0n;
       let nativeWei = 0n;
@@ -1126,7 +1137,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
         Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||
         Number(a.logIndex || 0) - Number(b.logIndex || 0),
     );
-  }, [curvePointsForUi, topazMarket.trades, unifiedMarket.trades]);
+  }, [curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
@@ -1919,6 +1930,7 @@ const bnbUsd = useMemo(() => {
           expectedTokenAddress: campaign.token,
           chainId: chainIdForStorage,
         });
+        let optimistic: CurveTradePoint | null = null;
         if (tradeTab === "buy") {
           const nativeAmountInRaw = tradeInputDenom === "BNB" ? parseBnbAmountWei(tradeAmount) : effectiveBnbWei;
           if (nativeAmountInRaw <= 0n) throw new Error("Enter a valid BNB or token amount.");
@@ -1939,6 +1951,23 @@ const bnbUsd = useMemo(() => {
             title: "Buy confirmed",
             description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
           });
+          const tokensOut = quote.amountOutRaw > 0n ? quote.amountOutRaw : quote.minimumOutRaw;
+          const pricePerToken =
+            tokensOut > 0n
+              ? Number(ethers.formatEther(nativeAmountInRaw)) / Number(ethers.formatUnits(tokensOut, TOKEN_DECIMALS))
+              : 0;
+          optimistic = {
+            type: "buy",
+            from: String(wallet.account).toLowerCase(),
+            to: String(campaign.token || "").toLowerCase(),
+            tokensWei: tokensOut,
+            nativeWei: nativeAmountInRaw,
+            pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+            timestamp: Math.floor(Date.now() / 1000),
+            txHash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
+            blockNumber: Number(receipt?.blockNumber || 0),
+            logIndex: 9_000_000 + Math.floor(Math.random() * 1000),
+          };
         } else {
           const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
           if (tokenAmountInRaw <= 0n) throw new Error("Enter a valid token or BNB amount.");
@@ -1976,12 +2005,34 @@ const bnbUsd = useMemo(() => {
             title: "Sell confirmed",
             description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
           });
+          const nativeOut = quote.amountOutRaw > 0n ? quote.amountOutRaw : quote.minimumOutRaw;
+          const pricePerToken =
+            tokenAmountInRaw > 0n
+              ? Number(ethers.formatEther(nativeOut)) / Number(ethers.formatUnits(tokenAmountInRaw, TOKEN_DECIMALS))
+              : 0;
+          optimistic = {
+            type: "sell",
+            from: String(wallet.account).toLowerCase(),
+            to: String(wallet.account).toLowerCase(),
+            tokensWei: tokenAmountInRaw,
+            nativeWei: nativeOut,
+            pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+            timestamp: Math.floor(Date.now() / 1000),
+            txHash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
+            blockNumber: Number(receipt?.blockNumber || 0),
+            logIndex: 9_000_000 + Math.floor(Math.random() * 1000),
+          };
+        }
+        if (optimistic?.txHash) {
+          setLocalTopazTrades((prev) => [...prev, optimistic as CurveTradePoint]);
         }
         try {
           await unifiedMarket.refresh();
         } catch {
           // Market API may still be disabled during rollout.
         }
+        // Give the pool a moment, then re-scan Topaz swaps for the confirmed fill.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         try {
           await topazMarket.refresh();
         } catch {

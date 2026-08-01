@@ -15,8 +15,8 @@ const CAMPAIGN_ABI = [
   "function token() view returns (address)",
 ] as const;
 
-const DEFAULT_LOOKBACK_BLOCKS = 4_000;
-const LOG_CHUNK_SIZE = 400;
+const DEFAULT_LOOKBACK_BLOCKS = 2_500;
+const LOG_CHUNK_SIZE = 250;
 
 export type TopazMarketSnapshot = {
   resolved: TopazResolvedRoute;
@@ -179,17 +179,19 @@ export async function fetchTopazMarketSnapshot(input: {
   });
 
   const blockTimes = new Map<number, number>();
-  const uniqueBlocks = Array.from(new Set(logs.map((log) => Number(log.blockNumber || 0)).filter((n) => n > 0)));
-  await Promise.all(
-    uniqueBlocks.slice(-80).map(async (blockNumber) => {
-      try {
-        const block = await input.provider.getBlock(blockNumber);
-        if (block?.timestamp) blockTimes.set(blockNumber, Number(block.timestamp));
-      } catch {
-        // ignore
-      }
-    }),
+  const uniqueBlocks = Array.from(new Set(logs.map((log) => Number(log.blockNumber || 0)).filter((n) => n > 0))).slice(
+    -40,
   );
+  // Sequential block-time reads — parallel getBlock storms exhaust browser RPC sockets.
+  for (const blockNumber of uniqueBlocks) {
+    if (input.signal?.aborted) break;
+    try {
+      const block = await input.provider.getBlock(blockNumber);
+      if (block?.timestamp) blockTimes.set(blockNumber, Number(block.timestamp));
+    } catch {
+      // ignore
+    }
+  }
 
   const trades: CurveTradePoint[] = [];
   for (const log of logs) {

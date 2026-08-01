@@ -347,29 +347,32 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         const rows = await fetchJson(apiTradesUrl, signal);
         const apiRows = Array.isArray(rows) ? rows : [];
         applySnapshot(apiRows);
-        if (forceOnChainReconcile && ENABLE_ONCHAIN_TRADE_FALLBACK) {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-          applySnapshot(fallbackRows);
+        // Empty indexer history is common for older/multi-factory campaigns — fill from chain.
+        if (apiRows.length === 0 || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) {
+          try {
+            const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+            if (fallbackRows.length) applySnapshot(fallbackRows);
+          } catch (fallbackError) {
+            if (!isAbortError(fallbackError) && apiRows.length === 0) {
+              console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+            }
+          }
         }
         setError(null);
         initialLoadedRef.current = true;
       } catch (apiError: any) {
         if (isAbortError(apiError)) return;
-        if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
-          console.warn("[useCurveTrades] trade API failed; using explicit on-chain fallback", apiError);
-          try {
-            const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-            applySnapshot(fallbackRows);
-            setError(null);
-          } catch (fallbackError) {
-            if (!isAbortError(fallbackError)) {
-              console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
-              setError("Trade history is temporarily unavailable.");
-            }
+        // Always try a bounded on-chain recovery when the API fails.
+        console.warn("[useCurveTrades] trade API failed; trying on-chain recovery", apiError);
+        try {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          applySnapshot(fallbackRows);
+          setError(null);
+        } catch (fallbackError) {
+          if (!isAbortError(fallbackError)) {
+            console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+            setError("Trade history is temporarily unavailable.");
           }
-        } else {
-          console.warn("[useCurveTrades] trade API failed; indexer must repair/backfill", apiError);
-          setError("Trade history is temporarily unavailable.");
         }
         initialLoadedRef.current = true;
       }

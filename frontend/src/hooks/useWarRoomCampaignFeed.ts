@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Contract } from "ethers";
 import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
@@ -12,6 +13,7 @@ import {
   isEvmChainId,
   type SupportedChainId,
 } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import {
   lifecycleByCampaign,
@@ -21,11 +23,30 @@ import {
   fetchPublicCampaignLifecycleDrafts,
 } from "@/lib/scheduledLaunchApi";
 
+const LAUNCHED_ABI = ["function launched() view returns (bool)"] as const;
+
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
 export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "onchain" | "empty";
 
 const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
+const ONCHAIN_HYDRATE_CONCURRENCY = 2;
+const MAX_ONCHAIN_STATS = 24;
+
+async function mapPool<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  if (!items.length) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  async function run() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => run()));
+  return results;
+}
 
 /** Match Showcase: BNB feed toggle loads both mainnet + testnet prepare drafts. */
 function draftFeedChainIds(selectedChainId: number): number[] {
@@ -333,14 +354,15 @@ async function fetchDraftCampaignsForWarRoom(selectedChainId: number): Promise<W
       )
       .slice(0, 100);
 
-    const hydrated = await Promise.all(
-      visibleDrafts.map(async (draft, index) => {
-        const bundle = await fetchCampaignDraft(draft.id).catch(() => null);
-        return mapDraftToWarRoomCampaign(draft, index, bundle);
-      }),
-    );
+    // Cap bundle hydration — popularity is nice-to-have, not worth melting the browser.
+    const hydrateLimit = Math.min(visibleDrafts.length, 30);
+    const hydrated = await mapPool(visibleDrafts.slice(0, hydrateLimit), 3, async (draft, index) => {
+      const bundle = await fetchCampaignDraft(draft.id).catch(() => null);
+      return mapDraftToWarRoomCampaign(draft, index, bundle);
+    });
+    const tail = visibleDrafts.slice(hydrateLimit).map((draft, index) => mapDraftToWarRoomCampaign(draft, hydrateLimit + index, null));
 
-    return hydrated;
+    return [...hydrated, ...tail];
   } catch (error) {
     console.warn("[useWarRoomCampaignFeed] public draft fallback failed", error);
     return [];
@@ -412,30 +434,39 @@ export function useWarRoomCampaignFeed({
         );
         const lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
 
-        const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, { limit: 100 }).catch(() => ({
+        const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
+          // Keep inventory small — full multi-factory history is available via pagination later.
+          limit: activeMode === "graduated" ? 40 : 30,
+        }).catch(() => ({
           campaigns: [],
           nextCursor: null,
           total: 0,
         }));
         const nowSec = Math.floor(Date.now() / 1000);
-        // Hydrate on-chain stats (including launched/graduated) BEFORE mode filtering.
-        // Graduated mode was empty because isDexTrading was hard-coded false pre-stats.
-        const onChainHydrated = await Promise.all(
-          onChainPage.campaigns.map(async (campaign, index) => {
+
+        // Phase 1: light classification only (launchAt + launched) with strict concurrency.
+        // Full Topaz/bonding stats are phase 2 and only for the visible mode set.
+        const lightRows = await mapPool(
+          onChainPage.campaigns.slice(0, MAX_ONCHAIN_STATS),
+          ONCHAIN_HYDRATE_CONCURRENCY,
+          async (campaign, index) => {
             const address = String(campaign.campaign || "").toLowerCase();
             const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
             const launchAtFromDraft = timestampSeconds(lifecycle?.scheduledLaunchAt || lifecycle?.tradingLaunchAt);
+            // Avoid an extra RPC when lifecycle already has launchAt.
             const launchAtOnChain =
               launchAtFromDraft ??
-              (await readCampaignLaunchAt(chainId, address).catch(() => null));
+              (lifecycle ? null : await readCampaignLaunchAt(chainId, address).catch(() => null));
 
-            const stats = await fetchOnChainCampaignStats({
-              chainId: chainId as SupportedChainId,
-              campaignAddress: campaign.campaign,
-              tokenAddress: campaign.token,
-            }).catch(() => null);
+            let launched = false;
+            try {
+              const provider = getReadProvider(chainId as SupportedChainId);
+              const c = new Contract(address, LAUNCHED_ABI, provider) as any;
+              launched = Boolean(await c.launched());
+            } catch {
+              launched = false;
+            }
 
-            const launched = Boolean(stats?.isDexTrading || stats?.status === "graduated");
             const preLaunch =
               !launched &&
               isPreLaunchCampaign({
@@ -446,7 +477,6 @@ export function useWarRoomCampaignFeed({
 
             return normalizeApiCampaign({
               ...campaign,
-              ...(stats || {}),
               chainId,
               campaignAddress: campaign.campaign,
               tokenAddress: campaign.token,
@@ -458,7 +488,6 @@ export function useWarRoomCampaignFeed({
               isDexTrading: launched,
               isScheduled: preLaunch || (!launched && String(lifecycle?.status) === "scheduled"),
               launchAt: launchAtOnChain ?? undefined,
-              // Only attach draft ids for real pre-launch draft rows, never for graduated.
               draftId: preLaunch ? lifecycle?.id : undefined,
               draftSlug: preLaunch ? lifecycle?.slug : undefined,
               draftStatus: preLaunch ? "scheduled" : undefined,
@@ -470,10 +499,45 @@ export function useWarRoomCampaignFeed({
                     : undefined
                 : undefined,
             }, 500000 + index);
-          }),
+          },
         );
-        const onChainItems = onChainHydrated.filter((campaign) =>
-          matchesModeAndSearch(campaign, activeMode, search),
+
+        const modeCandidates = lightRows.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+
+        // Phase 2: full stats only for mode-matching rows (max small batch).
+        const onChainItems = await mapPool(
+          modeCandidates.slice(0, MAX_ONCHAIN_STATS),
+          ONCHAIN_HYDRATE_CONCURRENCY,
+          async (campaign) => {
+            if ((campaign as any).status === "draft") return campaign;
+            const stats = await fetchOnChainCampaignStats({
+              chainId: chainId as SupportedChainId,
+              campaignAddress: campaign.campaign,
+              tokenAddress: campaign.token,
+            }).catch(() => null);
+            if (!stats) return campaign;
+            return normalizeApiCampaign(
+              {
+                ...campaign,
+                ...stats,
+                campaignAddress: campaign.campaign,
+                tokenAddress: campaign.token,
+                creatorAddress: campaign.creator,
+                logoUri: campaign.logoURI,
+                chainId: campaign.chainId,
+                status: stats.isDexTrading || stats.status === "graduated" ? "graduated" : (campaign as any).status,
+                isDexTrading: Boolean(stats.isDexTrading || (campaign as any).isDexTrading),
+                isActive: (campaign as any).isActive,
+                marketCapBnb: stats.marketCapBnb,
+                volumeBnb: stats.volumeBnb,
+                raisedTotalBnb: stats.raisedTotalBnb ?? stats.liquidityBnb,
+                holdersCount: stats.holdersCount,
+                priceBnb: stats.priceBnb,
+                dexPairAddress: stats.dexPairAddress,
+              },
+              Number(campaign.id || 0),
+            );
+          },
         );
 
         const draftItemsForMode = draftItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));

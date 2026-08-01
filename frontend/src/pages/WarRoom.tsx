@@ -97,28 +97,34 @@ const WarRoom = () => {
     const missing = (rawCampaigns || [])
       .filter((c) => !String((c as any).campaign || "").startsWith("draft:"))
       .map((c) => c.campaign?.toLowerCase())
-      .filter((addr): addr is string => !!addr && !logoCache[addr]);
+      .filter((addr): addr is string => !!addr)
+      .filter((addr) => !logoCache[addr])
+      .slice(0, 12);
 
     if (!missing.length) return;
 
     (async () => {
       try {
-        const pairs = await Promise.all(
-          missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr).catch(() => null)] as const)
-        );
-        if (cancelled) return;
-        setLogoCache((prev) => {
-          const next = { ...prev };
-          for (const [addr, uri] of pairs) {
-            if (uri) next[addr] = uri;
-          }
-          return next;
-        });
-      } catch {}
+        // Sequential logo fetch — avoid browser connection exhaustion.
+        const next: Record<string, string> = {};
+        for (const addr of missing) {
+          if (cancelled) return;
+          const uri = await fetchCampaignLogoURI(addr).catch(() => null);
+          if (uri) next[addr] = uri;
+        }
+        if (cancelled || !Object.keys(next).length) return;
+        setLogoCache((prev) => ({ ...prev, ...next }));
+      } catch {
+        // ignore
+      }
     })();
 
-    return () => { cancelled = true; };
-  }, [rawCampaigns, logoCache, fetchCampaignLogoURI]);
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit logoCache from deps to prevent re-entry storms.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawCampaigns, fetchCampaignLogoURI]);
 
   const campaigns = useMemo(() => {
     return (rawCampaigns || []).map((c) => {
