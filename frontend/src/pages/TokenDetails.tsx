@@ -24,6 +24,7 @@ import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
 import { GraduationExplosion } from "@/components/token/GraduationExplosion";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
+import { useTopazMarket } from "@/hooks/useTopazMarket";
 import {
   ensureTopazSellAllowance,
   executeTopazBuy,
@@ -1065,6 +1066,68 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     enabled: hasValidCampaignAddress,
   });
 
+  // Early graduation flag so Topaz market data can load before the full stage UI block.
+  const contractGraduatedEarly = useMemo(() => {
+    const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
+    return hasLaunchFlag
+      ? Boolean((metrics as any)?.launched) ||
+          (typeof (metrics as any)?.finalizedAt === "bigint"
+            ? (metrics as any).finalizedAt > 0n
+            : Number((metrics as any)?.finalizedAt ?? 0) > 0)
+      : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
+  }, [metrics]);
+
+  const topazMarket = useTopazMarket({
+    campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+    tokenAddress: campaign?.token,
+    chainId: chainIdForStorage,
+    enabled: hasValidCampaignAddress && contractGraduatedEarly,
+    pollMs: 20_000,
+  });
+
+  // Continuous market trade stream: bonding curve history + on-chain Topaz swaps + API trades.
+  const marketTradePoints: CurveTradePoint[] = useMemo(() => {
+    const byKey = new Map<string, CurveTradePoint>();
+    const add = (point: CurveTradePoint) => {
+      const key = `${String(point.txHash || "").toLowerCase()}:${Number(point.logIndex ?? 0)}`;
+      if (!byKey.has(key)) byKey.set(key, point);
+    };
+    for (const point of curvePointsForUi) add(point);
+    for (const point of topazMarket.trades) add(point);
+    for (const trade of unifiedMarket.trades || []) {
+      let tokensWei = 0n;
+      let nativeWei = 0n;
+      try {
+        tokensWei = BigInt(trade.tokenAmountRaw || "0");
+      } catch {
+        tokensWei = 0n;
+      }
+      try {
+        nativeWei = BigInt(trade.nativeAmountRaw || "0");
+      } catch {
+        nativeWei = 0n;
+      }
+      add({
+        type: trade.side,
+        from: trade.wallet,
+        to: trade.recipient || trade.wallet,
+        tokensWei,
+        nativeWei,
+        pricePerToken: Number(trade.priceBnb || 0),
+        timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
+        txHash: trade.txHash,
+        blockNumber: trade.blockNumber,
+        logIndex: trade.logIndex,
+      });
+    }
+    return Array.from(byKey.values()).sort(
+      (a, b) =>
+        Number(a.timestamp || 0) - Number(b.timestamp || 0) ||
+        Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||
+        Number(a.logIndex || 0) - Number(b.logIndex || 0),
+    );
+  }, [curvePointsForUi, topazMarket.trades, unifiedMarket.trades]);
+
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
   hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
@@ -1086,16 +1149,15 @@ const toSeconds = (ts: number): number => {
       "24h": 24 * 60 * 60,
     };
 
-    // End price: prefer realtime last trade price, else on-chain price, else latest trade price
+    // End price: Topaz spot (post-grad) → realtime → curve price → latest trade.
     const endPrice =
+      (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
 
-    // IMPORTANT:
-    // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
-    // - Do NOT ethers.formatEther(pricePerToken) here.
+    // Continuous stream: bonding + Topaz swap history for change/volume windows.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-  combinedCurvePointsSafe.map((p: any) => ({
+  marketTradePoints.map((p: any) => ({
     timestamp: Number(p.timestamp ?? 0),
     pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
     nativeWei: p.nativeWei,
@@ -1146,7 +1208,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [combinedCurvePointsSafe, metrics, rtStats?.lastPriceBnb]);
+  }, [combinedCurvePointsSafe, contractGraduatedEarly, marketTradePoints, metrics, rtStats?.lastPriceBnb, topazMarket.priceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -1156,6 +1218,10 @@ const toSeconds = (ts: number): number => {
 
     const rtMarketCap = rtStats?.marketcapBnb;
     const rtPrice = rtStats?.lastPriceBnb;
+    const topazPrice = contractGraduatedEarly ? topazMarket.priceBnb : null;
+    const topazMarketCap = contractGraduatedEarly ? topazMarket.marketCapBnb : null;
+    const topazLiquidity = contractGraduatedEarly ? topazMarket.liquidityBnb : null;
+    const window24h = timeframeTiles?.["24h"]?.volume;
 
     return {
       image: resolveImageUri(campaign?.logoURI) || "/placeholder.svg",
@@ -1167,23 +1233,30 @@ const toSeconds = (ts: number): number => {
       hasDiscord: Boolean(campaign?.discord && campaign.discord.length > 0),
       hasOtherLink: Boolean(campaign?.extraLink && campaign.extraLink.length > 0),
 
-      // Unified headline stats
+      // Unified headline stats (Topaz spot after graduation)
       marketCap:
-        rtMarketCap != null && Number.isFinite(rtMarketCap)
-          ? `${formatCompact(rtMarketCap)} BNB`
-          : stats?.marketCap ?? "—",
-      volume: stats?.volume ?? "—",
+        topazMarketCap != null && Number.isFinite(topazMarketCap) && topazMarketCap > 0
+          ? `${formatCompact(topazMarketCap)} BNB`
+          : rtMarketCap != null && Number.isFinite(rtMarketCap)
+            ? `${formatCompact(rtMarketCap)} BNB`
+            : stats?.marketCap ?? "—",
+      volume: window24h && window24h !== "—" ? window24h : stats?.volume ?? "—",
       holders: stats?.holders ?? "—",
       price:
-        rtPrice != null && Number.isFinite(rtPrice)
-          ? formatPriceBnb(rtPrice)
-          : formatPriceFromWei(metrics?.currentPrice ?? null),
-      liquidity: formatBnbFromWei(curveReserveWei),
+        topazPrice != null && Number.isFinite(topazPrice) && topazPrice > 0
+          ? formatPriceBnb(topazPrice)
+          : rtPrice != null && Number.isFinite(rtPrice)
+            ? formatPriceBnb(rtPrice)
+            : formatPriceFromWei(metrics?.currentPrice ?? null),
+      liquidity:
+        topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
+          ? `${formatCompact(topazLiquidity)} BNB`
+          : formatBnbFromWei(curveReserveWei),
 
       // Timeframe analytics (BNB volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, rtStats]);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, metrics, summary, timeframeTiles, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
   // Keep USD reference price available for UI conversions and ATH tracking.
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
@@ -1438,7 +1511,7 @@ const bnbUsd = useMemo(() => {
     };
   }, [readProvider, wallet.account, campaign?.token]);
 
-  // Build transactions table rows from bonding curve history + any unified Topaz trades.
+  // Build transactions table rows from continuous market trade stream.
   useEffect(() => {
     if (!campaign) {
       setTxs([]);
@@ -1446,48 +1519,8 @@ const bnbUsd = useMemo(() => {
     }
     const mcap = tokenData.marketCap ?? "—";
 
-    const topazPoints = (unifiedMarket.trades || []).map((trade) => {
-      let tokensWei = 0n;
-      let nativeWei = 0n;
-      try {
-        tokensWei = BigInt(trade.tokenAmountRaw || "0");
-      } catch {
-        tokensWei = 0n;
-      }
-      try {
-        nativeWei = BigInt(trade.nativeAmountRaw || "0");
-      } catch {
-        nativeWei = 0n;
-      }
-      return {
-        type: trade.side,
-        from: trade.wallet,
-        tokensWei,
-        nativeWei,
-        pricePerToken: Number(trade.priceBnb || 0),
-        timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
-        txHash: trade.txHash,
-        blockNumber: trade.blockNumber,
-        logIndex: trade.logIndex,
-        source: trade.source,
-      };
-    });
-
-    // Prefer a de-duplicated union so bonding history survives after graduation.
-    const byKey = new Map<string, any>();
-    for (const point of [...combinedCurvePointsSafe, ...topazPoints]) {
-      const key = `${String(point.txHash || "").toLowerCase()}:${Number((point as any).logIndex ?? 0)}:${Number(point.timestamp || 0)}`;
-      if (!byKey.has(key)) byKey.set(key, point);
-    }
-    const tradePoints = Array.from(byKey.values()).sort(
-      (a, b) =>
-        Number(a.timestamp || 0) - Number(b.timestamp || 0) ||
-        Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||
-        Number((a as any).logIndex || 0) - Number((b as any).logIndex || 0),
-    );
-
-    const next: TxRow[] = tradePoints
-      .slice(-80)
+    const next: TxRow[] = [...marketTradePoints]
+      .slice(-100)
       .reverse()
       .map((p: any, idx: number) => {
         const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
@@ -1516,14 +1549,11 @@ const bnbUsd = useMemo(() => {
       });
 
     setTxs(next);
-  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics, unifiedMarket.trades]);
+  }, [campaign, marketTradePoints, tokenData.marketCap, metrics]);
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
-  const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
-  const contractGraduated = hasLaunchFlag
-    ? Boolean((metrics as any)?.launched) || (typeof (metrics as any)?.finalizedAt === "bigint" ? (metrics as any).finalizedAt > 0n : Number((metrics as any)?.finalizedAt ?? 0) > 0)
-    : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
+  const contractGraduated = contractGraduatedEarly;
   const verifiedMarketStage = unifiedMarket.state?.marketStage;
   const isDexStage = verifiedMarketStage
     ? ["TOPAZ_PENDING", "TOPAZ_ACTIVE", "TOPAZ_DEGRADED"].includes(verifiedMarketStage)
@@ -1628,8 +1658,12 @@ const bnbUsd = useMemo(() => {
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
-
-    // LIVE: best-effort liquidity (BNB-equivalent) from DexScreener.
+    // Prefer on-chain Topaz pool liquidity (2 × WBNB reserve).
+    if (topazMarket.liquidityBnb != null && Number.isFinite(topazMarket.liquidityBnb) && topazMarket.liquidityBnb > 0) {
+      return `${formatCompact(topazMarket.liquidityBnb)} BNB`;
+    }
+    if (tokenData.liquidity && tokenData.liquidity !== "—") return tokenData.liquidity;
+    // Optional external fallback only.
     return formatBnb(dexLiquidityBnb ?? null);
   })()
 
@@ -1947,6 +1981,11 @@ const bnbUsd = useMemo(() => {
           await unifiedMarket.refresh();
         } catch {
           // Market API may still be disabled during rollout.
+        }
+        try {
+          await topazMarket.refresh();
+        } catch {
+          // On-chain Topaz snapshot refresh is best-effort.
         }
         const [bnbBal, tokenBal] = await Promise.all([
           readProvider.getBalance(wallet.account),
@@ -2533,7 +2572,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
               <div className="w-full h-full min-h-[260px]">
                 {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}
                 <UnifiedMarketChart
-                  curvePoints={curvePointsForUi}
+                  curvePoints={marketTradePoints}
                   marketCandles={unifiedMarket.candles}
                   marketState={unifiedMarket.state}
                   graduationMarker={unifiedMarket.graduationMarker}
@@ -2541,14 +2580,14 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}
                   loading={
-                    (curvePointsForUi?.length ?? 0) > 0
+                    (marketTradePoints?.length ?? 0) > 0
                       ? false
-                      : liveCurveLoading || unifiedMarket.loading
+                      : liveCurveLoading || unifiedMarket.loading || topazMarket.loading
                   }
                   error={
-                    (curvePointsForUi?.length ?? 0) > 0
+                    (marketTradePoints?.length ?? 0) > 0
                       ? null
-                      : liveCurveError || unifiedMarket.error
+                      : liveCurveError || unifiedMarket.error || topazMarket.error
                   }
                 />
               </div>
