@@ -1,0 +1,105 @@
+name: WTR indexer validation
+
+on:
+  push:
+    branches:
+      - agent/war-trade-room-continuity-foundation
+    paths:
+      - .github/workflows/wtr-indexer-validation.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wtr-indexer-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/war-trade-room-continuity-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Run indexer validation
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .github/validation
+          : > /tmp/wtr-validation.log
+
+          npm ci --prefix realtime-indexer --no-audit --no-fund >> /tmp/wtr-validation.log 2>&1
+          install_status=$?
+          test_status=99
+          build_status=99
+
+          if [ "$install_status" -eq 0 ]; then
+            npm --prefix realtime-indexer run test:wtr >> /tmp/wtr-validation.log 2>&1
+            test_status=$?
+          fi
+          if [ "$install_status" -eq 0 ] && [ "$test_status" -eq 0 ]; then
+            npm --prefix realtime-indexer run build >> /tmp/wtr-validation.log 2>&1
+            build_status=$?
+          fi
+
+          overall_status=0
+          if [ "$install_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$build_status" -ne 0 ]; then
+            overall_status=1
+          fi
+
+          echo "install_status=$install_status" >> "$GITHUB_OUTPUT"
+          echo "test_status=$test_status" >> "$GITHUB_OUTPUT"
+          echo "build_status=$build_status" >> "$GITHUB_OUTPUT"
+          echo "overall_status=$overall_status" >> "$GITHUB_OUTPUT"
+
+          if [ "$overall_status" -ne 0 ]; then
+            tail -n 160 /tmp/wtr-validation.log > .github/validation/wtr-indexer-validation-failure.log
+          else
+            rm -f .github/validation/wtr-indexer-validation-failure.log
+          fi
+          exit "$overall_status"
+
+      - name: Publish validation marker
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .github/validation
+          if [ "${{ steps.validate.outputs.overall_status }}" = "0" ]; then
+            result=passed
+          else
+            result=failed
+          fi
+          cat > .github/validation/wtr-indexer-validation.txt <<EOF
+          WTR indexer validation ${result}
+          validation_revision=market_continuity_v5
+          validated_source_sha=${GITHUB_SHA}
+          node=20
+          install_status=${{ steps.validate.outputs.install_status }}
+          test_status=${{ steps.validate.outputs.test_status }}
+          build_status=${{ steps.validate.outputs.build_status }}
+          EOF
+          git config user.name "MemeWarzone Validation Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/validation/wtr-indexer-validation.txt
+          if [ -f .github/validation/wtr-indexer-validation-failure.log ]; then
+            git add .github/validation/wtr-indexer-validation-failure.log
+          else
+            git rm -f .github/validation/wtr-indexer-validation-failure.log 2>/dev/null || true
+          fi
+          git commit -m "ci(wtr): record indexer validation result"
+          git push origin HEAD:agent/war-trade-room-continuity-foundation
+
+      - name: Fail workflow when validation failed
+        if: steps.validate.outputs.overall_status != '0'
+        run: exit 1

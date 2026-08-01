@@ -6,7 +6,18 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
+import { getActiveChainId } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
+import {
+  ensureTopazSellAllowance,
+  executeTopazBuy,
+  executeTopazSell,
+  quoteTopazBuy,
+  quoteTopazSell,
+  resolveVerifiedTopazRoute,
+  solveNativeForExactTokens,
+  solveTokensForExactNative,
+} from "@/lib/topazV2Trade";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
@@ -85,6 +96,10 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   const [approvePending, setApprovePending] = useState(false);
   const [bnbBalanceWei, setBnbBalanceWei] = useState<bigint | null>(null);
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
+  const [topazSlippageBps] = useState(100);
+
+  const chainId = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
+  const readProvider = useMemo(() => getReadProvider(chainId), [chainId]);
 
   const topbarButtonClass =
     "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-[11px] md:text-sm px-3 py-2 rounded-lg md:rounded-xl shadow-lg";
@@ -103,8 +118,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
   }, [metrics]);
-
-  const { baseUrl: dexBaseUrl } = useDexScreenerChart(isDexStage ? campaign.token : "");
+  const isTopazTradingActive = isDexStage;
 
   const loadMetrics = useCallback(async () => {
     try {
@@ -171,7 +185,95 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
         setQuoteError(null);
 
         if (isDexStage) {
-          setQuoteWei(null);
+          if (!isTopazTradingActive || !campaign.campaign || !campaign.token) {
+            setQuoteWei(null);
+            setQuoteError("Topaz market verification is still in progress.");
+            return;
+          }
+          setQuoteLoading(true);
+          const resolved = await resolveVerifiedTopazRoute({
+            provider: readProvider,
+            campaignAddress: campaign.campaign,
+            expectedTokenAddress: campaign.token,
+            chainId,
+          });
+          if (tradeInputDenom === "BNB") {
+            const targetNativeWei = parseBnbAmountWei(tradeAmount);
+            setEffectiveBnbWei(targetNativeWei);
+            if (targetNativeWei <= 0n) {
+              setEffectiveTokenWei(0n);
+              setQuoteWei(null);
+              return;
+            }
+            if (tradeTab === "buy") {
+              const quote = await quoteTopazBuy({
+                provider: readProvider,
+                resolved,
+                nativeAmountInRaw: targetNativeWei,
+                slippageBps: topazSlippageBps,
+              });
+              if (!cancelled) {
+                setEffectiveTokenWei(quote.amountOutRaw);
+                setQuoteWei(targetNativeWei);
+              }
+              return;
+            }
+            const tokenInputWei = await solveTokensForExactNative({
+              provider: readProvider,
+              resolved,
+              targetNativeOutRaw: targetNativeWei,
+              initialTokenHighRaw: tokenBalanceWei && tokenBalanceWei > 0n ? tokenBalanceWei : 10n ** 24n,
+            });
+            const quote = await quoteTopazSell({
+              provider: readProvider,
+              resolved,
+              tokenAmountInRaw: tokenInputWei,
+              slippageBps: topazSlippageBps,
+            });
+            if (!cancelled) {
+              setEffectiveTokenWei(tokenInputWei);
+              setEffectiveBnbWei(quote.amountOutRaw);
+              setQuoteWei(quote.amountOutRaw);
+            }
+            return;
+          }
+          const tokenInputWei = parseTokenAmountWei(tradeAmount);
+          setEffectiveTokenWei(tokenInputWei);
+          if (tokenInputWei <= 0n) {
+            setEffectiveBnbWei(0n);
+            setQuoteWei(null);
+            return;
+          }
+          if (tradeTab === "buy") {
+            const nativeInputWei = await solveNativeForExactTokens({
+              provider: readProvider,
+              resolved,
+              targetTokenOutRaw: tokenInputWei,
+              initialNativeHighRaw: 10n ** 15n,
+            });
+            const quote = await quoteTopazBuy({
+              provider: readProvider,
+              resolved,
+              nativeAmountInRaw: nativeInputWei,
+              slippageBps: topazSlippageBps,
+            });
+            if (!cancelled) {
+              setEffectiveBnbWei(nativeInputWei);
+              setEffectiveTokenWei(quote.amountOutRaw);
+              setQuoteWei(nativeInputWei);
+            }
+            return;
+          }
+          const quote = await quoteTopazSell({
+            provider: readProvider,
+            resolved,
+            tokenAmountInRaw: tokenInputWei,
+            slippageBps: topazSlippageBps,
+          });
+          if (!cancelled) {
+            setEffectiveBnbWei(quote.amountOutRaw);
+            setQuoteWei(quote.amountOutRaw);
+          }
           return;
         }
         if (!campaign.campaign) {
@@ -264,17 +366,104 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [wallet.provider, campaign.campaign, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage]);
+  }, [wallet.provider, campaign.campaign, campaign.token, chainId, readProvider, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, topazSlippageBps]);
 
   const handlePlaceTrade = async () => {
     if (!campaign.campaign) return;
 
     if (isDexStage) {
-      toast({
-        title: "Token is graduated",
-        description: "This token is trading on DEX now. Use DexScreener / PancakeSwap.",
-      });
-      if (dexBaseUrl) window.open(dexBaseUrl, "_blank", "noopener,noreferrer");
+      if (!isTopazTradingActive || !campaign.token) {
+        toast({
+          title: "Topaz market is not ready",
+          description: "The verified Topaz route is still being reconciled.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!wallet.signer || !wallet.account) {
+        toast({ title: "Connect wallet", description: "Please connect your wallet to trade." });
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
+      }
+      try {
+        setTradePending(true);
+        const resolved = await resolveVerifiedTopazRoute({
+          provider: readProvider,
+          campaignAddress: campaign.campaign,
+          expectedTokenAddress: campaign.token,
+          chainId,
+        });
+        if (tradeTab === "buy") {
+          const nativeAmountInRaw = tradeInputDenom === "BNB" ? parseBnbAmountWei(tradeAmount) : effectiveBnbWei;
+          if (nativeAmountInRaw <= 0n) throw new Error("Enter a valid BNB or token amount.");
+          if (bnbBalanceWei != null && nativeAmountInRaw > bnbBalanceWei) throw new Error("Insufficient BNB balance.");
+          const quote = await quoteTopazBuy({
+            provider: readProvider,
+            resolved,
+            nativeAmountInRaw,
+            slippageBps: topazSlippageBps,
+          });
+          toast({
+            title: "Submitting Topaz buy",
+            description: `Minimum received: ${formatTokenFromWei(quote.minimumOutRaw)} ${campaign.symbol}.`,
+          });
+          const tx = await executeTopazBuy({ signer: wallet.signer, recipient: wallet.account, quote });
+          const receipt = await tx.wait();
+          toast({
+            title: "Buy confirmed",
+            description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
+          });
+        } else {
+          const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
+          if (tokenAmountInRaw <= 0n) throw new Error("Enter a valid token or BNB amount.");
+          if (tokenBalanceWei != null && tokenAmountInRaw > tokenBalanceWei) {
+            throw new Error(`Insufficient ${campaign.symbol} balance.`);
+          }
+          const quote = await quoteTopazSell({
+            provider: readProvider,
+            resolved,
+            tokenAmountInRaw,
+            slippageBps: topazSlippageBps,
+          });
+          const approval = await ensureTopazSellAllowance({
+            signer: wallet.signer,
+            owner: wallet.account,
+            resolved,
+            tokenAmountRaw: tokenAmountInRaw,
+          });
+          if (approval) {
+            setApprovePending(true);
+            toast({
+              title: "Approval required",
+              description: `Approving the verified Topaz router for ${campaign.symbol}...`,
+            });
+            await approval.wait();
+            setApprovePending(false);
+          }
+          toast({
+            title: "Submitting Topaz sell",
+            description: `Minimum received: ${formatBnbFromWei(quote.minimumOutRaw)}.`,
+          });
+          const tx = await executeTopazSell({ signer: wallet.signer, recipient: wallet.account, quote });
+          const receipt = await tx.wait();
+          toast({
+            title: "Sell confirmed",
+            description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
+          });
+        }
+        await Promise.all([loadMetrics(), loadBalances()]);
+        setTradeAmount("0");
+      } catch (error: any) {
+        console.error("[WarRoomTradePanel] Topaz trade failed", error);
+        toast({
+          title: "Trade failed",
+          description: error?.shortMessage || error?.message || "Topaz trade failed.",
+          variant: "destructive",
+        });
+      } finally {
+        setApprovePending(false);
+        setTradePending(false);
+      }
       return;
     }
 
@@ -441,7 +630,11 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
             <div className="text-center text-[11px] text-muted-foreground md:text-xs">
               {isDexStage ? (
-                <p>Token is graduated. Trade on DEX.</p>
+                isTopazTradingActive && quoteWei != null ? (
+                  <p>Topaz execution · slippage {(topazSlippageBps / 100).toFixed(2)}%.</p>
+                ) : (
+                  <p>Topaz market verification is in progress.</p>
+                )
               ) : quoteWei != null ? (
                 <p>You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})</p>
               ) : (
@@ -451,10 +644,16 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
             <Button
               onClick={handlePlaceTrade}
-              disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+              disabled={
+                tradePending ||
+                approvePending ||
+                quoteLoading ||
+                (isDexStage && !isTopazTradingActive) ||
+                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)
+              }
               className={`w-full ${topbarButtonClass}`}
             >
-              {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
+              {tradePending ? "Processing..." : isDexStage ? "Buy on Topaz" : "Buy"}
             </Button>
           </TabsContent>
 
@@ -535,7 +734,11 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
             <div className="text-center text-[11px] text-muted-foreground md:text-xs">
               {isDexStage ? (
-                <p>Token is graduated. Trade on DEX.</p>
+                isTopazTradingActive && quoteWei != null ? (
+                  <p>Topaz execution · slippage {(topazSlippageBps / 100).toFixed(2)}%.</p>
+                ) : (
+                  <p>Topaz market verification is in progress.</p>
+                )
               ) : quoteWei != null ? (
                 <p>You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})</p>
               ) : (
@@ -545,10 +748,16 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
             <Button
               onClick={handlePlaceTrade}
-              disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+              disabled={
+                tradePending ||
+                approvePending ||
+                quoteLoading ||
+                (isDexStage && !isTopazTradingActive) ||
+                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)
+              }
               className={`w-full ${topbarButtonClass}`}
             >
-              {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}
+              {tradePending ? "Processing..." : isDexStage ? "Sell on Topaz" : "Sell"}
             </Button>
           </TabsContent>
         </Tabs>
