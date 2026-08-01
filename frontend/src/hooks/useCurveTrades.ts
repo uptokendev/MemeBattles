@@ -1,14 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
+import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
 import { loadCachedTradeHistory, saveCachedTradeHistory } from "@/lib/tradeHistoryCache";
 
-// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production-dca0.up.railway.app
-const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
+// Prefer the same token/realtime base resolution as apiBase (TOKEN_API_BASE first).
+// Default matches the live devpostgrad indexer service.
+function resolveRealtimeApiBase(): string {
+  const candidates = [
+    import.meta.env.VITE_TOKEN_API_BASE,
+    import.meta.env.VITE_RAILWAY_TOKEN_API_BASE,
+    import.meta.env.RAILWAY_TOKEN_API_BASE_URL,
+    import.meta.env.VITE_REALTIME_API_BASE,
+  ];
+  for (const value of candidates) {
+    const raw = String(value || "").trim().replace(/\/+$/, "");
+    if (!raw) continue;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^\/\//.test(raw)) return `https:${raw}`;
+    return `https://${raw}`;
+  }
+  return "https://memebattles-production-dca0.up.railway.app";
+}
+
+const API_BASE = resolveRealtimeApiBase();
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+// Browser eth_getLogs is optional recovery only — primary history comes from the Railway indexer.
+const ENABLE_ONCHAIN_TRADE_FALLBACK =
+  String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
+  String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() !== "1";
 
 type RealtimeChannel = any;
 
@@ -118,13 +141,32 @@ function numberFromWei(wei: bigint, decimals = 18): number {
   }
 }
 
-async function fetchJson(url: string, signal?: AbortSignal) {
-  const r = await fetch(url, { method: "GET", signal });
+async function fetchIndexerTrades(campaignAddress: string, chainId: number, limit: number, signal?: AbortSignal) {
+  // Prefer relative /api/token/* through apiFetch so Netlify/proxy routing hits the
+  // Railway indexer (memebattles-production-dca0) instead of inventing browser RPCs.
+  const path = `/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
+  try {
+    const r = await apiFetch(path, { method: "GET", signal, cache: "no-store" as RequestCache });
+    if (r.ok) {
+      const body = await r.json();
+      if (Array.isArray(body)) return body;
+      if (Array.isArray(body?.items)) return body.items;
+    }
+  } catch {
+    // fall through to absolute indexer URL
+  }
+
+  if (!API_BASE) return [];
+  const absolute = `${API_BASE}/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
+  const r = await fetch(absolute, { method: "GET", signal, cache: "no-store" });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
     throw new Error(text || `HTTP ${r.status}`);
   }
-  return r.json();
+  const body = await r.json();
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.items)) return body.items;
+  return [];
 }
 
 async function fetchOnChainTradeSnapshot(
@@ -234,11 +276,6 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
-  const apiTradesUrl = useMemo(() => {
-    if (!API_BASE || !campaignAddress || !canLoadTrades) return "";
-    return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-  }, [campaignAddress, canLoadTrades, chainId, limit]);
-
   const applySnapshot = useCallback((rows: any[], options?: { replaceEmpty?: boolean }) => {
     const next: CurveTradePoint[] = (rows || [])
       .map((r: any) => {
@@ -316,48 +353,35 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       if (!initialLoadedRef.current) setLoading(true);
 
-      const tryOnChain = async () => {
-        try {
-          return await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-        } catch (error) {
-          if (!isAbortError(error)) {
-            console.warn("[useCurveTrades] on-chain trade recovery failed", error);
-          }
-          return [] as CurveTradePoint[];
-        }
-      };
-
-      if (!apiTradesUrl) {
-        const fallbackRows = await tryOnChain();
-        applySnapshot(fallbackRows);
-        setError(null);
-        initialLoadedRef.current = true;
-        return;
-      }
-
+      // 1) Primary: Railway realtime-indexer (memebattles-production-dca0).
+      let apiRows: any[] = [];
       try {
-        const rows = await fetchJson(apiTradesUrl, signal);
-        const apiRows = Array.isArray(rows) ? rows : Array.isArray((rows as any)?.items) ? (rows as any).items : [];
-        applySnapshot(apiRows);
-        // If indexer is empty or force reconcile, recover bonding history from chain.
-        if ((apiRows.length === 0 || forceOnChainReconcile) && !signal?.aborted) {
-          const fallbackRows = await tryOnChain();
-          if (fallbackRows.length) applySnapshot(fallbackRows);
-        }
-        setError(null);
-        initialLoadedRef.current = true;
+        apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
+        if (apiRows.length) applySnapshot(apiRows);
       } catch (apiError: any) {
         if (isAbortError(apiError)) return;
-        console.warn("[useCurveTrades] trade API failed; trying on-chain recovery", apiError);
-        const fallbackRows = await tryOnChain();
-        applySnapshot(fallbackRows);
-        setError(null);
-        initialLoadedRef.current = true;
+        console.warn("[useCurveTrades] indexer trade API failed", apiError);
       }
+
+      // 2) Optional browser getLogs recovery — only when explicitly enabled.
+      // Default OFF: trade history must come from Railway indexer (production-dca0),
+      // not from inventing third-party RPCs in the browser.
+      if ((ENABLE_ONCHAIN_TRADE_FALLBACK || forceOnChainReconcile) && !signal?.aborted) {
+        try {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          if (fallbackRows.length) applySnapshot(fallbackRows);
+        } catch (error) {
+          if (!isAbortError(error)) {
+            console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", error);
+          }
+        }
+      }
+
+      setError(null);
+      initialLoadedRef.current = true;
     } catch (error: any) {
       if (!isAbortError(error)) {
         console.warn("[useCurveTrades] trade snapshot failed", error);
-        // Keep cached points visible; do not hard-error the chart empty.
         setError(null);
         initialLoadedRef.current = true;
       }
@@ -365,7 +389,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [canLoadTrades, campaignAddress, apiTradesUrl, applySnapshot, chainId, limit]);
+  }, [canLoadTrades, campaignAddress, applySnapshot, chainId, limit]);
 
   useEffect(() => {
     const ac = new AbortController();

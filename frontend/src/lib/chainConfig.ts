@@ -181,20 +181,14 @@ export function getPublicRpcUrls(chainId: SupportedChainId): string[] {
     (import.meta.env.VITE_BSC_TESTNET_RPC as string | undefined) ??
     (import.meta.env.VITE_PUBLIC_RPC_TESTNET as string | undefined);
   const list = fromCsv(v);
-  // Multiple free endpoints — getLogs rate-limits are common on any single public node.
-  const defaults = [
+  // Only use project-configured RPCs. Do not invent third-party nodes (e.g. publicnode)
+  // that belong to Railway/indexer env, not the browser bundle.
+  if (list.length) return list;
+  // Binance public seed only as last-resort read provider for local/dev without env.
+  return [
     "https://data-seed-prebsc-1-s1.binance.org:8545/",
     "https://data-seed-prebsc-2-s1.binance.org:8545/",
-    "https://bsc-testnet-rpc.publicnode.com",
   ];
-  if (!list.length) return defaults;
-  // Keep user-configured first, then fill unique defaults.
-  const seen = new Set(list.map((u) => u.toLowerCase()));
-  for (const url of defaults) {
-    if (seen.has(url.toLowerCase())) continue;
-    list.push(url);
-  }
-  return list;
 }
 
 export function getFactoryAddress(chainId: SupportedChainId): string {

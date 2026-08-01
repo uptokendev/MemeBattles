@@ -145,62 +145,68 @@ export async function fetchTopazMarketSnapshot(input: {
 
   const iface = new ethers.Interface(POOL_ABI);
   const swapTopic = iface.getEvent("Swap")!.topicHash;
-  const logs = await scanContractLogs({
-    chainId: input.chainId as SupportedChainId,
-    address: resolved.pairAddress,
-    topics: [swapTopic],
-    lookbackBlocks: input.lookbackBlocks ?? 3_000,
-    chunkSize: 80,
-    signal: input.signal,
-  });
-
-  const blockTimes = await getBlockTimestamps(
-    input.chainId as SupportedChainId,
-    logs.map((log) => Number(log.blockNumber || 0)),
-    input.signal,
-  );
-
-  const trades: CurveTradePoint[] = [];
-  for (const log of logs) {
+  // Topaz swap history is optional in the browser. Prefer indexer/session cache.
+  // Only scan pool logs when explicitly enabled to avoid public RPC storms.
+  const enableBrowserPoolScan =
+    String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1";
+  let trades: CurveTradePoint[] = [];
+  if (enableBrowserPoolScan) {
     try {
-      const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
-      if (!parsed || parsed.name !== "Swap") continue;
-      const amounts = {
-        amount0In: BigInt(parsed.args.amount0In ?? 0),
-        amount1In: BigInt(parsed.args.amount1In ?? 0),
-        amount0Out: BigInt(parsed.args.amount0Out ?? 0),
-        amount1Out: BigInt(parsed.args.amount1Out ?? 0),
-      };
-      const normalized = normalizeTopazSwap(tokenIsToken0, amounts);
-      if (!normalized) continue;
-      const blockNumber = Number(log.blockNumber || 0);
-      const timestamp = blockTimes.get(blockNumber) || Math.floor(Date.now() / 1000);
-      const pricePerToken = priceBnbFromAmounts(normalized.tokenAmountRaw, normalized.nativeAmountRaw);
-      // Prefer recipient (`to`) as the trader — `sender` is usually the Topaz router.
-      const recipient = String(parsed.args.to || "").toLowerCase();
-      const sender = String(parsed.args.sender || "").toLowerCase();
-      trades.push({
-        type: normalized.side,
-        from: recipient || sender,
-        to: recipient || sender,
-        tokensWei: normalized.tokenAmountRaw,
-        nativeWei: normalized.nativeAmountRaw,
-        pricePerToken,
-        timestamp,
-        txHash: String(log.transactionHash || "").toLowerCase(),
-        blockNumber,
-        logIndex: Number(log.index ?? 0),
+      const logs = await scanContractLogs({
+        chainId: input.chainId as SupportedChainId,
+        address: resolved.pairAddress,
+        topics: [swapTopic],
+        lookbackBlocks: input.lookbackBlocks ?? 2_000,
+        chunkSize: 80,
+        signal: input.signal,
       });
+      const blockTimes = await getBlockTimestamps(
+        input.chainId as SupportedChainId,
+        logs.map((log) => Number(log.blockNumber || 0)),
+        input.signal,
+      );
+      for (const log of logs) {
+        try {
+          const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
+          if (!parsed || parsed.name !== "Swap") continue;
+          const amounts = {
+            amount0In: BigInt(parsed.args.amount0In ?? 0),
+            amount1In: BigInt(parsed.args.amount1In ?? 0),
+            amount0Out: BigInt(parsed.args.amount0Out ?? 0),
+            amount1Out: BigInt(parsed.args.amount1Out ?? 0),
+          };
+          const normalized = normalizeTopazSwap(tokenIsToken0, amounts);
+          if (!normalized) continue;
+          const blockNumber = Number(log.blockNumber || 0);
+          const timestamp = blockTimes.get(blockNumber) || Math.floor(Date.now() / 1000);
+          const pricePerToken = priceBnbFromAmounts(normalized.tokenAmountRaw, normalized.nativeAmountRaw);
+          const recipient = String(parsed.args.to || "").toLowerCase();
+          const sender = String(parsed.args.sender || "").toLowerCase();
+          trades.push({
+            type: normalized.side,
+            from: recipient || sender,
+            to: recipient || sender,
+            tokensWei: normalized.tokenAmountRaw,
+            nativeWei: normalized.nativeAmountRaw,
+            pricePerToken,
+            timestamp,
+            txHash: String(log.transactionHash || "").toLowerCase(),
+            blockNumber,
+            logIndex: Number(log.index ?? 0),
+          });
+        } catch {
+          // skip undecodable logs
+        }
+      }
+      trades.sort(
+        (a, b) =>
+          a.blockNumber - b.blockNumber ||
+          Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0),
+      );
     } catch {
-      // skip undecodable logs
+      trades = [];
     }
   }
-
-  trades.sort(
-    (a, b) =>
-      a.blockNumber - b.blockNumber ||
-      Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0),
-  );
 
   return {
     resolved,
