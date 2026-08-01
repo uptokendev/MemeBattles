@@ -142,7 +142,10 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        c.creator_address,
        c.name,
        c.symbol,
-       c.logo_uri,
+       coalesce(
+         nullif(btrim(c.logo_uri), ''),
+         nullif(btrim(dl.draft_logo_url), '')
+       ) as logo_uri,
        null::text as website,
        null::text as x_account,
        null::text as extra_link,
@@ -165,6 +168,15 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        null::numeric as progress_pct,
        null::numeric as eta_sec
      from public.campaigns c
+     left join lateral (
+       select d.logo_url as draft_logo_url
+         from public.campaign_drafts d
+        where d.chain_id = c.chain_id
+          and d.campaign_address is not null
+          and lower(d.campaign_address) = lower(c.campaign_address)
+        order by d.updated_at desc
+        limit 1
+     ) dl on true
      ${where}
      order by ${orderBy}
      offset $${params.length - 1}
@@ -238,7 +250,11 @@ export default async function handler(req, res) {
           c.creator_address,
           c.name,
           c.symbol,
-          coalesce(tm.logo_uri, c.logo_uri) as logo_uri,
+          coalesce(
+            nullif(btrim(tm.logo_uri), ''),
+            nullif(btrim(c.logo_uri), ''),
+            nullif(btrim(dl.draft_logo_url), '')
+          ) as logo_uri,
           tm.website,
           tm.x_account,
           coalesce(tm.metadata ->> 'extraLink', tm.metadata ->> 'extra_link') as extra_link,
@@ -273,6 +289,15 @@ export default async function handler(req, res) {
             m.id asc
           limit 1
         ) tm on true
+        left join lateral (
+          select d.logo_url as draft_logo_url
+            from public.campaign_drafts d
+           where d.chain_id = c.chain_id
+             and d.campaign_address is not null
+             and lower(d.campaign_address) = lower(c.campaign_address)
+           order by d.updated_at desc
+           limit 1
+        ) dl on true
         left join public.vote_aggregates va
           on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
         where c.chain_id = $1

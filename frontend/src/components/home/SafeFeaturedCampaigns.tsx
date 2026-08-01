@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ThumbsUp } from "lucide-react";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { apiFetch } from "@/lib/apiBase";
+import { fetchPublicCampaignDrafts } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
 import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
@@ -229,12 +230,31 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
     let cancelled = false;
     setLoading(true);
     void (async () => {
-      const apiCandidates = await loadApiCandidates(chainId);
-      const candidates = apiCandidates.length ? apiCandidates : await loadOnChainCandidates(chainId);
-      const live = await verifyAndHydrateLive(candidates, chainId);
-      if (cancelled) return;
-      setItems(live);
-      setLoading(false);
+      try {
+        // Bake draft-logo hydration into source so Netlify static builds pick it up.
+        // Runtime closeout patches only run on Railway API / local dev, not vite build.
+        const [apiCandidates, publicDrafts] = await Promise.all([
+          loadApiCandidates(chainId),
+          fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
+        ]);
+        const draftLogoByCampaign = new Map(
+          publicDrafts
+            .filter((draft) => isAddress(draft.campaignAddress) && usefulImage(draft.logoUrl))
+            .map((draft) => [String(draft.campaignAddress).toLowerCase(), String(draft.logoUrl)]),
+        );
+        const rawCandidates = apiCandidates.length ? apiCandidates : await loadOnChainCandidates(chainId);
+        const candidates = rawCandidates.map((item) => ({
+          ...item,
+          logoUri: usefulImage(item.logoUri)
+            ? item.logoUri
+            : draftLogoByCampaign.get(item.campaignAddress.toLowerCase()) || item.logoUri,
+        }));
+        const live = await verifyAndHydrateLive(candidates, chainId);
+        if (cancelled) return;
+        setItems(live);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [chainId, refresh]);

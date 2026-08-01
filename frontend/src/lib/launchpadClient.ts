@@ -378,7 +378,8 @@ async function hydrateMissingLogosFromContract(
   campaigns: CampaignInfo[],
   fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>,
 ): Promise<CampaignInfo[]> {
-  const targets = campaigns.filter((campaign) => !hasLogo(campaign.logoURI)).slice(0, 25);
+  // Older multi-factory inventories can have many empty logo rows; hydrate more than one page.
+  const targets = campaigns.filter((campaign) => !hasLogo(campaign.logoURI)).slice(0, 80);
   if (!targets.length) return campaigns;
 
   const hydrated = new Map<string, string>();

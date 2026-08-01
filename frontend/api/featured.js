@@ -25,12 +25,21 @@ const LIFECYCLE_SELECT = `
        dl.scheduled_launch_at AS "scheduledLaunchAt",
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "tradingLaunchAt",`;
 
+// Prefer non-empty campaign logo, then Prepare Mode draft logo (common for older factory rows
+// that never got logo_uri backfilled into public.campaigns).
+const LOGO_URI_SELECT = `
+       COALESCE(
+         NULLIF(BTRIM(c.logo_uri), ''),
+         NULLIF(BTRIM(dl.draft_logo_url), '')
+       ) AS "logoUri",`;
+
 const LIFECYCLE_JOIN = `
       LEFT JOIN LATERAL (
         SELECT
           d.created_at AS draft_created_at,
           d.deployed_at AS contract_deployed_at,
-          d.scheduled_launch_at
+          d.scheduled_launch_at,
+          d.logo_url AS draft_logo_url
         FROM campaign_drafts d
         WHERE d.chain_id = c.chain_id
           AND d.campaign_address IS NOT NULL
@@ -49,7 +58,7 @@ async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
        c.creator_address AS "creatorAddress",
        c.name AS "name",
        c.symbol AS "symbol",
-       c.logo_uri AS "logoUri",
+${LOGO_URI_SELECT}
 ${LIFECYCLE_SELECT}
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
@@ -97,7 +106,7 @@ async function readFeaturedFromCampaigns({ chainId, limit }) {
        c.creator_address AS "creatorAddress",
        c.name AS "name",
        c.symbol AS "symbol",
-       c.logo_uri AS "logoUri",
+${LOGO_URI_SELECT}
 ${LIFECYCLE_SELECT}
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
