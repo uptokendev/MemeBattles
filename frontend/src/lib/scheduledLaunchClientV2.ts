@@ -10,6 +10,7 @@ const SCHEDULED_FACTORY_ABI = [
   "function FACTORY_GENERATION() view returns (uint32)",
   "function CAMPAIGN_GENERATION() view returns (uint32)",
   "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
+  "function creatorScheduledArmEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
   "function createScheduledCampaignAuthorized(((string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint256 graduationTarget) campaign,uint64 launchAt,bytes32 draftReferenceHash,bytes32 normalizedTickerHash,bytes32 metadataHash,uint64 reservationVersion,uint256 authorizationNonce) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
   "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI,string metadataURI)",
   "error NotLive()",
@@ -144,6 +145,8 @@ export async function readScheduledCreatorLaunchEligibility(input: {
   signer: JsonRpcSigner;
   chainId: number;
   factoryAddress: string;
+  /** When true (immediate deploy), enforce arm-time cooldown. Timed arms pass false. */
+  enforceArmCooldown?: boolean;
 }): Promise<ScheduledCreatorLaunchEligibility> {
   const provider = input.signer.provider;
   if (!provider) throw new Error("Wallet provider is unavailable.");
@@ -157,8 +160,14 @@ export async function readScheduledCreatorLaunchEligibility(input: {
   const factory = new Contract(input.factoryAddress, SCHEDULED_FACTORY_ABI, provider) as any;
   try {
     const creator = await input.signer.getAddress();
+    const enforceArmCooldown = input.enforceArmCooldown !== false;
+    const eligibilityCall = enforceArmCooldown
+      ? factory.creatorLaunchEligibility(creator)
+      : typeof factory.creatorScheduledArmEligibility === "function"
+        ? factory.creatorScheduledArmEligibility(creator).catch(() => factory.creatorLaunchEligibility(creator))
+        : factory.creatorLaunchEligibility(creator);
     const [result, registryAddressRaw, factoryGenerationRaw, campaignGenerationRaw] = await Promise.all([
-      factory.creatorLaunchEligibility(creator),
+      eligibilityCall,
       factory.creatorRegistry(),
       factory.FACTORY_GENERATION(),
       factory.CAMPAIGN_GENERATION(),
@@ -249,17 +258,22 @@ async function assertScheduledFactoryReady(input: {
     signer: input.signer,
     chainId: input.chainId,
     factoryAddress: input.factoryAddress,
+    enforceArmCooldown: false,
   });
   if (!eligibility.allowed) {
     if (eligibility.restricted) throw new Error("This creator wallet is restricted by the on-chain CreatorRegistry.");
     if (eligibility.manualReviewRequired) throw new Error("This creator wallet requires manual review before another launch.");
     if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
-      throw new Error("This creator wallet has reached its deployed, non-graduated campaign limit.");
+      throw new Error(
+        `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). ` +
+          "Graduate an existing live campaign before arming another. This limit is what stops mass multi-arm spam.",
+      );
     }
     if (eligibility.cooldownEndsAt > now) {
       throw new Error(
-        `This creator wallet cannot deploy or arm another campaign until ${formatLocalTimestamp(eligibility.cooldownEndsAt)}. ` +
-          "Choosing a later trading-open time does not bypass this cooldown.",
+        `Arm-time cooldown is still active until ${formatLocalTimestamp(eligibility.cooldownEndsAt)}. ` +
+          "On the corrected factory, future timed arms skip this cooldown; immediate deploys still use it. " +
+          "If this message appears for a timed arm, the factory has not been upgraded yet.",
       );
     }
     throw new Error("This creator wallet cannot deploy or arm another campaign right now.");

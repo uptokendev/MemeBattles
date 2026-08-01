@@ -122,6 +122,40 @@ describe("CreatorRegistry and RiskRegistry", function () {
     expect(await creatorRegistry.canLaunch(await creator.getAddress())).to.equal(true);
   });
 
+  it("allows multiple scheduled arms without cooldown while still enforcing live limit", async () => {
+    const { creator, recorder, creatorRegistry } = await deployRegistryFixture();
+    await creatorRegistry.setLaunchRecorder(await recorder.getAddress(), true);
+    const creatorAddress = await creator.getAddress();
+
+    // First immediate launch starts cooldown for further immediate launches.
+    await creatorRegistry.connect(recorder).recordLaunch(creatorAddress);
+    await expect(creatorRegistry.connect(recorder).recordLaunch(creatorAddress)).to.be.revertedWithCustomError(
+      creatorRegistry,
+      "CreatorCooldown",
+    );
+
+    // Timed arms skip arm-time cooldown but still consume live slots.
+    await expect(creatorRegistry.connect(recorder).recordScheduledLaunch(creatorAddress)).to.emit(
+      creatorRegistry,
+      "CreatorLaunchRecorded",
+    );
+    await expect(creatorRegistry.connect(recorder).recordScheduledLaunch(creatorAddress)).to.emit(
+      creatorRegistry,
+      "CreatorLaunchRecorded",
+    );
+
+    const profile = await creatorRegistry.getCreatorProfile(creatorAddress);
+    expect(profile.liveBondingCount).to.equal(3n);
+    expect(await creatorRegistry.canLaunchScheduled(creatorAddress)).to.equal(false);
+    await expect(creatorRegistry.connect(recorder).recordScheduledLaunch(creatorAddress)).to.be.revertedWithCustomError(
+      creatorRegistry,
+      "CreatorLiveLimit",
+    );
+
+    // Immediate launch remains gated by cooldown even though scheduled arms were allowed.
+    expect(await creatorRegistry.canLaunch(creatorAddress)).to.equal(false);
+  });
+
   it("blocks restricted and manual-review creators from canLaunch and recordLaunch", async () => {
     const { creator, recorder, creatorRegistry } = await deployRegistryFixture();
     await creatorRegistry.setLaunchRecorder(await recorder.getAddress(), true);

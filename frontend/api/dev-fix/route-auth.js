@@ -255,10 +255,10 @@ async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAdd
         ok: false,
         status: 403,
         code: "CREATE_ONCHAIN_ELIGIBILITY_BLOCKED",
-        error: cooldownEndsAt > Math.floor(Date.now() / 1000)
-          ? `This creator wallet cannot deploy or arm another campaign until ${new Date(cooldownEndsAt * 1000).toISOString()}. The selected trading-open time does not affect this cooldown.`
-          : onChainLiveCampaignCount >= onChainLiveCampaignLimit
-            ? "This creator wallet has reached its deployed, non-graduated campaign limit."
+        error: onChainLiveCampaignCount >= onChainLiveCampaignLimit
+          ? `Live campaign limit reached (${onChainLiveCampaignCount}/${onChainLiveCampaignLimit}). Graduate an existing live campaign before another immediate deploy.`
+          : cooldownEndsAt > Math.floor(Date.now() / 1000)
+            ? `Creator arm cooldown active until ${new Date(cooldownEndsAt * 1000).toISOString()}. Immediate deploy waits 24h after the last arm/deploy. Timed future arms skip this cooldown after the registry/factory upgrade but still consume the live campaign cap.`
             : "This creator wallet cannot deploy or arm another campaign right now.",
         onChain: { allowed, cooldownEndsAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
       };

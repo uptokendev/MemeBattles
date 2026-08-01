@@ -22,6 +22,7 @@ const CREATION_PREFLIGHT_ABI = [
   "function FACTORY_GENERATION() view returns (uint32)",
   "function CAMPAIGN_GENERATION() view returns (uint32)",
   "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
+  "function creatorScheduledArmEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
 ];
 
 function configuredScheduledFactory(chainId) {
@@ -71,6 +72,12 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
     }
 
     const factory = new ethers.Contract(factoryAddress, CREATION_PREFLIGHT_ABI, provider);
+    // Prefer scheduled-arm eligibility (no arm-time cooldown). Fall back to the
+    // legacy creatorLaunchEligibility selector on older factories.
+    let eligibilityFn = factory.creatorScheduledArmEligibility?.bind(factory);
+    if (typeof factory.creatorScheduledArmEligibility !== "function") {
+      eligibilityFn = factory.creatorLaunchEligibility.bind(factory);
+    }
     const [live, globalPaused, createPaused, routeAuthority, factoryGenerationRaw, campaignGenerationRaw, eligibility] = await Promise.all([
       factory.live(),
       factory.globalPaused(),
@@ -78,7 +85,7 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
       factory.routeAuthority(),
       factory.FACTORY_GENERATION(),
       factory.CAMPAIGN_GENERATION(),
-      factory.creatorLaunchEligibility(ethers.getAddress(walletAddress)),
+      eligibilityFn(ethers.getAddress(walletAddress)).catch(() => factory.creatorLaunchEligibility(ethers.getAddress(walletAddress))),
     ]);
 
     const factoryGeneration = Number(factoryGenerationRaw);
@@ -119,18 +126,35 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
         ok: false,
         status: 403,
         code: "SCHEDULED_CREATE_ONCHAIN_ELIGIBILITY_BLOCKED",
-        error: cooldownEndsAt > Math.floor(Date.now() / 1000)
-          ? `This creator wallet cannot deploy or arm another campaign until ${new Date(cooldownEndsAt * 1000).toISOString()}. The selected trading-open time does not affect this cooldown.`
-          : onChainLiveCampaignCount >= onChainLiveCampaignLimit
-            ? "This creator wallet has reached its deployed, non-graduated campaign limit."
+        error: onChainLiveCampaignCount >= onChainLiveCampaignLimit
+          ? `Live campaign limit reached (${onChainLiveCampaignCount}/${onChainLiveCampaignLimit}). Graduate or wait until a campaign leaves live bonding before arming another timed launch.`
+          : cooldownEndsAt > Math.floor(Date.now() / 1000)
+            ? `This creator wallet cannot arm another campaign until ${new Date(cooldownEndsAt * 1000).toISOString()}. Timed arms on the corrected factory skip arm-time cooldown but still count toward the live campaign limit.`
             : "This creator wallet cannot deploy or arm another campaign right now.",
-        preflight: { allowed, cooldownEndsAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
+        preflight: {
+          allowed,
+          cooldownEndsAt,
+          onChainLiveCampaignCount,
+          onChainLiveCampaignLimit,
+          factoryGeneration,
+          campaignGeneration,
+          scheduledArm: true,
+        },
       };
     }
 
     return {
       ok: true,
-      preflight: { allowed, canArmNow: true, cooldownEndsAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
+      preflight: {
+        allowed,
+        canArmNow: true,
+        cooldownEndsAt,
+        onChainLiveCampaignCount,
+        onChainLiveCampaignLimit,
+        factoryGeneration,
+        campaignGeneration,
+        scheduledArm: true,
+      },
     };
   } catch (error) {
     return {
