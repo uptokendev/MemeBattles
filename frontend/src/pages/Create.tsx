@@ -9,6 +9,7 @@ import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
+import { emitCreatorArmBlocked, resolveCreatorArmBlock } from "@/components/prepare/CreatorArmEligibilityDialog";
 import { getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContracts";
 import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
@@ -17,8 +18,13 @@ import { apiFetch } from "@/lib/apiBase";
 import { BNB_CHAIN_ID, getActiveChainId, getChainLabel, getDefaultChainId, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import {
+  readScheduledCreatorLaunchEligibility,
+  type ScheduledCreatorLaunchEligibility,
+} from "@/lib/scheduledLaunchClientV2";
+import { getScheduledFactoryAddress } from "@/lib/scheduledFactoryConfig";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 
@@ -115,6 +121,9 @@ const Create = () => {
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
   const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(30_000n * WAD);
+  const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
+  const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
+  const armDialogShownForWallet = useRef<string | null>(null);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
@@ -195,6 +204,68 @@ const Create = () => {
     const selectedStillAvailable = graduationOptions.some((option) => option.targetWei === graduationTargetWei);
     if (!selectedStillAvailable) setGraduationTargetWei(30_000n * WAD);
   }, [graduationOptions, graduationTargetWei]);
+
+  // Pre-check arm eligibility as soon as a BNB creator wallet is connected.
+  useEffect(() => {
+    if (isSolanaCreator || !wallet.account || !wallet.signer || !isEvmChainId(chainId)) {
+      setCreatorEligibility(null);
+      setCreatorEligibilityError(null);
+      return;
+    }
+
+    const factoryAddress =
+      getScheduledFactoryAddress(Number(chainId), launchpad.factoryAddress) || launchpad.factoryAddress || "";
+    if (!factoryAddress) {
+      setCreatorEligibility(null);
+      setCreatorEligibilityError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      readScheduledCreatorLaunchEligibility({
+        signer: wallet.signer!,
+        chainId: Number(chainId),
+        factoryAddress,
+      })
+        .then((result) => {
+          if (cancelled) return;
+          setCreatorEligibility(result);
+          setCreatorEligibilityError(null);
+
+          if (!result.allowed) {
+            const walletKey = `${wallet.account}:${chainId}:${result.cooldownEndsAt}:${result.currentLiveCount}`;
+            // Show the explain dialog once per blocked wallet session state.
+            if (armDialogShownForWallet.current !== walletKey) {
+              armDialogShownForWallet.current = walletKey;
+              emitCreatorArmBlocked(
+                resolveCreatorArmBlock({
+                  mode: "now",
+                  eligibility: result,
+                  errorMessage: result.cooldownEndsAt > Math.floor(Date.now() / 1000)
+                    ? `Creator arm cooldown active until ${new Date(result.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.`
+                    : result.currentLiveCount >= result.maxLiveBonding
+                      ? `Live campaign limit reached (${result.currentLiveCount}/${result.maxLiveBonding}).`
+                      : "This creator wallet cannot deploy or arm another campaign right now.",
+                }),
+              );
+            }
+          } else {
+            armDialogShownForWallet.current = null;
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setCreatorEligibility(null);
+          setCreatorEligibilityError(String(error?.message || error || "Could not check creator deployment eligibility."));
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isSolanaCreator, wallet.account, wallet.signer, chainId, launchpad.factoryAddress]);
 
   const ensureTickerAvailable = () => {
     if (!normalizedTicker) {
@@ -365,10 +436,46 @@ const Create = () => {
       return;
     }
 
+    if (!wallet.account || !wallet.signer) {
+      toast.error("Connect your BNB wallet first.");
+      return;
+    }
+
     if (!validateCoreForm()) return;
     setIsDeploying(true);
 
+    let latestEligibility = creatorEligibility;
     try {
+      const factoryAddress =
+        getScheduledFactoryAddress(Number(chainId), launchpad.factoryAddress) || launchpad.factoryAddress || "";
+      if (factoryAddress) {
+        const eligibility = await readScheduledCreatorLaunchEligibility({
+          signer: wallet.signer,
+          chainId: Number(chainId),
+          factoryAddress,
+        });
+        latestEligibility = eligibility;
+        setCreatorEligibility(eligibility);
+
+        if (!eligibility.allowed) {
+          const now = Math.floor(Date.now() / 1000);
+          const message =
+            eligibility.currentLiveCount >= eligibility.maxLiveBonding
+              ? `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). Graduate an existing live campaign before another deploy.`
+              : eligibility.cooldownEndsAt > now
+                ? `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.`
+                : "This creator wallet cannot deploy or arm another campaign right now.";
+          emitCreatorArmBlocked(
+            resolveCreatorArmBlock({
+              mode: "now",
+              eligibility,
+              errorMessage: message,
+            }),
+          );
+          return;
+        }
+      }
+
       const logoUrl = await uploadLogo();
       const receipt: any = await launchpad.createCampaign({
         name: formData.name,
@@ -386,7 +493,37 @@ const Create = () => {
       if (tokenAddress || campaignAddress) navigate(`/token/${tokenAddress || campaignAddress}?chainId=${chainId}`);
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Failed to deploy campaign");
+      const message = String(
+        error?.shortMessage || error?.reason || error?.message || "Failed to deploy campaign",
+      );
+      const code = String(error?.code || error?.data?.code || "");
+      const lower = message.toLowerCase();
+      const looksLikeArmBlock =
+        lower.includes("cooldown") ||
+        lower.includes("not eligible") ||
+        lower.includes("creatornoteligible") ||
+        lower.includes("live campaign limit") ||
+        lower.includes("cannot deploy or arm") ||
+        lower.includes("cannot arm another") ||
+        code.includes("ELIGIB") ||
+        code.includes("COOLDOWN") ||
+        code === "CALL_EXCEPTION" ||
+        (latestEligibility != null && latestEligibility.allowed === false) ||
+        (latestEligibility != null &&
+          Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000));
+
+      if (looksLikeArmBlock) {
+        emitCreatorArmBlocked(
+          resolveCreatorArmBlock({
+            mode: "now",
+            eligibility: latestEligibility,
+            errorMessage: message,
+            errorCode: code,
+          }),
+        );
+      } else {
+        toast.error(message);
+      }
     } finally {
       setIsDeploying(false);
     }
@@ -395,7 +532,15 @@ const Create = () => {
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
   const isDraftDisabled = isProjectDisabled || isDrafting || isDeploying || checkingTicker || tickerUnavailableOrUnknown;
-  const isDeployDisabled = isProjectDisabled || isDrafting || isDeploying || checkingTicker || tickerUnavailableOrUnknown || !directDeployRouteReady || !wallet.signer;
+  // Keep deploy clickable when arm-blocked so the explain dialog can open on click.
+  const isDeployDisabled =
+    isProjectDisabled ||
+    isDrafting ||
+    isDeploying ||
+    checkingTicker ||
+    tickerUnavailableOrUnknown ||
+    !directDeployRouteReady ||
+    !wallet.signer;
   const deployModeDescription = isSolanaProtocolPending
     ? "Solana drafts are signed and saved through your Solana wallet. Direct Solana deploy, buy, sell, and finalize stay locked until the on-chain launch program is deployed."
     : bnbDirectDeployEnabled
@@ -603,6 +748,49 @@ const Create = () => {
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{deployModeDescription}</p>
             </div>
+            {!isSolanaCreator && wallet.account ? (
+              <div className="rounded-xl border border-border/50 bg-background/30 p-3 text-xs">
+                <div className="font-retro uppercase tracking-[0.14em] text-muted-foreground">Creator arm status</div>
+                {creatorEligibility?.allowed ? (
+                  <p className="mt-1 text-green-300">
+                    Eligible to deploy now. Live campaigns: {creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}
+                  </p>
+                ) : creatorEligibility ? (
+                  <div className="mt-1 space-y-2 text-orange-300">
+                    <p>
+                      {creatorEligibility.cooldownEndsAt > Math.floor(Date.now() / 1000)
+                        ? `Arm cooldown active until ${new Date(creatorEligibility.cooldownEndsAt * 1000).toLocaleString()}.`
+                        : creatorEligibility.currentLiveCount >= creatorEligibility.maxLiveBonding
+                          ? `Live limit reached (${creatorEligibility.currentLiveCount}/${creatorEligibility.maxLiveBonding}).`
+                          : "This wallet cannot deploy right now."}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Arming a timed draft already starts the 24h cooldown, even if trading is still locked.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 border-orange-400/40 bg-orange-500/10 px-3 text-xs text-orange-200"
+                      onClick={() =>
+                        emitCreatorArmBlocked(
+                          resolveCreatorArmBlock({
+                            mode: "now",
+                            eligibility: creatorEligibility,
+                            errorMessage: "Deployment not available for this wallet right now.",
+                          }),
+                        )
+                      }
+                    >
+                      Why can&apos;t I deploy?
+                    </Button>
+                  </div>
+                ) : creatorEligibilityError ? (
+                  <p className="mt-1 text-orange-300">{creatorEligibilityError}</p>
+                ) : (
+                  <p className="mt-1 text-muted-foreground">Checking creator arm eligibility…</p>
+                )}
+              </div>
+            ) : null}
             <Button type="submit" disabled={isDeployDisabled} className={directDeployRouteReady ? "mwz-button h-10 w-full font-retro text-sm" : "h-10 w-full cursor-not-allowed bg-muted font-retro text-sm text-muted-foreground shadow-none"}>
               <Rocket className="mr-2 h-4 w-4" />
               {deployButtonLabel}
