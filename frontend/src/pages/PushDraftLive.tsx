@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GraduationTierSelector } from "@/components/launchpad/GraduationTierSelector";
 import {
-  classifyCreatorArmBlock,
   emitCreatorArmBlocked,
-  type CreatorArmEligibilityDialogDetail,
+  resolveCreatorArmBlock,
 } from "@/components/prepare/CreatorArmEligibilityDialog";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
@@ -113,8 +112,8 @@ export default function PushDraftLive() {
   const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
 
-  const showArmBlock = (detail: CreatorArmEligibilityDialogDetail) => {
-    // App-root host listens for this event (more reliable than page-local Dialog state).
+  const showArmBlock = (detail: Parameters<typeof emitCreatorArmBlocked>[0]) => {
+    // Same event pattern as CreatorProtectionDialog on TokenDetails.
     emitCreatorArmBlocked(detail);
   };
 
@@ -235,16 +234,13 @@ export default function PushDraftLive() {
             "Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.";
         }
         showArmBlock(
-          classifyCreatorArmBlock({
+          resolveCreatorArmBlock({
             mode,
             eligibility,
             errorMessage: message,
-          }) || { reason: "generic", mode, message, ...{
-            cooldownEndsAt: eligibility.cooldownEndsAt,
-            currentLiveCount: eligibility.currentLiveCount,
-            maxLiveBonding: eligibility.maxLiveBonding,
-          } },
+          }),
         );
+        // Never toast for arm eligibility blocks — the dialog is the UX.
         return;
       }
 
@@ -329,22 +325,29 @@ export default function PushDraftLive() {
           "Draft deployment failed.",
       );
       const code = String(err?.code || err?.data?.code || err?.error?.code || err?.preflight?.code || "");
-      const classified = classifyCreatorArmBlock({
-        mode,
-        eligibility: latestEligibility,
-        errorMessage: message,
-        errorCode: code,
-      });
-      if (classified) {
-        // Prefer fresh eligibility timestamps when the chain only returns CreatorNotEligible.
-        if (classified.reason === "cooldown" && !classified.cooldownEndsAt && latestEligibility?.cooldownEndsAt) {
-          classified.cooldownEndsAt = latestEligibility.cooldownEndsAt;
-        }
-        if (classified.reason === "live_limit" && latestEligibility) {
-          classified.currentLiveCount = latestEligibility.currentLiveCount;
-          classified.maxLiveBonding = latestEligibility.maxLiveBonding;
-        }
-        showArmBlock(classified);
+      const lower = message.toLowerCase();
+      const looksLikeArmBlock =
+        lower.includes("cooldown") ||
+        lower.includes("not eligible") ||
+        lower.includes("creatornoteligible") ||
+        lower.includes("live campaign limit") ||
+        lower.includes("cannot deploy or arm") ||
+        lower.includes("cannot arm another") ||
+        code.includes("ELIGIB") ||
+        code.includes("COOLDOWN") ||
+        code === "CALL_EXCEPTION" ||
+        (latestEligibility != null &&
+          latestEligibility.allowed === false);
+
+      if (looksLikeArmBlock || (latestEligibility && Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000))) {
+        showArmBlock(
+          resolveCreatorArmBlock({
+            mode,
+            eligibility: latestEligibility,
+            errorMessage: message,
+            errorCode: code,
+          }),
+        );
       } else {
         toast.error(message);
       }
@@ -431,11 +434,11 @@ export default function PushDraftLive() {
                 className="h-8 border-orange-400/40 bg-orange-500/10 px-3 text-xs text-orange-200 hover:bg-orange-500/20"
                 onClick={() =>
                   showArmBlock(
-                    classifyCreatorArmBlock({ mode, eligibility: creatorEligibility }) || {
-                      reason: "generic",
+                    resolveCreatorArmBlock({
                       mode,
-                      message: "Deployment not available for this wallet right now.",
-                    },
+                      eligibility: creatorEligibility,
+                      errorMessage: "Deployment not available for this wallet right now.",
+                    }),
                   )
                 }
               >
