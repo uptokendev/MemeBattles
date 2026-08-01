@@ -207,21 +207,39 @@ function modeToCampaignTab(mode: WarRoomMode) {
   return "trending";
 }
 
+function isGraduatedCampaign(campaign: WarRoomCampaign) {
+  const rich = campaign as any;
+  return Boolean(
+    rich.isDexTrading ||
+      rich.status === "graduated" ||
+      rich.status === "ended" ||
+      rich.dexPairAddress ||
+      rich.dexScreenerUrl ||
+      rich.graduatedAt,
+  );
+}
+
 function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, search: string) {
   const rich = campaign as any;
-  const preLaunch = isPreLaunchCampaign({
-    launchAtSec: rich.launchAt,
-    draftStatus: rich.draftStatus || rich.status,
-  });
-  const isDraftRow = rich.status === "draft" || preLaunch || Boolean(rich.draftId);
+  const graduated = isGraduatedCampaign(campaign);
+  // Once graduated, never treat as draft even if a stale scheduled lifecycle row remains.
+  const preLaunch =
+    !graduated &&
+    isPreLaunchCampaign({
+      launchAtSec: rich.launchAt,
+      draftStatus: rich.draftStatus || (rich.status === "draft" ? rich.draftStatus : null),
+    });
+  const isDraftRow =
+    !graduated &&
+    (rich.status === "draft" || preLaunch || Boolean(rich.draftId && rich.isActive === false) || Boolean(rich.isScheduled));
 
   if (mode === "draft") {
     if (!isDraftRow) return false;
   } else if (mode === "graduated") {
-    if (!campaign.isDexTrading || isDraftRow || preLaunch) return false;
+    if (!graduated || preLaunch) return false;
   } else {
-    // Trending / New: live bonding only — never timed drafts or pre-launch armed campaigns.
-    if (isDraftRow || preLaunch || campaign.isDexTrading) return false;
+    // Trending / New: live bonding only — never timed drafts, pre-launch, or graduated.
+    if (isDraftRow || preLaunch || graduated) return false;
   }
 
   const query = search.trim().toLowerCase();
@@ -397,7 +415,9 @@ export function useWarRoomCampaignFeed({
           total: 0,
         }));
         const nowSec = Math.floor(Date.now() / 1000);
-        const onChainBaseItems = await Promise.all(
+        // Hydrate on-chain stats (including launched/graduated) BEFORE mode filtering.
+        // Graduated mode was empty because isDexTrading was hard-coded false pre-stats.
+        const onChainHydrated = await Promise.all(
           onChainPage.campaigns.map(async (campaign, index) => {
             const address = String(campaign.campaign || "").toLowerCase();
             const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
@@ -405,56 +425,58 @@ export function useWarRoomCampaignFeed({
             const launchAtOnChain =
               launchAtFromDraft ??
               (await readCampaignLaunchAt(chainId, address).catch(() => null));
-            const preLaunch = isPreLaunchCampaign({
-              launchAtSec: launchAtOnChain,
-              draftStatus: lifecycle?.status,
-              nowSec,
-            });
+
+            const stats = await fetchOnChainCampaignStats({
+              chainId: chainId as SupportedChainId,
+              campaignAddress: campaign.campaign,
+              tokenAddress: campaign.token,
+            }).catch(() => null);
+
+            const launched = Boolean(stats?.isDexTrading || stats?.status === "graduated");
+            const preLaunch =
+              !launched &&
+              isPreLaunchCampaign({
+                launchAtSec: launchAtOnChain,
+                draftStatus: lifecycle?.status,
+                nowSec,
+              });
 
             return normalizeApiCampaign({
               ...campaign,
+              ...(stats || {}),
               chainId,
               campaignAddress: campaign.campaign,
               tokenAddress: campaign.token,
               creatorAddress: campaign.creator,
               logoUri: campaign.logoURI,
               createdAtChain: campaign.createdAt,
-              // Pre-launch armed campaigns must not look like live trade rows.
-              status: preLaunch ? "draft" : "live",
-              isActive: !preLaunch,
-              isDexTrading: false,
-              isScheduled: preLaunch || String(lifecycle?.status) === "scheduled",
+              status: launched ? "graduated" : preLaunch ? "draft" : "live",
+              isActive: !preLaunch && !launched,
+              isDexTrading: launched,
+              isScheduled: preLaunch || (!launched && String(lifecycle?.status) === "scheduled"),
               launchAt: launchAtOnChain ?? undefined,
-              draftId: lifecycle?.id,
-              draftSlug: lifecycle?.slug,
-              draftStatus: preLaunch ? "scheduled" : lifecycle?.status,
-              promotionHref: lifecycle?.slug
-                ? `/prepare/${lifecycle.slug}`
-                : lifecycle?.id
-                  ? `/drafts/${lifecycle.id}`
-                  : undefined,
+              // Only attach draft ids for real pre-launch draft rows, never for graduated.
+              draftId: preLaunch ? lifecycle?.id : undefined,
+              draftSlug: preLaunch ? lifecycle?.slug : undefined,
+              draftStatus: preLaunch ? "scheduled" : undefined,
+              promotionHref: preLaunch
+                ? lifecycle?.slug
+                  ? `/prepare/${lifecycle.slug}`
+                  : lifecycle?.id
+                    ? `/drafts/${lifecycle.id}`
+                    : undefined
+                : undefined,
             }, 500000 + index);
           }),
         );
-        const onChainFiltered = onChainBaseItems.filter((campaign) =>
+        const onChainItems = onChainHydrated.filter((campaign) =>
           matchesModeAndSearch(campaign, activeMode, search),
-        );
-        const onChainItems = await Promise.all(
-          onChainFiltered.map(async (campaign) => {
-            // Skip expensive stats for draft/pre-launch rows.
-            if ((campaign as any).status === "draft") return campaign;
-            const stats = await fetchOnChainCampaignStats({
-              chainId: chainId as SupportedChainId,
-              campaignAddress: campaign.campaign,
-              tokenAddress: campaign.token,
-            }).catch(() => null);
-            return stats ? ({ ...campaign, ...stats } as WarRoomCampaign) : campaign;
-          }),
         );
 
         const draftItemsForMode = draftItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
         const apiItemsForMode = apiItems
           .map((campaign) => {
+            if (isGraduatedCampaign(campaign)) return campaign;
             const address = String(campaign.campaign || "").toLowerCase();
             const lifecycle = lifecycleByAddress.get(address);
             if (!lifecycle) return campaign;
@@ -482,8 +504,8 @@ export function useWarRoomCampaignFeed({
 
         if (cancelled) return;
         const mergedMap = new Map<string, WarRoomCampaign>();
-        // Draft rows first so pre-launch metadata wins when de-duping against on-chain.
-        for (const campaign of [...draftItemsForMode, ...onChainItems, ...apiItemsForMode]) {
+        // Prefer market rows (on-chain / API) over draft rows so graduated campaigns are not demoted.
+        for (const campaign of [...onChainItems, ...apiItemsForMode, ...draftItemsForMode]) {
           if (!campaign.campaign) continue;
           const key = String(campaign.campaign).toLowerCase();
           const current = mergedMap.get(key);
@@ -491,26 +513,58 @@ export function useWarRoomCampaignFeed({
             mergedMap.set(key, campaign);
             continue;
           }
-          // Prefer draft/pre-launch status over live trade status when either side is pre-launch.
-          const preferDraft =
+
+          const currentGraduated = isGraduatedCampaign(current);
+          const nextGraduated = isGraduatedCampaign(campaign);
+          if (currentGraduated || nextGraduated) {
+            const base = currentGraduated ? current : campaign;
+            const extra = currentGraduated ? campaign : current;
+            const merged = mergeWarRoomCampaign(base, extra);
+            (merged as any).status = "graduated";
+            (merged as any).isDexTrading = true;
+            (merged as any).isActive = false;
+            (merged as any).isScheduled = false;
+            (merged as any).draftId = undefined;
+            (merged as any).draftStatus = undefined;
+            mergedMap.set(key, merged);
+            continue;
+          }
+
+          const currentPreLaunch =
             (current as any).status === "draft" ||
+            Boolean((current as any).isScheduled) ||
+            isPreLaunchCampaign({
+              launchAtSec: (current as any).launchAt,
+              draftStatus: (current as any).draftStatus,
+              nowSec,
+            });
+          const nextPreLaunch =
             (campaign as any).status === "draft" ||
-            (current as any).isScheduled ||
-            (campaign as any).isScheduled;
-          const merged = preferDraft
-            ? mergeWarRoomCampaign(
-                (current as any).status === "draft" ? current : campaign,
-                (current as any).status === "draft" ? campaign : current,
-              )
-            : mergeWarRoomCampaign(current, campaign);
-          if (preferDraft) {
+            Boolean((campaign as any).isScheduled) ||
+            isPreLaunchCampaign({
+              launchAtSec: (campaign as any).launchAt,
+              draftStatus: (campaign as any).draftStatus,
+              nowSec,
+            });
+
+          // Prefer pre-launch draft metadata only when neither side is graduated.
+          if (currentPreLaunch || nextPreLaunch) {
+            const base = currentPreLaunch ? current : campaign;
+            const extra = currentPreLaunch ? campaign : current;
+            const merged = mergeWarRoomCampaign(base, extra);
             (merged as any).status = "draft";
             (merged as any).isActive = false;
             (merged as any).isDexTrading = false;
+            (merged as any).isScheduled = true;
+            mergedMap.set(key, merged);
+            continue;
           }
-          mergedMap.set(key, merged);
+
+          mergedMap.set(key, mergeWarRoomCampaign(current, campaign));
         }
-        const merged = Array.from(mergedMap.values()).filter((campaign: WarRoomCampaign) => campaign.campaign);
+        const merged = Array.from(mergedMap.values())
+          .filter((campaign: WarRoomCampaign) => campaign.campaign)
+          .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
         setCampaigns(merged);
         setSource(merged.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
       } catch (loadError) {
