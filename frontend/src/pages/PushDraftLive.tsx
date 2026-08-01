@@ -6,6 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GraduationTierSelector } from "@/components/launchpad/GraduationTierSelector";
+import {
+  CreatorArmEligibilityDialog,
+  classifyCreatorArmBlock,
+  type CreatorArmEligibilityDialogDetail,
+} from "@/components/prepare/CreatorArmEligibilityDialog";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { fetchCampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
@@ -104,9 +109,16 @@ export default function PushDraftLive() {
   const [submitting, setSubmitting] = useState(false);
   const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
   const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
+  const [armBlockDetail, setArmBlockDetail] = useState<CreatorArmEligibilityDialogDetail | null>(null);
+  const [armBlockOpen, setArmBlockOpen] = useState(false);
   const [mode, setMode] = useState<"now" | "scheduled">("now");
   const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
+
+  const showArmBlock = (detail: CreatorArmEligibilityDialogDetail) => {
+    setArmBlockDetail(detail);
+    setArmBlockOpen(true);
+  };
 
   const viewerWallet = wallet.account || solanaWallet.solanaAccount || null;
 
@@ -211,20 +223,25 @@ export default function PushDraftLive() {
       setCreatorEligibility(eligibility);
       if (!eligibility.allowed) {
         const now = Math.floor(Date.now() / 1000);
+        let message =
+          "This creator wallet cannot deploy or arm another campaign right now.";
         if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
-          throw new Error(
+          message =
             `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). ` +
-              "Graduate an existing live campaign before another deploy/arm. Tier 1 max is 3 concurrent live campaigns (including timed arms).",
-          );
+            "Graduate an existing live campaign before another deploy/arm. Tier 1 max is 3 concurrent live campaigns (including timed arms).";
+        } else if (eligibility.cooldownEndsAt > now) {
+          message =
+            `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. ` +
+            "Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.";
         }
-        if (eligibility.cooldownEndsAt > now) {
-          throw new Error(
-            `Creator arm cooldown active until ${formatLocalLaunch(eligibility.cooldownEndsAt)}. ` +
-              "Both immediate deploy and timed arm share the same 24h cooldown after any on-chain deploy. " +
-              "Prepare as many drafts as you want now; arm at most one every 24 hours (and at most 3 live for Tier 1).",
-          );
-        }
-        throw new Error("This creator wallet cannot deploy or arm another campaign right now.");
+        showArmBlock(
+          classifyCreatorArmBlock({
+            mode,
+            eligibility,
+            errorMessage: message,
+          }) || { reason: "generic", mode, message },
+        );
+        return;
       }
 
       let scheduledLaunchAt: number | null = null;
@@ -299,7 +316,17 @@ export default function PushDraftLive() {
       toast.success(`${selectedTier} campaign is live.`);
       navigate(`/token/${created.tokenAddress || created.campaignAddress}`);
     } catch (err: any) {
-      toast.error(err?.shortMessage || err?.reason || err?.message || "Draft deployment failed.");
+      const message = String(err?.shortMessage || err?.reason || err?.message || "Draft deployment failed.");
+      const classified = classifyCreatorArmBlock({
+        mode,
+        eligibility: creatorEligibility,
+        errorMessage: message,
+      });
+      if (classified) {
+        showArmBlock(classified);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -315,16 +342,23 @@ export default function PushDraftLive() {
     );
   }
 
+  // Keep deploy clickable when eligibility fails so we can show the explain dialog.
   const blocked =
     submitting ||
     !DRAFT_PUSH_LIVE_ENABLED ||
     draftIsSolana ||
-    !canPushLive(draft.status) ||
-    creatorEligibility?.allowed === false ||
-    Boolean(creatorEligibilityError);
+    !canPushLive(draft.status);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
+      <CreatorArmEligibilityDialog
+        detail={armBlockDetail}
+        open={armBlockOpen}
+        onOpenChange={(open) => {
+          setArmBlockOpen(open);
+          if (!open) setArmBlockDetail(null);
+        }}
+      />
       <div className="mwz-card p-5 md:p-7">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -369,13 +403,31 @@ export default function PushDraftLive() {
               </p>
             </div>
           ) : creatorEligibility ? (
-            <div className="mt-2 space-y-1 text-sm text-orange-300">
+            <div className="mt-2 space-y-2 text-sm text-orange-300">
               {creatorEligibility.cooldownEndsAt > Math.floor(Date.now() / 1000) ? (
                 <p>Creator cooldown active. Another campaign may be deployed or armed after {formatLocalLaunch(creatorEligibility.cooldownEndsAt)} ({creatorTimeZone}).</p>
+              ) : creatorEligibility.currentLiveCount >= creatorEligibility.maxLiveBonding ? (
+                <p>Live campaign limit reached ({creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}).</p>
               ) : (
                 <p>This creator wallet cannot deploy or arm another campaign right now.</p>
               )}
-              <p className="text-xs text-muted-foreground">The selected trading-open time does not affect creator deployment eligibility.</p>
+              <p className="text-xs text-muted-foreground">Trading-open time does not affect arm cooldown. Arming (even with a timer) starts the 24h creator cooldown immediately.</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-8 border-orange-400/40 bg-orange-500/10 px-3 text-xs text-orange-200 hover:bg-orange-500/20"
+                onClick={() =>
+                  showArmBlock(
+                    classifyCreatorArmBlock({ mode, eligibility: creatorEligibility }) || {
+                      reason: "generic",
+                      mode,
+                      message: "Deployment not available for this wallet right now.",
+                    },
+                  )
+                }
+              >
+                Why can&apos;t I deploy?
+              </Button>
             </div>
           ) : null}
           {creatorEligibilityError ? <p className="mt-2 text-sm text-orange-300">{creatorEligibilityError}</p> : null}
