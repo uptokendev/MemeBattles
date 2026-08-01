@@ -15,8 +15,8 @@ const CAMPAIGN_ABI = [
   "function token() view returns (address)",
 ] as const;
 
-const DEFAULT_LOOKBACK_BLOCKS = 2_500;
-const LOG_CHUNK_SIZE = 250;
+const DEFAULT_LOOKBACK_BLOCKS = 800;
+const LOG_CHUNK_SIZE = 40;
 
 export type TopazMarketSnapshot = {
   resolved: TopazResolvedRoute;
@@ -92,12 +92,29 @@ export function normalizeTopazSwap(
   return null;
 }
 
+function isRateLimitError(error: unknown): boolean {
+  const message = String((error as any)?.shortMessage || (error as any)?.message || error || "").toLowerCase();
+  const code = String((error as any)?.error?.code ?? (error as any)?.code ?? "");
+  return (
+    code === "-32005" ||
+    message.includes("limit exceeded") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests")
+  );
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getLogsChunked(
   provider: ethers.Provider,
   filter: { address: string; topics: string[]; fromBlock: number; toBlock: number },
+  signal?: AbortSignal,
 ): Promise<ethers.Log[]> {
   const out: ethers.Log[] = [];
   for (let start = filter.fromBlock; start <= filter.toBlock; start += LOG_CHUNK_SIZE) {
+    if (signal?.aborted) break;
     const end = Math.min(filter.toBlock, start + LOG_CHUNK_SIZE - 1);
     try {
       const logs = await provider.getLogs({
@@ -107,9 +124,15 @@ async function getLogsChunked(
         toBlock: end,
       });
       out.push(...logs);
-    } catch {
+    } catch (error) {
+      if (isRateLimitError(error)) {
+        // Back off once then stop — better partial history than a request storm.
+        await sleep(300);
+        break;
+      }
       // Public RPCs often reject large ranges; keep partial history.
     }
+    await sleep(40);
   }
   return out;
 }
@@ -171,12 +194,16 @@ export async function fetchTopazMarketSnapshot(input: {
   const fromBlock = Math.max(0, latest - lookback);
   const iface = new ethers.Interface(POOL_ABI);
   const swapTopic = iface.getEvent("Swap")!.topicHash;
-  const logs = await getLogsChunked(input.provider, {
-    address: resolved.pairAddress,
-    topics: [swapTopic],
-    fromBlock,
-    toBlock: latest,
-  });
+  const logs = await getLogsChunked(
+    input.provider,
+    {
+      address: resolved.pairAddress,
+      topics: [swapTopic],
+      fromBlock,
+      toBlock: latest,
+    },
+    input.signal,
+  );
 
   const blockTimes = new Map<number, number>();
   const uniqueBlocks = Array.from(new Set(logs.map((log) => Number(log.blockNumber || 0)).filter((n) => n > 0))).slice(
@@ -209,10 +236,13 @@ export async function fetchTopazMarketSnapshot(input: {
       const blockNumber = Number(log.blockNumber || 0);
       const timestamp = blockTimes.get(blockNumber) || Math.floor(Date.now() / 1000);
       const pricePerToken = priceBnbFromAmounts(normalized.tokenAmountRaw, normalized.nativeAmountRaw);
+      // Prefer recipient (`to`) as the trader — `sender` is usually the Topaz router.
+      const recipient = String(parsed.args.to || "").toLowerCase();
+      const sender = String(parsed.args.sender || "").toLowerCase();
       trades.push({
         type: normalized.side,
-        from: String(parsed.args.sender || "").toLowerCase(),
-        to: String(parsed.args.to || "").toLowerCase(),
+        from: recipient || sender,
+        to: recipient || sender,
         tokensWei: normalized.tokenAmountRaw,
         nativeWei: normalized.nativeAmountRaw,
         pricePerToken,

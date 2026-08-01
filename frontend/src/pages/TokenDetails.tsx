@@ -50,6 +50,11 @@ import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchPublicCampaignLifecycleDrafts } from "@/lib/scheduledLaunchApi";
+import {
+  appendLocalTopazTrade,
+  loadLocalTopazTrades,
+  saveLocalTopazTrades,
+} from "@/lib/localTopazTrades";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -626,43 +631,10 @@ const TokenDetails = () => {
   /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
   const [localTopazTrades, setLocalTopazTrades] = useState<CurveTradePoint[]>([]);
 
-  // Fetch maker profiles for displayed trades (best-effort; do not block UI)
-  useEffect(() => {
-    const chainIdNum = Number(wallet.chainId ?? 97);
-    if (!txs.length) return;
-
-    const uniq = Array.from(
-      new Set(
-        txs
-          .map((t) => (t.makerAddress ? String(t.makerAddress).toLowerCase() : ""))
-          .filter(Boolean)
-      )
-    );
-
-    // Cap profiles and never depend on makerProfiles state (that caused request storms).
-    const missing = uniq.filter((a) => makerProfiles[a] === undefined).slice(0, 8);
-    if (!missing.length) return;
-
-    let cancelled = false;
-    (async () => {
-      for (const addr of missing) {
-        if (cancelled) return;
-        try {
-          const p = await fetchUserProfile(chainIdNum, addr);
-          if (cancelled) return;
-          setMakerProfiles((prev) => (prev[addr] !== undefined ? prev : { ...prev, [addr]: p }));
-        } catch {
-          if (cancelled) return;
-          setMakerProfiles((prev) => (prev[addr] !== undefined ? prev : { ...prev, [addr]: null }));
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [txs, wallet.chainId]);
+  // Fetch maker profiles for displayed trades (best-effort; do not block UI).
+  // Use a ref so re-renders/tx list churn cannot re-request the same addresses forever
+  // (Topaz Swap "sender" is often the router, which previously stormed /api/profile).
+  const makerProfileKnownRef = useRef(new Set<string>());
 
   // Fetch creator profile (best-effort; do not block UI)
   useEffect(() => {
@@ -1064,10 +1036,19 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
   }, [combinedCurvePointsSafe]);
 
-  // Reset optimistic Topaz fills when switching campaigns.
+  // Restore/persist local Topaz fills so candles survive reload until indexer/RPC catch up.
   useEffect(() => {
-    setLocalTopazTrades([]);
-  }, [resolvedCampaignAddress]);
+    if (!resolvedCampaignAddress) {
+      setLocalTopazTrades([]);
+      return;
+    }
+    setLocalTopazTrades(loadLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress));
+  }, [resolvedCampaignAddress, chainIdForStorage]);
+
+  useEffect(() => {
+    if (!resolvedCampaignAddress) return;
+    saveLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress, localTopazTrades);
+  }, [localTopazTrades, resolvedCampaignAddress, chainIdForStorage]);
 
   const unifiedMarket = useUnifiedMarket({
     campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
@@ -1092,8 +1073,69 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     tokenAddress: campaign?.token,
     chainId: chainIdForStorage,
     enabled: hasValidCampaignAddress && contractGraduatedEarly,
-    pollMs: 20_000,
+    pollMs: 45_000,
   });
+
+  // Maker profiles after topazMarket exists so we can skip protocol/router senders.
+  useEffect(() => {
+    const chainIdNum = Number(wallet.chainId ?? chainIdForStorage ?? 97);
+    if (!txs.length) return;
+
+    const protocolSkip = new Set(
+      [
+        campaign?.campaign,
+        campaign?.token,
+        topazMarket.routerAddress,
+        topazMarket.pairAddress,
+        "0x0000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000001",
+        // Known Topaz production router / adapter / route authority on testnet.
+        "0xe559d93643631e9e8cc7d10adfa581be4b5399c8",
+        "0xc49895ee36ad19aa5cb1405761f6272ad7be6357",
+        "0xb989a99823ea96552c3e3198a40cdbf682edf1aa",
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .filter(Boolean),
+    );
+
+    const uniq = Array.from(
+      new Set(
+        txs
+          .map((t) => (t.makerAddress ? String(t.makerAddress).toLowerCase() : ""))
+          .filter((addr) => addr && !protocolSkip.has(addr) && !makerProfileKnownRef.current.has(addr)),
+      ),
+    ).slice(0, 6);
+
+    if (!uniq.length) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const addr of uniq) {
+        if (cancelled) return;
+        makerProfileKnownRef.current.add(addr);
+        try {
+          const p = await fetchUserProfile(chainIdNum, addr);
+          if (cancelled) return;
+          setMakerProfiles((prev) => ({ ...prev, [addr]: p }));
+        } catch {
+          if (cancelled) return;
+          setMakerProfiles((prev) => ({ ...prev, [addr]: null }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    txs,
+    wallet.chainId,
+    chainIdForStorage,
+    campaign?.campaign,
+    campaign?.token,
+    topazMarket.routerAddress,
+    topazMarket.pairAddress,
+  ]);
 
   // Continuous market trade stream: bonding curve history + on-chain Topaz swaps + API trades.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
@@ -2023,8 +2065,9 @@ const bnbUsd = useMemo(() => {
             logIndex: 9_000_000 + Math.floor(Math.random() * 1000),
           };
         }
-        if (optimistic?.txHash) {
-          setLocalTopazTrades((prev) => [...prev, optimistic as CurveTradePoint]);
+        if (optimistic?.txHash && resolvedCampaignAddress) {
+          const next = appendLocalTopazTrade(chainIdForStorage, resolvedCampaignAddress, optimistic);
+          setLocalTopazTrades(next);
         }
         try {
           await unifiedMarket.refresh();

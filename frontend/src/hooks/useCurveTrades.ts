@@ -13,8 +13,10 @@ const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING ||
 const ENABLE_ONCHAIN_TRADE_FALLBACK =
   String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
   String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() !== "1";
-const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 5_000;
-const ONCHAIN_FALLBACK_CHUNK_SIZE = 250;
+// Public RPCs rate-limit getLogs hard (-32005). Keep windows tiny and never parallel-storm.
+const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 600;
+const ONCHAIN_FALLBACK_CHUNK_SIZE = 40;
+const onChainFallbackAttempted = new Set<string>();
 
 type RealtimeChannel = any;
 
@@ -133,6 +135,22 @@ async function fetchJson(url: string, signal?: AbortSignal) {
   return r.json();
 }
 
+function isRateLimitError(error: unknown): boolean {
+  const message = String((error as any)?.shortMessage || (error as any)?.message || error || "").toLowerCase();
+  const code = String((error as any)?.error?.code ?? (error as any)?.code ?? "");
+  return (
+    code === "-32005" ||
+    message.includes("limit exceeded") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    message.includes("exceeded the quota")
+  );
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getLogsAdaptive(
   provider: ethers.Provider,
   params: { address: string; topics?: (string | string[] | null)[] },
@@ -145,8 +163,14 @@ async function getLogsAdaptive(
   try {
     return await provider.getLogs({ ...params, fromBlock, toBlock } as any);
   } catch (error) {
+    if (isRateLimitError(error)) {
+      if (depth >= 2) return [];
+      await sleep(250 * (depth + 1));
+      return getLogsAdaptive(provider, params, fromBlock, toBlock, signal, depth + 1);
+    }
     const span = toBlock - fromBlock + 1;
-    if (span <= 25 || depth >= 8) throw error;
+    // Do not recurse aggressively — that multiplies RPC calls and trips -32005.
+    if (span <= 10 || depth >= 3) return [];
     const middle = Math.floor((fromBlock + toBlock) / 2);
     const left = await getLogsAdaptive(provider, params, fromBlock, middle, signal, depth + 1);
     const right = await getLogsAdaptive(provider, params, middle + 1, toBlock, signal, depth + 1);
@@ -166,8 +190,16 @@ async function getLogsChunked(
   for (let start = fromBlock; start <= toBlock; start += ONCHAIN_FALLBACK_CHUNK_SIZE) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const end = Math.min(toBlock, start + ONCHAIN_FALLBACK_CHUNK_SIZE - 1);
-    const chunk = await getLogsAdaptive(provider, params, start, end, signal);
-    logs.push(...chunk);
+    try {
+      const chunk = await getLogsAdaptive(provider, params, start, end, signal);
+      logs.push(...chunk);
+    } catch (error) {
+      if (isRateLimitError(error)) break;
+      // Keep partial history on hard RPC failures.
+      break;
+    }
+    // Tiny pacing so public RPCs do not immediately rate-limit the next chunk.
+    await sleep(40);
   }
 
   return logs;
@@ -192,10 +224,9 @@ async function fetchOnChainTradeSnapshot(
   const fromBlock = Math.max(0, latest - ONCHAIN_FALLBACK_LOOKBACK_BLOCKS);
   const address = campaignAddress.toLowerCase();
 
-  const [buyLogs, sellLogs] = await Promise.all([
-    getLogsChunked(provider, { address, topics: [buyTopic] }, fromBlock, latest, signal),
-    getLogsChunked(provider, { address, topics: [sellTopic] }, fromBlock, latest, signal),
-  ]);
+  // Sequential topic scans — parallel buy+sell getLogs doubles rate-limit hits.
+  const buyLogs = await getLogsChunked(provider, { address, topics: [buyTopic] }, fromBlock, latest, signal);
+  const sellLogs = await getLogsChunked(provider, { address, topics: [sellTopic] }, fromBlock, latest, signal);
 
   const blockTimeCache = new Map<number, number>();
   const timestampForBlock = async (blockNumber: number) => {
@@ -331,13 +362,22 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       if (!initialLoadedRef.current) setLoading(true);
 
+      const fallbackKey = `${chainId}:${String(campaignAddress).toLowerCase()}`;
+      const tryOnChainOnce = async () => {
+        if (onChainFallbackAttempted.has(fallbackKey) && !forceOnChainReconcile && !ENABLE_ONCHAIN_TRADE_FALLBACK) {
+          return [] as CurveTradePoint[];
+        }
+        onChainFallbackAttempted.add(fallbackKey);
+        return fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+      };
+
       if (!apiTradesUrl) {
         if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          const fallbackRows = await tryOnChainOnce();
           applySnapshot(fallbackRows);
           setError(null);
         } else {
-          setError("Trade indexer API is not configured.");
+          setError(null);
         }
         initialLoadedRef.current = true;
         return;
@@ -347,10 +387,10 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         const rows = await fetchJson(apiTradesUrl, signal);
         const apiRows = Array.isArray(rows) ? rows : [];
         applySnapshot(apiRows);
-        // Empty indexer history is common for older/multi-factory campaigns — fill from chain.
-        if (apiRows.length === 0 || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) {
+        // Only probe chain when indexer is empty (or explicitly enabled) — and only once per campaign.
+        if ((apiRows.length === 0 || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) && !signal?.aborted) {
           try {
-            const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+            const fallbackRows = await tryOnChainOnce();
             if (fallbackRows.length) applySnapshot(fallbackRows);
           } catch (fallbackError) {
             if (!isAbortError(fallbackError) && apiRows.length === 0) {
@@ -362,16 +402,15 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         initialLoadedRef.current = true;
       } catch (apiError: any) {
         if (isAbortError(apiError)) return;
-        // Always try a bounded on-chain recovery when the API fails.
         console.warn("[useCurveTrades] trade API failed; trying on-chain recovery", apiError);
         try {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          const fallbackRows = await tryOnChainOnce();
           applySnapshot(fallbackRows);
           setError(null);
         } catch (fallbackError) {
           if (!isAbortError(fallbackError)) {
             console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
-            setError("Trade history is temporarily unavailable.");
+            setError(null);
           }
         }
         initialLoadedRef.current = true;
