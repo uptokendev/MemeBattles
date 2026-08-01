@@ -55,6 +55,7 @@ import {
   loadLocalTopazTrades,
   saveLocalTopazTrades,
 } from "@/lib/localTopazTrades";
+import { fetchTopazTradeReports, reportTopazTrade } from "@/lib/topazTradeReports";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -1036,13 +1037,43 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
   }, [combinedCurvePointsSafe]);
 
-  // Restore/persist local Topaz fills so candles survive reload until indexer/RPC catch up.
+  // Restore/persist local Topaz fills + server-reported Topaz trades (wallet receipts).
   useEffect(() => {
     if (!resolvedCampaignAddress) {
       setLocalTopazTrades([]);
       return;
     }
-    setLocalTopazTrades(loadLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress));
+    const cached = loadLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress);
+    setLocalTopazTrades(cached);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remote = await fetchTopazTradeReports({
+          chainId: chainIdForStorage,
+          campaignAddress: resolvedCampaignAddress,
+          limit: 100,
+        });
+        if (cancelled || !remote.length) return;
+        setLocalTopazTrades((prev) => {
+          const byKey = new Map<string, CurveTradePoint>();
+          for (const row of [...prev, ...remote]) {
+            byKey.set(`${row.txHash}:${row.logIndex}`, row);
+          }
+          const merged = Array.from(byKey.values()).sort(
+            (a, b) => a.timestamp - b.timestamp || a.blockNumber - b.blockNumber,
+          );
+          saveLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress, merged);
+          return merged;
+        });
+      } catch {
+        // Server reports are optional until Railway frontend has the route + DB.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [resolvedCampaignAddress, chainIdForStorage]);
 
   useEffect(() => {
@@ -2071,18 +2102,30 @@ const bnbUsd = useMemo(() => {
         if (optimistic?.txHash && resolvedCampaignAddress) {
           const next = appendLocalTopazTrade(chainIdForStorage, resolvedCampaignAddress, optimistic);
           setLocalTopazTrades(next);
+          // Persist to frontend API so Topaz fills survive reloads without eth_getLogs.
+          void reportTopazTrade({
+            chainId: chainIdForStorage,
+            campaignAddress: resolvedCampaignAddress,
+            side: optimistic.type,
+            txHash: optimistic.txHash,
+            tokenAmountRaw: optimistic.tokensWei.toString(),
+            nativeAmountRaw: optimistic.nativeWei.toString(),
+            wallet: wallet.account || undefined,
+            pairAddress: topazMarket.pairAddress,
+            blockNumber: optimistic.blockNumber || null,
+            logIndex: optimistic.logIndex,
+            blockTime: new Date((optimistic.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+          });
         }
         try {
           await unifiedMarket.refresh();
         } catch {
           // Market API may still be disabled during rollout.
         }
-        // Give the pool a moment, then re-scan Topaz swaps for the confirmed fill.
-        await new Promise((resolve) => setTimeout(resolve, 1500));
         try {
           await topazMarket.refresh();
         } catch {
-          // On-chain Topaz snapshot refresh is best-effort.
+          // Pool metrics refresh is best-effort (reserves/price).
         }
         const [bnbBal, tokenBal] = await Promise.all([
           readProvider.getBalance(wallet.account),

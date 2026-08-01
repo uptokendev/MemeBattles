@@ -49,6 +49,7 @@ const REALTIME_INDEXER_API_PREFIXES = [
 
 const FRONTEND_API_PREFIXES = [
   "/api/token-metadata",
+  "/api/topaz-trades",
   "/api/recruiters/signup",
   "/api/recruiter-auth-nonce",
   "/api/recruiter-auth-verify",
