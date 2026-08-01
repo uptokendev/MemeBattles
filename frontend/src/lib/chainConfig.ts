@@ -196,6 +196,51 @@ export function getFactoryAddress(chainId: SupportedChainId): string {
   return fallback.trim();
 }
 
+function isEvmAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+// Known BSC testnet multi-generation inventory (active + legacy supported).
+// Env can extend/override; these defaults keep older graduated tokens discoverable.
+const DEFAULT_SUPPORTED_FACTORIES_97 = [
+  "0xA2B19f194826b6D930D18F3fBCad662FaDC9459E", // gen-3 active (creator-arm cooldown)
+  "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6", // previous supported
+  "0xF7872169265eCE4E4C93ef894F1635E84DC6F681", // older supported (hosts YAT)
+];
+
+/**
+ * Active creation factory + historical supported factories for read/index inventory.
+ * War Room / graduated discovery must scan the full list so tokens on older generations remain visible.
+ */
+export function getSupportedFactoryAddresses(chainId: SupportedChainId): string[] {
+  if (isSolanaChainId(chainId)) return [];
+
+  const active = getFactoryAddress(chainId);
+  const supportedRaw =
+    (import.meta.env[`VITE_SUPPORTED_FACTORY_ADDRESSES_${chainId}`] as string | undefined) ??
+    (import.meta.env.VITE_SUPPORTED_FACTORY_ADDRESSES as string | undefined) ??
+    "";
+  const fromEnv = String(supportedRaw)
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => isEvmAddress(value));
+  const defaults = chainId === 97 ? DEFAULT_SUPPORTED_FACTORIES_97 : [];
+
+  const ordered = [active, ...fromEnv, ...defaults]
+    .map((value) => String(value || "").trim())
+    .filter((value) => isEvmAddress(value));
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const address of ordered) {
+    const key = address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
 export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
   if (isSolanaChainId(chainId)) return "";
 

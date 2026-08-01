@@ -1,6 +1,10 @@
 import { Contract, ethers } from "ethers";
 import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
-import { getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
+import {
+  getFactoryAddress,
+  getSupportedFactoryAddresses,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 
@@ -16,20 +20,25 @@ export type OnChainCampaignPage = {
   total: number;
 };
 
-export async function fetchOnChainCampaignPage(
+async function fetchFactoryCampaignPage(
   chainId: SupportedChainId,
+  factoryAddress: string,
   options: { limit?: number; cursor?: number } = {},
 ): Promise<OnChainCampaignPage> {
   const limit = Math.max(1, Math.min(100, Number(options.limit ?? 100)));
   const cursor = Math.max(0, Number(options.cursor ?? 0));
-  const factoryAddress = getFactoryAddress(chainId);
   if (!factoryAddress || !ethers.isAddress(factoryAddress)) {
     return { campaigns: [], nextCursor: null, total: 0 };
   }
 
   const provider = getReadProvider(chainId);
   const factory = new Contract(factoryAddress, FACTORY_ABI, provider) as any;
-  const total = Number((await factory.campaignsCount()) ?? 0n);
+  let total = 0;
+  try {
+    total = Number((await factory.campaignsCount()) ?? 0n);
+  } catch {
+    return { campaigns: [], nextCursor: null, total: 0 };
+  }
   if (!Number.isFinite(total) || total <= 0 || cursor >= total) {
     return { campaigns: [], nextCursor: null, total: Math.max(0, total || 0) };
   }
@@ -41,9 +50,13 @@ export async function fetchOnChainCampaignPage(
   let page: any[] = [];
   try {
     page = await factory.getCampaignPage(offset, actualLimit);
-  } catch (error) {
-    const legacyFactory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
-    page = await legacyFactory.getCampaignPage(offset, actualLimit);
+  } catch {
+    try {
+      const legacyFactory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
+      page = await legacyFactory.getCampaignPage(offset, actualLimit);
+    } catch {
+      return { campaigns: [], nextCursor: null, total };
+    }
   }
 
   const campaigns = Array.from(page ?? [])
@@ -63,7 +76,9 @@ export async function fetchOnChainCampaignPage(
         website: String(row?.website ?? ""),
         extraLink: String(row?.extraLink ?? ""),
         createdAt: row?.createdAt ? Number(row.createdAt) : undefined,
-      };
+        // Preserve factory origin for multi-generation inventory.
+        factoryAddress: factoryAddress.toLowerCase(),
+      } as CampaignInfo;
     })
     .filter((campaign): campaign is CampaignInfo => campaign !== null)
     .reverse();
@@ -71,6 +86,62 @@ export async function fetchOnChainCampaignPage(
   return {
     campaigns,
     nextCursor: cursor + actualLimit < total ? cursor + actualLimit : null,
+    total,
+  };
+}
+
+/**
+ * Load campaigns from the active factory plus all supported historical factories.
+ * Dedupes by campaign address (first occurrence wins — usually the active factory page).
+ */
+export async function fetchOnChainCampaignPage(
+  chainId: SupportedChainId,
+  options: { limit?: number; cursor?: number } = {},
+): Promise<OnChainCampaignPage> {
+  const limit = Math.max(1, Math.min(100, Number(options.limit ?? 100)));
+  const factories = getSupportedFactoryAddresses(chainId);
+  const fallbackActive = getFactoryAddress(chainId);
+  const factoryList =
+    factories.length > 0
+      ? factories
+      : fallbackActive && ethers.isAddress(fallbackActive)
+        ? [fallbackActive]
+        : [];
+
+  if (!factoryList.length) {
+    return { campaigns: [], nextCursor: null, total: 0 };
+  }
+
+  // For multi-factory inventory we always load the latest page from each factory
+  // (cursor applies only when a single factory is configured).
+  const pages = await Promise.all(
+    factoryList.map((factoryAddress) =>
+      fetchFactoryCampaignPage(chainId, factoryAddress, {
+        limit,
+        cursor: factoryList.length === 1 ? options.cursor : 0,
+      }).catch(() => ({ campaigns: [] as CampaignInfo[], nextCursor: null, total: 0 })),
+    ),
+  );
+
+  const seen = new Set<string>();
+  const campaigns: CampaignInfo[] = [];
+  let total = 0;
+  for (const page of pages) {
+    total += Number(page.total || 0);
+    for (const campaign of page.campaigns) {
+      const key = String(campaign.campaign || "").toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      campaigns.push(campaign);
+    }
+  }
+
+  // Newest first across factories.
+  campaigns.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+  return {
+    campaigns: campaigns.slice(0, limit),
+    nextCursor: null,
     total,
   };
 }
