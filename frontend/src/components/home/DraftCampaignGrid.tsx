@@ -8,10 +8,18 @@ import {
   fetchPublicCampaignDrafts,
   type DraftPopularity,
 } from "@/lib/draftApi";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, SOLANA_CHAIN_ID, isEvmChainId } from "@/lib/chainConfig";
 import { resolveImageUri } from "@/lib/media";
 import { timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 import { cn } from "@/lib/utils";
 import type { HomeQuery } from "./CampaignGrid";
+
+/** BNB toggle is one button but staging defaults to 97 while live drafts also sit on 56. */
+function draftFeedChainIds(selectedChainId: number): number[] {
+  if (Number(selectedChainId) === SOLANA_CHAIN_ID) return [SOLANA_CHAIN_ID];
+  if (isEvmChainId(selectedChainId)) return [BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID];
+  return [Number(selectedChainId)];
+}
 
 type DraftCampaignVM = {
   draft: CampaignDraftLifecycle;
@@ -46,14 +54,23 @@ function scheduledLaunchSeconds(draft: CampaignDraftLifecycle) {
   return timestampSeconds(draft.scheduledLaunchAt);
 }
 
+function isScheduledDraft(draft: CampaignDraftLifecycle) {
+  return String(draft.status) === "scheduled";
+}
+
 function isFutureScheduledDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
   const launchAt = scheduledLaunchSeconds(draft);
   return Boolean(
-    String(draft.status) === "scheduled" &&
+    isScheduledDraft(draft) &&
       draft.campaignAddress &&
       launchAt &&
       launchAt > Math.floor(nowMs / 1000),
   );
+}
+
+/** Armed timed launches stay discoverable even after launchAt if status never flipped to deployed. */
+function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle) {
+  return isScheduledDraft(draft) && Boolean(draft.campaignAddress || scheduledLaunchSeconds(draft));
 }
 
 function formatLaunchDate(value?: string | number | null) {
@@ -85,13 +102,14 @@ function matchesSearch(item: DraftCampaignVM, search?: string) {
 function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefined, nowMs: number) {
   const created = (item: DraftCampaignVM) => String(item.draft.draftCreatedAt || item.draft.createdAt || "");
   const active = items.filter((item) => {
-    if (String(item.draft.status) !== "scheduled") return String(item.draft.status) !== "deployed";
-    return isFutureScheduledDraft(item.draft, nowMs);
+    if (String(item.draft.status) === "deployed") return false;
+    if (String(item.draft.status) === "scheduled") return isDiscoverableScheduledDraft(item.draft);
+    return true;
   });
 
   if (sort === "progress_desc") {
     return active
-      .filter((item) => isFutureScheduledDraft(item.draft, nowMs))
+      .filter((item) => isFutureScheduledDraft(item.draft, nowMs) || isDiscoverableScheduledDraft(item.draft))
       .sort((a, b) => {
         const launchDiff = Number(scheduledLaunchSeconds(a.draft) || Number.MAX_SAFE_INTEGER)
           - Number(scheduledLaunchSeconds(b.draft) || Number.MAX_SAFE_INTEGER);
@@ -103,10 +121,11 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
   return active.slice().sort((a, b) => created(b).localeCompare(created(a)));
 }
 
-function isDiscoverableDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
+function isDiscoverableDraft(draft: CampaignDraftLifecycle, _nowMs = Date.now()) {
   const status = String(draft.status);
   if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
-  if (status === "scheduled") return isFutureScheduledDraft(draft, nowMs);
+  if (status === "scheduled") return isDiscoverableScheduledDraft(draft);
+  // Un-deployed prepare pages only (armed timed launches use status=scheduled).
   return !draft.campaignAddress;
 }
 
@@ -142,12 +161,23 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
 
     void (async () => {
       try {
-        const drafts = (await fetchPublicCampaignDrafts({ chainId, limit: 50 })) as CampaignDraftLifecycle[];
+        const chainIds = draftFeedChainIds(chainId);
+        const pages = await Promise.all(
+          chainIds.map((id) => fetchPublicCampaignDrafts({ chainId: id, limit: 50 })),
+        );
+        const drafts = pages.flat() as CampaignDraftLifecycle[];
+        const seen = new Set<string>();
         const candidates = drafts
-          .filter((draft) => Number(draft.chainId) === Number(chainId))
+          .filter((draft) => {
+            const id = String(draft.id || "");
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          })
+          .filter((draft) => chainIds.includes(Number(draft.chainId)))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => isDiscoverableDraft(draft, Date.now()))
-          .slice(0, 24);
+          .slice(0, 40);
 
         const hydrated = await Promise.all(
           candidates.map(async (draft): Promise<DraftCampaignVM> => {
@@ -217,8 +247,12 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
             const heat = popularity?.heatLabel || "Cold";
             const follows = Number(popularity?.follows || 0);
             const popularityPct = Number(popularity?.popularityPercentage || 0);
-            const scheduled = isFutureScheduledDraft(draft, nowMs);
-            const launchDate = scheduled ? formatLaunchDate(draft.scheduledLaunchAt) : "";
+            const scheduled = isDiscoverableScheduledDraft(draft);
+            const launchDate = scheduled
+              ? (scheduledLaunchSeconds(draft)
+                  ? formatLaunchDate(draft.scheduledLaunchAt)
+                  : "On-chain launch armed")
+              : "";
 
             return (
               <article key={draft.id} className={cn("mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30", cardClass)}>

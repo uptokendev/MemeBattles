@@ -49,18 +49,15 @@ async function enrichPayload(payload, pool) {
   return payload;
 }
 
-function belongsInDraftSection(item, nowMs = Date.now()) {
+function belongsInDraftSection(item, _nowMs = Date.now()) {
   const status = String(item?.status || "draft");
+  // Only fully deployed drafts leave the draft discovery surface. Keep
+  // status=scheduled rows visible even after launchAt — many live rows stay
+  // "scheduled" because the scheduled→deployed flip never ran, and live UI
+  // still lists them. Hiding by clock made BNB armed drafts vanish on postgrad
+  // while Solana promotion_published drafts still appeared.
   if (status === "deployed") return false;
-  if (status !== "scheduled") return true;
-
-  // Live DB still has armed/public scheduled drafts whose scheduled_launch_at was
-  // never backfilled (null). Hiding those made postgrad look like it "missed"
-  // drafts that live still shows. Only drop scheduled rows once we know the
-  // launch timestamp and it is already in the past.
-  const launchMs = item?.scheduledLaunchAt ? Date.parse(String(item.scheduledLaunchAt)) : NaN;
-  if (!Number.isFinite(launchMs)) return true;
-  return launchMs > nowMs;
+  return true;
 }
 
 function mergeDraftItems(primary, lifecycle) {

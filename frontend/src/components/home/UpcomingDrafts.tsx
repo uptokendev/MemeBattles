@@ -17,7 +17,7 @@ type UpcomingDraftVM = {
   popularity: DraftPopularity | null;
 };
 
-const UPCOMING_STATUSES = new Set(["promotion_published", "ready_to_launch"]);
+const UPCOMING_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
 
 function shortAddr(addr?: string | null) {
   if (!addr) return "—";
@@ -78,7 +78,9 @@ export function UpcomingDrafts({ className }: { className?: string }) {
           .filter((draft) => Number(draft.chainId) === Number(activeChainId))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => UPCOMING_STATUSES.has(draft.status))
-          .filter((draft) => !draft.campaignAddress && draft.status !== "deployed")
+          // Keep unarmed prepare pages and armed timed launches; only drop fully deployed.
+          .filter((draft) => draft.status !== "deployed")
+          .filter((draft) => draft.status === "scheduled" || !draft.campaignAddress)
           .slice(0, 8);
 
         const hydrated = await Promise.all(
