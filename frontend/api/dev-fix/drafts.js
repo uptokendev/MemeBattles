@@ -53,8 +53,14 @@ function belongsInDraftSection(item, nowMs = Date.now()) {
   const status = String(item?.status || "draft");
   if (status === "deployed") return false;
   if (status !== "scheduled") return true;
+
+  // Live DB still has armed/public scheduled drafts whose scheduled_launch_at was
+  // never backfilled (null). Hiding those made postgrad look like it "missed"
+  // drafts that live still shows. Only drop scheduled rows once we know the
+  // launch timestamp and it is already in the past.
   const launchMs = item?.scheduledLaunchAt ? Date.parse(String(item.scheduledLaunchAt)) : NaN;
-  return Number.isFinite(launchMs) && launchMs > nowMs;
+  if (!Number.isFinite(launchMs)) return true;
+  return launchMs > nowMs;
 }
 
 function mergeDraftItems(primary, lifecycle) {

@@ -137,13 +137,16 @@ export async function listPublicCampaignLifecycleDrafts(
   if (!pool) return [];
   const statuses = includeLaunched ? PUBLIC_LIFECYCLE_STATUSES : ["scheduled"];
   const params = [statuses];
+  // Include armed campaigns even when scheduled_launch_at was never backfilled
+  // (legacy live drafts: status=scheduled + campaign_address set, timestamp null).
   const where = [
     "visibility = 'public'",
     "campaign_address is not null",
-    "scheduled_launch_at is not null",
     "status = any($1::text[])",
   ];
-  if (!includeLaunched) where.push("scheduled_launch_at > now()");
+  if (!includeLaunched) {
+    where.push("(scheduled_launch_at is null or scheduled_launch_at > now())");
+  }
   if (chainId) {
     params.push(Number(chainId));
     where.push(`chain_id = $${params.length}`);
