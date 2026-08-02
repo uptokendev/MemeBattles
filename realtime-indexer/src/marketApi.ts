@@ -1,13 +1,14 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
+import { isEvmAddress, resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
 function validAddress(value: string): boolean {
-  return /^0x[a-f0-9]{40}$/.test(value);
+  return isEvmAddress(value);
 }
 
 function validChainId(value: number): boolean {
@@ -17,6 +18,14 @@ function validChainId(value: number): boolean {
 function asNumber(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Path param may be campaign or public ERC-20 token; always query by campaign. */
+async function campaignFromParam(chainId: number, raw: string): Promise<string | null> {
+  const input = normalizeAddress(raw);
+  if (!validAddress(input) || !validChainId(chainId)) return null;
+  const identity = await resolveMarketIdentityOrPassthrough(chainId, input);
+  return identity.campaignAddress;
 }
 
 function marketApiEnabled(): boolean {
@@ -168,11 +177,43 @@ async function readMarketState(chainId: number, campaign: string) {
 }
 
 export function registerMarketContinuityRoutes(app: Express) {
+  // Always-on identity resolve (no market API flag). Public URL = token; DB key = campaign.
+  app.get("/api/market/resolve", async (req, res) => {
+    try {
+      const chainId = asNumber(req.query.chainId, 97);
+      const address = normalizeAddress(req.query.address || req.query.id || "");
+      if (!validAddress(address) || !validChainId(chainId)) {
+        return res.status(400).json({ error: "Invalid address or chainId" });
+      }
+      const identity = await resolveMarketIdentity(chainId, address);
+      if (!identity) {
+        return res.status(404).json({
+          ok: false,
+          error: "No campaign found for this address (tried campaign + token columns).",
+          chainId,
+          address,
+        });
+      }
+      return res.json({
+        ok: true,
+        chainId: identity.chainId,
+        inputAddress: identity.inputAddress,
+        matchedBy: identity.matchedBy,
+        campaignAddress: identity.campaignAddress,
+        tokenAddress: identity.tokenAddress || null,
+        publicUrlAddress: identity.tokenAddress || identity.campaignAddress,
+        marketKey: identity.campaignAddress,
+      });
+    } catch (error) {
+      return sendServerError(res, error);
+    }
+  });
+
   app.get("/api/token/:campaign/market-state", enabledOnly, async (req, res) => {
     try {
-      const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
-      if (!validAddress(campaign) || !validChainId(chainId)) {
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
+      if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
 
@@ -186,9 +227,9 @@ export function registerMarketContinuityRoutes(app: Express) {
 
   app.get("/api/token/:campaign/trade-route", enabledOnly, async (req, res) => {
     try {
-      const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
-      if (!validAddress(campaign) || !validChainId(chainId)) {
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
+      if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
 
@@ -219,12 +260,12 @@ export function registerMarketContinuityRoutes(app: Express) {
 
   app.get("/api/token/:campaign/market-trades", enabledOnly, async (req, res) => {
     try {
-      const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
       const limit = Math.max(1, Math.min(asNumber(req.query.limit, 100), 500));
       const stage = String(req.query.marketStage || "all").trim().toLowerCase();
       const cursor = String(req.query.cursor || "").trim();
-      if (!validAddress(campaign) || !validChainId(chainId)) {
+      if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
       if (!["all", "bonding", "topaz"].includes(stage)) {
@@ -270,13 +311,13 @@ export function registerMarketContinuityRoutes(app: Express) {
 
   app.get("/api/token/:campaign/market-candles", enabledOnly, async (req, res) => {
     try {
-      const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
       const resolution = String(req.query.resolution || req.query.tf || "1m").trim();
       const limit = Math.max(1, Math.min(asNumber(req.query.limit, 1000), 5000));
       const from = req.query.from == null ? null : new Date(asNumber(req.query.from, 0) * 1000);
       const to = req.query.to == null ? null : new Date(asNumber(req.query.to, 0) * 1000);
-      if (!validAddress(campaign) || !validChainId(chainId)) {
+      if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
       if (!["5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"].includes(resolution)) {
@@ -321,26 +362,58 @@ export function registerMarketContinuityRoutes(app: Express) {
 
   app.get("/api/token/:campaign/market-summary", enabledOnly, async (req, res) => {
     try {
-      const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
-      if (!validAddress(campaign) || !validChainId(chainId)) {
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
+      if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
 
-      const result = await pool.query(
-        `select * from public.market_stats where chain_id=$1 and campaign_address=$2 limit 1`,
-        [chainId, campaign],
-      );
-      const state = await readMarketState(chainId, campaign);
-      if (!state && !result.rows[0]) return res.status(404).json({ error: "Market not found" });
+      // Prefer a lightweight stats row; never hard-fail quotes/UI if one side of the join is slow.
+      let statsRow: Record<string, unknown> | null = null;
+      let state: Awaited<ReturnType<typeof readMarketState>> | null = null;
+      let partialError: string | null = null;
+
+      try {
+        const result = await pool.query(
+          `select * from public.market_stats where chain_id=$1 and campaign_address=$2 limit 1`,
+          [chainId, campaign],
+        );
+        statsRow = result.rows[0] || null;
+      } catch (error: any) {
+        partialError = error?.message || String(error);
+        console.error("[wtr] market-summary stats query failed", partialError);
+      }
+
+      try {
+        state = await readMarketState(chainId, campaign);
+      } catch (error: any) {
+        partialError = error?.message || String(error);
+        console.error("[wtr] market-summary state query failed", partialError);
+      }
+
+      if (!state && !statsRow) {
+        // Degraded empty summary so the UI can fall through to on-chain Topaz quotes
+        // instead of spinning forever on HTTP 500.
+        return res.status(200).json({
+          marketStage: "BONDING",
+          poolVerified: false,
+          quotesEnabled: false,
+          tradingEnabled: false,
+          dataLagSeconds: null,
+          degraded: true,
+          lastError: partialError,
+        });
+      }
 
       return res.json({
-        ...(result.rows[0] || {}),
-        marketStage: state?.marketStage ?? result.rows[0]?.market_stage ?? "BONDING",
+        ...(statsRow || {}),
+        marketStage: state?.marketStage ?? (statsRow as any)?.market_stage ?? "BONDING",
         poolVerified: state?.poolVerified ?? false,
         quotesEnabled: state?.quotesEnabled ?? false,
         tradingEnabled: state?.tradingEnabled ?? false,
-        dataLagSeconds: state?.indexingStatus.dataLagSeconds ?? result.rows[0]?.data_lag_seconds ?? null,
+        dataLagSeconds: state?.indexingStatus.dataLagSeconds ?? (statsRow as any)?.data_lag_seconds ?? null,
+        degraded: Boolean(partialError),
+        lastError: partialError,
       });
     } catch (error) {
       return sendServerError(res, error);

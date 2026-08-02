@@ -105,24 +105,66 @@ export function useUnifiedMarket(input: {
     }
     const requestId = ++requestRef.current;
     try {
+      // Soft-timeout each market endpoint so a hung Railway indexer cannot freeze quotes/UI.
+      const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const timeout = new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(fallback), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+      };
+
+      const emptyTrades = { items: [] as MarketTrade[], nextCursor: null as string | null };
+      const emptyCandles = {
+        items: [] as MarketCandle[],
+        graduationMarker: null,
+        marketStage: "BONDING" as const,
+      };
+
       const [nextState, nextSummary, nextTrades, nextCandles] = await Promise.all([
-        fetchMarketState(campaignAddress, input.chainId, signal),
-        fetchMarketSummary(campaignAddress, input.chainId, signal),
-        fetchMarketTrades(campaignAddress, input.chainId, { limit: 500, signal }),
-        fetchMarketCandles(campaignAddress, input.chainId, resolution, { limit: 5000, signal }),
+        withTimeout(
+          fetchMarketState(campaignAddress, input.chainId, signal).catch(() => null),
+          4_000,
+          null,
+        ),
+        withTimeout(
+          fetchMarketSummary(campaignAddress, input.chainId, signal).catch(() => null),
+          4_000,
+          null,
+        ),
+        withTimeout(
+          fetchMarketTrades(campaignAddress, input.chainId, { limit: 500, signal }).catch(() => emptyTrades),
+          4_000,
+          emptyTrades,
+        ),
+        withTimeout(
+          fetchMarketCandles(campaignAddress, input.chainId, resolution, { limit: 5000, signal }).catch(
+            () => emptyCandles,
+          ),
+          4_000,
+          emptyCandles,
+        ),
       ]);
       if (requestId !== requestRef.current || signal?.aborted) return;
+      if (!nextState && !nextSummary) {
+        setError("Market API is slow or unavailable; showing on-chain fallback only.");
+        setLoading(false);
+        return;
+      }
 
       const previousStage = previousStageRef.current;
-      if (previousStage && previousStage !== nextState.marketStage) {
-        setStageTransition({ from: previousStage, to: nextState.marketStage, at: Date.now() });
+      const stage = nextState?.marketStage || nextSummary?.marketStage || previousStage;
+      if (previousStage && stage && previousStage !== stage) {
+        setStageTransition({ from: previousStage, to: stage, at: Date.now() });
       }
-      previousStageRef.current = nextState.marketStage;
-      setState(nextState);
-      setSummary(nextSummary);
-      setTrades((current) => mergeTrades(current, nextTrades.items || []));
-      setCandles((current) => mergeCandles(current, nextCandles.items || []));
-      setGraduationMarker(nextCandles.graduationMarker || null);
+      if (stage) previousStageRef.current = stage;
+      if (nextState) setState(nextState);
+      if (nextSummary) setSummary(nextSummary);
+      setTrades((current) => mergeTrades(current, nextTrades?.items || []));
+      setCandles((current) => mergeCandles(current, nextCandles?.items || []));
+      setGraduationMarker(nextCandles?.graduationMarker || null);
       setError(null);
     } catch (caught: any) {
       if (caught?.name === "AbortError" || signal?.aborted) return;

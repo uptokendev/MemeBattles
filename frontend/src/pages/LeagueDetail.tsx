@@ -559,10 +559,11 @@ useEffect(() => {
                     };
                   } else {
                     const row = rowAny as any;
-                    const addr = String(row.campaign_address ?? "");
+                    const addr = String(row.token_address || row.campaign_address || "");
                     leftEl = <RowToken logo={row.logo_uri} name={row.name} symbol={row.symbol} address={addr} />;
                     key = def.key === "biggest_hit" ? `${String(row.tx_hash ?? "")}:${String(row.log_index ?? idx)}` : `${def.key}:${addr}:${idx}`;
                     onClick = () => {
+                      // Prefer ERC-20 token address for the public TokenDetails URL.
                       if (isAddress(addr)) navigate(`/token/${addr}`);
                     };
 

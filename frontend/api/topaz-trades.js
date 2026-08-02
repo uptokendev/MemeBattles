@@ -28,6 +28,30 @@ function clampInt(value, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
+/**
+ * Path/query may be public ERC-20 token or LaunchCampaign.
+ * Trade reports and pool scans are stored/keyed by campaign.
+ */
+async function resolveCampaignAddress(chainId, addressOrToken) {
+  const input = normalizeAddress(addressOrToken);
+  if (!input || !pool) return input;
+  try {
+    const { rows } = await pool.query(
+      `select campaign_address, token_address
+         from public.campaigns
+        where chain_id = $1
+          and (campaign_address = $2 or token_address = $2)
+        order by case when campaign_address = $2 then 0 else 1 end
+        limit 1`,
+      [chainId, input],
+    );
+    const campaign = normalizeAddress(rows?.[0]?.campaign_address);
+    return campaign || input;
+  } catch {
+    return input;
+  }
+}
+
 async function ensureTable() {
   if (tableReady || !pool) return Boolean(pool);
   await pool.query(`
@@ -120,23 +144,33 @@ async function insertReport(row) {
 
 async function listReports(chainId, campaignAddress, limit) {
   if (!(await ensureTable())) return [];
+  // One row per tx_hash — wallet reports + pool scans often insert the same fill twice
+  // with different log_index (synthetic 1e6 vs real pool index).
   const { rows } = await pool.query(
-    `select
-       tx_hash as "txHash",
-       log_index as "logIndex",
-       block_number as "blockNumber",
-       block_time as "blockTime",
-       side,
-       wallet,
-       token_amount_raw as "tokenAmountRaw",
-       native_amount_raw as "nativeAmountRaw",
-       price_bnb as "priceBnb",
-       pair_address as "pairAddress",
-       source
-     from public.topaz_trade_reports
-     where chain_id = $1 and campaign_address = $2
-     order by coalesce(block_number, 0) desc, log_index desc
-     limit $3`,
+    `select *
+       from (
+         select distinct on (tx_hash)
+           tx_hash as "txHash",
+           log_index as "logIndex",
+           block_number as "blockNumber",
+           block_time as "blockTime",
+           side,
+           wallet,
+           token_amount_raw as "tokenAmountRaw",
+           native_amount_raw as "nativeAmountRaw",
+           price_bnb as "priceBnb",
+           pair_address as "pairAddress",
+           source
+         from public.topaz_trade_reports
+         where chain_id = $1 and campaign_address = $2
+         order by
+           tx_hash,
+           case when log_index >= 1000000 then 1 else 0 end asc,
+           coalesce(block_number, 0) desc,
+           log_index desc
+       ) deduped
+      order by coalesce("blockNumber", 0) desc, "logIndex" desc
+      limit $3`,
     [chainId, campaignAddress, limit],
   );
   return rows || [];
@@ -225,9 +259,10 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const q = getQuery(req);
       const chainId = Number(q.chainId ?? 97);
-      const campaignAddress = normalizeAddress(
-        q.campaignAddress ?? q.campaign ?? q.address ?? req.params?.campaign,
+      const rawAddress = normalizeAddress(
+        q.campaignAddress ?? q.campaign ?? q.address ?? q.tokenAddress ?? req.params?.campaign,
       );
+      const campaignAddress = await resolveCampaignAddress(chainId, rawAddress);
       const limit = clampInt(q.limit, 1, 200, 100);
       if (!Number.isFinite(chainId) || !campaignAddress) {
         return json(res, 400, { error: "chainId and campaignAddress are required" });
@@ -267,7 +302,8 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const body = await readJson(req);
       const chainId = Number(body.chainId ?? 97);
-      const campaignAddress = normalizeAddress(body.campaignAddress ?? body.campaign);
+      const rawAddress = normalizeAddress(body.campaignAddress ?? body.campaign ?? body.tokenAddress);
+      const campaignAddress = await resolveCampaignAddress(chainId, rawAddress);
       const txHash = String(body.txHash || body.tx_hash || "").toLowerCase();
       const side = String(body.side || "").toLowerCase() === "sell" ? "sell" : "buy";
       const tokenAmountRaw = String(body.tokenAmountRaw || body.token_amount_raw || "0");
@@ -281,12 +317,16 @@ export default async function handler(req, res) {
 
       const tokenRaw = BigInt(tokenAmountRaw);
       const nativeRaw = BigInt(nativeAmountRaw);
+      // Always store wallet reports under the synthetic log band so UI merge
+      // collapses them against real pool logs for the same tx_hash.
+      const rawLog = clampInt(body.logIndex ?? body.log_index, 0, 2_000_000, 1_000_000);
+      const logIndex = rawLog >= 1_000_000 ? rawLog : 1_000_000;
       const row = {
         chainId,
         campaignAddress,
         pairAddress: normalizeAddress(body.pairAddress) || null,
         txHash,
-        logIndex: clampInt(body.logIndex ?? body.log_index, 0, 1_000_000, 0),
+        logIndex,
         blockNumber: clampInt(body.blockNumber ?? body.block_number, 0, Number.MAX_SAFE_INTEGER, 0) || null,
         blockTime: body.blockTime || body.block_time || new Date().toISOString(),
         side,

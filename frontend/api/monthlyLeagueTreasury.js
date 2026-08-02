@@ -47,7 +47,12 @@ export default async function handler(req, res) {
     const winners = await loadWinners(chainId, epochStart);
     const tree = buildWinnerTree(monthId, winners);
 
-    const provider = new ethers.JsonRpcProvider(rpc);
+    const network = ethers.Network.from(Number(chainId));
+    const provider = new ethers.JsonRpcProvider(rpc, network, {
+      staticNetwork: network,
+      batchMaxCount: 1,
+      batchStallTime: 0,
+    });
     const treasury = new ethers.Contract(contractAddress, MONTHLY_TREASURY_ABI, provider);
     const [seal, claimedTotal, outstandingClaims, totalOutstandingClaims, unallocatedBalance] = await Promise.all([
       treasury.monthSeal(monthId),

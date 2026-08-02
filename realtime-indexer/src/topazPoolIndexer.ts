@@ -3,6 +3,7 @@ import { ablyRest, tokenChannel } from "./ably.js";
 import { TOPAZ_POOL_ABI } from "./abis.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
+import { createWorkingProvider, maskRpcUrl, parseRpcList } from "./rpcProvider.js";
 import { normalizeTopazSwap, priceBnbFromRaw } from "./topazPoolCore.js";
 
 type ChainConfig = {
@@ -39,13 +40,6 @@ const LOOP_SYMBOL = Symbol.for("memewarzone.wtrTopazPoolIndexerStarted");
 const globalState = globalThis as any;
 const ERC20_METADATA_ABI = ["function decimals() view returns (uint8)"];
 
-function parseRpcList(value: string): string[] {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function chainConfigs(): ChainConfig[] {
   const result: ChainConfig[] = [];
   const testnet = parseRpcList(ENV.BSC_RPC_HTTP_97);
@@ -53,13 +47,6 @@ function chainConfigs(): ChainConfig[] {
   if (testnet.length) result.push({ chainId: 97, rpcUrls: testnet });
   if (mainnet.length) result.push({ chainId: 56, rpcUrls: mainnet });
   return result;
-}
-
-function providerFor(config: ChainConfig): ethers.JsonRpcProvider {
-  return new ethers.JsonRpcProvider(config.rpcUrls[0], config.chainId, {
-    batchMaxCount: 1,
-    batchStallTime: 0,
-  });
 }
 
 function bucketStart(blockTime: Date, resolution: CandleResolution): Date {
@@ -577,10 +564,14 @@ export async function runTopazPoolIndexerOnce() {
   let errors = 0;
 
   for (const config of chainConfigs()) {
-    const provider = providerFor(config);
+    let provider: ethers.JsonRpcProvider | null = null;
     try {
-      const head = await provider.getBlockNumber();
-      const finalizedHead = Math.max(0, head - Math.max(0, ENV.CONFIRMATIONS));
+      const working = await createWorkingProvider(config.rpcUrls, config.chainId, {
+        label: `topaz-pool-indexer chain ${config.chainId}`,
+        timeoutMs: 10_000,
+      });
+      provider = working.provider;
+      const finalizedHead = Math.max(0, working.headBlock - Math.max(0, ENV.CONFIRMATIONS));
       const indexedPools = await listPools(config.chainId);
       for (const indexedPool of indexedPools) {
         pools += 1;
@@ -594,6 +585,7 @@ export async function runTopazPoolIndexerOnce() {
               campaign: indexedPool.campaignAddress,
               insertedTrades: result.insertedTrades,
               finalizedHead,
+              rpc: maskRpcUrl(working.url),
             });
           }
         } catch (error: any) {
@@ -615,8 +607,14 @@ export async function runTopazPoolIndexerOnce() {
           });
         }
       }
+    } catch (error: any) {
+      errors += 1;
+      console.error("[wtr] Topaz pool indexer RPC unavailable", {
+        chainId: config.chainId,
+        error: error?.shortMessage || error?.message || String(error),
+      });
     } finally {
-      provider.destroy();
+      provider?.destroy();
     }
   }
 

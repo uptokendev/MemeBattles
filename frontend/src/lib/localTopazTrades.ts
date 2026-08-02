@@ -1,4 +1,5 @@
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
+import { mergeTradePoints } from "@/lib/tradeDedupe";
 
 const STORAGE_PREFIX = "mwz:local-topaz-trades:v1:";
 const MAX_TRADES = 40;
@@ -64,10 +65,10 @@ export function loadLocalTopazTrades(chainId: number, campaignAddress: string): 
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredTrade[];
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map(deserialize)
-      .filter((row): row is CurveTradePoint => Boolean(row))
-      .slice(-MAX_TRADES);
+    // Re-merge so older session keys with multiple logIndex variants collapse.
+    return mergeTradePoints(
+      parsed.map(deserialize).filter((row): row is CurveTradePoint => Boolean(row)),
+    ).slice(-MAX_TRADES);
   } catch {
     return [];
   }
@@ -76,14 +77,10 @@ export function loadLocalTopazTrades(chainId: number, campaignAddress: string): 
 export function saveLocalTopazTrades(chainId: number, campaignAddress: string, trades: CurveTradePoint[]) {
   if (typeof window === "undefined") return;
   try {
-    const byHash = new Map<string, StoredTrade>();
-    for (const trade of trades) {
-      const stored = serialize(trade);
-      if (!stored) continue;
-      byHash.set(`${stored.txHash}:${stored.logIndex}`, stored);
-    }
-    const rows = Array.from(byHash.values())
-      .sort((a, b) => a.timestamp - b.timestamp || a.blockNumber - b.blockNumber)
+    const deduped = mergeTradePoints(trades);
+    const rows = deduped
+      .map(serialize)
+      .filter((row): row is StoredTrade => Boolean(row))
       .slice(-MAX_TRADES);
     window.sessionStorage.setItem(storageKey(chainId, campaignAddress), JSON.stringify(rows));
   } catch {

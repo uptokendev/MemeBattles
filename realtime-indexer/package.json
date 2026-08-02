@@ -18,8 +18,9 @@
     "cron:process-reward-reminders": "node --enable-source-maps dist/jobs/processRewardReminders.js",
     "simulate:phase7": "node --enable-source-maps dist/jobs/runPhase7Simulation.js",
     "test:phase4-7": "tsx --test src/tests/phase4-phase7.test.ts",
-    "test:wtr": "tsx --test src/tests/marketContinuity.test.ts src/tests/topazPoolCore.test.ts",
-    "job:reconcile-graduations-once": "tsx src/jobs/reconcileGraduationsOnce.ts"
+    "test:wtr": "tsx --test src/tests/marketContinuity.test.ts src/tests/topazPoolCore.test.ts src/tests/graduationSearch.test.ts",
+    "job:reconcile-graduations-once": "node --enable-source-maps dist/jobs/reconcileGraduationsOnce.js",
+    "job:reconcile-graduations-once:dev": "tsx src/jobs/reconcileGraduationsOnce.ts"
   },
   "dependencies": {
     "ably": "^2.6.0",

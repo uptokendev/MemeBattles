@@ -297,7 +297,13 @@ function buildMerkleProof(leaves, leafIndex) {
 
 async function sendOnchainPayout({ chainId, vaultAddress, recipient, amountRaw }) {
   const rpc = getRpcUrl(chainId);
-  const provider = new ethers.JsonRpcProvider(rpc);
+  // ethers v6: always pin network — bare JsonRpcProvider(url) spam-logs detect-network retries.
+  const network = ethers.Network.from(Number(chainId));
+  const provider = new ethers.JsonRpcProvider(rpc, network, {
+    staticNetwork: network,
+    batchMaxCount: 1,
+    batchStallTime: 0,
+  });
   const wallet = new ethers.Wallet(getOperatorPk(), provider);
 
   const abi = [

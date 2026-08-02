@@ -7,6 +7,7 @@ import { publishTrade, publishCandle, publishStats, publishLeague } from "./ably
 import { createLeagueFeedPublisher } from "./leagueFeed.js";
 import { recordCampaignCreatedActivity, recordTradeActivity } from "./rewards/attribution.js";
 import { upsertRewardEvent } from "./rewards/ingest.js";
+import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,13 +22,6 @@ function sleep(ms: number) {
 
 function toDec18(x: bigint): number {
   return Number(ethers.formatUnits(x, 18));
-}
-
-function parseRpcList(v: string): string[] {
-  return String(v || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 function isRateLimitError(e: any): boolean {
@@ -1354,10 +1348,7 @@ function providerForChain(chain: ChainCfg): ethers.JsonRpcProvider {
   if (rpcList.length === 0) {
     throw new Error(`No RPC URLs configured for chain ${chain.chainId}`);
   }
-  return new ethers.JsonRpcProvider(rpcList[0], undefined, {
-    batchMaxCount: 1,
-    batchStallTime: 0
-  });
+  return createStaticJsonRpcProvider(rpcList[0], chain.chainId, { timeoutMs: 12_000 });
 }
 
 export async function ingestCampaignTransaction(input: {
@@ -1589,10 +1580,9 @@ async function runIndexerCore(opts: {
     let rpcIdx = 0;
 
     const makeProvider = () =>
-      new ethers.JsonRpcProvider(rpcList[rpcIdx], undefined, {
-        // reduce batch eth_getLogs pressure on public endpoints
-        batchMaxCount: 1,
-        batchStallTime: 0
+      createStaticJsonRpcProvider(rpcList[rpcIdx], chain.chainId, {
+        // Bound timeouts so a dead free-tier URL cannot pile AggregateError / TIMEOUT loops.
+        timeoutMs: 12_000,
       });
 
     const rotate = () => {

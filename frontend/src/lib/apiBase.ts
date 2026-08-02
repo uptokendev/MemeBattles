@@ -43,6 +43,7 @@ const REALTIME_INDEXER_API_PREFIXES = [
   "/api/recruiters",
   "/api/rewards",
   "/api/token/",
+  "/api/market/",
   "/api/votes",
   "/api/vote_counts",
 ];

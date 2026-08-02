@@ -8,6 +8,7 @@ type Period = "weekly" | "monthly" | "all_time";
 
 type LeagueBase = {
   campaign_address: string;
+  token_address?: string | null;
   name?: string | null;
   symbol?: string | null;
   logo_uri?: string | null;
@@ -176,7 +177,7 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
               <button
                 key={r.campaign_address}
                 type="button"
-                onClick={() => navigate(`/token/${r.campaign_address}`)}
+                onClick={() => navigate(`/token/${r.token_address || r.campaign_address}`)}
                 className="w-full text-left flex items-start justify-between gap-3"
               >
                 <div className="min-w-0 flex-1">
@@ -207,7 +208,7 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
               <button
                 key={r.campaign_address}
                 type="button"
-                onClick={() => navigate(`/token/${r.campaign_address}`)}
+                onClick={() => navigate(`/token/${r.token_address || r.campaign_address}`)}
                 className="w-full text-left flex items-start justify-between gap-3"
               >
                 <div className="min-w-0 flex-1">
@@ -238,7 +239,7 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
               <button
                 key={r.tx_hash + ":" + String(r.log_index)}
                 type="button"
-                onClick={() => navigate(`/token/${r.campaign_address}`)}
+                onClick={() => navigate(`/token/${r.token_address || r.campaign_address}`)}
                 className="w-full text-left flex items-start justify-between gap-3"
               >
                 <div className="min-w-0 flex-1">

@@ -19,10 +19,39 @@ import { getRewardClaimVaultPosture, getRewardPublicationState, getRewardRouting
 import { createCampaignRouteAuthorization, createTradeRouteAuthorization, getRouteAuthorityAddress, getWalletRouteSnapshot } from "./rewards/routing.js";
 import { getRewardAdminEpochSummary, getRecruiterSummaryByCode, getRecruiterSummaryByWalletAddress, getSquadSummaryByRecruiterCode, getWalletRewardSummary, listRecruiterClosureDiagnostics, listRecruiterSummaries, listRewardAdminEpochSummaries, listRewardProgramEpochReconciliations, listSquadSummaries, listWalletEligibilityHistory, listWalletRewardHistory } from "./rewards/readModels.js";
 import { getSquadAllocationPreview } from "./rewards/squads.js";
+import {
+  createStaticJsonRpcProvider,
+  maskRpcUrl,
+  parseRpcList,
+  probeRpcUrl,
+  rawRpcCall,
+} from "./rpcProvider.js";
+import { resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
+import { runGraduationReconcilerOnce } from "./graduationReconciler.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
+
+// Boot self-check: prove this process pins static networks (no detect-network retry spam).
+// If this throws, deploy/runtime is wrong — better fail loud than flood logs.
+try {
+  const urls = parseRpcList(ENV.BSC_RPC_HTTP_97);
+  if (urls[0]) {
+    const probeProvider = createStaticJsonRpcProvider(urls[0], 97, { timeoutMs: 3_000 });
+    // Accessing _network throws if unpinned — that is the detect-loop bug class.
+    const pinned = (probeProvider as any)._network;
+    console.log("[rpc] static network pin OK", {
+      chainId: String(pinned?.chainId ?? "97"),
+      url: maskRpcUrl(urls[0]),
+    });
+    probeProvider.destroy();
+  } else {
+    console.warn("[rpc] BSC_RPC_HTTP_97 empty — indexer loops will idle/fail without a URL");
+  }
+} catch (error: any) {
+  console.error("[rpc] static network pin FAILED", error?.message || String(error));
+}
 
 // ---------------------------------------------------------------------------
 // Minimal in-process metrics (safe to expose)
@@ -305,7 +334,11 @@ app.get("/health", async (_req, res) => {
 
 app.get("/api/indexer/status", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
-  const campaign = normalizeAddress(req.query.campaign || req.query.campaignAddress || "");
+  const rawAddress = normalizeAddress(req.query.campaign || req.query.campaignAddress || req.query.token || "");
+  const identity = rawAddress
+    ? await resolveMarketIdentityOrPassthrough(chainId, rawAddress)
+    : null;
+  const campaign = identity?.campaignAddress || "";
 
   const cursorRows = await pool.query(
     `select cursor,last_indexed_block,updated_at
@@ -388,6 +421,14 @@ app.get("/api/indexer/status", wrap(async (req, res) => {
     rpc,
     totals: totals.rows[0] || null,
     cursors: cursorRows.rows,
+    identity: identity
+      ? {
+          inputAddress: identity.inputAddress,
+          matchedBy: identity.matchedBy,
+          campaignAddress: identity.campaignAddress,
+          tokenAddress: identity.tokenAddress || null,
+        }
+      : null,
     campaign: campaign ? (campaignRows?.rows?.[0] || null) : null,
     runtime: {
       running,
@@ -398,6 +439,14 @@ app.get("/api/indexer/status", wrap(async (req, res) => {
       lastIndexerErrorMsg,
     },
   });
+}));
+
+// One-shot graduation handoff (campaign → TOPAZ_ACTIVE + dex_pools). Prefer this on
+// Railway shells when `npm run job:…` is unavailable (wrong cwd / no tsx in image).
+app.post("/internal/wtr/reconcile-graduations", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const result = await runGraduationReconcilerOnce();
+  res.status(result.errors ? 207 : 200).json({ ok: result.errors === 0, ...result });
 }));
 
 app.post("/internal/indexer/run", wrap(async (req, res) => {
@@ -1992,11 +2041,13 @@ app.get("/api/activity/interactions", wrap(async (req, res) => {
 }));
 
 /**
- * Snapshot endpoints for TokenDetails
+ * Snapshot endpoints for TokenDetails.
+ * Path :campaign accepts either LaunchCampaign or public ERC-20 token address.
  */
 app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
-  const campaign = String(req.params.campaign || "").toLowerCase();
   const chainId = Number(req.query.chainId || 97);
+  const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
+  const campaign = identity.campaignAddress;
 
   const r = await pool.query(
     `with stored as (
@@ -2049,8 +2100,9 @@ app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
 }));
 
 app.get("/api/token/:campaign/trades", wrap(async (req, res) => {
-  const campaign = String(req.params.campaign || "").toLowerCase();
   const chainId = Number(req.query.chainId || 97);
+  const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
+  const campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
 
   const r = await pool.query(
@@ -2175,8 +2227,9 @@ app.get("/api/league", wrap(async (req, res) => {
 }));
 
 app.get("/api/token/:campaign/candles", wrap(async (req, res) => {
-  const campaign = String(req.params.campaign || "").toLowerCase();
   const chainId = Number(req.query.chainId || 97);
+  const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
+  const campaign = identity.campaignAddress;
   const tf = String(req.query.tf || "5s");
   const limit = Math.min(Number(req.query.limit || 200), 2000);
 
@@ -2289,26 +2342,12 @@ async function getLastIndexedBlock(chainId: number): Promise<number | null> {
 }
 
 async function getRpcHeadBlock(): Promise<number | null> {
-  const first = String(ENV.BSC_RPC_HTTP_97 || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean)[0];
-  if (!first) return null;
-  try {
-    const body = { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] };
-    const resp = await fetch(first, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) return null;
-    const j: any = await resp.json();
-    const hex = j?.result;
-    if (typeof hex !== "string" || !hex.startsWith("0x")) return null;
-    return parseInt(hex, 16);
-  } catch {
-    return null;
+  const urls = parseRpcList(ENV.BSC_RPC_HTTP_97);
+  for (const url of urls.slice(0, 3)) {
+    const probe = await probeRpcUrl(url, 97, 4_000);
+    if (probe.ok && probe.headBlock != null) return probe.headBlock;
   }
+  return null;
 }
 
 startTelemetryReporter(async () => {
@@ -2399,38 +2438,55 @@ async function runIndexerJob(
   }
 }
 
-async function rpcCall(method: string, params: any[] = []): Promise<any> {
-  const first = String(ENV.BSC_RPC_HTTP_97 || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)[0];
-  if (!first) return null;
-  try {
-    const resp = await fetch(first, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    });
-    if (!resp.ok) return null;
-    const j: any = await resp.json();
-    return j?.result ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function getRpcDiagnostics(chainId: number, campaign?: string | null) {
-  if (chainId !== 97) return null;
-  const factory = ENV.FACTORY_ADDRESS_97 || "";
-  const [chainHex, blockHex, factoryCode, campaignCode] = await Promise.all([
-    rpcCall("eth_chainId"),
-    rpcCall("eth_blockNumber"),
-    factory ? rpcCall("eth_getCode", [factory, "latest"]) : Promise.resolve(null),
-    campaign ? rpcCall("eth_getCode", [campaign, "latest"]) : Promise.resolve(null),
-  ]);
-  const headBlock = typeof blockHex === "string" && blockHex.startsWith("0x") ? parseInt(blockHex, 16) : null;
-  const rpcChainId = typeof chainHex === "string" && chainHex.startsWith("0x") ? parseInt(chainHex, 16) : null;
-  const factoryStartBlock = ENV.FACTORY_START_BLOCK_97 || null;
+  if (chainId !== 97 && chainId !== 56) return null;
+  const rpcList = parseRpcList(chainId === 56 ? ENV.BSC_RPC_HTTP_56 : ENV.BSC_RPC_HTTP_97);
+  const factory =
+    chainId === 56 ? ENV.FACTORY_ADDRESS_56 || "" : ENV.FACTORY_ADDRESS_97 || "";
+  const factoryStartBlock =
+    chainId === 56 ? ENV.FACTORY_START_BLOCK_56 || null : ENV.FACTORY_START_BLOCK_97 || null;
+
+  if (!rpcList.length) {
+    return {
+      chainId: null,
+      headBlock: null,
+      factoryStartBlock,
+      headBehindFactoryStart: false,
+      factoryCodePresent: false,
+      factoryCodeBytes: null,
+      campaignCodePresent: campaign ? false : null,
+      campaignCodeBytes: null,
+      rpcConfigured: false,
+      rpcWorkingUrl: null,
+      rpcErrors: ["No BSC_RPC_HTTP configured"],
+    };
+  }
+
+  const probes = await Promise.all(
+    rpcList.slice(0, 4).map((url) => probeRpcUrl(url, chainId, 4_000)),
+  );
+  const working = probes.find((p) => p.ok);
+  const rpcErrors = probes
+    .filter((p) => !p.ok)
+    .map((p) => `${maskRpcUrl(p.url)}: ${p.error || "failed"} (${p.durationMs}ms)`);
+
+  let factoryCode: unknown = null;
+  let campaignCode: unknown = null;
+  if (working) {
+    try {
+      factoryCode = factory
+        ? await rawRpcCall(working.url, "eth_getCode", [factory, "latest"], 4_000)
+        : null;
+      campaignCode = campaign
+        ? await rawRpcCall(working.url, "eth_getCode", [campaign, "latest"], 4_000)
+        : null;
+    } catch {
+      // leave codes null; head is still useful
+    }
+  }
+
+  const headBlock = working?.headBlock ?? null;
+  const rpcChainId = working?.chainId ?? null;
 
   return {
     chainId: rpcChainId,
@@ -2438,9 +2494,18 @@ async function getRpcDiagnostics(chainId: number, campaign?: string | null) {
     factoryStartBlock,
     headBehindFactoryStart: Boolean(factoryStartBlock && headBlock != null && headBlock < factoryStartBlock),
     factoryCodePresent: typeof factoryCode === "string" && factoryCode !== "0x",
-    factoryCodeBytes: typeof factoryCode === "string" && factoryCode.startsWith("0x") ? Math.max(0, (factoryCode.length - 2) / 2) : null,
+    factoryCodeBytes:
+      typeof factoryCode === "string" && factoryCode.startsWith("0x")
+        ? Math.max(0, (factoryCode.length - 2) / 2)
+        : null,
     campaignCodePresent: campaign ? typeof campaignCode === "string" && campaignCode !== "0x" : null,
-    campaignCodeBytes: campaign && typeof campaignCode === "string" && campaignCode.startsWith("0x") ? Math.max(0, (campaignCode.length - 2) / 2) : null,
+    campaignCodeBytes:
+      campaign && typeof campaignCode === "string" && campaignCode.startsWith("0x")
+        ? Math.max(0, (campaignCode.length - 2) / 2)
+        : null,
+    rpcConfigured: true,
+    rpcWorkingUrl: working ? maskRpcUrl(working.url) : null,
+    rpcErrors: working ? rpcErrors : rpcErrors.length ? rpcErrors : ["all RPC endpoints failed"],
   };
 }
 

@@ -1,4 +1,4 @@
-import { Contract, JsonRpcProvider, getAddress } from "ethers";
+import { Contract, JsonRpcProvider, Network, getAddress } from "ethers";
 import { asBigInt, envText, requireEnv } from "./config.mjs";
 
 function rpcUrl(chainId) {
@@ -9,7 +9,8 @@ function providerFor(chainId) {
   const raw = rpcUrl(chainId);
   if (!raw) throw new Error(`BSC_RPC_HTTP_${chainId} is required`);
   const url = raw.split(",").map((value) => value.trim()).find(Boolean);
-  return new JsonRpcProvider(url);
+  const network = Network.from(Number(chainId || 97));
+  return new JsonRpcProvider(url, network, { staticNetwork: network, batchMaxCount: 1 });
 }
 
 export function configuredVaultAddress(chainId) {

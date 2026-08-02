@@ -56,6 +56,7 @@ import {
   saveLocalTopazTrades,
 } from "@/lib/localTopazTrades";
 import { fetchTopazTradeReports, reportTopazTrade } from "@/lib/topazTradeReports";
+import { mergeTradePoints, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -316,10 +317,6 @@ type TxRow = {
   txHash: string;
 };
 
-function curveTradeKey(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
-  return `${String(t.txHash || "").toLowerCase()}:${Number(t.logIndex ?? 0)}`;
-}
-
 function parseRawOrDecimalWei(value: unknown, kind: "ether" | "token"): bigint {
   if (typeof value === "bigint") return value;
   const raw = String(value ?? "0").trim();
@@ -338,13 +335,7 @@ function parseRawOrDecimalWei(value: unknown, kind: "ether" | "token"): bigint {
 }
 
 function mergeCurveTradePoints(prev: CurveTradePoint[], next: CurveTradePoint[]) {
-  const map = new Map<string, CurveTradePoint>();
-  for (const point of prev) map.set(curveTradeKey(point), point);
-  for (const point of next) map.set(curveTradeKey(point), point);
-  return Array.from(map.values()).sort((a, b) => {
-    if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
-    return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
-  });
+  return mergeTradePoints(prev, next);
 }
 
 function confirmedRowsToCurvePoints(rows: any[], campaignAddress: string): CurveTradePoint[] {
@@ -703,7 +694,26 @@ const TokenDetails = () => {
           : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
 
         if (!match && isAddress) {
-          const directCampaignAddress = String(lifecycleDraft?.campaignAddress || param);
+          // param may be the public ERC-20 token address. Prefer lifecycle campaign,
+          // then reverse-resolve token→campaign via indexer, then treat param as campaign.
+          let directCampaignAddress = String(lifecycleDraft?.campaignAddress || "").trim();
+          if (!ethers.isAddress(directCampaignAddress)) {
+            try {
+              const { resolveMarketIdentity } = await import("@/lib/marketIdentity");
+              const identity = await resolveMarketIdentity({
+                address: param,
+                chainId: chainIdForStorage,
+              });
+              if (identity?.campaignAddress) {
+                directCampaignAddress = identity.campaignAddress;
+              }
+            } catch {
+              // fall through
+            }
+          }
+          if (!ethers.isAddress(directCampaignAddress)) {
+            directCampaignAddress = param;
+          }
           match = await buildCampaignFromAddress(directCampaignAddress, readProvider, chainIdForStorage);
         }
 
@@ -1056,13 +1066,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
         });
         if (cancelled || !remote.length) return;
         setLocalTopazTrades((prev) => {
-          const byKey = new Map<string, CurveTradePoint>();
-          for (const row of [...prev, ...remote]) {
-            byKey.set(`${row.txHash}:${row.logIndex}`, row);
-          }
-          const merged = Array.from(byKey.values()).sort(
-            (a, b) => a.timestamp - b.timestamp || a.blockNumber - b.blockNumber,
-          );
+          const merged = mergeTradePoints(prev, remote);
           saveLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress, merged);
           return merged;
         });
@@ -1168,20 +1172,10 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     topazMarket.pairAddress,
   ]);
 
-  // Continuous market trade stream: bonding curve history + on-chain Topaz swaps + API trades + local session fills.
+  // Continuous market trade stream: bonding + Topaz scan + wallet reports + local optimistic.
+  // Dedupe by tx: synthetic logIndex (>=1e6) collapses when real on-chain log exists.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
-    const byKey = new Map<string, CurveTradePoint>();
-    const add = (point: CurveTradePoint) => {
-      const tx = String(point.txHash || "").toLowerCase();
-      if (!/^0x[a-f0-9]{64}$/.test(tx)) return;
-      const key = `${tx}:${Number(point.logIndex ?? 0)}`;
-      // Prefer richer later sources (Topaz pool / local fill) over sparse rows.
-      byKey.set(key, point);
-    };
-    for (const point of curvePointsForUi) add(point);
-    for (const point of topazMarket.trades) add(point);
-    for (const point of localTopazTrades) add(point);
-    for (const trade of unifiedMarket.trades || []) {
+    const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
       let tokensWei = 0n;
       let nativeWei = 0n;
       try {
@@ -1194,7 +1188,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
       } catch {
         nativeWei = 0n;
       }
-      add({
+      return {
         type: trade.side,
         from: trade.wallet,
         to: trade.recipient || trade.wallet,
@@ -1205,14 +1199,9 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
         txHash: trade.txHash,
         blockNumber: trade.blockNumber,
         logIndex: trade.logIndex,
-      });
-    }
-    return Array.from(byKey.values()).sort(
-      (a, b) =>
-        Number(a.timestamp || 0) - Number(b.timestamp || 0) ||
-        Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||
-        Number(a.logIndex || 0) - Number(b.logIndex || 0),
-    );
+      };
+    });
+    return mergeTradePoints(curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedAsPoints);
   }, [curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
@@ -1606,10 +1595,19 @@ const bnbUsd = useMemo(() => {
     }
     const mcap = tokenData.marketCap ?? "—";
 
+    const seenTx = new Set<string>();
     const next: TxRow[] = [...marketTradePoints]
-      .slice(-100)
+      .slice()
       .reverse()
-      .map((p: any, idx: number) => {
+      .filter((p: any) => {
+        const tx = String(p.txHash || "").toLowerCase();
+        if (!/^0x[a-f0-9]{64}$/.test(tx)) return false;
+        if (seenTx.has(tx)) return false;
+        seenTx.add(tx);
+        return true;
+      })
+      .slice(0, 100)
+      .map((p: any) => {
         const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
         const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
         const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
@@ -1617,12 +1615,11 @@ const bnbUsd = useMemo(() => {
         const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
         const priceStr = formatPriceBnb(priceNum);
 
-        const txHash = String(p.txHash ?? "");
+        const txHash = String(p.txHash ?? "").toLowerCase();
         const ts = Number(p.timestamp ?? 0);
-        const id = txHash || `${ts}-${idx}`;
 
         return {
-          id,
+          id: txHash,
           time: formatAgo(ts),
           type: (p.type ?? "buy") as "buy" | "sell",
           amount: formatCompact(tokenAmount),
@@ -2042,7 +2039,7 @@ const bnbUsd = useMemo(() => {
             timestamp: Math.floor(Date.now() / 1000),
             txHash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
             blockNumber: Number(receipt?.blockNumber || 0),
-            logIndex: 9_000_000 + Math.floor(Math.random() * 1000),
+            logIndex: SYNTHETIC_LOG_INDEX_MIN,
           };
         } else {
           const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
@@ -2096,7 +2093,8 @@ const bnbUsd = useMemo(() => {
             timestamp: Math.floor(Date.now() / 1000),
             txHash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
             blockNumber: Number(receipt?.blockNumber || 0),
-            logIndex: 9_000_000 + Math.floor(Math.random() * 1000),
+            // Synthetic logIndex: real pool log is preferred when available (see mergeTradePoints).
+            logIndex: SYNTHETIC_LOG_INDEX_MIN,
           };
         }
         if (optimistic?.txHash && resolvedCampaignAddress) {
@@ -2113,7 +2111,7 @@ const bnbUsd = useMemo(() => {
             wallet: wallet.account || undefined,
             pairAddress: topazMarket.pairAddress,
             blockNumber: optimistic.blockNumber || null,
-            logIndex: optimistic.logIndex,
+            logIndex: SYNTHETIC_LOG_INDEX_MIN,
             blockTime: new Date((optimistic.timestamp || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
           });
         }
@@ -2634,9 +2632,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 </span>
               </div>
               <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:justify-end">
-                {!isDexStage && (
-                  <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end">
-                    {Object.entries(tokenData.metrics).map(([key, data]) => {
+                <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end">
+                  {/* Bonding-only % change chips; graduated stage uses resolution inside UnifiedMarketChart. */}
+                  {!isDexStage &&
+                    Object.entries(tokenData.metrics).map(([key, data]) => {
                       const ch = (data as any).change as number | null;
                       return (
                         <Button
@@ -2667,26 +2666,26 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                       );
                     })}
 
-                    <div className="inline-flex items-center gap-0 rounded-lg border border-border/40 bg-muted/25 p-1 shrink-0">
-                      <Button
-                        size="sm"
-                        variant={displayDenom === "USD" ? "secondary" : "ghost"}
-                        className="h-6 px-2.5 text-[10px] md:text-[11px]"
-                        onClick={() => setDisplayDenom("USD")}
-                      >
-                        USD
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={displayDenom === "BNB" ? "secondary" : "ghost"}
-                        className="h-6 px-2.5 text-[10px] md:text-[11px]"
-                        onClick={() => setDisplayDenom("BNB")}
-                      >
-                        BNB
-                      </Button>
-                    </div>
+                  {/* Always available — memecoin traders price mcap in USD by default. */}
+                  <div className="inline-flex items-center gap-0 rounded-lg border border-border/40 bg-muted/25 p-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant={displayDenom === "USD" ? "secondary" : "ghost"}
+                      className="h-6 px-2.5 text-[10px] md:text-[11px]"
+                      onClick={() => setDisplayDenom("USD")}
+                    >
+                      USD
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={displayDenom === "BNB" ? "secondary" : "ghost"}
+                      className="h-6 px-2.5 text-[10px] md:text-[11px]"
+                      onClick={() => setDisplayDenom("BNB")}
+                    >
+                      BNB
+                    </Button>
                   </div>
-                )}
+                </div>
 
                 <AthBar
                   currentLabel={marketCapUsdLabel ?? undefined}

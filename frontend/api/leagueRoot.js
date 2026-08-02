@@ -84,7 +84,12 @@ export default async function handler(req, res) {
     }
 
     const root = buildMerkleRoot(leaves);
-    const provider = new ethers.JsonRpcProvider(rpc);
+    const network = ethers.Network.from(Number(chainId));
+    const provider = new ethers.JsonRpcProvider(rpc, network, {
+      staticNetwork: network,
+      batchMaxCount: 1,
+      batchStallTime: 0,
+    });
     const wallet = new ethers.Wallet(pk, provider);
 
     if (period === "monthly") {

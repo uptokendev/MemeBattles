@@ -236,7 +236,15 @@ async function getLatestBlock(provider, rpcUrl) {
 async function indexOnce(options = {}) {
   const manifest = options.manifest || loadManifest(options.target);
   const rpcUrl = options.rpcUrl || requireEnv("INDEXER_RPC_URL", process.env.RPC_URL || process.env.BSC_TESTNET_RPC || "http://127.0.0.1:8545");
-  const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
+  // ethers v6: staticNetwork:true with network=undefined does NOT pin #network and
+  // spam-logs "failed to detect network... retry in 1s". Always pass chainId/Network.
+  const chainId = Number(manifest.chainId || 97);
+  const network = ethers.Network.from(chainId);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, network, {
+    staticNetwork: network,
+    batchMaxCount: 1,
+    batchStallTime: 0,
+  });
   const confirmations = options.confirmations ?? optionalInt("INDEXER_CONFIRMATIONS", defaultConfirmations(manifest));
   const batchBlocks = options.batchBlocks ?? optionalInt("INDEXER_BATCH_BLOCKS", DEFAULT_BATCH_BLOCKS);
   const outDir = options.outDir || process.env.INDEXER_OUT_DIR || defaultOutputDir(manifest.network || String(manifest.chainId));

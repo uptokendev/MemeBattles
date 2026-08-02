@@ -9,6 +9,7 @@ import {
   LEGACY_LAUNCH_FACTORY_ABI,
 } from "./abis.js";
 import { buildFactoryInventory, type SupportedFactory } from "./factoryInventory.js";
+import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
 
 const CURRENT_FACTORY_IFACE = new ethers.Interface(LAUNCH_FACTORY_ABI);
 const LEGACY_FACTORY_IFACE = new ethers.Interface(LEGACY_LAUNCH_FACTORY_ABI);
@@ -45,13 +46,6 @@ const CAMPAIGN_EVENT_VARIANTS: CampaignEventVariant[] = [
 const CAMPAIGN_EVENT_BY_TOPIC = new Map(
   CAMPAIGN_EVENT_VARIANTS.map((variant) => [variant.topicHash.toLowerCase(), variant]),
 );
-
-function parseRpcList(value: string): string[] {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
 
 function inventories(): SupportedFactory[] {
   return [
@@ -310,10 +304,7 @@ async function runFactory(factory: SupportedFactory): Promise<void> {
 
   let lastError: unknown;
   for (const rpcUrl of rpcUrls) {
-    const provider = new ethers.JsonRpcProvider(rpcUrl, factory.chainId, {
-      batchMaxCount: 1,
-      batchStallTime: 0,
-    });
+    const provider = createStaticJsonRpcProvider(rpcUrl, factory.chainId, { timeoutMs: 12_000 });
     try {
       const code = await provider.getCode(factory.address);
       if (code === "0x") throw new Error(`No contract code at ${factory.address}`);

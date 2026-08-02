@@ -307,7 +307,12 @@ async function main() {
   const rpcUrl = getRpcUrl(chainId);
   if (!rpcUrl) throw new Error(`Missing RPC URL for chain ${chainId}`);
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+  const network = ethers.Network.from(Number(chainId));
+  const provider = new ethers.JsonRpcProvider(rpcUrl, network, {
+    staticNetwork: network,
+    batchMaxCount: 1,
+    batchStallTime: 0,
+  });
   const signer = new ethers.Wallet(getPrivateKey(), provider);
   const contracts = {
     factory: new ethers.Contract(

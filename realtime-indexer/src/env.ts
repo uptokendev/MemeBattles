@@ -111,8 +111,18 @@ export const ENV = {
   // War Trade Room market-continuity rollout. The handoff reconciler is safe to run
   // before the public API/chart/trading flags because it only verifies and records state.
   ENABLE_GRADUATION_HANDOFF_RECONCILER: String(process.env.ENABLE_GRADUATION_HANDOFF_RECONCILER || "1") === "1",
-  GRADUATION_HANDOFF_INTERVAL_MS: Number(process.env.GRADUATION_HANDOFF_INTERVAL_MS || "30000"),
-  GRADUATION_HANDOFF_MAX_CAMPAIGNS: Number(process.env.GRADUATION_HANDOFF_MAX_CAMPAIGNS || "100"),
+  // Default 60s (was 30s) — launched() polls are cheap; log scans are not.
+  GRADUATION_HANDOFF_INTERVAL_MS: Number(process.env.GRADUATION_HANDOFF_INTERVAL_MS || "60000"),
+  GRADUATION_HANDOFF_MAX_CAMPAIGNS: Number(process.env.GRADUATION_HANDOFF_MAX_CAMPAIGNS || "25"),
+  // Recent tip window for CampaignFinalized eth_getLogs. Do NOT use FACTORY_LOOKBACK (250k).
+  // ~20k blocks ≈ half a day on ~3s BSC blocks — enough to catch live graduations.
+  GRADUATION_LOG_LOOKBACK_BLOCKS: Number(process.env.GRADUATION_LOG_LOOKBACK_BLOCKS || "20000"),
+  // When campaigns.created_block is 0/null, never fall back to factory 250k lookback.
+  GRADUATION_UNKNOWN_CREATED_LOOKBACK_BLOCKS: Number(
+    process.env.GRADUATION_UNKNOWN_CREATED_LOOKBACK_BLOCKS || "12000",
+  ),
+  // After a miss (launched but no log in window), skip log scans for this campaign awhile.
+  GRADUATION_SCAN_COOLDOWN_MS: Number(process.env.GRADUATION_SCAN_COOLDOWN_MS || "300000"),
   ENABLE_UNIFIED_MARKET_API: String(process.env.ENABLE_UNIFIED_MARKET_API || "0") === "1",
   ENABLE_TOPAZ_POOL_INDEXER: String(process.env.ENABLE_TOPAZ_POOL_INDEXER || "0") === "1",
   ENABLE_UNIFIED_MARKET_CHART: String(process.env.ENABLE_UNIFIED_MARKET_CHART || "0") === "1",

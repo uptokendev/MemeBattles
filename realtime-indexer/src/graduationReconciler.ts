@@ -4,6 +4,11 @@ import { LAUNCH_CAMPAIGN_ABI } from "./abis.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { reconcileGraduationHandoff } from "./marketContinuity.js";
+import {
+  graduationLogChunkRanges,
+  graduationLogSearchWindow,
+} from "./graduationSearch.js";
+import { createWorkingProvider, maskRpcUrl, parseRpcList } from "./rpcProvider.js";
 
 type ChainConfig = {
   chainId: number;
@@ -20,11 +25,11 @@ type Candidate = {
 const LOOP_SYMBOL = Symbol.for("memewarzone.wtrGraduationReconcilerStarted");
 const globalState = globalThis as any;
 
-function parseRpcList(value: string): string[] {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+/** In-process cooldown: campaignKey → earliest next log-scan time (ms). */
+const scanCooldownUntil = new Map<string, number>();
+
+function campaignKey(chainId: number, campaign: string): string {
+  return `${chainId}:${String(campaign || "").toLowerCase()}`;
 }
 
 function chainConfigs(): ChainConfig[] {
@@ -36,11 +41,23 @@ function chainConfigs(): ChainConfig[] {
   return result;
 }
 
-function providerFor(config: ChainConfig): ethers.JsonRpcProvider {
-  return new ethers.JsonRpcProvider(config.rpcUrls[0], config.chainId, {
-    batchMaxCount: 1,
-    batchStallTime: 0,
-  });
+function isInScanCooldown(chainId: number, campaign: string): boolean {
+  const until = scanCooldownUntil.get(campaignKey(chainId, campaign));
+  if (!until) return false;
+  if (Date.now() >= until) {
+    scanCooldownUntil.delete(campaignKey(chainId, campaign));
+    return false;
+  }
+  return true;
+}
+
+function markScanCooldown(chainId: number, campaign: string) {
+  const ms = Math.max(30_000, ENV.GRADUATION_SCAN_COOLDOWN_MS);
+  scanCooldownUntil.set(campaignKey(chainId, campaign), Date.now() + ms);
+}
+
+function clearScanCooldown(chainId: number, campaign: string) {
+  scanCooldownUntil.delete(campaignKey(chainId, campaign));
 }
 
 async function listCandidates(chainId: number): Promise<Candidate[]> {
@@ -59,6 +76,7 @@ async function listCandidates(chainId: number): Promise<Candidate[]> {
        and coalesce(cms.market_stage,c.market_stage,'BONDING') in ('BONDING','GRADUATING','TOPAZ_PENDING','TOPAZ_DEGRADED')
      order by
        case when c.graduated_block is not null then 0 else 1 end,
+       case when coalesce(cms.market_stage,c.market_stage,'BONDING') in ('GRADUATING','TOPAZ_PENDING','TOPAZ_DEGRADED') then 0 else 1 end,
        coalesce(c.graduated_at_chain,c.created_at_chain,c.updated_at) desc nulls last
      limit $2`,
     [chainId, Math.max(1, ENV.GRADUATION_HANDOFF_MAX_CAMPAIGNS)],
@@ -101,25 +119,35 @@ async function findGraduationLog(
   const event = iface.getEvent("CampaignFinalized");
   if (!event) throw new Error("CampaignFinalized event is missing from LAUNCH_CAMPAIGN_ABI");
 
-  if (candidate.graduatedBlock != null) {
-    const from = Math.max(0, candidate.graduatedBlock - 1);
-    const to = Math.min(finalizedHead, candidate.graduatedBlock + 1);
-    const exact = await getLogsAdaptive(provider, candidate.campaignAddress, event.topicHash, from, to);
-    return exact.sort((a, b) => b.blockNumber - a.blockNumber || Number(b.index ?? 0) - Number(a.index ?? 0))[0] ?? null;
-  }
+  const window = graduationLogSearchWindow({
+    finalizedHead,
+    createdBlock: candidate.createdBlock,
+    graduatedBlock: candidate.graduatedBlock,
+    lookbackBlocks: ENV.GRADUATION_LOG_LOOKBACK_BLOCKS,
+    unknownCreatedLookbackBlocks: ENV.GRADUATION_UNKNOWN_CREATED_LOOKBACK_BLOCKS,
+    logChunkSize: ENV.LOG_CHUNK_SIZE,
+  });
 
-  const fallbackStart = Math.max(0, finalizedHead - ENV.FACTORY_LOOKBACK_BLOCKS);
-  const fromBlock = candidate.createdBlock > 0 ? candidate.createdBlock : fallbackStart;
+  if (window.fromBlock > window.toBlock) return null;
+
   const step = Math.max(250, ENV.LOG_CHUNK_SIZE);
-  let latest: ethers.Log | null = null;
 
-  for (let start = fromBlock; start <= finalizedHead; start += step) {
-    const end = Math.min(finalizedHead, start + step - 1);
-    const logs = await getLogsAdaptive(provider, candidate.campaignAddress, event.topicHash, start, end);
-    if (logs.length) latest = logs[logs.length - 1];
+  // Newest-first: stop at the first chunk that contains CampaignFinalized.
+  for (const { start, end } of graduationLogChunkRanges(window.fromBlock, window.toBlock, step)) {
+    const logs = await getLogsAdaptive(
+      provider,
+      candidate.campaignAddress,
+      event.topicHash,
+      start,
+      end,
+    );
+    if (!logs.length) continue;
+    return logs.sort(
+      (a, b) => b.blockNumber - a.blockNumber || Number(b.index ?? 0) - Number(a.index ?? 0),
+    )[0];
   }
 
-  return latest;
+  return null;
 }
 
 async function publishStageChange(input: {
@@ -187,8 +215,8 @@ async function reconcileCandidate(
   chainId: number,
   candidate: Candidate,
   finalizedHead: number,
-) {
-  if (!ethers.isAddress(candidate.campaignAddress)) return;
+): Promise<"skipped" | "not_launched" | "cooldown" | "pending" | "reconciled"> {
+  if (!ethers.isAddress(candidate.campaignAddress)) return "skipped";
 
   const campaign = new ethers.Contract(candidate.campaignAddress, LAUNCH_CAMPAIGN_ABI, provider) as any;
   let launched = false;
@@ -200,14 +228,39 @@ async function reconcileCandidate(
       campaign: candidate.campaignAddress,
       error: error?.shortMessage || error?.message || String(error),
     });
-    return;
+    return "skipped";
   }
-  if (!launched) return;
+  if (!launched) return "not_launched";
+
+  // Cheap eth_call only above; expensive getLogs behind cooldown after misses.
+  if (isInScanCooldown(chainId, candidate.campaignAddress) && candidate.graduatedBlock == null) {
+    return "cooldown";
+  }
+
+  const searchWindow = graduationLogSearchWindow({
+    finalizedHead,
+    createdBlock: candidate.createdBlock,
+    graduatedBlock: candidate.graduatedBlock,
+    lookbackBlocks: ENV.GRADUATION_LOG_LOOKBACK_BLOCKS,
+    unknownCreatedLookbackBlocks: ENV.GRADUATION_UNKNOWN_CREATED_LOOKBACK_BLOCKS,
+    logChunkSize: ENV.LOG_CHUNK_SIZE,
+  });
 
   const log = await findGraduationLog(provider, candidate, finalizedHead);
   if (!log) {
+    markScanCooldown(chainId, candidate.campaignAddress);
     await noteMissingGraduationLog(chainId, candidate);
-    return;
+    console.log("[wtr] graduation log not in window (cooldown applied)", {
+      chainId,
+      campaign: candidate.campaignAddress,
+      mode: searchWindow.mode,
+      fromBlock: searchWindow.fromBlock,
+      toBlock: searchWindow.toBlock,
+      estimatedChunks: searchWindow.estimatedChunks,
+      createdBlock: candidate.createdBlock,
+      cooldownMs: ENV.GRADUATION_SCAN_COOLDOWN_MS,
+    });
+    return "pending";
   }
 
   const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
@@ -228,6 +281,8 @@ async function reconcileCandidate(
     args: parsed.args,
   });
 
+  clearScanCooldown(chainId, candidate.campaignAddress);
+
   await publishStageChange({
     chainId,
     campaignAddress: candidate.campaignAddress,
@@ -239,31 +294,47 @@ async function reconcileCandidate(
   });
 
   console.log("[wtr] graduation reconciled", result);
+  return "reconciled";
 }
 
 export async function runGraduationReconcilerOnce() {
   if (!ENV.ENABLE_GRADUATION_HANDOFF_RECONCILER) {
-    return { enabled: false, scanned: 0, reconciled: 0, errors: 0 };
+    return { enabled: false, scanned: 0, reconciled: 0, pending: 0, cooldown: 0, errors: 0 };
   }
 
   let scanned = 0;
   let reconciled = 0;
+  let pending = 0;
+  let cooldown = 0;
   let errors = 0;
 
   for (const config of chainConfigs()) {
-    const provider = providerFor(config);
+    let provider: ethers.JsonRpcProvider | null = null;
     try {
-      const head = await provider.getBlockNumber();
-      const finalizedHead = Math.max(0, head - Math.max(0, ENV.CONFIRMATIONS));
+      const working = await createWorkingProvider(config.rpcUrls, config.chainId, {
+        label: `graduation-reconciler chain ${config.chainId}`,
+        timeoutMs: 10_000,
+      });
+      provider = working.provider;
+      console.log("[wtr] graduation reconciler RPC", {
+        chainId: config.chainId,
+        url: maskRpcUrl(working.url),
+        headBlock: working.headBlock,
+        lookbackBlocks: ENV.GRADUATION_LOG_LOOKBACK_BLOCKS,
+        unknownCreatedLookback: ENV.GRADUATION_UNKNOWN_CREATED_LOOKBACK_BLOCKS,
+      });
+      const finalizedHead = Math.max(0, working.headBlock - Math.max(0, ENV.CONFIRMATIONS));
       const candidates = await listCandidates(config.chainId);
       for (const candidate of candidates) {
         scanned += 1;
         try {
-          const before = candidate.marketStage;
-          await reconcileCandidate(provider, config.chainId, candidate, finalizedHead);
-          if (before !== "TOPAZ_ACTIVE") reconciled += 1;
+          const outcome = await reconcileCandidate(provider, config.chainId, candidate, finalizedHead);
+          if (outcome === "reconciled") reconciled += 1;
+          else if (outcome === "pending") pending += 1;
+          else if (outcome === "cooldown") cooldown += 1;
         } catch (error: any) {
           errors += 1;
+          markScanCooldown(config.chainId, candidate.campaignAddress);
           console.error("[wtr] graduation reconciliation failed", {
             chainId: config.chainId,
             campaign: candidate.campaignAddress,
@@ -271,12 +342,18 @@ export async function runGraduationReconcilerOnce() {
           });
         }
       }
+    } catch (error: any) {
+      errors += 1;
+      console.error("[wtr] graduation reconciler RPC unavailable", {
+        chainId: config.chainId,
+        error: error?.shortMessage || error?.message || String(error),
+      });
     } finally {
-      provider.destroy();
+      provider?.destroy();
     }
   }
 
-  return { enabled: true, scanned, reconciled, errors };
+  return { enabled: true, scanned, reconciled, pending, cooldown, errors };
 }
 
 export function startGraduationReconcilerLoop() {
@@ -289,7 +366,9 @@ export function startGraduationReconcilerLoop() {
     running = true;
     try {
       const result = await runGraduationReconcilerOnce();
-      if (result.scanned || result.errors) console.log("[wtr] graduation reconciliation pass", result);
+      if (result.scanned || result.errors || result.reconciled || result.pending) {
+        console.log("[wtr] graduation reconciliation pass", result);
+      }
     } catch (error: any) {
       console.error("[wtr] graduation reconciler loop failed", error?.message || String(error));
     } finally {
