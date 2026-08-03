@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Contract, ethers } from "ethers";
+import { useLocation } from "react-router-dom";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { BNB_CHAIN_ID, getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
@@ -481,36 +482,53 @@ async function getCampaignLogsChunked(
   return logs;
 }
 
+function isEvmTokenRoutePath(pathname?: string | null): boolean {
+  return /^\/token\/0x[a-fA-F0-9]{40}/i.test(String(pathname || ""));
+}
+
+function readWindowPathname(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.location.pathname || "";
+  } catch {
+    return "";
+  }
+}
+
 export function useLaunchpad(): LaunchpadAdapter {
   const wallet = useWallet() as any;
   const solanaWallet = useSolanaWallet();
-  const { provider: walletProvider, signer, chainId: walletChainId } = wallet;
+  const { provider: walletProvider, signer, chainId: walletChainId, account: evmAccount } = wallet;
   const { solanaAccount, solanaWalletName, isSolanaConnected } = solanaWallet;
 
-  // Only use Solana adapter when the wallet path is actually Solana-only.
-  // Never let a leftover Solana feed selection (chain 101) hijack 0x token pages —
-  // that throws "VITE_SOLANA_LAUNCHPAD_PROGRAM_ID" and blanks metrics/chart.
-  const preferSolanaLaunchpad = Boolean(isSolanaConnected && solanaAccount && !wallet.isConnected);
+  // CRITICAL BUG (fixed): preferSolana used `!wallet.isConnected`, which is true whenever
+  // the *app* has no EVM session — even if MetaMask is injected on BNB. Combined with a
+  // connected Phantom/Solana session, EVERY page (including /token/0x…) selected the
+  // Solana adapter → metrics throw VITE_SOLANA_LAUNCHPAD_PROGRAM_ID and charts go blank.
+  const location = useLocation();
+  const onEvmTokenPage = isEvmTokenRoutePath(location.pathname) || isEvmTokenRoutePath(readWindowPathname());
+  const hasEvmAppSession = Boolean(evmAccount || walletProvider);
+  const preferSolanaLaunchpad = Boolean(
+    isSolanaConnected &&
+      solanaAccount &&
+      !hasEvmAppSession &&
+      !onEvmTokenPage,
+  );
+
   const activeChainId = useMemo<SupportedChainId>(() => {
-    if (preferSolanaLaunchpad) return SOLANA_CHAIN_ID;
-    const active = getActiveChainId(walletChainId);
-    if (typeof window !== "undefined") {
-      try {
-        const path = window.location.pathname || "";
-        if (/^\/token\/0x[a-fA-F0-9]{40}/i.test(path) && isSolanaChainId(active)) {
-          const walletEvm =
-            walletChainId && (walletChainId === 56 || walletChainId === 97)
-              ? (walletChainId as SupportedChainId)
-              : null;
-          return walletEvm ?? BNB_CHAIN_ID;
-        }
-      } catch {
-        // ignore
-      }
+    // 0x token pages are always BNB (56/97), never Solana 101.
+    if (onEvmTokenPage) {
+      if (walletChainId === 56 || walletChainId === 97) return walletChainId as SupportedChainId;
+      const active = getActiveChainId(walletChainId);
+      if (active === 56 || active === 97) return active;
+      return BNB_CHAIN_ID;
     }
-    return active;
-  }, [preferSolanaLaunchpad, walletChainId]);
+    if (preferSolanaLaunchpad) return SOLANA_CHAIN_ID;
+    return getActiveChainId(walletChainId);
+  }, [onEvmTokenPage, preferSolanaLaunchpad, walletChainId]);
+
   const evmFallbackChainId = useMemo<SupportedChainId>(() => {
+    if (walletChainId === 56 || walletChainId === 97) return walletChainId as SupportedChainId;
     const fallback = getActiveChainId(walletChainId);
     return isSolanaChainId(fallback) ? BNB_CHAIN_ID : fallback;
   }, [walletChainId]);
@@ -999,5 +1017,8 @@ export function useLaunchpad(): LaunchpadAdapter {
     solanaAccount,
   }), [fetchCampaigns, walletProvider, solanaAccount, solanaWalletName]);
 
+  // Hard rule: /token/0x… always BNB. Solana adapter only when active chain is Solana
+  // and we are not on an EVM token details route.
+  if (onEvmTokenPage) return bnbAdapter;
   return isSolanaChainId(activeChainId) ? solanaAdapter : bnbAdapter;
 }

@@ -619,6 +619,12 @@ export function createSolanaLaunchpadAdapter(params: {
     fetchCampaigns: params.fetchCampaigns,
     fetchCampaignLogoURI: async (_campaignAddress: string) => null,
     fetchCampaignMetrics: async (campaignAddress: string): Promise<CampaignMetrics | null> => {
+      // Guard: 0x addresses are BNB campaigns — never load Solana runtime for them.
+      if (/^0x[a-fA-F0-9]{40}$/i.test(String(campaignAddress || "").trim())) {
+        throw new Error(
+          "Solana launchpad adapter received a BNB (0x) campaign address. Use the BNB launchpad adapter.",
+        );
+      }
       const runtime = await loadRuntime(params.hasSolanaWallet);
       const campaign = await fetchCampaignAccount(runtime, campaignAddress);
       if (!campaign) return null;
@@ -626,11 +632,18 @@ export function createSolanaLaunchpadAdapter(params: {
       return mapMetrics(campaign, vault);
     },
     fetchCampaignCardStats: async (campaign: CampaignInfo) => {
+      const addr = String(campaign.campaign || campaign.token || "").trim();
+      if (/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+        return emptyStats;
+      }
       const runtime = await loadRuntime(params.hasSolanaWallet);
       const account = await fetchCampaignAccount(runtime, campaign.campaign || campaign.token);
       return account ? mapStats(account) : emptyStats;
     },
     fetchCampaignActivity: async (campaignAddress: string): Promise<CampaignActivity | null> => {
+      if (/^0x[a-fA-F0-9]{40}$/i.test(String(campaignAddress || "").trim())) {
+        return null;
+      }
       const runtime = await loadRuntime(params.hasSolanaWallet);
       const campaign = await fetchCampaignAccount(runtime, campaignAddress);
       if (!campaign) return null;
@@ -644,6 +657,11 @@ export function createSolanaLaunchpadAdapter(params: {
       };
     },
     fetchCampaignSummary: async (campaign: CampaignInfo): Promise<CampaignSummary> => {
+      const addr = String(campaign.campaign || campaign.token || "").trim();
+      if (/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+        // Soft empty — caller should have used BNB adapter; never throw PROGRAM_PENDING for 0x.
+        return { campaign, metrics: null, stats: emptyStats };
+      }
       const runtime = await loadRuntime(params.hasSolanaWallet);
       const account = await fetchCampaignAccount(runtime, campaign.campaign || campaign.token);
       if (!account) return { campaign, metrics: null, stats: emptyStats };
