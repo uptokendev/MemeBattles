@@ -318,6 +318,17 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// Always attach ACAO on errors so browser reports the real 5xx/timeout, not a fake CORS failure.
+app.use((req, res, next) => {
+  const origin = String(req.headers.origin || "");
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  next();
+});
+
 // Extremely lightweight health (no DB). Safe for frequent monitoring.
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
@@ -2105,39 +2116,10 @@ async function handleTokenTrades(req: any, res: any) {
   const campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
 
-  // One-shot repair: empty history + cursor past created_block (bad RPC scan) → rewind.
+  // One-shot repair: empty history after bad RPC scan (includes created_block=0 rows).
   try {
-    const meta = await pool.query(
-      `select coalesce(created_block,0)::bigint as created_block
-       from public.campaigns where chain_id=$1 and campaign_address=$2 limit 1`,
-      [chainId, campaign],
-    );
-    const createdBlock = Number(meta.rows[0]?.created_block || 0);
-    if (createdBlock > 0) {
-      const countR = await pool.query(
-        `select count(*)::int as n from public.curve_trades where chain_id=$1 and campaign_address=$2`,
-        [chainId, campaign],
-      );
-      if (Number(countR.rows[0]?.n || 0) === 0) {
-        const cursor = `campaign:${campaign}`;
-        const stateR = await pool.query(
-          `select last_indexed_block from public.indexer_state where chain_id=$1 and cursor=$2`,
-          [chainId, cursor],
-        );
-        const last = Number(stateR.rows[0]?.last_indexed_block || 0);
-        if (last > createdBlock) {
-          await pool.query(
-            `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
-             values ($1,$2,$3)
-             on conflict (chain_id,cursor) do update
-               set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
-                   updated_at = now()`,
-            [chainId, cursor, createdBlock],
-          );
-          console.log("[api] rewound empty campaign trade cursor", { chainId, campaign, from: last, to: createdBlock });
-        }
-      }
-    }
+    const { rewindEmptyCampaignTradeCursor } = await import("./emptyTradeCursorRewind.js");
+    await rewindEmptyCampaignTradeCursor(chainId, campaign);
   } catch (error) {
     console.warn("[api] trade cursor rewind skipped", String((error as any)?.message || error));
   }

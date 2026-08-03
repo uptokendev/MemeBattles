@@ -174,21 +174,22 @@ async function fetchOnChainTradeSnapshot(
   if (!buyTopic || !sellTopic) return [];
 
   const address = campaignAddress.toLowerCase();
-  // Multi-RPC sequential scans for bonding history (older graduated tokens often need this).
+  // Recent window only (browser RPCs). Covers "bought 10 minutes ago" without full history.
+  const lookbackBlocks = 12_000;
   const buyLogs = await scanContractLogs({
     chainId,
     address,
     topics: [buyTopic],
-    lookbackBlocks: 4_000,
-    chunkSize: 100,
+    lookbackBlocks,
+    chunkSize: 250,
     signal,
   });
   const sellLogs = await scanContractLogs({
     chainId,
     address,
     topics: [sellTopic],
-    lookbackBlocks: 4_000,
-    chunkSize: 100,
+    lookbackBlocks,
+    chunkSize: 250,
     signal,
   });
 
@@ -344,6 +345,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       if (!initialLoadedRef.current) setLoading(true);
 
       // 1) Primary: Railway realtime-indexer (memebattles-production-dca0).
+      // Hitting /trades also triggers server-side empty-cursor rewind for bad scans.
       let apiRows: any[] = [];
       try {
         apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
@@ -353,10 +355,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         console.warn("[useCurveTrades] indexer trade API failed", apiError);
       }
 
-      // 2) Optional browser getLogs recovery — only when explicitly enabled.
-      // Default OFF: trade history must come from Railway indexer (production-dca0),
-      // not from inventing third-party RPCs in the browser.
-      if ((ENABLE_ONCHAIN_TRADE_FALLBACK || forceOnChainReconcile) && !signal?.aborted) {
+      // 2) Browser getLogs when indexer is empty or forced.
+      // Required for campaigns whose cursor advanced with created_block=0 and zero rows
+      // (chart would stay blank forever waiting for Railway alone).
+      const needOnChain =
+        (ENABLE_ONCHAIN_TRADE_FALLBACK || forceOnChainReconcile || apiRows.length === 0) &&
+        !signal?.aborted;
+      if (needOnChain) {
         try {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           if (fallbackRows.length) applySnapshot(fallbackRows);

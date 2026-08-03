@@ -34,7 +34,13 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
   const [error, setError] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
 
-  const cid = useMemo<SupportedChainId>(() => getActiveChainId(Number(chainId ?? 97)), [chainId]);
+  // Use the page-provided chainId as-is (Token Details pins 97/56). Do not re-run
+  // getActiveChainId(wallet) or mainnet MM will poison testnet token stats.
+  const cid = useMemo<SupportedChainId>(() => {
+    const n = Number(chainId ?? 97);
+    if (n === 56 || n === 97) return n as SupportedChainId;
+    return getActiveChainId(n);
+  }, [chainId]);
 
   const url = useMemo(() => {
     if (!API_BASE || !campaignAddress) return "";

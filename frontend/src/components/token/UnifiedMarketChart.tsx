@@ -390,7 +390,7 @@ export function UnifiedMarketChart({
               ? "Loading trade history…"
               : error
                 ? error
-                : "No trade history loaded yet. Bonding curve and Topaz swaps will appear here once recovered."}
+                : "No trades in the loaded window yet. Recent buys/sells should appear after on-chain recovery; full history fills as the indexer rescans."}
           </div>
         )}
       </div>

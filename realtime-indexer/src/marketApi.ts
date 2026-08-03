@@ -1,6 +1,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
+import { rewindEmptyCampaignTradeCursor } from "./emptyTradeCursorRewind.js";
 import { isEvmAddress, resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 
 function normalizeAddress(value: unknown): string {
@@ -92,59 +93,8 @@ async function ensureBondingMarketState(chainId: number, campaign: string): Prom
   }
 }
 
-/**
- * If a campaign was scanned with a dead/empty RPC (cursor advanced, zero trades),
- * rewind the campaign cursor to created_block so the normal indexer re-ingests
- * TokensPurchased/TokensSold. Only for campaigns with zero curve_trades.
- */
 async function maybeRewindEmptyTradeCursor(chainId: number, campaign: string): Promise<void> {
-  try {
-    const stats = await pool.query(
-      `select
-         coalesce(c.created_block,0)::bigint as created_block,
-         (select count(*)::int from public.curve_trades t
-           where t.chain_id=c.chain_id and t.campaign_address=c.campaign_address) as trade_count
-       from public.campaigns c
-       where c.chain_id=$1 and c.campaign_address=$2
-       limit 1`,
-      [chainId, campaign],
-    );
-    const row = stats.rows[0];
-    if (!row) return;
-    const createdBlock = Number(row.created_block || 0);
-    const tradeCount = Number(row.trade_count || 0);
-    if (tradeCount > 0 || createdBlock <= 0) return;
-
-    const cursor = `campaign:${campaign}`;
-    const state = await pool.query(
-      `select last_indexed_block from public.indexer_state
-       where chain_id=$1 and cursor=$2 limit 1`,
-      [chainId, cursor],
-    );
-    const last = Number(state.rows[0]?.last_indexed_block || 0);
-    if (last <= createdBlock) return;
-
-    await pool.query(
-      `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
-       values ($1,$2,$3)
-       on conflict (chain_id,cursor) do update
-         set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
-             updated_at = now()`,
-      [chainId, cursor, createdBlock],
-    );
-    console.log("[wtr] rewound empty-trade campaign cursor", {
-      chainId,
-      campaign,
-      from: last,
-      to: createdBlock,
-    });
-  } catch (error) {
-    console.warn("[wtr] maybeRewindEmptyTradeCursor failed", {
-      chainId,
-      campaign,
-      error: String((error as any)?.message || error),
-    });
-  }
+  await rewindEmptyCampaignTradeCursor(chainId, campaign);
 }
 
 async function readMarketState(chainId: number, campaign: string) {
