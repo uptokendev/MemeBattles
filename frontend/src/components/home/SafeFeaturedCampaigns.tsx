@@ -199,11 +199,35 @@ async function hydrateMissingSummary(item: FeaturedItem, options?: { includeOnCh
   return next;
 }
 
+async function mapPoolFeatured<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (!items.length) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function run() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => run()));
+  return results;
+}
+
 async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Promise<FeaturedItem[]> {
   const provider = getReadProvider(chainId as any);
-  // Phase 1: lifecycle + cheap API summary (no bulk on-chain mcap).
-  const checked = await Promise.all(items.slice(0, 100).map(async (item) => {
+  // Cap work hard — full Promise.all over 100 launched() calls freezes the home page.
+  const candidates = items.slice(0, 24);
+
+  const checked = await mapPoolFeatured(candidates, 4, async (item) => {
     if (item.graduatedAtChain || item.isDexTrading) return null;
+    // Trust API rows that already have identity; skip multi-RPC hydration.
+    if (item.name && item.symbol && isAddress(item.tokenAddress) && Number(item.votes24h || 0) >= 0) {
+      if (item.marketcapBnb != null && item.marketcapBnb !== "") {
+        return item;
+      }
+      return hydrateMissingSummary(item, { includeOnChainMcap: false });
+    }
     try {
       const campaign = new Contract(item.campaignAddress, CAMPAIGN_ABI, provider) as any;
       if (await campaign.launched()) return null;
@@ -231,34 +255,33 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
       console.warn("[SafeFeaturedCampaigns] lifecycle verification failed", item.campaignAddress, error);
       return null;
     }
-  }));
+  });
 
   const live = checked.filter(Boolean) as FeaturedItem[];
-  // Phase 2: on-chain mcap only for upvoted candidates (featured filter).
+  // Phase 2: on-chain mcap only for a few upvoted cards missing stats.
   const upvoted = live
     .filter((item) => Number(item.votes24h || 0) > 0 || Number(item.votesAllTime || 0) > 0)
-    .slice(0, 20);
+    .filter((item) => item.marketcapBnb == null || item.marketcapBnb === "" || Number(item.marketcapBnb) <= 0)
+    .slice(0, 8);
 
   if (!upvoted.length) return live;
 
   const mcapByAddress = new Map<string, string>();
-  await Promise.all(
-    upvoted.map(async (item) => {
-      if (item.marketcapBnb != null && item.marketcapBnb !== "" && Number(item.marketcapBnb) > 0) return;
-      try {
-        const stats = await fetchOnChainCampaignStats({
-          chainId: item.chainId as SupportedChainId,
-          campaignAddress: item.campaignAddress,
-          tokenAddress: item.tokenAddress,
-        });
-        if (stats?.marketCapBnb != null && stats.marketCapBnb > 0) {
-          mcapByAddress.set(item.campaignAddress.toLowerCase(), String(stats.marketCapBnb));
-        }
-      } catch {
-        // optional
+  await mapPoolFeatured(upvoted, 3, async (item) => {
+    try {
+      const stats = await fetchOnChainCampaignStats({
+        chainId: item.chainId as SupportedChainId,
+        campaignAddress: item.campaignAddress,
+        tokenAddress: item.tokenAddress,
+      });
+      if (stats?.marketCapBnb != null && stats.marketCapBnb > 0) {
+        mcapByAddress.set(item.campaignAddress.toLowerCase(), String(stats.marketCapBnb));
       }
-    }),
-  );
+    } catch {
+      // optional
+    }
+    return null;
+  });
 
   if (!mcapByAddress.size) return live;
   return live.map((item) => {

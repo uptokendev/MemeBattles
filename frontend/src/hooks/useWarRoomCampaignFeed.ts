@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Contract } from "ethers";
 import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
@@ -13,26 +12,24 @@ import {
   isEvmChainId,
   type SupportedChainId,
 } from "@/lib/chainConfig";
-import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import {
   lifecycleByCampaign,
-  readCampaignLaunchAt,
   timestampSeconds,
   type CampaignDraftLifecycle,
   fetchPublicCampaignLifecycleDrafts,
 } from "@/lib/scheduledLaunchApi";
-
-const LAUNCHED_ABI = ["function launched() view returns (bool)"] as const;
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
 export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "onchain" | "empty";
 
 const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
-/** Higher concurrency — public RPC + multi-factory inventory used to feel stuck at 2. */
-const ONCHAIN_HYDRATE_CONCURRENCY = 8;
-const MAX_ONCHAIN_STATS = 36;
+/** Keep hydrate light — browser public RPCs cannot absorb bulk multicalls. */
+const ONCHAIN_HYDRATE_CONCURRENCY = 4;
+const MAX_ONCHAIN_STATS = 12;
+/** Skip full on-chain inventory when the API already returned a usable list. */
+const MIN_API_ROWS_TO_SKIP_INVENTORY = 3;
 
 async function mapPool<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   if (!items.length) return [];
@@ -513,30 +510,58 @@ export function useWarRoomCampaignFeed({
         const chainId = Number(activeChainId || 97);
         const nowSec = Math.floor(Date.now() / 1000);
 
-        // Fast path: API + drafts first so the table paints before on-chain RPCs.
-        const [json, draftItems, lifecyclePages] = await Promise.all([
-          fetchPostGradWarRoomCampaignFeed({
+        // ── Phase 0: paint market rows ASAP (do NOT wait on drafts / lifecycle / RPC) ──
+        let feedSource: WarRoomCampaignFeedSource = "api";
+        let apiItems: WarRoomCampaign[] = [];
+        try {
+          const json = await fetchPostGradWarRoomCampaignFeed({
             chainId,
             mode: activeMode,
             search,
             includeTestnet: chainId === 97,
             signal: controller.signal,
-          }).catch(() => null),
-          fetchDraftCampaignsForWarRoom(chainId),
-          Promise.all(
-            draftFeedChainIds(chainId).map((id) =>
-              fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 200 }).catch(() => [] as CampaignDraftLifecycle[]),
-            ),
-          ),
-        ]);
-        if (cancelled) return;
-
-        let feedSource: WarRoomCampaignFeedSource = "api";
-        let apiItems = Array.isArray(json?.items) ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index)) : [];
+          });
+          apiItems = Array.isArray(json?.items)
+            ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index))
+            : [];
+        } catch {
+          apiItems = [];
+        }
 
         if (!apiItems.length) {
           apiItems = await fetchCampaignApiFallback(chainId, activeMode, search, controller.signal).catch(() => []);
           if (apiItems.length) feedSource = "campaign-api";
+        }
+
+        let apiItemsForMode = apiItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+        let painted = mergeLists([], apiItemsForMode, [], nowSec);
+        if (!cancelled && painted.length) {
+          setCampaigns(painted);
+          setSource(feedSource);
+          setLoading(false);
+        }
+
+        // ── Phase 1: drafts only when needed (draft tab, or soft demote pre-launch) ──
+        let draftItems: WarRoomCampaign[] = [];
+        let lifecycleByAddress = new Map<string, CampaignDraftLifecycle>();
+        const needDrafts = activeMode === "draft" || painted.length < 5;
+        if (needDrafts || activeMode !== "draft") {
+          // Lifecycle is cheap relative to full draft bundle — only fetch when demoting live rows.
+          const [draftBundle, lifecyclePages] = await Promise.all([
+            activeMode === "draft" || needDrafts
+              ? fetchDraftCampaignsForWarRoom(chainId)
+              : Promise.resolve([] as WarRoomCampaign[]),
+            Promise.all(
+              draftFeedChainIds(chainId).map((id) =>
+                fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 80 }).catch(
+                  () => [] as CampaignDraftLifecycle[],
+                ),
+              ),
+            ),
+          ]);
+          if (cancelled) return;
+          draftItems = draftBundle;
+          lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
         }
 
         const lifecycleMap = lifecycleByCampaign(
@@ -552,10 +577,9 @@ export function useWarRoomCampaignFeed({
             }))
             .filter((item) => item.campaignAddress && !item.campaignAddress.startsWith("draft:")) as any,
         );
-        const lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
 
         const draftItemsForMode = draftItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
-        const apiItemsForMode = apiItems
+        apiItemsForMode = apiItems
           .map((campaign) => {
             if (isGraduatedCampaign(campaign)) return campaign;
             const address = String(campaign.campaign || "").toLowerCase();
@@ -583,50 +607,34 @@ export function useWarRoomCampaignFeed({
           })
           .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
 
-        // Paint immediately with API/draft rows — do not block on multi-factory RPC.
-        let painted = mergeLists([], apiItemsForMode, draftItemsForMode, nowSec);
-        if (!cancelled && painted.length) {
+        painted = mergeLists([], apiItemsForMode, draftItemsForMode, nowSec);
+        if (!cancelled) {
           setCampaigns(painted);
-          setSource(feedSource);
+          setSource(painted.length ? feedSource : "empty");
           setLoading(false);
         }
 
-        const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
-          limit: activeMode === "graduated" ? 40 : 30,
-        }).catch(() => ({
-          campaigns: [],
-          nextCursor: null,
-          total: 0,
-        }));
-        if (cancelled) return;
+        // ── Phase 2: on-chain inventory only when API is thin (testnet recovery) ──
+        const skipInventory = apiItemsForMode.length >= MIN_API_ROWS_TO_SKIP_INVENTORY && activeMode !== "draft";
+        let modeCandidates: WarRoomCampaign[] = [];
+        if (!skipInventory) {
+          const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
+            limit: activeMode === "graduated" ? 20 : 16,
+            skipLifecycleFilter: true,
+          }).catch(() => ({
+            campaigns: [],
+            nextCursor: null,
+            total: 0,
+          }));
+          if (cancelled) return;
 
-        // Light classification: prefer lifecycle metadata; only RPC launched() when needed.
-        const lightRows = await mapPool(
-          onChainPage.campaigns.slice(0, MAX_ONCHAIN_STATS),
-          ONCHAIN_HYDRATE_CONCURRENCY,
-          async (campaign, index) => {
+          // Trust factory registry rows — no per-campaign launched() RPC storm.
+          modeCandidates = onChainPage.campaigns.slice(0, MAX_ONCHAIN_STATS).map((campaign, index) => {
             const address = String(campaign.campaign || "").toLowerCase();
             const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
-            const launchAtFromDraft = timestampSeconds(lifecycle?.scheduledLaunchAt || lifecycle?.tradingLaunchAt);
-            const launchAtOnChain =
-              launchAtFromDraft ??
-              (lifecycle ? null : await readCampaignLaunchAt(chainId, address).catch(() => null));
-
-            // Prefer API-known graduation over an extra launched() RPC when present.
+            const launchAtOnChain = timestampSeconds(lifecycle?.scheduledLaunchAt || lifecycle?.tradingLaunchAt);
             const apiKnown = apiItemsForMode.find((item) => String(item.campaign || "").toLowerCase() === address);
-            let launched = Boolean(apiKnown && isGraduatedCampaign(apiKnown));
-            if (!launched && !apiKnown) {
-              try {
-                const provider = getReadProvider(chainId as SupportedChainId);
-                const c = new Contract(address, LAUNCHED_ABI, provider) as any;
-                launched = Boolean(await c.launched());
-              } catch {
-                launched = false;
-              }
-            } else if (!launched && apiKnown) {
-              launched = Boolean((apiKnown as any).isDexTrading);
-            }
-
+            const launched = Boolean(apiKnown && isGraduatedCampaign(apiKnown));
             const preLaunch =
               !launched &&
               isPreLaunchCampaign({
@@ -634,45 +642,44 @@ export function useWarRoomCampaignFeed({
                 draftStatus: lifecycle?.status,
                 nowSec,
               });
+            return normalizeApiCampaign(
+              {
+                ...campaign,
+                chainId,
+                campaignAddress: campaign.campaign,
+                tokenAddress: campaign.token,
+                creatorAddress: campaign.creator,
+                logoUri: campaign.logoURI,
+                createdAtChain: campaign.createdAt,
+                status: launched ? "graduated" : preLaunch ? "draft" : "live",
+                isActive: !preLaunch && !launched,
+                isDexTrading: launched,
+                isScheduled: preLaunch || (!launched && String(lifecycle?.status) === "scheduled"),
+                launchAt: launchAtOnChain ?? undefined,
+                draftId: preLaunch ? lifecycle?.id : undefined,
+                draftSlug: preLaunch ? lifecycle?.slug : undefined,
+                draftStatus: preLaunch ? "scheduled" : undefined,
+                promotionHref: preLaunch
+                  ? lifecycle?.slug
+                    ? `/prepare/${lifecycle.slug}`
+                    : lifecycle?.id
+                      ? `/drafts/${lifecycle.id}`
+                      : undefined
+                  : undefined,
+              },
+              500000 + index,
+            );
+          }).filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
 
-            return normalizeApiCampaign({
-              ...campaign,
-              chainId,
-              campaignAddress: campaign.campaign,
-              tokenAddress: campaign.token,
-              creatorAddress: campaign.creator,
-              logoUri: campaign.logoURI,
-              createdAtChain: campaign.createdAt,
-              status: launched ? "graduated" : preLaunch ? "draft" : "live",
-              isActive: !preLaunch && !launched,
-              isDexTrading: launched,
-              isScheduled: preLaunch || (!launched && String(lifecycle?.status) === "scheduled"),
-              launchAt: launchAtOnChain ?? undefined,
-              draftId: preLaunch ? lifecycle?.id : undefined,
-              draftSlug: preLaunch ? lifecycle?.slug : undefined,
-              draftStatus: preLaunch ? "scheduled" : undefined,
-              promotionHref: preLaunch
-                ? lifecycle?.slug
-                  ? `/prepare/${lifecycle.slug}`
-                  : lifecycle?.id
-                    ? `/drafts/${lifecycle.id}`
-                    : undefined
-                : undefined,
-            }, 500000 + index);
-          },
-        );
-
-        const modeCandidates = lightRows.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
-
-        // Merge on-chain inventory before heavy stats so new campaigns appear quickly.
-        painted = mergeLists(modeCandidates, apiItemsForMode, draftItemsForMode, nowSec);
-        if (!cancelled) {
-          setCampaigns(painted);
-          setSource(painted.length ? (modeCandidates.length ? "onchain" : feedSource) : "empty");
-          setLoading(false);
+          painted = mergeLists(modeCandidates, apiItemsForMode, draftItemsForMode, nowSec);
+          if (!cancelled) {
+            setCampaigns(painted);
+            setSource(painted.length ? (modeCandidates.length ? "onchain" : feedSource) : "empty");
+            setLoading(false);
+          }
         }
 
-        // Stats pass: fill mcap/ATH for rows still missing (API + on-chain).
+        // ── Phase 3: fill missing mcap/ATH for a small visible batch only ──
         const needStats = painted.filter(needsMarketStats).slice(0, MAX_ONCHAIN_STATS);
         if (needStats.length) {
           const hydrated = await mapPool(

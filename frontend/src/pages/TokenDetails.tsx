@@ -22,7 +22,7 @@ import {
   pinTokenDetailsChainId,
   type SupportedChainId,
 } from "@/lib/chainConfig";
-import { resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
+import { resolveMarketIdentity, resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
 import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -680,72 +680,63 @@ const TokenDetails = () => {
         const param = campaignAddress.trim();
         const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
 
-        // 1) Discover which EVM chain hosts this market (97 vs 56) BEFORE reading metrics.
-        //    Following MetaMask (often mainnet) while the token is on testnet zeros/wrongs every number.
+        // ── Fast path for /token/0x… ─────────────────────────────────────────
+        // Avoid: full campaign feed, lifecycle×500, dual-chain resolve before paint,
+        // and sequential hydrate steps. Paint as soon as contract metadata is ready.
         let loadChainId: SupportedChainId = pageChainId;
         let resolvedCampaignFromIndexer = "";
+        let match: CampaignInfo | null = null;
+
         if (isAddress) {
-          try {
-            const identity = await resolveMarketIdentityAcrossEvm({ address: param });
-            if (identity?.campaignAddress) {
-              const nextChain = identity.chainId as SupportedChainId;
-              resolvedCampaignFromIndexer = identity.campaignAddress;
-              pinTokenDetailsChainId(nextChain);
-              // Re-run this effect so useLaunchpad + RPC bind to the same chain before metrics.
-              if (nextChain !== pageChainId) {
-                setPageChainId(nextChain);
-                setLoading(false);
-                return;
-              }
-              loadChainId = nextChain;
+          const loadProvider = getReadProvider(loadChainId);
+
+          // Parallel: prefer page chain resolve + treat param as campaign contract.
+          const [pageIdentity, directAsCampaign] = await Promise.all([
+            resolveMarketIdentity({ address: param, chainId: loadChainId }).catch(() => null),
+            buildCampaignFromAddress(param, loadProvider, loadChainId).catch(() => null),
+          ]);
+
+          if (pageIdentity?.campaignAddress && !pageIdentity.provisional) {
+            resolvedCampaignFromIndexer = pageIdentity.campaignAddress;
+            match =
+              directAsCampaign &&
+              String(directAsCampaign.campaign).toLowerCase() === pageIdentity.campaignAddress.toLowerCase()
+                ? directAsCampaign
+                : await buildCampaignFromAddress(pageIdentity.campaignAddress, loadProvider, loadChainId);
+            if (match && pageIdentity.tokenAddress) {
+              match = { ...match, token: pageIdentity.tokenAddress };
             }
-          } catch (resolveErr) {
-            console.warn("[TokenDetails] cross-chain resolve failed; using page chain", resolveErr);
+          } else if (directAsCampaign) {
+            match = directAsCampaign;
+          } else {
+            // Token URL on another EVM chain (rare) — only then scan 56.
+            try {
+              const identity = await resolveMarketIdentityAcrossEvm({ address: param });
+              if (identity?.campaignAddress) {
+                const nextChain = identity.chainId as SupportedChainId;
+                resolvedCampaignFromIndexer = identity.campaignAddress;
+                pinTokenDetailsChainId(nextChain);
+                if (nextChain !== pageChainId) {
+                  setPageChainId(nextChain);
+                  setLoading(false);
+                  return;
+                }
+                loadChainId = nextChain;
+                match = await buildCampaignFromAddress(
+                  identity.campaignAddress,
+                  getReadProvider(loadChainId),
+                  loadChainId,
+                );
+              }
+            } catch (resolveErr) {
+              console.warn("[TokenDetails] cross-chain resolve failed; using page chain", resolveErr);
+            }
           }
-        }
 
-        const loadProvider = getReadProvider(loadChainId);
-
-        const campaigns = await fetchCampaigns().catch((campaignError) => {
-          console.warn("[TokenDetails] campaign feed failed; trying direct campaign load", campaignError);
-          return [] as CampaignInfo[];
-        });
-
-        const lifecycleDrafts = isAddress
-          ? await fetchPublicCampaignLifecycleDrafts({ chainId: loadChainId, limit: 500 }).catch(() => [])
-          : [];
-        const lifecycleDraft = isAddress
-          ? lifecycleDrafts.find((item) => {
-              const needle = param.toLowerCase();
-              return String(item.campaignAddress || "").toLowerCase() === needle
-                || String(item.tokenAddress || "").toLowerCase() === needle;
-            })
-          : null;
-
-        let match = isAddress
-          ? campaigns.find((c) => {
-              const needle = param.toLowerCase();
-              return (
-                (c.campaign ?? "").toLowerCase() === needle ||
-                (c.token ?? "").toLowerCase() === needle
-              );
-            })
-          : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
-
-        if (!match && isAddress) {
-          // param may be the public ERC-20 token address. Prefer lifecycle campaign,
-          // then reverse-resolve token→campaign via indexer, then treat param as campaign.
-          let directCampaignAddress = String(lifecycleDraft?.campaignAddress || resolvedCampaignFromIndexer || "").trim();
-          if (!ethers.isAddress(directCampaignAddress)) {
-            directCampaignAddress = param;
-          }
-          match = await buildCampaignFromAddress(directCampaignAddress, loadProvider, loadChainId);
-
-          // Indexer cleanup / lag: URL is token address but campaigns row is missing.
-          // Resolve via on-chain factory inventory so Token Details still works offline of DB.
+          // Last resort: small factory inventory (only when campaign not direct-readable).
           if (!match) {
             try {
-              const page = await fetchOnChainCampaignPage(loadChainId, { limit: 100 });
+              const page = await fetchOnChainCampaignPage(loadChainId, { limit: 24 });
               const needle = param.toLowerCase();
               const row = page.campaigns.find((c) => {
                 const campaign = String(c.campaign || "").toLowerCase();
@@ -754,7 +745,7 @@ const TokenDetails = () => {
               });
               if (row?.campaign) {
                 match =
-                  (await buildCampaignFromAddress(String(row.campaign), loadProvider, loadChainId)) ||
+                  (await buildCampaignFromAddress(String(row.campaign), getReadProvider(loadChainId), loadChainId)) ||
                   ({
                     id: 0,
                     campaign: String(row.campaign).toLowerCase(),
@@ -774,81 +765,91 @@ const TokenDetails = () => {
               console.warn("[TokenDetails] on-chain inventory resolve failed", onChainErr);
             }
           }
+        } else {
+          // Symbol path (legacy): still need a list.
+          const campaigns = await fetchCampaigns().catch((campaignError) => {
+            console.warn("[TokenDetails] campaign feed failed; trying direct campaign load", campaignError);
+            return [] as CampaignInfo[];
+          });
+          match = campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase()) || null;
+          if (!match) {
+            setError(campaigns.length === 0 ? "No token data" : "Token not found");
+            setCampaign(null);
+            setMetrics(null);
+            setSummary(null);
+            return;
+          }
         }
 
         if (!match) {
-          setError(campaigns.length === 0 && !isAddress ? "No token data" : "Token not found");
+          setError("Token not found");
           setCampaign(null);
           setMetrics(null);
           setSummary(null);
           return;
         }
 
-const lifecycleCampaignAddress = String(
-  lifecycleDraft?.campaignAddress || (lifecycleDraft as any)?.campaign_address || "",
-).trim().toLowerCase();
-const lifecycleTokenAddress = String(
-  lifecycleDraft?.tokenAddress || (lifecycleDraft as any)?.token_address || "",
-).trim().toLowerCase();
+        // Paint shell immediately so chart/trade hooks can start while extras hydrate.
+        setCampaign(match);
+        setLoading(false);
 
-if (ethers.isAddress(lifecycleCampaignAddress)) {
-  match = {
-    ...match,
-    campaign: lifecycleCampaignAddress,
-    token: ethers.isAddress(lifecycleTokenAddress) ? lifecycleTokenAddress : match.token,
-  };
-}
+        let displayMatch = match;
+        const loadProvider = getReadProvider(loadChainId);
 
-let displayMatch = match;
-displayMatch = await hydrateCampaignCreatorFromContract(displayMatch, readProvider);
-displayMatch = await hydrateCampaignMetadata(displayMatch, chainIdForStorage);
-displayMatch = await hydrateCampaignCreatedAtFromFactory(displayMatch, chainIdForStorage);
-try {
-  const displayImage = await resolveCampaignDisplayImage(displayMatch, chainIdForStorage, fetchCampaignLogoURI);
-  if (hasUsefulImage(displayImage)) {
-    displayMatch = { ...displayMatch, logoURI: displayImage };
-  }
-} catch {
-  // Best-effort image hydration; keep rendering the token page.
-}
+        // Metrics + cosmetic hydrates in parallel (do not serialize RPC).
+        const [summaryResult, withCreator, withMeta, withCreated, displayImage] = await Promise.all([
+          fetchCampaignSummary(match)
+            .then((s) => ({ ok: true as const, s }))
+            .catch(async (summaryErr) => {
+              console.warn("[TokenDetails] summary fetch failed; trying direct metrics", summaryErr);
+              try {
+                const directMetrics = await fetchCampaignMetrics(match.campaign);
+                return {
+                  ok: false as const,
+                  s: {
+                    campaign: match,
+                    metrics: directMetrics,
+                    stats: { holders: "—", volume: "—", marketCap: "—" },
+                  } as CampaignSummary,
+                };
+              } catch (metricsErr) {
+                console.warn("[TokenDetails] direct metrics also failed", metricsErr);
+                return {
+                  ok: false as const,
+                  s: {
+                    campaign: match,
+                    metrics: null,
+                    stats: { holders: "—", volume: "—", marketCap: "—" },
+                  } as CampaignSummary,
+                };
+              }
+            }),
+          hydrateCampaignCreatorFromContract(displayMatch, loadProvider),
+          hydrateCampaignMetadata(displayMatch, loadChainId),
+          hydrateCampaignCreatedAtFromFactory(displayMatch, loadChainId),
+          resolveCampaignDisplayImage(displayMatch, loadChainId, fetchCampaignLogoURI).catch(() => null),
+        ]);
 
-setCampaign(displayMatch);
+        displayMatch = {
+          ...displayMatch,
+          ...withCreator,
+          ...withMeta,
+          ...withCreated,
+        };
+        if (hasUsefulImage(displayImage)) {
+          displayMatch = { ...displayMatch, logoURI: String(displayImage) };
+        }
+        if (ethers.isAddress(resolvedCampaignFromIndexer)) {
+          displayMatch = { ...displayMatch, campaign: resolvedCampaignFromIndexer.toLowerCase() };
+        }
+        setCampaign(displayMatch);
+        setSummary({ ...summaryResult.s, campaign: displayMatch });
+        setMetrics(summaryResult.s.metrics ?? null);
 
-const canonicalTokenAddress = String(displayMatch.token ?? "").trim().toLowerCase();
-if (isAddress && ethers.isAddress(canonicalTokenAddress) && param.toLowerCase() !== canonicalTokenAddress) {
-  navigate(`/token/${canonicalTokenAddress}${location.search || ""}`, { replace: true });
-}
-
-// Unified token stats + metrics are best-effort. The page should still render
-// from Railway/realtime data when public RPC reads fail.
-try {
-  const s = await fetchCampaignSummary(displayMatch);
-  setSummary(s);
-  setMetrics(s.metrics ?? null);
-} catch (summaryErr) {
-  console.warn(
-    "[TokenDetails] summary fetch failed; trying direct metrics",
-    summaryErr,
-  );
-
-  let directMetrics: CampaignMetrics | null = null;
-  try {
-    directMetrics = await fetchCampaignMetrics(displayMatch.campaign);
-  } catch (metricsErr) {
-    console.warn("[TokenDetails] direct metrics also failed", metricsErr);
-  }
-
-  setSummary({
-    campaign: displayMatch,
-    metrics: directMetrics,
-    stats: {
-      holders: "—",
-      volume: "—",
-      marketCap: "—",
-    },
-  });
-  setMetrics(directMetrics);
-}
+        const canonicalTokenAddress = String(displayMatch.token ?? "").trim().toLowerCase();
+        if (isAddress && ethers.isAddress(canonicalTokenAddress) && param.toLowerCase() !== canonicalTokenAddress) {
+          navigate(`/token/${canonicalTokenAddress}${location.search || ""}`, { replace: true });
+        }
       } catch (err) {
         console.error(err);
         setError("Failed to load token data");

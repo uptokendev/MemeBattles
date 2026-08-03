@@ -356,37 +356,43 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       if (!initialLoadedRef.current) setLoading(true);
 
-      // Race indexer + browser getLogs. Never wait on a hanging /trades backfill
-      // before attempting on-chain recovery (AWTT empty-chart root cause).
-      void forceOnChainReconcile; // reserved for callers that force a re-scan
-      void ENABLE_ONCHAIN_TRADE_FALLBACK;
-      const apiPromise = fetchIndexerTrades(campaignAddress, chainId, limit, signal)
-        .then((rows) => ({ source: "api" as const, rows }))
-        .catch((apiError: any) => {
-          if (!isAbortError(apiError)) {
-            console.warn("[useCurveTrades] indexer trade API failed", apiError);
+      // 1) Indexer first (capped). Unblock the chart as soon as we have rows or a quick empty.
+      let apiRows: any[] = [];
+      try {
+        apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
+        if (signal?.aborted) return;
+        if (apiRows.length) {
+          applySnapshot(apiRows);
+          setLoading(false);
+          initialLoadedRef.current = true;
+          // Background reconcile only when forced — never block paint on eth_getLogs.
+          if (!forceOnChainReconcile) {
+            setError(null);
+            return;
           }
-          return { source: "api" as const, rows: [] as any[] };
-        });
+        }
+      } catch (apiError: any) {
+        if (isAbortError(apiError)) return;
+        console.warn("[useCurveTrades] indexer trade API failed", apiError);
+      }
 
-      const onChainPromise = fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal)
-        .then((rows) => ({ source: "chain" as const, rows }))
-        .catch((error) => {
+      // 2) On-chain recovery only when indexer empty / forced. Keep loading false if we already
+      // painted cache so Token Details doesn't sit on "Loading trade history…" for 20s+.
+      if (!apiRows.length || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) {
+        if (!apiRows.length) {
+          // Still show loading only when we have nothing to display yet.
+          setLoading((prev) => (initialLoadedRef.current ? false : prev));
+        }
+        try {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          if (signal?.aborted) return;
+          if (fallbackRows.length) applySnapshot(fallbackRows);
+        } catch (error) {
           if (!isAbortError(error)) {
             console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", error);
           }
-          return { source: "chain" as const, rows: [] as CurveTradePoint[] };
-        });
-
-      // Prefer whichever returns non-empty first; still merge the other when it finishes.
-      const first = await Promise.race([apiPromise, onChainPromise]);
-      if (signal?.aborted) return;
-      if (first.rows.length) applySnapshot(first.rows as any[]);
-
-      const [apiResult, chainResult] = await Promise.all([apiPromise, onChainPromise]);
-      if (signal?.aborted) return;
-      if (apiResult.rows.length) applySnapshot(apiResult.rows);
-      if (chainResult.rows.length) applySnapshot(chainResult.rows as any[]);
+        }
+      }
 
       setError(null);
       initialLoadedRef.current = true;
