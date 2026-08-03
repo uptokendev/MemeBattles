@@ -111,20 +111,54 @@ export function getActiveChainId(walletChainId?: number | null): SupportedChainI
   return getDefaultChainId();
 }
 
+/**
+ * Chain used for *reading* Token Details / metrics on 0x pages.
+ *
+ * IMPORTANT: Do NOT follow the wallet network here. Users often leave MetaMask on
+ * mainnet (56) while browsing testnet (97) tokens — that produced totally wrong
+ * price/mcap/liquidity (reading the wrong chain's contracts).
+ *
+ * Order: pinned token-page chain → last featured EVM feed → default EVM → 97.
+ */
+export const TOKEN_DETAILS_CHAIN_KEY = "mwz:token_details_chain_id";
+
+export function pinTokenDetailsChainId(chainId: number): void {
+  if (!isEvmChainId(chainId)) return;
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(TOKEN_DETAILS_CHAIN_KEY, String(chainId));
+    window.localStorage.setItem(LAST_FEATURED_CHAIN_KEY, String(chainId));
+  } catch {
+    // ignore
+  }
+}
+
+export function getEvmReadChainIdForTokenPage(): SupportedChainId {
+  try {
+    if (typeof window !== "undefined") {
+      const pinned = Number(window.localStorage.getItem(TOKEN_DETAILS_CHAIN_KEY) || "");
+      if (isEvmChainId(pinned)) return pinned as SupportedChainId;
+      const featured = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
+      if (isEvmChainId(featured)) return featured as SupportedChainId;
+    }
+  } catch {
+    // ignore
+  }
+  const def = getDefaultChainId();
+  return isEvmChainId(def) ? def : BNB_TESTNET_CHAIN_ID;
+}
+
 /** Force EVM chain for 0x campaign/token ids (Token Details / War Room). */
 export function getEvmChainIdForAddress(
   address: string | null | undefined,
-  walletChainId?: number | null,
+  _walletChainId?: number | null,
 ): SupportedChainId {
   const raw = String(address || "").trim();
   if (/^0x[a-fA-F0-9]{40}$/i.test(raw)) {
-    const active = getActiveChainId(walletChainId);
-    if (isEvmChainId(active)) return active;
-    if (isEvmChainId(walletChainId)) return walletChainId as SupportedChainId;
-    const def = getDefaultChainId();
-    return isEvmChainId(def) ? def : BNB_TESTNET_CHAIN_ID;
+    // Wallet chain deliberately ignored for 0x market pages (see getEvmReadChainIdForTokenPage).
+    return getEvmReadChainIdForTokenPage();
   }
-  return getActiveChainId(walletChainId);
+  return getActiveChainId(_walletChainId);
 }
 
 function normalizeRpcUrl(u: string) {

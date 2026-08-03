@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/apiBase";
+import { getEvmReadChainIdForTokenPage, pinTokenDetailsChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { normalizeEvmAddress } from "@/lib/tokenDetailsPath";
 
 export type MarketIdentity = {
@@ -44,4 +45,33 @@ export async function resolveMarketIdentity(input: {
   } catch {
     return null;
   }
+}
+
+/**
+ * Find which EVM chain (97/56) hosts this token or campaign.
+ * Prefer the app's token-page read chain, then the other EVM chain.
+ * Pins the result so launchpad metrics use the same network as the page.
+ */
+export async function resolveMarketIdentityAcrossEvm(input: {
+  address: string;
+  signal?: AbortSignal;
+}): Promise<MarketIdentity | null> {
+  const address = normalizeEvmAddress(input.address);
+  if (!address) return null;
+
+  const preferred = getEvmReadChainIdForTokenPage();
+  const order = preferred === 56 ? ([56, 97] as const) : ([97, 56] as const);
+
+  for (const chainId of order) {
+    const identity = await resolveMarketIdentity({
+      address,
+      chainId,
+      signal: input.signal,
+    });
+    if (identity?.campaignAddress) {
+      pinTokenDetailsChainId(identity.chainId as SupportedChainId);
+      return identity;
+    }
+  }
+  return null;
 }

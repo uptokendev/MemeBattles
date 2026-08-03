@@ -3,7 +3,14 @@ import { Contract, ethers } from "ethers";
 import { useLocation } from "react-router-dom";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { BNB_CHAIN_ID, getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import {
+  BNB_CHAIN_ID,
+  getActiveChainId,
+  getEvmReadChainIdForTokenPage,
+  isSolanaChainId,
+  SOLANA_CHAIN_ID,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
 import { bnbContractAbis, getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContracts";
 import {
   fetchLaunchpadBuyPreflight,
@@ -515,23 +522,22 @@ export function useLaunchpad(): LaunchpadAdapter {
       !onEvmTokenPage,
   );
 
+  // Read pin/localStorage every render on token pages (not memoized on wallet).
+  const tokenPageReadChain = onEvmTokenPage ? getEvmReadChainIdForTokenPage() : null;
+
   const activeChainId = useMemo<SupportedChainId>(() => {
-    // 0x token pages are always BNB (56/97), never Solana 101.
-    if (onEvmTokenPage) {
-      if (walletChainId === 56 || walletChainId === 97) return walletChainId as SupportedChainId;
-      const active = getActiveChainId(walletChainId);
-      if (active === 56 || active === 97) return active;
-      return BNB_CHAIN_ID;
-    }
+    // 0x token pages: pinned/featured/default EVM — never MetaMask network.
+    if (tokenPageReadChain) return tokenPageReadChain;
     if (preferSolanaLaunchpad) return SOLANA_CHAIN_ID;
     return getActiveChainId(walletChainId);
-  }, [onEvmTokenPage, preferSolanaLaunchpad, walletChainId]);
+  }, [tokenPageReadChain, preferSolanaLaunchpad, walletChainId]);
 
   const evmFallbackChainId = useMemo<SupportedChainId>(() => {
+    if (tokenPageReadChain) return tokenPageReadChain;
     if (walletChainId === 56 || walletChainId === 97) return walletChainId as SupportedChainId;
     const fallback = getActiveChainId(walletChainId);
     return isSolanaChainId(fallback) ? BNB_CHAIN_ID : fallback;
-  }, [walletChainId]);
+  }, [tokenPageReadChain, walletChainId]);
   const evmReadChainId = isSolanaChainId(activeChainId) ? evmFallbackChainId : activeChainId;
   const bnbAddresses = useMemo(() => getBnbContractAddresses(evmReadChainId), [evmReadChainId]);
   const bnbReadiness = useMemo(() => getBnbContractReadiness(evmReadChainId), [evmReadChainId]);

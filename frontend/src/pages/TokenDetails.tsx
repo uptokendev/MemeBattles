@@ -16,7 +16,14 @@ import { useToast } from "@/hooks/use-toast";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
-import { getActiveChainId, getEvmChainIdForAddress, type SupportedChainId } from "@/lib/chainConfig";
+import {
+  getActiveChainId,
+  getEvmChainIdForAddress,
+  getEvmReadChainIdForTokenPage,
+  pinTokenDetailsChainId,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
+import { resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
 import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -523,11 +530,9 @@ const TokenDetails = () => {
     () => String(campaign?.campaign ?? campaignAddress ?? "").trim().toLowerCase(),
     [campaign?.campaign, campaignAddress],
   );
-  // 0x token URLs must stay on BNB (56/97). Never inherit Solana 101 from feed switch.
-  const chainIdForStorage = useMemo(
-    () => getEvmChainIdForAddress(campaignAddress || campaignAddr, wallet.chainId),
-    [campaignAddress, campaignAddr, wallet.chainId],
-  );
+  // Pinned/featured/default EVM chain — NOT wallet network (see getEvmReadChainIdForTokenPage).
+  const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => getEvmReadChainIdForTokenPage());
+  const chainIdForStorage = pageChainId;
   const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
 
   useEffect(() => {
@@ -671,15 +676,42 @@ const TokenDetails = () => {
         setLoading(true);
         setError(null);
 
+        const param = campaignAddress.trim();
+        const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
+
+        // 1) Discover which EVM chain hosts this market (97 vs 56) BEFORE reading metrics.
+        //    Following MetaMask (often mainnet) while the token is on testnet zeros/wrongs every number.
+        let loadChainId: SupportedChainId = pageChainId;
+        let resolvedCampaignFromIndexer = "";
+        if (isAddress) {
+          try {
+            const identity = await resolveMarketIdentityAcrossEvm({ address: param });
+            if (identity?.campaignAddress) {
+              const nextChain = identity.chainId as SupportedChainId;
+              resolvedCampaignFromIndexer = identity.campaignAddress;
+              pinTokenDetailsChainId(nextChain);
+              // Re-run this effect so useLaunchpad + RPC bind to the same chain before metrics.
+              if (nextChain !== pageChainId) {
+                setPageChainId(nextChain);
+                setLoading(false);
+                return;
+              }
+              loadChainId = nextChain;
+            }
+          } catch (resolveErr) {
+            console.warn("[TokenDetails] cross-chain resolve failed; using page chain", resolveErr);
+          }
+        }
+
+        const loadProvider = getReadProvider(loadChainId);
+
         const campaigns = await fetchCampaigns().catch((campaignError) => {
           console.warn("[TokenDetails] campaign feed failed; trying direct campaign load", campaignError);
           return [] as CampaignInfo[];
         });
 
-        const param = campaignAddress.trim();
-        const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
         const lifecycleDrafts = isAddress
-          ? await fetchPublicCampaignLifecycleDrafts({ chainId: chainIdForStorage, limit: 500 }).catch(() => [])
+          ? await fetchPublicCampaignLifecycleDrafts({ chainId: loadChainId, limit: 500 }).catch(() => [])
           : [];
         const lifecycleDraft = isAddress
           ? lifecycleDrafts.find((item) => {
@@ -702,25 +734,11 @@ const TokenDetails = () => {
         if (!match && isAddress) {
           // param may be the public ERC-20 token address. Prefer lifecycle campaign,
           // then reverse-resolve token→campaign via indexer, then treat param as campaign.
-          let directCampaignAddress = String(lifecycleDraft?.campaignAddress || "").trim();
-          if (!ethers.isAddress(directCampaignAddress)) {
-            try {
-              const { resolveMarketIdentity } = await import("@/lib/marketIdentity");
-              const identity = await resolveMarketIdentity({
-                address: param,
-                chainId: chainIdForStorage,
-              });
-              if (identity?.campaignAddress) {
-                directCampaignAddress = identity.campaignAddress;
-              }
-            } catch {
-              // fall through
-            }
-          }
+          let directCampaignAddress = String(lifecycleDraft?.campaignAddress || resolvedCampaignFromIndexer || "").trim();
           if (!ethers.isAddress(directCampaignAddress)) {
             directCampaignAddress = param;
           }
-          match = await buildCampaignFromAddress(directCampaignAddress, readProvider, chainIdForStorage);
+          match = await buildCampaignFromAddress(directCampaignAddress, loadProvider, loadChainId);
         }
 
         if (!match) {
@@ -798,7 +816,7 @@ try {
     };
 
     load();
-  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary, location.search, navigate, readProvider]);
+  }, [campaignAddress, pageChainId, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary, location.search, navigate]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
