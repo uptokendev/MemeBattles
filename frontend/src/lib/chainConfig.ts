@@ -281,17 +281,16 @@ function isEvmAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-// Known BSC testnet multi-generation inventory (active + legacy supported).
-// Env can extend/override; these defaults keep older graduated tokens discoverable.
+// BSC testnet dual-factory inventory only (cleanup dropped e0FbBa / F787 generations).
+// Env VITE_SUPPORTED_FACTORY_ADDRESSES_97 can still extend; defaults stay tight.
 const DEFAULT_SUPPORTED_FACTORIES_97 = [
-  "0xA2B19f194826b6D930D18F3fBCad662FaDC9459E", // gen-3 active (creator-arm cooldown)
-  "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6", // previous supported
-  "0xF7872169265eCE4E4C93ef894F1635E84DC6F681", // older supported (hosts YAT)
+  "0xA2B19f194826b6D930D18F3fBCad662FaDC9459E", // previous gen-3 (support / tradable)
+  "0x8d4937D3BEe8A750411c0a24f888C0088754D3eD", // dual-test creation factory
 ];
 
 /**
- * Active creation factory + historical supported factories for read/index inventory.
- * War Room / graduated discovery must scan the full list so tokens on older generations remain visible.
+ * Active creation factory + supported inventory for read/index discovery.
+ * War Room / Token Details only scan these factories on testnet (plus env overrides).
  */
 export function getSupportedFactoryAddresses(chainId: SupportedChainId): string[] {
   if (isSolanaChainId(chainId)) return [];

@@ -102,12 +102,10 @@ export async function ensureCampaignRowFromChain(
       }
       campaignAddr = input;
     } catch {
-      // Input may be the ERC-20 token address — reverse via factory registry inventory.
-      // Include known BSC testnet generations so cleanup lag still resolves ATS/AWTT etc.
+      // Input may be the ERC-20 token address — reverse via dual-test factory inventory only.
       const DEFAULT_FACTORIES_97 = [
-        "0xa2b19f194826b6d930d18f3fbcad662fadc9459e",
-        "0xe0fbba4533513110cec7e78aa3e48ec45301b5e6",
-        "0xf7872169265ece4e4c93ef894f1635e84dc6f681",
+        "0xa2b19f194826b6d930d18f3fbcad662fadc9459e", // previous / support
+        "0x8d4937d3bee8a750411c0a24f888c0088754d3ed", // new dual-test / creation
       ];
       const factories = [
         ENV.FACTORY_ADDRESS_97,
