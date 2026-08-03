@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId, getEvmChainIdForAddress, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -515,7 +515,11 @@ const TokenDetails = () => {
   const wallet = useWallet();
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
-  const chainIdForStorage = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
+  // 0x token URLs must stay on BNB (56/97). Never inherit Solana 101 from feed switch.
+  const chainIdForStorage = useMemo(
+    () => getEvmChainIdForAddress(campaignAddress || campaignAddr, wallet.chainId),
+    [campaignAddress, campaignAddr, wallet.chainId],
+  );
   const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
 
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);

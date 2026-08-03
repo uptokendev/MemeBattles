@@ -487,11 +487,29 @@ export function useLaunchpad(): LaunchpadAdapter {
   const { provider: walletProvider, signer, chainId: walletChainId } = wallet;
   const { solanaAccount, solanaWalletName, isSolanaConnected } = solanaWallet;
 
+  // Only use Solana adapter when the wallet path is actually Solana-only.
+  // Never let a leftover Solana feed selection (chain 101) hijack 0x token pages —
+  // that throws "VITE_SOLANA_LAUNCHPAD_PROGRAM_ID" and blanks metrics/chart.
   const preferSolanaLaunchpad = Boolean(isSolanaConnected && solanaAccount && !wallet.isConnected);
-  const activeChainId = useMemo<SupportedChainId>(
-    () => (preferSolanaLaunchpad ? SOLANA_CHAIN_ID : getActiveChainId(walletChainId)),
-    [preferSolanaLaunchpad, walletChainId],
-  );
+  const activeChainId = useMemo<SupportedChainId>(() => {
+    if (preferSolanaLaunchpad) return SOLANA_CHAIN_ID;
+    const active = getActiveChainId(walletChainId);
+    if (typeof window !== "undefined") {
+      try {
+        const path = window.location.pathname || "";
+        if (/^\/token\/0x[a-fA-F0-9]{40}/i.test(path) && isSolanaChainId(active)) {
+          const walletEvm =
+            walletChainId && (walletChainId === 56 || walletChainId === 97)
+              ? (walletChainId as SupportedChainId)
+              : null;
+          return walletEvm ?? BNB_CHAIN_ID;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return active;
+  }, [preferSolanaLaunchpad, walletChainId]);
   const evmFallbackChainId = useMemo<SupportedChainId>(() => {
     const fallback = getActiveChainId(walletChainId);
     return isSolanaChainId(fallback) ? BNB_CHAIN_ID : fallback;

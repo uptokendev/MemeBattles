@@ -61,15 +61,39 @@ export function isEvmChainId(chainId?: number | null): boolean {
   return chainId === BNB_CHAIN_ID || chainId === BNB_TESTNET_CHAIN_ID;
 }
 
+function isEvmTokenPath(pathname: string): boolean {
+  return /^\/token\/0x[a-fA-F0-9]{40}/i.test(pathname);
+}
+
+function isSolanaTokenPath(pathname: string): boolean {
+  // Base58 mint/campaign ids (not 0x). Keep loose — only used to avoid EVM/Solana mixups.
+  return /^\/token\/[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(pathname);
+}
+
 function readBrowserChainContext(): SupportedChainId | null {
   if (typeof window === "undefined") return null;
 
   try {
     const url = new URL(window.location.href);
     const queryChainId = Number(url.searchParams.get("chainId") || "");
+
+    // EVM token pages must never inherit Solana (101) from ?chainId= or last feed switch.
+    // That routes metrics/trades through the Solana launchpad adapter and blanks the UI.
+    if (isEvmTokenPath(url.pathname)) {
+      if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
+      const stored = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
+      if (isEvmChainId(stored)) return stored as SupportedChainId;
+      return null; // fall through to wallet / default EVM
+    }
+
+    if (isSolanaTokenPath(url.pathname)) {
+      if (queryChainId === SOLANA_CHAIN_ID) return SOLANA_CHAIN_ID;
+      return SOLANA_CHAIN_ID;
+    }
+
     if (isAllowedChainId(queryChainId)) return queryChainId as SupportedChainId;
 
-    if (/^\/token\/0x[a-fA-F0-9]{40}/.test(url.pathname)) {
+    if (/^\/token\//.test(url.pathname)) {
       const stored = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
       if (isAllowedChainId(stored)) return stored as SupportedChainId;
     }
@@ -85,6 +109,22 @@ export function getActiveChainId(walletChainId?: number | null): SupportedChainI
   if (routeChainId) return routeChainId;
   if (walletChainId && isAllowedChainId(walletChainId)) return walletChainId as SupportedChainId;
   return getDefaultChainId();
+}
+
+/** Force EVM chain for 0x campaign/token ids (Token Details / War Room). */
+export function getEvmChainIdForAddress(
+  address: string | null | undefined,
+  walletChainId?: number | null,
+): SupportedChainId {
+  const raw = String(address || "").trim();
+  if (/^0x[a-fA-F0-9]{40}$/i.test(raw)) {
+    const active = getActiveChainId(walletChainId);
+    if (isEvmChainId(active)) return active;
+    if (isEvmChainId(walletChainId)) return walletChainId as SupportedChainId;
+    const def = getDefaultChainId();
+    return isEvmChainId(def) ? def : BNB_TESTNET_CHAIN_ID;
+  }
+  return getActiveChainId(walletChainId);
 }
 
 function normalizeRpcUrl(u: string) {
