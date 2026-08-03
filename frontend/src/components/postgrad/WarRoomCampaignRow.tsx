@@ -4,11 +4,11 @@ import { ChevronDown, ChevronUp, ExternalLink, Globe, Megaphone, ShoppingCart } 
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { CurvePriceChart } from "@/components/token/CurvePriceChart";
+import { ContinuousMarketChartPanel } from "@/components/token/ContinuousMarketChartPanel";
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
-import { getChainLabel } from "@/lib/chainConfig";
+import { getActiveChainId, getChainLabel } from "@/lib/chainConfig";
 
 function shortenAddress(value?: string | null) {
   const input = String(value ?? "").trim();
@@ -98,12 +98,18 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
           : "Draft";
   const statusTone =
     metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : isScheduledDraft ? "sponsored" : "default";
-  const chartSourceLabel = metrics.status === "graduated" ? "DEX chart" : metrics.status === "bonding" ? "Bonding chart" : "Chart";
+  const chartSourceLabel =
+    metrics.status === "graduated"
+      ? "Continuous chart · Topaz + bonding"
+      : metrics.status === "bonding"
+        ? "Continuous chart · bonding"
+        : "Chart";
   const promotionHref = String(rich.promotionHref || (rich.draftSlug ? `/prepare/${rich.draftSlug}` : rich.draftId ? `/drafts/${rich.draftId}` : ""));
   const draftDescription = String(rich.draftDescription || "No promotion description has been added yet.");
   const founderNote = String(rich.draftFounderNote || "No founder note has been added yet.");
   const draftStatus = formatStatus(rich.draftStatus || (isScheduledDraft ? "scheduled" : "draft"));
-  const chainLabel = getChainLabel(Number(rich.chainId)) || `Chain ${Number(rich.chainId || 0) || "unknown"}`;
+  const rowChainId = getActiveChainId(Number(rich.chainId || 97));
+  const chainLabel = getChainLabel(rowChainId) || `Chain ${rowChainId || "unknown"}`;
   const draftFollows = formatCompactNumber(rich.draftFollowCount);
   const draftOptIns = formatCompactNumber(rich.draftOptInCount);
   const draftComments = formatCompactNumber(rich.draftCommentCount);
@@ -303,14 +309,20 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <div className="mb-2 flex items-center justify-between gap-3 md:mb-3">
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Chart</div>
-                  <div className="mt-1 text-[13px] font-semibold text-white md:text-sm">Same market view as token details</div>
+                  <div className="mt-1 text-[13px] font-semibold text-white md:text-sm">Same continuous stack as token details</div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <TacticalTag label={chartSourceLabel} tone="sponsored" />
                   <TacticalTag label={campaign.symbol} tone="default" />
                 </div>
               </div>
-              <CurvePriceChart campaignAddress={campaign.campaign} />
+              <ContinuousMarketChartPanel
+                campaignAddress={campaign.campaign}
+                tokenAddress={campaign.token}
+                chainId={rowChainId}
+                compact
+                className="flex h-[280px] w-full flex-col md:h-[340px]"
+              />
             </div>
 
             <div className="order-1 space-y-2.5 md:space-y-3 xl:order-2">

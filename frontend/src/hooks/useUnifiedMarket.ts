@@ -20,13 +20,29 @@ const ENABLE_MARKET_API =
   String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
-  return `${String(trade.txHash || "").toLowerCase()}:${Number(trade.logIndex ?? 0)}`;
+  // One row per tx — matches Token Details / War Room chart dedupe.
+  return String(trade.txHash || "").toLowerCase();
 }
 
 function mergeTrades(current: MarketTrade[], incoming: MarketTrade[]) {
   const map = new Map<string, MarketTrade>();
-  for (const trade of current) map.set(tradeKey(trade), trade);
-  for (const trade of incoming) map.set(tradeKey(trade), trade);
+  const prefer = (a: MarketTrade, b: MarketTrade) => {
+    const aReal = Number(a.logIndex) > 0 && Number(a.logIndex) < 1_000_000;
+    const bReal = Number(b.logIndex) > 0 && Number(b.logIndex) < 1_000_000;
+    if (aReal !== bReal) return bReal ? b : a;
+    return Number(b.logIndex || 0) >= Number(a.logIndex || 0) ? b : a;
+  };
+  for (const trade of current) {
+    const key = tradeKey(trade);
+    if (!key.startsWith("0x") || key.length !== 66) continue;
+    map.set(key, trade);
+  }
+  for (const trade of incoming) {
+    const key = tradeKey(trade);
+    if (!key.startsWith("0x") || key.length !== 66) continue;
+    const prev = map.get(key);
+    map.set(key, prev ? prefer(prev, trade) : trade);
+  }
   return Array.from(map.values())
     .sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
     .slice(-500);

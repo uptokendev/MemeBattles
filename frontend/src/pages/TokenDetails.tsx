@@ -1103,11 +1103,13 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
   }, [metrics]);
 
+  // Always scan when we have a campaign: snapshot no-ops if still bonding.
+  // Older factories may not have market_stage handoff yet; browser Topaz scan still fills the chart.
   const topazMarket = useTopazMarket({
     campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
     tokenAddress: campaign?.token,
     chainId: chainIdForStorage,
-    enabled: hasValidCampaignAddress && contractGraduatedEarly,
+    enabled: hasValidCampaignAddress,
     pollMs: 45_000,
   });
 

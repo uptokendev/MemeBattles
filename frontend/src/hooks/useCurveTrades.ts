@@ -6,6 +6,7 @@ import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/cha
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
 import { loadCachedTradeHistory, saveCachedTradeHistory } from "@/lib/tradeHistoryCache";
+import { mergeTradePoints } from "@/lib/tradeDedupe";
 
 // Prefer the same token/realtime base resolution as apiBase (TOKEN_API_BASE first).
 // Default matches the live devpostgrad indexer service.
@@ -68,20 +69,9 @@ function isAbortError(error: unknown): boolean {
   return candidate?.name === "AbortError" || String(candidate?.message || candidate || "").toLowerCase().includes("aborted");
 }
 
-function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
-  return `${t.txHash.toLowerCase()}:${Number(t.logIndex ?? 0)}`;
-}
-
-function sortAsc(a: CurveTradePoint, b: CurveTradePoint) {
-  if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
-  return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
-}
-
 function mergeTrades(prev: CurveTradePoint[], next: CurveTradePoint[]) {
-  const map = new Map<string, CurveTradePoint>();
-  for (const t of prev) map.set(keyOf(t), t);
-  for (const t of next) map.set(keyOf(t), t);
-  return Array.from(map.values()).sort(sortAsc);
+  // Same rule as Token Details / War Room: one row per txHash (on-chain wins).
+  return mergeTradePoints(prev, next);
 }
 
 function toBigIntWei(amount: unknown, kind: "ether" | "token"): bigint {
