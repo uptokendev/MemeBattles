@@ -46,7 +46,8 @@ export async function scanContractLogs(input: {
   const urls = getPublicRpcUrls(input.chainId);
   if (!urls.length) return [];
 
-  const lookback = Math.max(100, Math.min(input.lookbackBlocks ?? 2_500, 8_000));
+  // Cap still high enough for multi-day testnet history (~80k blocks).
+  const lookback = Math.max(100, Math.min(input.lookbackBlocks ?? 8_000, 100_000));
   const chunkSize = Math.max(20, Math.min(input.chunkSize ?? 80, 200));
 
   for (let urlIndex = 0; urlIndex < urls.length; urlIndex += 1) {
@@ -56,34 +57,44 @@ export async function scanContractLogs(input: {
       const latest = await provider.getBlockNumber();
       const fromBlock = Math.max(0, latest - lookback);
       const logs: ethers.Log[] = [];
-      let rateLimited = false;
+      let hardFail = false;
 
-      for (let start = fromBlock; start <= latest; start += chunkSize) {
+      // Scan newest → oldest so recent buys surface even if we rate-limit mid-scan.
+      for (let end = latest; end >= fromBlock; end -= chunkSize) {
         if (input.signal?.aborted) break;
-        const end = Math.min(latest, start + chunkSize - 1);
-        try {
-          const chunk = await provider.getLogs({
-            address,
-            topics: input.topics as any,
-            fromBlock: start,
-            toBlock: end,
-          });
-          logs.push(...chunk);
-        } catch (error) {
-          if (isRateLimitError(error)) {
-            rateLimited = true;
-            await sleep(200);
+        const start = Math.max(fromBlock, end - chunkSize + 1);
+        let attempts = 0;
+        while (attempts < 3) {
+          attempts += 1;
+          try {
+            const chunk = await provider.getLogs({
+              address,
+              topics: input.topics as any,
+              fromBlock: start,
+              toBlock: end,
+            });
+            logs.push(...chunk);
+            break;
+          } catch (error) {
+            if (isRateLimitError(error) && attempts < 3) {
+              await sleep(250 * attempts);
+              continue;
+            }
+            if (isRateLimitError(error)) {
+              // Keep whatever we already recovered; try another RPC only if empty.
+              hardFail = logs.length === 0;
+              end = fromBlock - 1;
+              break;
+            }
+            hardFail = logs.length === 0;
+            end = fromBlock - 1;
             break;
           }
-          // Try next RPC endpoint for hard failures.
-          rateLimited = true;
-          break;
         }
-        await sleep(30);
+        await sleep(40);
       }
 
-      // Accept partial success from this endpoint.
-      if (logs.length > 0 || !rateLimited) return logs;
+      if (logs.length > 0 || !hardFail) return logs;
     } catch {
       // try next url
     }

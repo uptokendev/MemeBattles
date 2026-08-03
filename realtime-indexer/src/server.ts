@@ -2112,9 +2112,19 @@ app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
 
 async function handleTokenTrades(req: any, res: any) {
   const chainId = Number(req.query.chainId || 97);
-  const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
-  const campaign = identity.campaignAddress;
+  let identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
+  let campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
+
+  // Cleanup / discovery lag: materialize campaigns row + backfill empty curve_trades
+  // from chain so charts work even when factory inventory was wiped.
+  try {
+    const { ensureCampaignTradeHistory } = await import("./ensureCampaignTradeHistory.js");
+    const ensured = await ensureCampaignTradeHistory(chainId, campaign);
+    if (ensured.campaign) campaign = ensured.campaign;
+  } catch (error) {
+    console.warn("[api] ensureCampaignTradeHistory skipped", String((error as any)?.message || error));
+  }
 
   // One-shot repair: empty history after bad RPC scan (includes created_block=0 rows).
   try {
@@ -2122,6 +2132,14 @@ async function handleTokenTrades(req: any, res: any) {
     await rewindEmptyCampaignTradeCursor(chainId, campaign);
   } catch (error) {
     console.warn("[api] trade cursor rewind skipped", String((error as any)?.message || error));
+  }
+
+  // Re-resolve after ensure (token URL may now map to campaign).
+  try {
+    identity = await resolveMarketIdentityOrPassthrough(chainId, campaign);
+    campaign = identity.campaignAddress || campaign;
+  } catch {
+    // keep campaign from ensure
   }
 
   const r = await pool.query(

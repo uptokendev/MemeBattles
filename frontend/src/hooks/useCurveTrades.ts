@@ -174,14 +174,15 @@ async function fetchOnChainTradeSnapshot(
   if (!buyTopic || !sellTopic) return [];
 
   const address = campaignAddress.toLowerCase();
-  // Recent window only (browser RPCs). Covers "bought 10 minutes ago" without full history.
-  const lookbackBlocks = 12_000;
+  // Deep lookback when the indexer is empty (cleanup / discovery lag). BSC testnet
+  // free RPCs need small chunks; prefer recovering days of history over a 2h window.
+  const lookbackBlocks = 80_000;
   const buyLogs = await scanContractLogs({
     chainId,
     address,
     topics: [buyTopic],
     lookbackBlocks,
-    chunkSize: 250,
+    chunkSize: 120,
     signal,
   });
   const sellLogs = await scanContractLogs({
@@ -189,7 +190,7 @@ async function fetchOnChainTradeSnapshot(
     address,
     topics: [sellTopic],
     lookbackBlocks,
-    chunkSize: 250,
+    chunkSize: 120,
     signal,
   });
 

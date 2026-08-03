@@ -464,7 +464,8 @@ const TokenDetails = () => {
   const { toast } = useToast();
   const [tradeAmount, setTradeAmount] = useState("0");
 
-  const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("TOKEN");
+  // Default buy input to BNB — "0.005" as tokens on a ~1e-9 spot curve is almost always a UX mistake.
+  const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("BNB");
   const toggleTradeInputDenom = () => {
     setTradeAmount("0");
     setQuoteWei(null);
@@ -2080,10 +2081,15 @@ const bnbUsd = useMemo(() => {
         if (tradeInputDenom === "BNB") {
           const targetWei = inputBnbWei;
           if (tradeTab === "buy") {
-            const [tokensOut, totalCostWei] = await c.quoteBuyExactBnb(targetWei);
+            // quoteBuyExactBnb → (tokensOut, totalCostWei, feeWei)
+            const quoted = await c.quoteBuyExactBnb(targetWei);
+            const tokensOut = BigInt(quoted?.[0] ?? quoted?.tokensOut ?? 0n);
+            const totalCostWei = BigInt(quoted?.[1] ?? quoted?.totalCostWei ?? targetWei);
             if (!cancelled) {
               setEffectiveTokenWei(tokensOut);
-              setQuoteWei(totalCostWei);
+              // User spends the entered BNB amount; contract may consume slightly less.
+              setEffectiveBnbWei(targetWei);
+              setQuoteWei(totalCostWei > 0n ? totalCostWei : targetWei);
             }
             return;
           }
@@ -2120,7 +2126,11 @@ const bnbUsd = useMemo(() => {
           const q: bigint = tradeTab === "buy"
             ? await c.quoteBuyExactTokens(amountWei)
             : await c.quoteSellExactTokens(amountWei);
-          if (!cancelled) setQuoteWei(q);
+          if (!cancelled) {
+            setQuoteWei(q);
+            if (tradeTab === "buy") setEffectiveBnbWei(q);
+            else setEffectiveBnbWei(q);
+          }
         }
       } catch (e: any) {
         console.warn("[TokenDetails] Quote failed", e);
@@ -2309,7 +2319,7 @@ const bnbUsd = useMemo(() => {
     }
 
     const amountWei = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
-  const inputBnbWei = tradeInputDenom === "BNB" ? effectiveBnbWei : 0n;
+    const inputBnbWei = tradeInputDenom === "BNB" ? effectiveBnbWei : 0n;
     if (amountWei <= 0n) {
       toast({
         title: "Invalid amount",
@@ -2331,54 +2341,54 @@ const bnbUsd = useMemo(() => {
       }
 
       if (!isDexStage && tradeTab === "buy" && bnbBalanceWei != null) {
-        const baseCostWei = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
+        const baseCostWei = quoteWei && quoteWei > 0n ? quoteWei : tradeInputDenom === "BNB" ? inputBnbWei : 0n;
         if (baseCostWei > 0n) {
-          const maxCostWei = tradeInputDenom === "BNB"
-            ? baseCostWei
-            : (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+          const maxCostWei = (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
           if (maxCostWei > bnbBalanceWei) {
-          toast({
-            title: "Insufficient BNB",
-            description: `You need ~${formatBnbFromWei(maxCostWei)} to place this buy.`,
-            variant: "destructive",
-          });
-          return;
-        }
+            toast({
+              title: "Insufficient BNB",
+              description: `You need ~${formatBnbFromWei(maxCostWei)} to place this buy.`,
+              variant: "destructive",
+            });
+            return;
           }
+        }
       }
 
       // Ensure wallet is connected for writes
-if (!wallet.signer || !wallet.account) {
-  toast({
-    title: "Connect wallet",
-    description: "Please connect your wallet to trade.",
-  });
-  window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
-  return;
-}
-if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
+      if (!wallet.signer || !wallet.account) {
+        toast({
+          title: "Connect wallet",
+          description: "Please connect your wallet to trade.",
+        });
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
+      }
 
       setTradePending(true);
 
       if (tradeTab === "buy") {
-  let costWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
+        let costWei = quoteWei && quoteWei > 0n ? quoteWei : tradeInputDenom === "BNB" ? inputBnbWei : null;
 
-  if (amountWei > 0n && (costWei == null || costWei === 0n)) {
-    const c = new Contract(
-      campaign.campaign,
-      CAMPAIGN_ABI,
-      readProvider
-    ) as any;
-
-    costWei = await c.quoteBuyExactTokens(amountWei);
-  }
-        const maxCostWei = tradeInputDenom === "BNB"
-          ? costWei
-          : (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+        if (amountWei > 0n && (costWei == null || costWei === 0n)) {
+          const c = new Contract(campaign.campaign, CAMPAIGN_ABI, readProvider) as any;
+          costWei = await c.quoteBuyExactTokens(amountWei);
+        }
+        if (costWei == null || costWei <= 0n) {
+          toast({
+            title: "Quote unavailable",
+            description: "Could not price this buy. Try again in a moment.",
+            variant: "destructive",
+          });
+          return;
+        }
+        // Always allow 5% headroom — BNB mode previously sent exact cost and could
+        // revert on micro rounding / fee drift.
+        const maxCostWei = (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
 
         toast({
           title: "Submitting buy",
-          description: `Buying ${ethers.formatUnits(amountWei, TOKEN_DECIMALS)} ${tokenData.ticker} (max ${formatBnbFromWei(maxCostWei)}).`,
+          description: `Buying ~${formatTokenFromWei(amountWei)} ${tokenData.ticker} for up to ${formatBnbFromWei(maxCostWei)}.`,
         });
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
@@ -3289,11 +3299,14 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        Cost: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
+                        Pay: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
                       </span>
                     </div>
-                    {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
-                      <p className="mt-1 text-[11px] text-muted-foreground">Est. receive: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}</p>
+                    {effectiveTokenWei > 0n ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Receive: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}
+                        {tradeInputDenom === "TOKEN" ? " (exact)" : " (est.)"}
+                      </p>
                     ) : null}
                     {quoteError ? (
                       <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
@@ -3312,17 +3325,13 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                       ) : (
                         <p>Topaz market verification is in progress. Bonding history remains available.</p>
                       )
-                    ) : quoteWei != null ? (
+                    ) : quoteWei != null && effectiveTokenWei > 0n ? (
                       <p>
-                        You will pay ~{formatBnbFromWei(quoteWei)} (max{" "}
-                        {formatBnbFromWei(
-                          tradeInputDenom === "BNB"
-                            ? effectiveBnbWei
-                            : (quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n,
-                        )})
+                        Pay ~{formatBnbFromWei(quoteWei)} → get {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}
+                        {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
                       </p>
                     ) : (
-                      <p>Enter an amount to see the buy quote.</p>
+                      <p>Enter a BNB amount to buy (switch to {tokenData.ticker || "TOKEN"} only for exact token size).</p>
                     )}
                   </div>
 

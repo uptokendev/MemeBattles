@@ -85,7 +85,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   const { fetchCampaignMetrics, buyTokens, sellTokens } = useLaunchpad();
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [tradeAmount, setTradeAmount] = useState("0");
-  const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("TOKEN");
+  const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("BNB");
   const [effectiveTokenWei, setEffectiveTokenWei] = useState<bigint>(0n);
   const [effectiveBnbWei, setEffectiveBnbWei] = useState<bigint>(0n);
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
@@ -322,9 +322,25 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
           return;
         }
 
-        const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider) as any;
+        const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, readProvider) as any;
         if (tradeInputDenom === "BNB") {
           const targetWei = inputBnbWei;
+          if (tradeTab === "buy") {
+            // Prefer exact contract quote (tokensOut, totalCostWei, feeWei) over binary search.
+            try {
+              const quoted = await contract.quoteBuyExactBnb(targetWei);
+              const tokensOut = BigInt(quoted?.[0] ?? quoted?.tokensOut ?? 0n);
+              const totalCostWei = BigInt(quoted?.[1] ?? quoted?.totalCostWei ?? targetWei);
+              if (!cancelled) {
+                setEffectiveTokenWei(tokensOut);
+                setEffectiveBnbWei(targetWei);
+                setQuoteWei(totalCostWei > 0n ? totalCostWei : targetWei);
+              }
+              return;
+            } catch {
+              // Fall through to binary search on older ABIs.
+            }
+          }
           const priceWei = metrics?.currentPrice ?? 0n;
           let hi: bigint;
           if (tradeTab === "sell" && tokenBalanceWei != null && tokenBalanceWei > 0n) {
@@ -360,7 +376,10 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
             tradeTab === "buy"
               ? await contract.quoteBuyExactTokens(amountWei)
               : await contract.quoteSellExactTokens(amountWei);
-          if (!cancelled) setQuoteWei(quote);
+          if (!cancelled) {
+            setQuoteWei(quote);
+            setEffectiveBnbWei(quote);
+          }
         }
       } catch (error: any) {
         console.warn("[WarRoomTradePanel] Quote failed", error);
@@ -504,7 +523,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       }
 
       if (tradeTab === "buy" && bnbBalanceWei != null) {
-        const baseCostWei = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
+        const baseCostWei = quoteWei && quoteWei > 0n ? quoteWei : tradeInputDenom === "BNB" ? inputBnbWei : 0n;
         if (baseCostWei > 0n) {
           const maxCostWei = (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
           if (maxCostWei > bnbBalanceWei) {
@@ -530,16 +549,24 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       setTradePending(true);
 
       if (tradeTab === "buy") {
-        let costWei: bigint = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
+        let costWei: bigint = quoteWei && quoteWei > 0n ? quoteWei : tradeInputDenom === "BNB" ? inputBnbWei : 0n;
         if (amountWei > 0n && costWei === 0n) {
-          const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
+          const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, readProvider) as any;
           costWei = await contract.quoteBuyExactTokens(amountWei);
+        }
+        if (costWei <= 0n) {
+          toast({
+            title: "Quote unavailable",
+            description: "Could not price this buy. Try again in a moment.",
+            variant: "destructive",
+          });
+          return;
         }
         const maxCostWei = (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
 
         toast({
           title: "Submitting buy",
-          description: `Buying ${ethers.formatUnits(amountWei, TOKEN_DECIMALS)} ${campaign.symbol} (max ${formatBnbFromWei(maxCostWei)}).`,
+          description: `Buying ~${formatTokenFromWei(amountWei)} ${campaign.symbol} for up to ${formatBnbFromWei(maxCostWei)}.`,
         });
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
@@ -632,10 +659,13 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
                 <span className="truncate">Bal: {tradeInputDenom === "BNB" ? formatBnbFromWei(bnbBalanceWei) : `${formatTokenFromWei(tokenBalanceWei)} ${campaign.symbol}`}</span>
-                <span className="truncate text-right">Cost: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}</span>
+                <span className="truncate text-right">Pay: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}</span>
               </div>
-              {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
-                <p className="mt-1 text-[11px] text-muted-foreground">Est. receive: {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}</p>
+              {effectiveTokenWei > 0n ? (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Receive: {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}
+                  {tradeInputDenom === "TOKEN" ? " (exact)" : " (est.)"}
+                </p>
               ) : null}
               {quoteError ? <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p> : null}
             </div>
@@ -647,10 +677,13 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                 ) : (
                   <p>Topaz market verification is in progress.</p>
                 )
-              ) : quoteWei != null ? (
-                <p>You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})</p>
+              ) : quoteWei != null && effectiveTokenWei > 0n ? (
+                <p>
+                  Pay ~{formatBnbFromWei(quoteWei)} → get {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}
+                  {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                </p>
               ) : (
-                <p>Enter an amount to see the buy quote.</p>
+                <p>Enter a BNB amount to buy (switch to {campaign.symbol || "TOKEN"} for exact size).</p>
               )}
             </div>
 
