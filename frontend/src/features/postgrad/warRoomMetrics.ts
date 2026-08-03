@@ -108,7 +108,9 @@ export function getWarRoomCampaignMetrics(campaign: CampaignInfo, bnbUsd = 0): W
         : 0;
 
   const marketCapUsd = derivedMcapBnb > 0 && usd > 0 ? derivedMcapBnb * usd : parseCompactNumber(campaign.marketCap);
-  const volumeUsd = volumeBnb > 0 && usd > 0 ? volumeBnb * usd : parseCompactNumber(campaign.volume);
+  // Never fall back volume/liquidity onto market cap — that made War Room columns
+  // all print the same $X.XX for TTA-style single-fill bonding tokens.
+  const volumeUsd = volumeBnb > 0 && usd > 0 ? volumeBnb * usd : 0;
   const liquidityUsd = raisedTotalBnb > 0 && usd > 0 ? raisedTotalBnb * usd : 0;
   const athMarketCapUsd =
     athMarketCapBnb > 0 && usd > 0

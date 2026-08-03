@@ -2116,32 +2116,8 @@ async function handleTokenTrades(req: any, res: any) {
   let campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
 
-  // Cleanup / discovery lag: materialize campaigns row + backfill empty curve_trades
-  // from chain so charts work even when factory inventory was wiped.
-  try {
-    const { ensureCampaignTradeHistory } = await import("./ensureCampaignTradeHistory.js");
-    const ensured = await ensureCampaignTradeHistory(chainId, campaign);
-    if (ensured.campaign) campaign = ensured.campaign;
-  } catch (error) {
-    console.warn("[api] ensureCampaignTradeHistory skipped", String((error as any)?.message || error));
-  }
-
-  // One-shot repair: empty history after bad RPC scan (includes created_block=0 rows).
-  try {
-    const { rewindEmptyCampaignTradeCursor } = await import("./emptyTradeCursorRewind.js");
-    await rewindEmptyCampaignTradeCursor(chainId, campaign);
-  } catch (error) {
-    console.warn("[api] trade cursor rewind skipped", String((error as any)?.message || error));
-  }
-
-  // Re-resolve after ensure (token URL may now map to campaign).
-  try {
-    identity = await resolveMarketIdentityOrPassthrough(chainId, campaign);
-    campaign = identity.campaignAddress || campaign;
-  } catch {
-    // keep campaign from ensure
-  }
-
+  // Fast path: never block the HTTP response on multi-minute getLogs backfills.
+  // AWTT-style empty history used to hang /trades for 90s+ and starve the UI.
   const r = await pool.query(
     `select
        tx_hash, log_index, block_number, block_time,
@@ -2150,10 +2126,59 @@ async function handleTokenTrades(req: any, res: any) {
      where chain_id=$1 and campaign_address=$2
      order by block_number desc, log_index desc
      limit $3`,
-    [chainId, campaign, limit]
+    [chainId, campaign, limit],
   );
 
-  res.json(r.rows);
+  if ((r.rowCount ?? 0) > 0) {
+    res.json(r.rows);
+    // Still repair cursor in the background when history exists.
+    void import("./emptyTradeCursorRewind.js")
+      .then(({ rewindEmptyCampaignTradeCursor }) => rewindEmptyCampaignTradeCursor(chainId, campaign))
+      .catch(() => undefined);
+    return;
+  }
+
+  // Empty history: try a *bounded* ensure+backfill with a hard timeout, then re-query.
+  // If it times out we still return [] so the browser can fall through to on-chain recovery.
+  try {
+    const { ensureCampaignTradeHistory } = await import("./ensureCampaignTradeHistory.js");
+    const { rewindEmptyCampaignTradeCursor } = await import("./emptyTradeCursorRewind.js");
+    await Promise.race([
+      (async () => {
+        const ensured = await ensureCampaignTradeHistory(chainId, campaign);
+        if (ensured.campaign) campaign = ensured.campaign;
+        await rewindEmptyCampaignTradeCursor(chainId, campaign);
+      })(),
+      new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+    ]);
+  } catch (error) {
+    console.warn("[api] ensureCampaignTradeHistory skipped", String((error as any)?.message || error));
+  }
+
+  // Kick a full backfill after the response if still empty (non-blocking).
+  void import("./ensureCampaignTradeHistory.js")
+    .then(({ ensureCampaignTradeHistory }) => ensureCampaignTradeHistory(chainId, campaign))
+    .catch(() => undefined);
+
+  try {
+    identity = await resolveMarketIdentityOrPassthrough(chainId, campaign);
+    campaign = identity.campaignAddress || campaign;
+  } catch {
+    // keep campaign
+  }
+
+  const r2 = await pool.query(
+    `select
+       tx_hash, log_index, block_number, block_time,
+       side, wallet, token_amount, bnb_amount, price_bnb
+     from public.curve_trades
+     where chain_id=$1 and campaign_address=$2
+     order by block_number desc, log_index desc
+     limit $3`,
+    [chainId, campaign, limit],
+  );
+
+  res.json(r2.rows);
 }
 
 app.get("/api/token/:campaign/trades", wrap(handleTokenTrades));

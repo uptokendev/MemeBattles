@@ -273,15 +273,15 @@ export async function backfillEmptyCampaignTrades(
     const createdBlock = Number(campRow.rows[0]?.created_block || 0);
     const factoryStart =
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
-    const lookback = Math.max(5_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 5);
-    const fromBlock = Math.max(
-      0,
+    // Cap lookback so API-triggered backfill cannot scan 100k+ blocks and hang /trades.
+    const lookback = Math.max(5_000, Math.min(40_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 2));
+    const floor =
       createdBlock > 0
         ? createdBlock
         : factoryStart > 0
           ? factoryStart
-          : latest - lookback,
-    );
+          : Math.max(0, latest - lookback);
+    const fromBlock = Math.max(0, Math.max(floor, latest - lookback));
 
     const logs = await getLogsChunked(
       provider,

@@ -94,14 +94,19 @@ export async function fetchOnChainCampaignStats(input: {
     }
   }
 
-  const volumeWei = BigInt(String(totalBuyVolumeWei ?? 0n)) + BigInt(String(totalSellVolumeWei ?? 0n));
+  const buyVolWei = BigInt(String(totalBuyVolumeWei ?? 0n));
+  const sellVolWei = BigInt(String(totalSellVolumeWei ?? 0n));
+  const volumeWei = buyVolWei + sellVolWei;
   let priceBnb = toNumberFromWei(BigInt(String(currentPrice ?? 0n)));
   let marketCapBnb =
     priceBnb && circulating > 0n
       ? Number(ethers.formatEther((BigInt(String(currentPrice ?? 0n)) * circulating) / WAD))
       : undefined;
+  // Bonding liquidity ≈ curve reserve (BNB held by campaign), not mcap.
   let liquidityBnb = toNumberFromWei(BigInt(String(reserveWei ?? 0n)));
-  let raisedTotalBnb = liquidityBnb;
+  // Raised = cumulative buy volume (not the same as spot mcap).
+  let raisedTotalBnb = toNumberFromWei(buyVolWei);
+  if (raisedTotalBnb == null || raisedTotalBnb <= 0) raisedTotalBnb = liquidityBnb;
 
   // After graduation, bonding reserve is empty — prefer Topaz pool reserves for spot metrics.
   if (launched && isAddress(dexPairAddress) && isAddress(tokenAddress)) {

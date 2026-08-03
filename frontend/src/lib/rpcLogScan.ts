@@ -46,9 +46,11 @@ export async function scanContractLogs(input: {
   const urls = getPublicRpcUrls(input.chainId);
   if (!urls.length) return [];
 
-  // Cap still high enough for multi-day testnet history (~80k blocks).
-  const lookback = Math.max(100, Math.min(input.lookbackBlocks ?? 8_000, 100_000));
-  const chunkSize = Math.max(20, Math.min(input.chunkSize ?? 80, 200));
+  // Cap still high enough for multi-day testnet history. publicnode free tier
+  // often prunes beyond ~100k; 40k is enough for dual-test bonding activity.
+  const lookback = Math.max(100, Math.min(input.lookbackBlocks ?? 12_000, 50_000));
+  // Larger chunks on healthy nodes; scanContractLogs bisects / retries on failure.
+  const chunkSize = Math.max(50, Math.min(input.chunkSize ?? 1_500, 5_000));
 
   for (let urlIndex = 0; urlIndex < urls.length; urlIndex += 1) {
     if (input.signal?.aborted) return [];

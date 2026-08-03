@@ -1315,15 +1315,17 @@ const toSeconds = (ts: number): number => {
     const endPrice =
       (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
-      (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
+      (metrics?.currentPrice != null && metrics.currentPrice > 0n
+        ? Number(ethers.formatUnits(metrics.currentPrice, 18))
+        : undefined);
 
     // Continuous stream: bonding + Topaz swap history for change/volume windows.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-  marketTradePoints.map((p: any) => ({
-    timestamp: Number(p.timestamp ?? 0),
-    pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
-    nativeWei: p.nativeWei,
-  }));
+      marketTradePoints.map((p: any) => ({
+        timestamp: Number(p.timestamp ?? 0),
+        pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
+        nativeWei: p.nativeWei,
+      }));
 
     if (!points.length && endPrice == null) {
       return {
@@ -1352,25 +1354,33 @@ const toSeconds = (ts: number): number => {
       // Start price: last trade at/before the window start, else first trade in the window.
       const before = [...sorted].reverse().find((p) => tsOf(p.timestamp) <= startTs);
       const within = sorted.find((p) => tsOf(p.timestamp) >= startTs);
-      const startPrice = (before ?? within)?.pricePerToken;
+      const startPrice = before?.pricePerToken ?? within?.pricePerToken;
 
       const volumeWei = sorted
         .filter((p) => tsOf(p.timestamp) >= startTs)
         .reduce((acc, p) => acc + (p.nativeWei ?? 0n), 0n);
 
-      const start = startPrice ?? end;
-      if (start > 0 && end > 0) {
-        const pct = ((end - start) / start) * 100;
-        out[k].change = Number.isFinite(pct) ? Number(pct.toFixed(2)) : null;
-      } else {
-        out[k].change = null;
+      // With a single fill (or no prior open), start≈end yields a fake 0.00%.
+      // Prefer spot-vs-trade-avg when currentPrice is available; else show "—".
+      let change: number | null = null;
+      if (startPrice != null && startPrice > 0 && end > 0) {
+        if (before == null && within != null && sorted.length === 1 && endPrice == null) {
+          change = null;
+        } else {
+          const pct = ((end - startPrice) / startPrice) * 100;
+          // Collapse pure float noise on a single-point window.
+          change = Number.isFinite(pct) ? (Math.abs(pct) < 0.005 ? 0 : Number(pct.toFixed(2))) : null;
+          if (before == null && sorted.length === 1 && Math.abs(pct) < 0.05 && endPrice == null) {
+            change = null;
+          }
+        }
       }
-
-      out[k].volume = points.length ? formatBnbFromWei(volumeWei) : "—";
+      out[k].change = change;
+      out[k].volume = volumeWei > 0n ? formatBnbFromWei(volumeWei) : points.length ? formatBnbFromWei(0n) : "—";
     }
 
     return out;
-  }, [combinedCurvePointsSafe, contractGraduatedEarly, marketTradePoints, metrics, rtStats?.lastPriceBnb, topazMarket.priceBnb]);
+  }, [contractGraduatedEarly, marketTradePoints, metrics, rtStats?.lastPriceBnb, topazMarket.priceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -1802,14 +1812,11 @@ const bnbUsd = useMemo(() => {
     contractGraduated ||
     verifiedMarketStage === "TOPAZ_ACTIVE" ||
     (verifiedMarketStage === "TOPAZ_DEGRADED" && contractGraduated);
-  // Allow Topaz quotes/trades when backend marks TOPAZ_ACTIVE, or when graduated on-chain.
+  // Allow Topaz when on-chain graduated even if market-state is a soft BONDING skeleton
+  // (common after cleanup / CMS lag). Soft BONDING must not block WIC-style trades.
   const isTopazTradingActive =
-    (verifiedMarketStage === "TOPAZ_ACTIVE" && Boolean(unifiedMarket.state?.tradingEnabled)) ||
-    (contractGraduated &&
-      (!verifiedMarketStage ||
-        verifiedMarketStage === "TOPAZ_ACTIVE" ||
-        verifiedMarketStage === "TOPAZ_PENDING" ||
-        verifiedMarketStage === "TOPAZ_DEGRADED"));
+    contractGraduated ||
+    (verifiedMarketStage === "TOPAZ_ACTIVE" && Boolean(unifiedMarket.state?.tradingEnabled));
 
   const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
   const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =

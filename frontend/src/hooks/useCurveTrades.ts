@@ -135,28 +135,40 @@ async function fetchIndexerTrades(campaignAddress: string, chainId: number, limi
   // Prefer relative /api/token/* through apiFetch so Netlify/proxy routing hits the
   // Railway indexer (memebattles-production-dca0) instead of inventing browser RPCs.
   const path = `/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-  try {
-    const r = await apiFetch(path, { method: "GET", signal, cache: "no-store" as RequestCache });
-    if (r.ok) {
-      const body = await r.json();
-      if (Array.isArray(body)) return body;
-      if (Array.isArray(body?.items)) return body.items;
-    }
-  } catch {
-    // fall through to absolute indexer URL
-  }
 
-  if (!API_BASE) return [];
-  const absolute = `${API_BASE}/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-  const r = await fetch(absolute, { method: "GET", signal, cache: "no-store" });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(text || `HTTP ${r.status}`);
+  // Hard-cap wait: empty-history backfill used to hang for 60–90s and blocked
+  // browser on-chain recovery entirely.
+  const timeout = new AbortController();
+  const onParentAbort = () => timeout.abort();
+  signal?.addEventListener("abort", onParentAbort, { once: true });
+  const timer = setTimeout(() => timeout.abort(), 5_000);
+  try {
+    try {
+      const r = await apiFetch(path, { method: "GET", signal: timeout.signal, cache: "no-store" as RequestCache });
+      if (r.ok) {
+        const body = await r.json();
+        if (Array.isArray(body)) return body;
+        if (Array.isArray(body?.items)) return body.items;
+      }
+    } catch {
+      // fall through to absolute indexer URL
+    }
+
+    if (!API_BASE) return [];
+    const absolute = `${API_BASE}/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
+    const r = await fetch(absolute, { method: "GET", signal: timeout.signal, cache: "no-store" });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      throw new Error(text || `HTTP ${r.status}`);
+    }
+    const body = await r.json();
+    if (Array.isArray(body)) return body;
+    if (Array.isArray(body?.items)) return body.items;
+    return [];
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onParentAbort);
   }
-  const body = await r.json();
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.items)) return body.items;
-  return [];
 }
 
 async function fetchOnChainTradeSnapshot(
@@ -174,15 +186,14 @@ async function fetchOnChainTradeSnapshot(
   if (!buyTopic || !sellTopic) return [];
 
   const address = campaignAddress.toLowerCase();
-  // Deep lookback when the indexer is empty (cleanup / discovery lag). BSC testnet
-  // free RPCs need small chunks; prefer recovering days of history over a 2h window.
-  const lookbackBlocks = 80_000;
+  // Deep lookback when the indexer is empty. publicnode serves ~5k-block windows well.
+  const lookbackBlocks = 40_000;
   const buyLogs = await scanContractLogs({
     chainId,
     address,
     topics: [buyTopic],
     lookbackBlocks,
-    chunkSize: 120,
+    chunkSize: 2_000,
     signal,
   });
   const sellLogs = await scanContractLogs({
@@ -190,7 +201,7 @@ async function fetchOnChainTradeSnapshot(
     address,
     topics: [sellTopic],
     lookbackBlocks,
-    chunkSize: 120,
+    chunkSize: 2_000,
     signal,
   });
 
@@ -345,33 +356,37 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     try {
       if (!initialLoadedRef.current) setLoading(true);
 
-      // 1) Primary: Railway realtime-indexer (memebattles-production-dca0).
-      // Hitting /trades also triggers server-side empty-cursor rewind for bad scans.
-      let apiRows: any[] = [];
-      try {
-        apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
-        if (apiRows.length) applySnapshot(apiRows);
-      } catch (apiError: any) {
-        if (isAbortError(apiError)) return;
-        console.warn("[useCurveTrades] indexer trade API failed", apiError);
-      }
+      // Race indexer + browser getLogs. Never wait on a hanging /trades backfill
+      // before attempting on-chain recovery (AWTT empty-chart root cause).
+      void forceOnChainReconcile; // reserved for callers that force a re-scan
+      void ENABLE_ONCHAIN_TRADE_FALLBACK;
+      const apiPromise = fetchIndexerTrades(campaignAddress, chainId, limit, signal)
+        .then((rows) => ({ source: "api" as const, rows }))
+        .catch((apiError: any) => {
+          if (!isAbortError(apiError)) {
+            console.warn("[useCurveTrades] indexer trade API failed", apiError);
+          }
+          return { source: "api" as const, rows: [] as any[] };
+        });
 
-      // 2) Browser getLogs when indexer is empty or forced.
-      // Required for campaigns whose cursor advanced with created_block=0 and zero rows
-      // (chart would stay blank forever waiting for Railway alone).
-      const needOnChain =
-        (ENABLE_ONCHAIN_TRADE_FALLBACK || forceOnChainReconcile || apiRows.length === 0) &&
-        !signal?.aborted;
-      if (needOnChain) {
-        try {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-          if (fallbackRows.length) applySnapshot(fallbackRows);
-        } catch (error) {
+      const onChainPromise = fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal)
+        .then((rows) => ({ source: "chain" as const, rows }))
+        .catch((error) => {
           if (!isAbortError(error)) {
             console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", error);
           }
-        }
-      }
+          return { source: "chain" as const, rows: [] as CurveTradePoint[] };
+        });
+
+      // Prefer whichever returns non-empty first; still merge the other when it finishes.
+      const first = await Promise.race([apiPromise, onChainPromise]);
+      if (signal?.aborted) return;
+      if (first.rows.length) applySnapshot(first.rows as any[]);
+
+      const [apiResult, chainResult] = await Promise.all([apiPromise, onChainPromise]);
+      if (signal?.aborted) return;
+      if (apiResult.rows.length) applySnapshot(apiResult.rows);
+      if (chainResult.rows.length) applySnapshot(chainResult.rows as any[]);
 
       setError(null);
       initialLoadedRef.current = true;
