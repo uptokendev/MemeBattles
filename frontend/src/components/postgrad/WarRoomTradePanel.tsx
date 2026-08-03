@@ -102,12 +102,13 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   const readProvider = useMemo(() => getReadProvider(chainId), [chainId]);
 
   const topbarButtonClass =
-    "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-[11px] md:text-sm px-3 py-2 rounded-lg md:rounded-xl shadow-lg";
+    "bg-transparent border border-orange-400/50 text-orange-300 hover:bg-orange-500 hover:text-white hover:border-orange-500 " +
+    "font-retro text-[11px] md:text-sm px-3 py-2 rounded-lg md:rounded-xl shadow-lg transition-colors";
   const ctaTabsListClass = "grid w-full grid-cols-2 mb-2 bg-transparent p-0 h-auto gap-1.5 md:mb-3 md:gap-2";
   const ctaTabsTriggerClass =
     "rounded-lg md:rounded-xl border px-3 py-2 font-retro text-[11px] md:text-sm transition-colors " +
-    "bg-transparent border-border/40 text-muted-foreground hover:text-foreground hover:bg-card/30 " +
-    "data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:border-accent/40 data-[state=active]:shadow-lg";
+    "bg-transparent border-orange-400/40 text-orange-300 hover:bg-orange-500 hover:text-white hover:border-orange-500 " +
+    "data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:border-orange-500 data-[state=active]:shadow-lg";
 
   const isDexStage = useMemo(() => {
     const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;

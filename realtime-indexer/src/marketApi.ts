@@ -289,15 +289,24 @@ export function registerMarketContinuityRoutes(app: Express) {
       }
       const identity = await resolveMarketIdentity(chainId, address);
       if (!identity) {
-        return res.status(404).json({
-          ok: false,
-          error: "No campaign found for this address (tried campaign + token columns).",
+        // Soft provisional identity so Token Details can keep loading while discovery/cleanup lag.
+        // Frontend still prefers on-chain factory reverse-lookup when matchedBy is provisional.
+        return res.status(200).json({
+          ok: true,
+          provisional: true,
           chainId,
-          address,
+          inputAddress: address,
+          matchedBy: "campaign",
+          campaignAddress: address,
+          tokenAddress: null,
+          publicUrlAddress: address,
+          marketKey: address,
+          hint: "No campaigns row yet; treating address as provisional campaign key.",
         });
       }
       return res.json({
         ok: true,
+        provisional: false,
         chainId: identity.chainId,
         inputAddress: identity.inputAddress,
         matchedBy: identity.matchedBy,
@@ -322,11 +331,39 @@ export function registerMarketContinuityRoutes(app: Express) {
       // Seeds CMS when missing (older campaigns) — returns 200 BONDING skeleton.
       const state = await readMarketState(chainId, campaign);
       if (!state) {
-        return res.status(404).json({
-          error: "Market state not found",
-          hint: "No campaigns row for this address. Factory discovery may not have indexed it yet.",
+        // Soft BONDING skeleton when campaigns row is missing (cleanup lag / discovery lag).
+        // Avoids frontend 404 spam; chart still uses on-chain bonding trades.
+        return res.status(200).json({
           chainId,
           campaignAddress: campaign,
+          tokenAddress: campaign,
+          factoryAddress: null,
+          campaignGeneration: null,
+          marketStage: "BONDING",
+          graduation: null,
+          pairAddress: null,
+          routerAddress: null,
+          dexFactoryAddress: null,
+          wrappedNativeAddress: null,
+          stable: null,
+          feeBps: null,
+          poolVerified: false,
+          supportEnabled: true,
+          bondingActive: true,
+          tradingEnabled: true,
+          indexingStatus: {
+            enabled: true,
+            poolEnabled: false,
+            lastIndexedBlock: null,
+            lastFinalizedBlock: null,
+            lastSwapAt: null,
+            lastSyncAt: null,
+            dataLagSeconds: null,
+          },
+          reserves: { tokenRaw: null, nativeRaw: null },
+          lastVerifiedAt: null,
+          lastError: null,
+          provisional: true,
         });
       }
       return res.json(state);

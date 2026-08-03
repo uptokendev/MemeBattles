@@ -45,12 +45,16 @@ export function ContinuousMarketChartPanel({
   return (
     <div className={className ?? "flex h-full min-h-[220px] w-full flex-col"}>
       {showDenomToggle ? (
-        <div className={`flex items-center justify-end gap-1 ${compact ? "mb-1.5" : "mb-2"}`}>
+        <div className={`flex shrink-0 items-center justify-end gap-1 ${compact ? "mb-1" : "mb-2"}`}>
           <Button
             type="button"
             size="sm"
             variant={denomination === "USD" ? "secondary" : "ghost"}
-            className="h-6 px-2.5 text-[10px]"
+            className={`h-6 px-2.5 text-[10px] ${
+              denomination === "USD"
+                ? "border border-orange-400/40 bg-orange-500/20 text-orange-300 hover:bg-orange-500/30"
+                : "text-muted-foreground hover:text-orange-200"
+            }`}
             onClick={() => setDenomination("USD")}
           >
             USD
@@ -59,7 +63,11 @@ export function ContinuousMarketChartPanel({
             type="button"
             size="sm"
             variant={denomination === "BNB" ? "secondary" : "ghost"}
-            className="h-6 px-2.5 text-[10px]"
+            className={`h-6 px-2.5 text-[10px] ${
+              denomination === "BNB"
+                ? "border border-orange-400/40 bg-orange-500/20 text-orange-300 hover:bg-orange-500/30"
+                : "text-muted-foreground hover:text-orange-200"
+            }`}
             onClick={() => setDenomination("BNB")}
           >
             BNB
@@ -67,7 +75,7 @@ export function ContinuousMarketChartPanel({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <UnifiedMarketChart
           curvePoints={market.tradePoints}
           marketCandles={market.unifiedMarket.candles}

@@ -97,17 +97,31 @@ export function getWarRoomCampaignMetrics(campaign: CampaignInfo, bnbUsd = 0): W
   const raisedTotalBnb = toNumber(rich.raisedTotalBnb ?? rich.raised_total_bnb);
   const holdersCount = toNumber(rich.holdersCount ?? rich.holderCount ?? rich.holder_count) || parseCompactNumber(campaign.holders);
   const athMarketCapBnb = toNumber(rich.athMarketCapBnb ?? rich.athMarketcapBnb ?? rich.ath_marketcap_bnb);
+  // When indexer mcap is empty, approximate from spot price × sold tokens if present.
+  const priceBnb = toNumber(rich.priceBnb ?? rich.price_bnb ?? rich.lastPriceBnb ?? rich.last_price_bnb);
+  const soldTokens = toNumber(rich.soldTokens ?? rich.sold_tokens ?? rich.currentSoldTokens);
+  const derivedMcapBnb =
+    marketCapBnb > 0
+      ? marketCapBnb
+      : priceBnb > 0 && soldTokens > 0
+        ? priceBnb * soldTokens
+        : 0;
 
-  const marketCapUsd = marketCapBnb > 0 && usd > 0 ? marketCapBnb * usd : parseCompactNumber(campaign.marketCap);
+  const marketCapUsd = derivedMcapBnb > 0 && usd > 0 ? derivedMcapBnb * usd : parseCompactNumber(campaign.marketCap);
   const volumeUsd = volumeBnb > 0 && usd > 0 ? volumeBnb * usd : parseCompactNumber(campaign.volume);
   const liquidityUsd = raisedTotalBnb > 0 && usd > 0 ? raisedTotalBnb * usd : 0;
-  const athMarketCapUsd = athMarketCapBnb > 0 && usd > 0 ? athMarketCapBnb * usd : marketCapUsd;
+  const athMarketCapUsd =
+    athMarketCapBnb > 0 && usd > 0
+      ? athMarketCapBnb * usd
+      : marketCapUsd > 0
+        ? marketCapUsd
+        : 0;
   const athProgressPct = athMarketCapUsd > 0 && marketCapUsd > 0 ? Math.min(100, Math.max(1, Math.round((marketCapUsd / athMarketCapUsd) * 100))) : 0;
   const ageSeconds = getAgeSeconds(campaign);
   const recencyBoost = ageSeconds === Number.MAX_SAFE_INTEGER ? 0 : Math.max(0, 1_000_000 - ageSeconds) / 1_000_000;
   const votes24h = toNumber(rich.votes24h ?? rich.votes_24h);
   const trendScore = volumeUsd * 0.5 + marketCapUsd * 0.28 + holdersCount * 40 + votes24h * 25 + recencyBoost * 100_000;
-  const hasRichStats = marketCapBnb > 0 || volumeBnb > 0 || holdersCount > 0 || raisedTotalBnb > 0;
+  const hasRichStats = derivedMcapBnb > 0 || volumeBnb > 0 || holdersCount > 0 || raisedTotalBnb > 0;
 
   return {
     marketCapUsd,

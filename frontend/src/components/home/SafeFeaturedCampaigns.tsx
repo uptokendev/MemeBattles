@@ -8,8 +8,10 @@ import { fetchPublicCampaignDrafts } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
 import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import type { SupportedChainId } from "@/lib/chainConfig";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
@@ -148,29 +150,58 @@ async function loadOnChainCandidates(chainId: number): Promise<FeaturedItem[]> {
   }
 }
 
-async function hydrateMissingSummary(item: FeaturedItem): Promise<FeaturedItem> {
-  if (item.marketcapBnb != null && item.marketcapBnb !== "") return item;
+async function hydrateMissingSummary(item: FeaturedItem, options?: { includeOnChainMcap?: boolean }): Promise<FeaturedItem> {
+  let next = item;
 
-  try {
-    const response = await apiFetch(`/api/token/${item.campaignAddress}/summary?chainId=${item.chainId}`, {
-      cache: "no-store",
-    });
-    const json = await response.json().catch(() => null);
-    if (!response.ok || !json) return item;
-
-    return {
-      ...item,
-      marketcapBnb: json.marketcapBnb ?? json.marketcap_bnb ?? item.marketcapBnb ?? null,
-      votes24h: Number(json.votes24h ?? json.votes_24h ?? item.votes24h ?? 0),
-      votesAllTime: Number(json.votesAllTime ?? json.votes_all_time ?? item.votesAllTime ?? 0),
-    };
-  } catch {
-    return item;
+  if (next.marketcapBnb == null || next.marketcapBnb === "" || Number(next.votes24h || 0) <= 0) {
+    try {
+      const response = await apiFetch(`/api/token/${next.campaignAddress}/summary?chainId=${next.chainId}`, {
+        cache: "no-store",
+      });
+      const json = await response.json().catch(() => null);
+      if (response.ok && json) {
+        next = {
+          ...next,
+          marketcapBnb: json.marketcapBnb ?? json.marketcap_bnb ?? next.marketcapBnb ?? null,
+          votes24h: Number(json.votes24h ?? json.votes_24h ?? next.votes24h ?? 0),
+          votesAllTime: Number(json.votesAllTime ?? json.votes_all_time ?? next.votesAllTime ?? 0),
+        };
+      }
+    } catch {
+      // Fall through to on-chain stats when needed.
+    }
   }
+
+  // Indexer token_stats is often empty on testnet — fill mcap from bonding curve for upvoted cards only.
+  const hasVotes = Number(next.votes24h || 0) > 0 || Number(next.votesAllTime || 0) > 0;
+  if (
+    options?.includeOnChainMcap !== false &&
+    hasVotes &&
+    (next.marketcapBnb == null || next.marketcapBnb === "" || Number(next.marketcapBnb) <= 0)
+  ) {
+    try {
+      const stats = await fetchOnChainCampaignStats({
+        chainId: next.chainId as SupportedChainId,
+        campaignAddress: next.campaignAddress,
+        tokenAddress: next.tokenAddress,
+      });
+      if (stats?.marketCapBnb != null && stats.marketCapBnb > 0) {
+        next = {
+          ...next,
+          marketcapBnb: String(stats.marketCapBnb),
+        };
+      }
+    } catch {
+      // Keep whatever we have.
+    }
+  }
+
+  return next;
 }
 
 async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Promise<FeaturedItem[]> {
   const provider = getReadProvider(chainId as any);
+  // Phase 1: lifecycle + cheap API summary (no bulk on-chain mcap).
   const checked = await Promise.all(items.slice(0, 100).map(async (item) => {
     if (item.graduatedAtChain || item.isDexTrading) return null;
     try {
@@ -195,13 +226,45 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
         logoUri,
         isDexTrading: false,
         graduatedAtChain: null,
-      } satisfies FeaturedItem);
+      } satisfies FeaturedItem, { includeOnChainMcap: false });
     } catch (error) {
       console.warn("[SafeFeaturedCampaigns] lifecycle verification failed", item.campaignAddress, error);
       return null;
     }
   }));
-  return checked.filter(Boolean) as FeaturedItem[];
+
+  const live = checked.filter(Boolean) as FeaturedItem[];
+  // Phase 2: on-chain mcap only for upvoted candidates (featured filter).
+  const upvoted = live
+    .filter((item) => Number(item.votes24h || 0) > 0 || Number(item.votesAllTime || 0) > 0)
+    .slice(0, 20);
+
+  if (!upvoted.length) return live;
+
+  const mcapByAddress = new Map<string, string>();
+  await Promise.all(
+    upvoted.map(async (item) => {
+      if (item.marketcapBnb != null && item.marketcapBnb !== "" && Number(item.marketcapBnb) > 0) return;
+      try {
+        const stats = await fetchOnChainCampaignStats({
+          chainId: item.chainId as SupportedChainId,
+          campaignAddress: item.campaignAddress,
+          tokenAddress: item.tokenAddress,
+        });
+        if (stats?.marketCapBnb != null && stats.marketCapBnb > 0) {
+          mcapByAddress.set(item.campaignAddress.toLowerCase(), String(stats.marketCapBnb));
+        }
+      } catch {
+        // optional
+      }
+    }),
+  );
+
+  if (!mcapByAddress.size) return live;
+  return live.map((item) => {
+    const mcap = mcapByAddress.get(item.campaignAddress.toLowerCase());
+    return mcap ? { ...item, marketcapBnb: mcap } : item;
+  });
 }
 
 export function SafeFeaturedCampaigns({ className = "" }: { className?: string }) {
@@ -262,11 +325,13 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   const cards = useMemo<FeaturedCard[]>(() => {
     return items
       .slice()
+      // Featured = ranked by upvotes — zero-vote campaigns do not belong here.
+      .filter((item) => Number(item.votes24h || 0) > 0 || Number(item.votesAllTime || 0) > 0)
       .sort((a, b) => Number(b.votes24h || 0) - Number(a.votes24h || 0))
       .slice(0, 20)
       .map((item) => {
         const mcapBnb = Number(item.marketcapBnb ?? NaN);
-        const mcapUsd = Number.isFinite(mcapBnb) && Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0
+        const mcapUsd = Number.isFinite(mcapBnb) && mcapBnb > 0 && Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0
           ? mcapBnb * Number(bnbUsd)
           : null;
 

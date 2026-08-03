@@ -209,7 +209,8 @@ export function UnifiedMarketChart({
     const rect = element.getBoundingClientRect();
     const chart = createChart(element, {
       width: Math.max(10, rect.width || element.clientWidth || 10),
-      height: Math.max(260, rect.height || element.clientHeight || 360),
+      // Prefer real container height so War Room compact panels align; avoid forced 260 overflow.
+      height: Math.max(140, rect.height || element.clientHeight || 260),
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "rgba(255,255,255,0.75)",
@@ -274,7 +275,7 @@ export function UnifiedMarketChart({
       const bounds = target.getBoundingClientRect();
       chartRef.current.applyOptions({
         width: Math.max(10, bounds.width || target.clientWidth || 10),
-        height: Math.max(260, bounds.height || target.clientHeight || 360),
+        height: Math.max(140, bounds.height || target.clientHeight || 260),
       });
     });
     observer.observe(element);
@@ -351,20 +352,28 @@ export function UnifiedMarketChart({
 
   const hasData = data.length > 0;
   return (
-    <div className="relative flex h-full min-h-[260px] w-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-2">
-        <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/35 p-0.5">
+    <div className="relative flex h-full min-h-0 w-full flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2 shrink-0">
+        <div className="flex items-center gap-1 rounded-md border border-orange-400/25 bg-black/30 p-0.5">
           <button
             type="button"
             onClick={() => setMetric("marketcap")}
-            className={`rounded px-2 py-1 text-[10px] font-semibold ${metric === "marketcap" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
+            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${
+              metric === "marketcap"
+                ? "bg-orange-500/25 text-orange-300"
+                : "text-muted-foreground hover:text-orange-200"
+            }`}
           >
             Market Cap
           </button>
           <button
             type="button"
             onClick={() => setMetric("price")}
-            className={`rounded px-2 py-1 text-[10px] font-semibold ${metric === "price" ? "bg-primary/20 text-primary" : "text-muted-foreground"}`}
+            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${
+              metric === "price"
+                ? "bg-orange-500/25 text-orange-300"
+                : "text-muted-foreground hover:text-orange-200"
+            }`}
           >
             Price
           </button>
@@ -375,14 +384,18 @@ export function UnifiedMarketChart({
               type="button"
               key={item.key}
               onClick={() => onResolutionChange(item.key)}
-              className={`rounded border px-2 py-1 text-[10px] font-semibold ${resolution === item.key ? "border-primary/50 bg-primary/20 text-primary" : "border-border/60 text-muted-foreground hover:text-foreground"}`}
+              className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${
+                resolution === item.key
+                  ? "border-orange-400/50 bg-orange-500/25 text-orange-300"
+                  : "border-border/60 text-muted-foreground hover:text-orange-200"
+              }`}
             >
               {item.key}
             </button>
           ))}
         </div>
       </div>
-      <div className="relative min-h-[260px] flex-1">
+      <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
         {!hasData && (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">

@@ -497,16 +497,17 @@ const TokenDetails = () => {
   });
   const isMobile = window.innerWidth < 768;
 
-  // Keep CTA styling consistent with TopBar (Create Coin / Connect Wallet)
+  // Buy / Sell CTAs: orange text at rest → full orange + white text on hover/active.
   const topbarButtonClass =
-    "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg";
+    "bg-transparent border border-orange-400/50 text-orange-300 hover:bg-orange-500 hover:text-white hover:border-orange-500 " +
+    "font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg transition-colors";
 
   // Tabs that should visually read like the TopBar CTA buttons.
   const ctaTabsListClass = "grid w-full grid-cols-2 mb-3 bg-transparent p-0 h-auto gap-2";
   const ctaTabsTriggerClass =
     "rounded-xl border px-3 py-2 font-retro text-xs md:text-sm transition-colors " +
-    "bg-transparent border-border/40 text-muted-foreground hover:text-foreground hover:bg-card/30 " +
-    "data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:border-accent/40 data-[state=active]:shadow-lg";
+    "bg-transparent border-orange-400/40 text-orange-300 hover:bg-orange-500 hover:text-white hover:border-orange-500 " +
+    "data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:border-orange-500 data-[state=active]:shadow-lg";
 
   useEffect(() => {
     try {
@@ -738,6 +739,40 @@ const TokenDetails = () => {
             directCampaignAddress = param;
           }
           match = await buildCampaignFromAddress(directCampaignAddress, loadProvider, loadChainId);
+
+          // Indexer cleanup / lag: URL is token address but campaigns row is missing.
+          // Resolve via on-chain factory inventory so Token Details still works offline of DB.
+          if (!match) {
+            try {
+              const page = await fetchOnChainCampaignPage(loadChainId, { limit: 100 });
+              const needle = param.toLowerCase();
+              const row = page.campaigns.find((c) => {
+                const campaign = String(c.campaign || "").toLowerCase();
+                const token = String(c.token || "").toLowerCase();
+                return campaign === needle || token === needle;
+              });
+              if (row?.campaign) {
+                match =
+                  (await buildCampaignFromAddress(String(row.campaign), loadProvider, loadChainId)) ||
+                  ({
+                    id: 0,
+                    campaign: String(row.campaign).toLowerCase(),
+                    token: String(row.token || "").toLowerCase(),
+                    creator: String(row.creator || "").toLowerCase(),
+                    name: String(row.name || "Unknown"),
+                    symbol: String(row.symbol || ""),
+                    logoURI: resolveImageUri(row.logoURI) || "/placeholder.svg",
+                    metadataURI: undefined,
+                    xAccount: String(row.xAccount || ""),
+                    website: String(row.website || ""),
+                    extraLink: String(row.extraLink || ""),
+                    createdAt: row.createdAt,
+                  } as CampaignInfo);
+              }
+            } catch (onChainErr) {
+              console.warn("[TokenDetails] on-chain inventory resolve failed", onChainErr);
+            }
+          }
         }
 
         if (!match) {
@@ -791,20 +826,27 @@ try {
   setMetrics(s.metrics ?? null);
 } catch (summaryErr) {
   console.warn(
-    "[TokenDetails] summary fetch failed; rendering with campaign + realtime data",
+    "[TokenDetails] summary fetch failed; trying direct metrics",
     summaryErr,
   );
 
+  let directMetrics: CampaignMetrics | null = null;
+  try {
+    directMetrics = await fetchCampaignMetrics(displayMatch.campaign);
+  } catch (metricsErr) {
+    console.warn("[TokenDetails] direct metrics also failed", metricsErr);
+  }
+
   setSummary({
     campaign: displayMatch,
-    metrics: null,
+    metrics: directMetrics,
     stats: {
       holders: "—",
       volume: "—",
       marketCap: "—",
     },
   });
-  setMetrics(null);
+  setMetrics(directMetrics);
 }
       } catch (err) {
         console.error(err);
@@ -820,10 +862,19 @@ try {
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
     try {
+      if (wei === 0n) return "0 BNB";
       const raw = ethers.formatUnits(wei, 18);
       const n = Number(raw);
       if (!Number.isFinite(n)) return `${raw} BNB`;
-      const pretty = n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6);
+      // Bonding spot prices are often far below 1e-6 BNB — keep significant digits.
+      if (n >= 1) return `${n.toFixed(2)} BNB`;
+      if (n >= 0.01) return `${n.toFixed(6)} BNB`;
+      if (n >= 1e-6) return `${n.toFixed(8)} BNB`;
+      if (n > 0 && n < 1e-12) return "<0.000000000001 BNB";
+      const fraction = raw.split(".")[1] || "";
+      const firstNonZero = fraction.search(/[1-9]/);
+      const decimals = Math.min(18, Math.max(8, (firstNonZero >= 0 ? firstNonZero : 7) + 4));
+      const pretty = n.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
       return `${pretty} BNB`;
     } catch {
       return "—";
@@ -938,10 +989,14 @@ try {
   };
 
   const formatPriceBnb = (p?: number | null): string => {
-    if (p == null || !Number.isFinite(p)) return "—";
-    const pretty =
-      p >= 1 ? p.toFixed(2) : p >= 0.01 ? p.toFixed(6) : p.toFixed(8);
-    return `${pretty} BNB`;
+    if (p == null || !Number.isFinite(p) || p < 0) return "—";
+    if (p === 0) return "0 BNB";
+    if (p >= 1) return `${p.toFixed(2)} BNB`;
+    if (p >= 0.01) return `${p.toFixed(6)} BNB`;
+    if (p >= 1e-6) return `${p.toFixed(8)} BNB`;
+    if (p > 0 && p < 1e-12) return "<0.000000000001 BNB";
+    // Preserve scientific-scale micro prices without truncating to zero.
+    return `${p.toPrecision(4)} BNB`;
   };
 
   // Format a BNB amount (number) consistently across the UI.
@@ -1433,17 +1488,60 @@ const bnbUsd = useMemo(() => {
   }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
 
   const priceDisplay = useMemo(() => {
-    const bnbLabel = tokenData.price;
+    // Prefer numeric spot sources first so micro prices never collapse via label truncation.
+    const fromWei =
+      metrics?.currentPrice != null && metrics.currentPrice > 0n
+        ? Number(ethers.formatUnits(metrics.currentPrice, 18))
+        : null;
+    const fromTopaz =
+      contractGraduatedEarly && topazMarket.priceBnb != null && Number.isFinite(topazMarket.priceBnb) && topazMarket.priceBnb > 0
+        ? Number(topazMarket.priceBnb)
+        : null;
+    const fromRt =
+      rtStats?.lastPriceBnb != null && Number.isFinite(rtStats.lastPriceBnb) && rtStats.lastPriceBnb > 0
+        ? Number(rtStats.lastPriceBnb)
+        : null;
+    const fromUnified =
+      unifiedMarket.summary?.last_price_bnb != null
+        ? Number(unifiedMarket.summary.last_price_bnb)
+        : null;
+    const fromTrades = (() => {
+      const pts = Array.isArray(marketTradePoints) ? marketTradePoints : [];
+      for (let i = pts.length - 1; i >= 0; i -= 1) {
+        const p = Number((pts[i] as any)?.pricePerToken ?? 0);
+        if (Number.isFinite(p) && p > 0) return p;
+      }
+      return null;
+    })();
 
-    if (displayDenom === "BNB") return bnbLabel;
+    const priceBnb =
+      (contractGraduatedEarly ? fromTopaz : null) ??
+      fromWei ??
+      fromRt ??
+      (Number.isFinite(fromUnified) && (fromUnified as number) > 0 ? (fromUnified as number) : null) ??
+      fromTrades ??
+      parseBnbLabel(tokenData.price);
 
-    const priceBnb = parseBnbLabel(bnbLabel);
-    if (priceBnb == null) return "—";
+    if (priceBnb == null || !Number.isFinite(priceBnb) || priceBnb <= 0) {
+      return tokenData.price && tokenData.price !== "—" ? tokenData.price : "—";
+    }
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (displayDenom === "BNB") return formatPriceBnb(priceBnb);
 
-    return formatCompactUsd(priceBnb * bnbUsdPrice);
-  }, [displayDenom, tokenData.price, bnbUsdPrice, bnbUsdLoading]);
+    if (!bnbUsd) return bnbUsdLoading ? "…" : formatPriceBnb(priceBnb);
+    return formatCompactUsd(priceBnb * bnbUsd);
+  }, [
+    bnbUsd,
+    bnbUsdLoading,
+    contractGraduatedEarly,
+    displayDenom,
+    marketTradePoints,
+    metrics?.currentPrice,
+    rtStats?.lastPriceBnb,
+    tokenData.price,
+    topazMarket.priceBnb,
+    unifiedMarket.summary?.last_price_bnb,
+  ]);
 
   const volumeDisplay = useMemo(() => {
     const bnbLabel = tokenData.metrics[selectedTimeframe]?.volume ?? "—";

@@ -9,6 +9,8 @@ export type MarketIdentity = {
   matchedBy: "campaign" | "token";
   inputAddress: string;
   publicUrlAddress: string;
+  /** True when indexer has no campaigns row yet (discovery/cleanup lag). */
+  provisional?: boolean;
 };
 
 /**
@@ -18,6 +20,8 @@ export async function resolveMarketIdentity(input: {
   address: string;
   chainId: number;
   signal?: AbortSignal;
+  /** When false (default), ignore soft provisional identities with no DB row. */
+  acceptProvisional?: boolean;
 }): Promise<MarketIdentity | null> {
   const address = normalizeEvmAddress(input.address);
   const chainId = Number(input.chainId || 97);
@@ -31,6 +35,8 @@ export async function resolveMarketIdentity(input: {
     if (!response.ok) return null;
     const body = await response.json().catch(() => null);
     if (!body?.ok) return null;
+    const provisional = Boolean(body.provisional);
+    if (provisional && !input.acceptProvisional) return null;
     const campaignAddress = normalizeEvmAddress(body.campaignAddress);
     const tokenAddress = normalizeEvmAddress(body.tokenAddress);
     if (!campaignAddress) return null;
@@ -41,6 +47,7 @@ export async function resolveMarketIdentity(input: {
       matchedBy: body.matchedBy === "token" ? "token" : "campaign",
       inputAddress: normalizeEvmAddress(body.inputAddress) || address,
       publicUrlAddress: normalizeEvmAddress(body.publicUrlAddress) || tokenAddress || campaignAddress,
+      provisional,
     };
   } catch {
     return null;
@@ -51,6 +58,7 @@ export async function resolveMarketIdentity(input: {
  * Find which EVM chain (97/56) hosts this token or campaign.
  * Prefer the app's token-page read chain, then the other EVM chain.
  * Pins the result so launchpad metrics use the same network as the page.
+ * Skips provisional identities so a missing DB row on chain A cannot hide a real row on chain B.
  */
 export async function resolveMarketIdentityAcrossEvm(input: {
   address: string;
@@ -67,8 +75,9 @@ export async function resolveMarketIdentityAcrossEvm(input: {
       address,
       chainId,
       signal: input.signal,
+      acceptProvisional: false,
     });
-    if (identity?.campaignAddress) {
+    if (identity?.campaignAddress && !identity.provisional) {
       pinTokenDetailsChainId(identity.chainId as SupportedChainId);
       return identity;
     }

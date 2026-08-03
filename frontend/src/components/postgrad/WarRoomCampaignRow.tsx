@@ -100,10 +100,10 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
     metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : isScheduledDraft ? "sponsored" : "default";
   const chartSourceLabel =
     metrics.status === "graduated"
-      ? "Continuous chart · Topaz + bonding"
+      ? "TOPAZ"
       : metrics.status === "bonding"
-        ? "Continuous chart · bonding"
-        : "Chart";
+        ? "BONDING"
+        : "CHART";
   const promotionHref = String(rich.promotionHref || (rich.draftSlug ? `/prepare/${rich.draftSlug}` : rich.draftId ? `/drafts/${rich.draftId}` : ""));
   const draftDescription = String(rich.draftDescription || "No promotion description has been added yet.");
   const founderNote = String(rich.draftFounderNote || "No founder note has been added yet.");
@@ -305,15 +305,10 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
           </div>
         ) : (
           <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-2.5 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[1.35fr_0.65fr]">
-            <div className="order-2 min-h-[220px] rounded-[16px] border border-white/10 bg-black/30 p-2.5 md:min-h-[360px] md:rounded-[18px] md:p-3 xl:order-1">
-              <div className="mb-2 flex items-center justify-between gap-3 md:mb-3">
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Chart</div>
-                  <div className="mt-1 text-[13px] font-semibold text-white md:text-sm">Same continuous stack as token details</div>
-                </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <TacticalTag label={chartSourceLabel} tone="sponsored" />
-                  <TacticalTag label={campaign.symbol} tone="default" />
+            <div className="order-2 flex h-[300px] flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:h-[380px] md:rounded-[18px] md:p-3 xl:order-1">
+              <div className="mb-1.5 flex shrink-0 items-center justify-between gap-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-300">
+                  {chartSourceLabel}
                 </div>
               </div>
               <ContinuousMarketChartPanel
@@ -321,7 +316,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 tokenAddress={campaign.token}
                 chainId={rowChainId}
                 compact
-                className="flex h-[280px] w-full flex-col md:h-[340px]"
+                className="flex min-h-0 w-full flex-1 flex-col"
               />
             </div>
 
