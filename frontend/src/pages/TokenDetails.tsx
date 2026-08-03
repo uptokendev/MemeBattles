@@ -515,18 +515,20 @@ const TokenDetails = () => {
   const wallet = useWallet();
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+
+  const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
+  // Must be declared BEFORE chainIdForStorage — using campaignAddr in a prior const
+  // caused TDZ: "Cannot access 'Q' before initialization" and crashed TokenDetails.
+  const campaignAddr = useMemo(
+    () => String(campaign?.campaign ?? campaignAddress ?? "").trim().toLowerCase(),
+    [campaign?.campaign, campaignAddress],
+  );
   // 0x token URLs must stay on BNB (56/97). Never inherit Solana 101 from feed switch.
   const chainIdForStorage = useMemo(
     () => getEvmChainIdForAddress(campaignAddress || campaignAddr, wallet.chainId),
     [campaignAddress, campaignAddr, wallet.chainId],
   );
   const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
-
-  const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
-  const campaignAddr = useMemo(
-    () => String(campaign?.campaign ?? campaignAddress ?? "").trim().toLowerCase(),
-    [campaign?.campaign, campaignAddress],
-  );
 
   useEffect(() => {
     let alive = true;
