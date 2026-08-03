@@ -568,7 +568,7 @@ export async function runTopazPoolIndexerOnce() {
     try {
       const working = await createWorkingProvider(config.rpcUrls, config.chainId, {
         label: `topaz-pool-indexer chain ${config.chainId}`,
-        timeoutMs: 10_000,
+        timeoutMs: ENV.RPC_REQUEST_TIMEOUT_MS,
       });
       provider = working.provider;
       const finalizedHead = Math.max(0, working.headBlock - Math.max(0, ENV.CONFIRMATIONS));

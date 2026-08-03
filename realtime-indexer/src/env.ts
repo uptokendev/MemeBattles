@@ -65,23 +65,28 @@ export const ENV = {
   // If FACTORY_START_BLOCK_* is not set, we fallback to (latest - FACTORY_LOOKBACK_BLOCKS)
   FACTORY_LOOKBACK_BLOCKS: Number(process.env.FACTORY_LOOKBACK_BLOCKS || 250000),
 
-  // Log scanning chunk sizes
-  LOG_CHUNK_SIZE: Number(process.env.LOG_CHUNK_SIZE || "2000"),
+  // Log scanning chunk sizes (smaller = slower but friendlier to free RPC tiers).
+  LOG_CHUNK_SIZE: Number(process.env.LOG_CHUNK_SIZE || "1000"),
   // When we need to split ranges due to public RPC limits, don't split below this span.
-  MIN_LOG_CHUNK_SIZE: Number(process.env.MIN_LOG_CHUNK_SIZE || "250"),
+  MIN_LOG_CHUNK_SIZE: Number(process.env.MIN_LOG_CHUNK_SIZE || "100"),
 
   // Optional daily repair job settings
   REPAIR_LOOKBACK_BLOCKS: Number(process.env.REPAIR_LOOKBACK_BLOCKS || 20000),
   REPAIR_REWIND_BLOCKS: Number(process.env.REPAIR_REWIND_BLOCKS || 200),
 
   // Poll interval for the always-on indexer loop in server.ts
-  // NOTE: Testnet UX benefits from lower latency; tune up for mainnet.
-  INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 5000),
+  // NOTE: Testnet UX benefits from lower latency; tune up for mainnet / free RPCs.
+  INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 10000),
+  // Factory discovery (registry + CampaignCreated logs) is heavier than trade ticks —
+  // do not share the aggressive trade interval on free RPCs.
+  FACTORY_DISCOVERY_INTERVAL_MS: Number(process.env.FACTORY_DISCOVERY_INTERVAL_MS || 60000),
   INDEXER_STALE_AFTER_MS: Number(process.env.INDEXER_STALE_AFTER_MS || 120000),
   // "core" is the launch-safe default: factory registry calls + campaign trade logs.
   // "full" also scans factory/vote/router logs and should use a paid/indexed RPC.
   INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "core",
-  INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 250),
+  INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 400),
+  // eth_getLogs on free tiers often exceeds 12s under load — default 30s.
+  RPC_REQUEST_TIMEOUT_MS: Number(process.env.RPC_REQUEST_TIMEOUT_MS || 30000),
 
   // Lower default confirmations for faster UI updates (especially on testnet).
   CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),

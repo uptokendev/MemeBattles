@@ -42,7 +42,8 @@ export function createStaticJsonRpcProvider(
   const url = String(rpcUrl || "").trim();
   if (!url) throw new Error("RPC URL is empty");
 
-  const timeoutMs = Math.max(2_000, Number(options?.timeoutMs ?? 12_000));
+  const envDefault = Number(process.env.RPC_REQUEST_TIMEOUT_MS || 30_000);
+  const timeoutMs = Math.max(5_000, Number(options?.timeoutMs ?? envDefault));
   const network = networkFor(chainId);
 
   const request = new FetchRequest(url);

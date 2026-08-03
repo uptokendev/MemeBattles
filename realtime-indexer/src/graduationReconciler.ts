@@ -90,22 +90,47 @@ async function listCandidates(chainId: number): Promise<Candidate[]> {
   }));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function isTimeoutError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  const code = String((error as any)?.code || "").toLowerCase();
+  return code === "timeout" || msg.includes("timeout") || msg.includes("timed out") || msg.includes("etimedout");
+}
+
 async function getLogsAdaptive(
   provider: ethers.JsonRpcProvider,
   address: string,
   topic0: string,
   fromBlock: number,
   toBlock: number,
+  depth = 0,
 ): Promise<ethers.Log[]> {
   if (fromBlock > toBlock) return [];
   const span = toBlock - fromBlock + 1;
+  const minSpan = Math.max(1, ENV.MIN_LOG_CHUNK_SIZE);
   try {
+    if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
+      await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS);
+    }
     return await provider.getLogs({ address, topics: [topic0], fromBlock, toBlock });
   } catch (error) {
-    if (span <= Math.max(1, ENV.MIN_LOG_CHUNK_SIZE)) throw error;
+    if (isTimeoutError(error) && depth < 6) {
+      await sleep(1_000 + depth * 750);
+      if (span > minSpan) {
+        const mid = Math.floor((fromBlock + toBlock) / 2);
+        const left = await getLogsAdaptive(provider, address, topic0, fromBlock, mid, depth + 1);
+        const right = await getLogsAdaptive(provider, address, topic0, mid + 1, toBlock, depth + 1);
+        return left.concat(right);
+      }
+      return getLogsAdaptive(provider, address, topic0, fromBlock, toBlock, depth + 1);
+    }
+    if (span <= minSpan) throw error;
     const mid = Math.floor((fromBlock + toBlock) / 2);
-    const left = await getLogsAdaptive(provider, address, topic0, fromBlock, mid);
-    const right = await getLogsAdaptive(provider, address, topic0, mid + 1, toBlock);
+    const left = await getLogsAdaptive(provider, address, topic0, fromBlock, mid, depth + 1);
+    const right = await getLogsAdaptive(provider, address, topic0, mid + 1, toBlock, depth + 1);
     return left.concat(right);
   }
 }
@@ -313,7 +338,7 @@ export async function runGraduationReconcilerOnce() {
     try {
       const working = await createWorkingProvider(config.rpcUrls, config.chainId, {
         label: `graduation-reconciler chain ${config.chainId}`,
-        timeoutMs: 10_000,
+        timeoutMs: ENV.RPC_REQUEST_TIMEOUT_MS,
       });
       provider = working.provider;
       console.log("[wtr] graduation reconciler RPC", {

@@ -229,6 +229,16 @@ async function syncRegistry(provider: ethers.JsonRpcProvider, factory: Supported
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function isTimeoutError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  const code = String((error as any)?.code || "").toLowerCase();
+  return code === "timeout" || msg.includes("timeout") || msg.includes("timed out") || msg.includes("etimedout");
+}
+
 async function getLogsAdaptive(
   provider: ethers.JsonRpcProvider,
   filter: ethers.Filter,
@@ -237,10 +247,28 @@ async function getLogsAdaptive(
   depth = 0,
 ): Promise<ethers.Log[]> {
   try {
+    if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
+      await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS);
+    }
     return await provider.getLogs({ ...filter, fromBlock, toBlock });
   } catch (error) {
     const span = toBlock - fromBlock + 1;
-    if (span <= Math.max(1, ENV.MIN_LOG_CHUNK_SIZE) || depth >= 12) throw error;
+    const minSpan = Math.max(1, ENV.MIN_LOG_CHUNK_SIZE);
+
+    // Free RPCs often time out under concurrent load. Wait + shrink range instead of
+    // immediately bisecting into a stampede of smaller calls on the same second.
+    if (isTimeoutError(error) && depth < 6) {
+      await sleep(1_000 + depth * 750);
+      if (span > minSpan) {
+        const middle = Math.floor((fromBlock + toBlock) / 2);
+        const left = await getLogsAdaptive(provider, filter, fromBlock, middle, depth + 1);
+        const right = await getLogsAdaptive(provider, filter, middle + 1, toBlock, depth + 1);
+        return left.concat(right);
+      }
+      return getLogsAdaptive(provider, filter, fromBlock, toBlock, depth + 1);
+    }
+
+    if (span <= minSpan || depth >= 12) throw error;
     const middle = Math.floor((fromBlock + toBlock) / 2);
     const left = await getLogsAdaptive(provider, filter, fromBlock, middle, depth + 1);
     const right = await getLogsAdaptive(provider, filter, middle + 1, toBlock, depth + 1);
@@ -304,7 +332,9 @@ async function runFactory(factory: SupportedFactory): Promise<void> {
 
   let lastError: unknown;
   for (const rpcUrl of rpcUrls) {
-    const provider = createStaticJsonRpcProvider(rpcUrl, factory.chainId, { timeoutMs: 12_000 });
+    const provider = createStaticJsonRpcProvider(rpcUrl, factory.chainId, {
+      timeoutMs: ENV.RPC_REQUEST_TIMEOUT_MS,
+    });
     try {
       const code = await provider.getCode(factory.address);
       if (code === "0x") throw new Error(`No contract code at ${factory.address}`);
@@ -316,9 +346,11 @@ async function runFactory(factory: SupportedFactory): Promise<void> {
       console.warn("[factory-discovery] RPC failed", {
         chainId: factory.chainId,
         factory: factory.address,
-        rpcUrl,
-        error: String((error as any)?.message || error),
+        rpcUrl: rpcUrl.replace(/\/[a-f0-9]{16,}/i, "/…"),
+        error: String((error as any)?.shortMessage || (error as any)?.message || error),
       });
+      // Brief pause before next URL / factory so free tiers can recover.
+      await sleep(750);
     }
   }
   throw lastError;
@@ -334,14 +366,17 @@ export async function runSupportedFactoryDiscoveryOnce(): Promise<void> {
         chainId: factory.chainId,
         factory: factory.address,
         cursor: factory.cursor,
-        error: String((error as any)?.message || error),
+        error: String((error as any)?.shortMessage || (error as any)?.message || error),
       });
     }
+    // Serialize factories with breathing room — concurrent free-tier getLogs thrashes RPS.
+    await sleep(Math.max(250, ENV.INDEXER_LOG_CALL_DELAY_MS));
   }
 }
 
 export function startSupportedFactoryDiscoveryLoop(): void {
   let running = false;
+  const intervalMs = Math.max(15_000, ENV.FACTORY_DISCOVERY_INTERVAL_MS);
   const run = async () => {
     if (running) return;
     running = true;
@@ -353,5 +388,6 @@ export function startSupportedFactoryDiscoveryLoop(): void {
   };
 
   void run();
-  setInterval(() => void run(), ENV.INDEXER_INTERVAL_MS);
+  setInterval(() => void run(), intervalMs);
+  console.log("[factory-discovery] loop started", { intervalMs });
 }

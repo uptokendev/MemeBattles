@@ -1348,7 +1348,7 @@ function providerForChain(chain: ChainCfg): ethers.JsonRpcProvider {
   if (rpcList.length === 0) {
     throw new Error(`No RPC URLs configured for chain ${chain.chainId}`);
   }
-  return createStaticJsonRpcProvider(rpcList[0], chain.chainId, { timeoutMs: 12_000 });
+  return createStaticJsonRpcProvider(rpcList[0], chain.chainId, { timeoutMs: ENV.RPC_REQUEST_TIMEOUT_MS });
 }
 
 export async function ingestCampaignTransaction(input: {
@@ -1582,7 +1582,7 @@ async function runIndexerCore(opts: {
     const makeProvider = () =>
       createStaticJsonRpcProvider(rpcList[rpcIdx], chain.chainId, {
         // Bound timeouts so a dead free-tier URL cannot pile AggregateError / TIMEOUT loops.
-        timeoutMs: 12_000,
+        timeoutMs: ENV.RPC_REQUEST_TIMEOUT_MS,
       });
 
     const rotate = () => {
