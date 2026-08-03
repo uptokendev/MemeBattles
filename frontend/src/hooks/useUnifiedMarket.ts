@@ -186,7 +186,6 @@ export function useUnifiedMarket(input: {
             poolVerified: false,
             supportEnabled: true,
             bondingActive: true,
-            quotesEnabled: true,
             tradingEnabled: true,
             indexingStatus: {
               enabled: true,
