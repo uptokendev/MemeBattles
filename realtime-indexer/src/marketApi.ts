@@ -53,6 +53,100 @@ function sendServerError(res: Response, error: unknown) {
   });
 }
 
+/**
+ * When the campaign exists but campaign_market_state was never seeded (common for
+ * older factories / pre-WTR rows), create a BONDING skeleton so market-state is
+ * 200 instead of 404 and graduation reconciler can pick the campaign up.
+ */
+async function ensureBondingMarketState(chainId: number, campaign: string): Promise<boolean> {
+  try {
+    const inserted = await pool.query(
+      `insert into public.campaign_market_state(
+         chain_id,campaign_address,token_address,factory_address,market_stage,
+         pool_verified,indexing_enabled,created_at,updated_at
+       )
+       select
+         c.chain_id,
+         c.campaign_address,
+         coalesce(nullif(c.token_address,''), c.campaign_address),
+         c.factory_address,
+         'BONDING',
+         false,
+         true,
+         now(),
+         now()
+       from public.campaigns c
+       where c.chain_id=$1 and c.campaign_address=$2
+       on conflict (chain_id,campaign_address) do nothing
+       returning campaign_address`,
+      [chainId, campaign],
+    );
+    return (inserted.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.warn("[wtr] ensureBondingMarketState failed", {
+      chainId,
+      campaign,
+      error: String((error as any)?.message || error),
+    });
+    return false;
+  }
+}
+
+/**
+ * If a campaign was scanned with a dead/empty RPC (cursor advanced, zero trades),
+ * rewind the campaign cursor to created_block so the normal indexer re-ingests
+ * TokensPurchased/TokensSold. Only for campaigns with zero curve_trades.
+ */
+async function maybeRewindEmptyTradeCursor(chainId: number, campaign: string): Promise<void> {
+  try {
+    const stats = await pool.query(
+      `select
+         coalesce(c.created_block,0)::bigint as created_block,
+         (select count(*)::int from public.curve_trades t
+           where t.chain_id=c.chain_id and t.campaign_address=c.campaign_address) as trade_count
+       from public.campaigns c
+       where c.chain_id=$1 and c.campaign_address=$2
+       limit 1`,
+      [chainId, campaign],
+    );
+    const row = stats.rows[0];
+    if (!row) return;
+    const createdBlock = Number(row.created_block || 0);
+    const tradeCount = Number(row.trade_count || 0);
+    if (tradeCount > 0 || createdBlock <= 0) return;
+
+    const cursor = `campaign:${campaign}`;
+    const state = await pool.query(
+      `select last_indexed_block from public.indexer_state
+       where chain_id=$1 and cursor=$2 limit 1`,
+      [chainId, cursor],
+    );
+    const last = Number(state.rows[0]?.last_indexed_block || 0);
+    if (last <= createdBlock) return;
+
+    await pool.query(
+      `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
+       values ($1,$2,$3)
+       on conflict (chain_id,cursor) do update
+         set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
+             updated_at = now()`,
+      [chainId, cursor, createdBlock],
+    );
+    console.log("[wtr] rewound empty-trade campaign cursor", {
+      chainId,
+      campaign,
+      from: last,
+      to: createdBlock,
+    });
+  } catch (error) {
+    console.warn("[wtr] maybeRewindEmptyTradeCursor failed", {
+      chainId,
+      campaign,
+      error: String((error as any)?.message || error),
+    });
+  }
+}
+
 async function readMarketState(chainId: number, campaign: string) {
   const result = await pool.query(
     `select
@@ -104,8 +198,66 @@ async function readMarketState(chainId: number, campaign: string) {
     [chainId, campaign],
   );
 
-  const row = result.rows[0];
-  if (!row) return null;
+  let row = result.rows[0];
+  if (!row) {
+    // Seed CMS + optionally rewind empty trade cursor, then re-read.
+    await ensureBondingMarketState(chainId, campaign);
+    await maybeRewindEmptyTradeCursor(chainId, campaign);
+    const retry = await pool.query(
+      `select
+         cms.chain_id,
+         cms.campaign_address,
+         cms.token_address,
+         cms.factory_address,
+         cms.campaign_generation,
+         cms.market_stage,
+         cms.graduation_tx_hash,
+         cms.graduation_block,
+         cms.graduation_time,
+         cms.dex_pair_address,
+         cms.dex_router_address,
+         cms.dex_factory_address,
+         cms.wrapped_native_address,
+         cms.pool_stable,
+         cms.pool_fee_bps,
+         cms.final_curve_price_bnb,
+         cms.initial_dex_price_bnb,
+         cms.graduated_liquidity_token_raw,
+         cms.graduated_liquidity_bnb_raw,
+         cms.graduated_lp_raw,
+         cms.burned_unsold_token_raw,
+         cms.burned_unused_lp_token_raw,
+         cms.post_burn_total_supply_raw,
+         cms.pool_verified,
+         cms.indexing_enabled,
+         cms.last_verified_at,
+         cms.last_error,
+         c.bonding_active,
+         c.support_enabled,
+         c.indexing_enabled as campaign_indexing_enabled,
+         dp.last_indexed_block,
+         dp.last_finalized_block,
+         dp.last_swap_at,
+         dp.last_sync_at,
+         dp.reserve_token_raw,
+         dp.reserve_native_raw,
+         dp.support_enabled as pool_support_enabled,
+         dp.indexing_enabled as pool_indexing_enabled
+       from public.campaign_market_state cms
+       join public.campaigns c
+         on c.chain_id=cms.chain_id and c.campaign_address=cms.campaign_address
+       left join public.dex_pools dp
+         on dp.chain_id=cms.chain_id and dp.pair_address=cms.dex_pair_address
+       where cms.chain_id=$1 and cms.campaign_address=$2
+       limit 1`,
+      [chainId, campaign],
+    );
+    row = retry.rows[0];
+  }
+  if (!row) {
+    // Campaign not in campaigns table at all.
+    return null;
+  }
 
   const topazActive = row.market_stage === "TOPAZ_ACTIVE";
   const bondingActive = row.market_stage === "BONDING" && Boolean(row.bonding_active);
@@ -217,8 +369,16 @@ export function registerMarketContinuityRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
 
+      // Seeds CMS when missing (older campaigns) — returns 200 BONDING skeleton.
       const state = await readMarketState(chainId, campaign);
-      if (!state) return res.status(404).json({ error: "Market state not found" });
+      if (!state) {
+        return res.status(404).json({
+          error: "Market state not found",
+          hint: "No campaigns row for this address. Factory discovery may not have indexed it yet.",
+          chainId,
+          campaignAddress: campaign,
+        });
+      }
       return res.json(state);
     } catch (error) {
       return sendServerError(res, error);

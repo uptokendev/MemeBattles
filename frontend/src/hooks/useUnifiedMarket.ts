@@ -164,8 +164,45 @@ export function useUnifiedMarket(input: {
         ),
       ]);
       if (requestId !== requestRef.current || signal?.aborted) return;
+
+      // Missing market-state row is normal for pre-handoff / older campaigns.
+      // Do not surface as an outage — chart still uses bonding + Topaz browser scan.
       if (!nextState && !nextSummary) {
-        setError("Market API is slow or unavailable; showing on-chain fallback only.");
+        setState((prev) =>
+          prev || {
+            chainId: input.chainId,
+            campaignAddress,
+            tokenAddress: campaignAddress,
+            factoryAddress: null,
+            campaignGeneration: null,
+            marketStage: "BONDING",
+            graduation: null,
+            pairAddress: null,
+            routerAddress: null,
+            dexFactoryAddress: null,
+            wrappedNativeAddress: null,
+            stable: null,
+            feeBps: null,
+            poolVerified: false,
+            supportEnabled: true,
+            bondingActive: true,
+            quotesEnabled: true,
+            tradingEnabled: true,
+            indexingStatus: {
+              enabled: true,
+              poolEnabled: false,
+              lastIndexedBlock: null,
+              lastFinalizedBlock: null,
+              lastSwapAt: null,
+              lastSyncAt: null,
+              dataLagSeconds: null,
+            },
+            reserves: { tokenRaw: null, nativeRaw: null },
+            lastVerifiedAt: null,
+            lastError: null,
+          },
+        );
+        setError(null);
         setLoading(false);
         return;
       }

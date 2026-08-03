@@ -2099,11 +2099,48 @@ app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
   res.json(r.rows[0] || null);
 }));
 
-app.get("/api/token/:campaign/trades", wrap(async (req, res) => {
+async function handleTokenTrades(req: any, res: any) {
   const chainId = Number(req.query.chainId || 97);
   const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
   const campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
+
+  // One-shot repair: empty history + cursor past created_block (bad RPC scan) → rewind.
+  try {
+    const meta = await pool.query(
+      `select coalesce(created_block,0)::bigint as created_block
+       from public.campaigns where chain_id=$1 and campaign_address=$2 limit 1`,
+      [chainId, campaign],
+    );
+    const createdBlock = Number(meta.rows[0]?.created_block || 0);
+    if (createdBlock > 0) {
+      const countR = await pool.query(
+        `select count(*)::int as n from public.curve_trades where chain_id=$1 and campaign_address=$2`,
+        [chainId, campaign],
+      );
+      if (Number(countR.rows[0]?.n || 0) === 0) {
+        const cursor = `campaign:${campaign}`;
+        const stateR = await pool.query(
+          `select last_indexed_block from public.indexer_state where chain_id=$1 and cursor=$2`,
+          [chainId, cursor],
+        );
+        const last = Number(stateR.rows[0]?.last_indexed_block || 0);
+        if (last > createdBlock) {
+          await pool.query(
+            `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
+             values ($1,$2,$3)
+             on conflict (chain_id,cursor) do update
+               set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
+                   updated_at = now()`,
+            [chainId, cursor, createdBlock],
+          );
+          console.log("[api] rewound empty campaign trade cursor", { chainId, campaign, from: last, to: createdBlock });
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[api] trade cursor rewind skipped", String((error as any)?.message || error));
+  }
 
   const r = await pool.query(
     `select
@@ -2117,7 +2154,11 @@ app.get("/api/token/:campaign/trades", wrap(async (req, res) => {
   );
 
   res.json(r.rows);
-}));
+}
+
+app.get("/api/token/:campaign/trades", wrap(handleTokenTrades));
+// Common typo / singular form — same payload as /trades
+app.get("/api/token/:campaign/trade", wrap(handleTokenTrades));
 
 
 // ---------------------------------------------
