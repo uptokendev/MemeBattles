@@ -18,7 +18,6 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import {
   getActiveChainId,
-  getEvmChainIdForAddress,
   getEvmReadChainIdForTokenPage,
   pinTokenDetailsChainId,
   type SupportedChainId,
