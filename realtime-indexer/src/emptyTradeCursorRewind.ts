@@ -46,15 +46,37 @@ export async function rewindEmptyCampaignTradeCursor(
       [chainId, cursor],
     );
     const last = Number(state.rows[0]?.last_indexed_block || 0);
-    if (last <= 0) return { rewound: false, reason: "no_cursor" };
+    // No cursor yet: seed at created/factory so the next indexer pass has a floor.
+    if (last <= 0) {
+      const seed = createdBlock > 0 ? createdBlock : factoryStart > 0 ? factoryStart : 0;
+      if (seed <= 0) return { rewound: false, reason: "no_cursor" };
+      await pool.query(
+        `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
+         values ($1,$2,$3)
+         on conflict (chain_id,cursor) do update
+           set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
+               updated_at = now()`,
+        [chainId, cursor, Math.max(0, seed - 1)],
+      );
+      return { rewound: true, from: 0, to: Math.max(0, seed - 1), reason: "seeded" };
+    }
 
     // created_block when known; else factory start; else last-N so we re-scan a real window.
-    const target =
+    // IMPORTANT: when last == created_block the old logic treated cursor as "ok" and never
+    // rewound, but getLogs may have failed for months — force a re-scan from created-1.
+    let target =
       createdBlock > 0
-        ? createdBlock
+        ? Math.max(0, createdBlock - 1)
         : factoryStart > 0
           ? factoryStart
           : Math.max(0, last - Number(ENV.FACTORY_LOOKBACK_BLOCKS || 250_000));
+
+    // Always pull cursor back at least a recent window so late buys are not skipped when
+    // the rolling lookback advanced past a stuck cursor.
+    const recentFloor = Math.max(0, last - Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000));
+    if (createdBlock > 0) target = Math.min(target, recentFloor);
+    else target = Math.min(target, recentFloor);
+
     if (last <= target) return { rewound: false, reason: "cursor_ok", from: last, to: target };
 
     await pool.query(

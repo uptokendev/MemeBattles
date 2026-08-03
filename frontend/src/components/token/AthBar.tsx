@@ -70,8 +70,8 @@ type AthBarProps = {
 export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMaxWidth }: AthBarProps) {
   const current = useMemo(() => parseCompactUsd(currentLabel), [currentLabel]);
 
-  // Bump the storage format version to avoid showing stale ATH values from older (buggy) USD calculations.
-  const storageKeyV2 = useMemo(() => `${storageKey}:v2`, [storageKey]);
+  // v3: drop ATH values polluted by bad session trades (e.g. 510k BNB rows → fake USD ATH).
+  const storageKeyV2 = useMemo(() => `${storageKey}:v3`, [storageKey]);
 
   const [ath, setAth] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
@@ -82,18 +82,25 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
     try {
       const raw = localStorage.getItem(storageKeyV2);
       const n = raw ? Number(raw) : NaN;
-      const stored = Number.isFinite(n) ? n : null;
+      let stored = Number.isFinite(n) ? n : null;
+      // If current mcap is sane and stored ATH is absurdly higher, reset.
+      if (stored != null && current != null && current > 0 && stored > current * 50 && stored > 100) {
+        stored = current;
+        localStorage.setItem(storageKeyV2, String(current));
+      }
       setAth(stored);
       prevAthRef.current = stored;
     } catch {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKeyV2]);
+  }, [storageKeyV2, current]);
 
   // Update ATH if we surpass it.
   useEffect(() => {
     if (current == null || !Number.isFinite(current)) return;
+    // Ignore absurd spikes (bad local trade pollution).
+    if (current > 1e12) return;
 
     setAth((prev) => {
       const p = prev ?? prevAthRef.current;

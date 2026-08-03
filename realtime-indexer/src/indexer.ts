@@ -1723,6 +1723,18 @@ async function runIndexerCore(opts: {
           ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
           : Math.max(windowStart, state > 0 ? state : (campaignStart > 0 ? campaignStart : windowStart));
 
+        // If the cursor never left the create block (common after failed getLogs),
+        // do not clamp up to windowStart — that can skip the only recent trades
+        // when combined with other bugs. Prefer campaignStart when state is stuck.
+        if (
+          opts.mode === "normal" &&
+          campaignStart > 0 &&
+          state > 0 &&
+          state <= campaignStart + 5
+        ) {
+          from = Math.min(from, campaignStart);
+        }
+
         if (opts.forceCampaignStart && campaignStart > 0) {
           // Targeted manual repair is intentionally operator-driven. If a prior
           // bad RPC advanced or created a stale campaign cursor below the

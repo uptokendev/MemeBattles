@@ -3095,11 +3095,16 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             <div className="space-y-4">
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-2 mb-3">
-                  <h3 className="text-sm font-semibold">Bonding Curve Progress</h3>
+                  <h3 className="text-sm font-semibold">Graduation progress</h3>
                   <span className="text-xs text-muted-foreground">
                     {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
                   </span>
                 </div>
+                <p className="text-[10px] text-muted-foreground leading-snug mb-2">
+                  Graduates when <span className="text-foreground/80">tokens sold</span> hit the curve
+                  supply <span className="text-foreground/80">or</span> BNB raised hits the target
+                  (testnet target can be tiny, so BNB % can look large).
+                </p>
 
                 <div className="mt-3 h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
                   <div
@@ -3110,11 +3115,19 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                   <div>
+                    <p className="text-muted-foreground">Tokens sold</p>
+                    <p className="mt-1 font-mono text-foreground">{curveProgress.soldPct.toFixed(2)}%</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-muted-foreground">BNB raised</p>
+                    <p className="mt-1 font-mono text-foreground">{curveProgress.raisedPct.toFixed(2)}%</p>
+                  </div>
+                  <div>
                     <p className="text-muted-foreground">In curve</p>
                     <p className="mt-1 font-mono text-foreground">{formatBnbFromWei(curveProgress.reserveWei ?? undefined)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-muted-foreground">Remaining</p>
+                    <p className="text-muted-foreground">BNB to target</p>
                     <p className="mt-1 font-mono text-foreground">{remainingCurveLabel.primary}</p>
                   </div>
                 </div>

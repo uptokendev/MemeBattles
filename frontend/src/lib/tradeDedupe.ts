@@ -42,6 +42,27 @@ function tradeQuality(point: CurveTradePoint): number {
   return score;
 }
 
+/** Drop session/optimistic garbage that blows up charts (e.g. 510000 BNB rows). */
+export function isPlausibleBondingTrade(point: CurveTradePoint): boolean {
+  try {
+    if (point.tokensWei <= 0n) return false;
+    // Bonding fills are tiny on testnet (often << 1 BNB). Cap well above mainnet sanity.
+    if (point.nativeWei < 0n) return false;
+    if (point.nativeWei > 10n ** 18n * 1000n) return false; // > 1000 BNB
+    const tokens = Number(point.tokensWei) / 1e18;
+    const bnb = Number(point.nativeWei) / 1e18;
+    if (!Number.isFinite(tokens) || !Number.isFinite(bnb)) return false;
+    if (tokens > 1e15) return false;
+    const price = Number(point.pricePerToken || 0);
+    if (price > 0 && (price > 1e6 || price < 0)) return false;
+    // Implied price from amounts when price field is set wrongly
+    if (tokens > 0 && bnb / tokens > 1e6) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Merge bonding + Topaz + wallet reports + optimistic local.
  * - Real chain logs: unique by txHash:logIndex (preserves bonding history).
@@ -55,6 +76,8 @@ export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | un
     for (const point of stream || []) {
       const tx = String(point.txHash || "").toLowerCase();
       if (!/^0x[a-f0-9]{64}$/.test(tx)) continue;
+      if (!isPlausibleBondingTrade(point) && isSyntheticLogIndex(point.logIndex)) continue;
+      if (!isPlausibleBondingTrade(point)) continue;
       if (!isSyntheticLogIndex(point.logIndex)) realTx.add(tx);
       const key = tradeDedupeKey(point);
       if (!key) continue;
