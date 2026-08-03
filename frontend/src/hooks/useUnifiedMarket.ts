@@ -20,30 +20,40 @@ const ENABLE_MARKET_API =
   String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
-  // One row per tx — matches Token Details / War Room chart dedupe.
-  return String(trade.txHash || "").toLowerCase();
+  const tx = String(trade.txHash || "").toLowerCase();
+  const logIndex = Number(trade.logIndex ?? 0);
+  // Preserve real log indices (bonding multi-log txs); collapse missing/0 synthetics.
+  if (!Number.isFinite(logIndex) || logIndex <= 0 || logIndex >= 1_000_000) {
+    return `${tx}:synthetic`;
+  }
+  return `${tx}:${logIndex}`;
 }
 
 function mergeTrades(current: MarketTrade[], incoming: MarketTrade[]) {
   const map = new Map<string, MarketTrade>();
+  const realTx = new Set<string>();
   const prefer = (a: MarketTrade, b: MarketTrade) => {
     const aReal = Number(a.logIndex) > 0 && Number(a.logIndex) < 1_000_000;
     const bReal = Number(b.logIndex) > 0 && Number(b.logIndex) < 1_000_000;
     if (aReal !== bReal) return bReal ? b : a;
     return Number(b.logIndex || 0) >= Number(a.logIndex || 0) ? b : a;
   };
-  for (const trade of current) {
+  for (const trade of [...current, ...incoming]) {
+    const tx = String(trade.txHash || "").toLowerCase();
+    if (!tx.startsWith("0x") || tx.length !== 66) continue;
+    const logIndex = Number(trade.logIndex ?? 0);
+    if (Number.isFinite(logIndex) && logIndex > 0 && logIndex < 1_000_000) realTx.add(tx);
     const key = tradeKey(trade);
-    if (!key.startsWith("0x") || key.length !== 66) continue;
-    map.set(key, trade);
-  }
-  for (const trade of incoming) {
-    const key = tradeKey(trade);
-    if (!key.startsWith("0x") || key.length !== 66) continue;
     const prev = map.get(key);
     map.set(key, prev ? prefer(prev, trade) : trade);
   }
   return Array.from(map.values())
+    .filter((trade) => {
+      const tx = String(trade.txHash || "").toLowerCase();
+      const logIndex = Number(trade.logIndex ?? 0);
+      const synthetic = !Number.isFinite(logIndex) || logIndex <= 0 || logIndex >= 1_000_000;
+      return !(synthetic && realTx.has(tx));
+    })
     .sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
     .slice(-500);
 }

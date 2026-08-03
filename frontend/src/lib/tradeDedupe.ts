@@ -2,10 +2,11 @@ import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 
 /**
  * Wallet reports / optimistic UI use synthetic log indices (>= 1e6).
- * Some older reports used 0. On-chain pool scans use real log indices.
+ * Older reports used 0. On-chain pool/curve logs use real log indices.
  *
- * Chart + trade tab must show at most ONE row per transaction hash for Topaz
- * fills — multi-log same-tx is rare and double-counting breaks mcap.
+ * Bonding must keep multiple REAL logs per tx when they exist (rare, but
+ * collapsing all logs to one tx breaks circulating-supply mcap walks).
+ * Synthetic rows collapse onto a real log for the same txHash.
  */
 export const SYNTHETIC_LOG_INDEX_MIN = 1_000_000;
 
@@ -20,8 +21,8 @@ export function isSyntheticLogIndex(logIndex: unknown): boolean {
 export function tradeDedupeKey(point: Pick<CurveTradePoint, "txHash" | "logIndex">): string {
   const tx = String(point.txHash || "").toLowerCase();
   if (!/^0x[a-f0-9]{64}$/.test(tx)) return "";
-  // One market row per tx — logIndex only ranks quality, it does not split rows.
-  return tx;
+  if (isSyntheticLogIndex(point.logIndex)) return `${tx}:synthetic`;
+  return `${tx}:${Number(point.logIndex)}`;
 }
 
 function tradeQuality(point: CurveTradePoint): number {
@@ -35,7 +36,6 @@ function tradeQuality(point: CurveTradePoint): number {
     // ignore
   }
   if (Number(point.pricePerToken || 0) > 0) score += 2;
-  // Prefer real log indices when both are "real".
   if (!isSyntheticLogIndex(point.logIndex)) {
     score += Math.min(50, Math.max(0, Number(point.logIndex) || 0) % 50);
   }
@@ -43,24 +43,37 @@ function tradeQuality(point: CurveTradePoint): number {
 }
 
 /**
- * Merge bonding + Topaz scan + wallet reports + optimistic local into one stream.
- * Same txHash always collapses to the highest-quality row (on-chain wins).
+ * Merge bonding + Topaz + wallet reports + optimistic local.
+ * - Real chain logs: unique by txHash:logIndex (preserves bonding history).
+ * - Synthetic / wallet reports: one per txHash, dropped when a real log exists.
  */
 export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | undefined>): CurveTradePoint[] {
-  const byTx = new Map<string, CurveTradePoint>();
+  const byKey = new Map<string, CurveTradePoint>();
+  const realTx = new Set<string>();
 
   for (const stream of streams) {
     for (const point of stream || []) {
       const tx = String(point.txHash || "").toLowerCase();
       if (!/^0x[a-f0-9]{64}$/.test(tx)) continue;
-      const prev = byTx.get(tx);
+      if (!isSyntheticLogIndex(point.logIndex)) realTx.add(tx);
+      const key = tradeDedupeKey(point);
+      if (!key) continue;
+      const prev = byKey.get(key);
       if (!prev || tradeQuality(point) >= tradeQuality(prev)) {
-        byTx.set(tx, point);
+        byKey.set(key, point);
       }
     }
   }
 
-  return Array.from(byTx.values()).sort(
+  const out: CurveTradePoint[] = [];
+  for (const point of byKey.values()) {
+    const tx = String(point.txHash || "").toLowerCase();
+    // Drop optimistic/wallet rows once the real chain log is present.
+    if (isSyntheticLogIndex(point.logIndex) && realTx.has(tx)) continue;
+    out.push(point);
+  }
+
+  return out.sort(
     (a, b) =>
       Number(a.timestamp || 0) - Number(b.timestamp || 0) ||
       Number(a.blockNumber || 0) - Number(b.blockNumber || 0) ||

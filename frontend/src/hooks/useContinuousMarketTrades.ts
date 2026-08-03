@@ -81,13 +81,12 @@ export function useContinuousMarketTrades(input: {
   const stage = unifiedMarket.state?.marketStage;
   const graduatedFromApi =
     stage === "TOPAZ_ACTIVE" ||
-    stage === "TOPAZ_PENDING" ||
     stage === "TOPAZ_DEGRADED" ||
-    stage === "GRADUATING";
+    stage === "TOPAZ_PENDING";
 
-  // Always try Topaz scan for live campaigns: snapshot no-ops when not launched.
-  // Needed for older factories before graduation handoff writes market_stage.
-  const topazScanEnabled = enabled && input.enableTopazScan !== false;
+  // Only scan Topaz when market stage says post-bond — never on pure bonding.
+  const topazScanEnabled =
+    enabled && input.enableTopazScan !== false && graduatedFromApi && stage === "TOPAZ_ACTIVE";
 
   const topazMarket = useTopazMarket({
     campaignAddress: enabled ? campaignAddress : undefined,
@@ -99,6 +98,10 @@ export function useContinuousMarketTrades(input: {
 
   const tradePoints = useMemo(() => {
     const curve = Array.isArray(curvePoints) ? curvePoints : [];
+    // Bonding-only: never mix DEX/unified rows into circulating mcap walks.
+    if (!graduatedFromApi || stage === "BONDING" || !stage) {
+      return mergeTradePoints(curve);
+    }
     const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
       let tokensWei = 0n;
       let nativeWei = 0n;
@@ -126,7 +129,7 @@ export function useContinuousMarketTrades(input: {
       };
     });
     return mergeTradePoints(curve, topazMarket.trades, localTopazTrades, unifiedAsPoints);
-  }, [curvePoints, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
+  }, [curvePoints, topazMarket.trades, localTopazTrades, unifiedMarket.trades, graduatedFromApi, stage]);
 
   useEffect(() => {
     if (tradePoints.length) lastNonEmptyRef.current = tradePoints;

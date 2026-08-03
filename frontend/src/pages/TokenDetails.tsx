@@ -1103,13 +1103,13 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
   }, [metrics]);
 
-  // Always scan when we have a campaign: snapshot no-ops if still bonding.
-  // Older factories may not have market_stage handoff yet; browser Topaz scan still fills the chart.
+  // Topaz pair scan only after graduation. Running it on pure bonding campaigns
+  // can resolve a wrong/empty route and poison price/mcap/chart streams.
   const topazMarket = useTopazMarket({
     campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
     tokenAddress: campaign?.token,
     chainId: chainIdForStorage,
-    enabled: hasValidCampaignAddress,
+    enabled: hasValidCampaignAddress && contractGraduatedEarly,
     pollMs: 45_000,
   });
 
@@ -1174,9 +1174,14 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     topazMarket.pairAddress,
   ]);
 
-  // Continuous market trade stream: bonding + Topaz scan + wallet reports + local optimistic.
-  // Dedupe by tx: synthetic logIndex (>=1e6) collapses when real on-chain log exists.
+  // Continuous market trade stream.
+  // Bonding: curve trades (+ confirmed fills) only — do not mix Topaz/unified DEX rows
+  // or circulating mcap / price change tiles go wildly wrong.
+  // Graduated: bonding history + Topaz scan + wallet reports + unified market API.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
+    if (!contractGraduatedEarly) {
+      return mergeTradePoints(curvePointsForUi);
+    }
     const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
       let tokensWei = 0n;
       let nativeWei = 0n;
@@ -1204,7 +1209,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
       };
     });
     return mergeTradePoints(curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedAsPoints);
-  }, [curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
+  }, [contractGraduatedEarly, curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
@@ -1301,6 +1306,22 @@ const toSeconds = (ts: number): number => {
     const topazLiquidity = contractGraduatedEarly ? topazMarket.liquidityBnb : null;
     const window24h = timeframeTiles?.["24h"]?.volume;
 
+    // Bonding source of truth = on-chain curve (sold * currentPrice), not Ably/rt
+    // market_stats which can drift after Topaz-oriented indexer changes.
+    let bondingMcapLabel: string | null = null;
+    if (!contractGraduatedEarly && metrics?.currentPrice != null && metrics?.sold != null) {
+      try {
+        const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
+        bondingMcapLabel = formatBnbFromWei(mcWei);
+      } catch {
+        bondingMcapLabel = null;
+      }
+    }
+    const statsMcap =
+      stats?.marketCap && stats.marketCap !== "—" && stats.marketCap !== "-"
+        ? stats.marketCap
+        : null;
+
     return {
       image: resolveImageUri(campaign?.logoURI) || "/placeholder.svg",
       ticker,
@@ -1311,21 +1332,27 @@ const toSeconds = (ts: number): number => {
       hasDiscord: Boolean(campaign?.discord && campaign.discord.length > 0),
       hasOtherLink: Boolean(campaign?.extraLink && campaign.extraLink.length > 0),
 
-      // Unified headline stats (Topaz spot after graduation)
+      // Graduated: Topaz spot. Bonding: on-chain mcap first, then summary, then realtime.
       marketCap:
         topazMarketCap != null && Number.isFinite(topazMarketCap) && topazMarketCap > 0
           ? `${formatCompact(topazMarketCap)} BNB`
-          : rtMarketCap != null && Number.isFinite(rtMarketCap)
-            ? `${formatCompact(rtMarketCap)} BNB`
-            : stats?.marketCap ?? "—",
+          : !contractGraduatedEarly && bondingMcapLabel
+            ? bondingMcapLabel
+            : statsMcap
+              ? statsMcap
+              : rtMarketCap != null && Number.isFinite(rtMarketCap)
+                ? `${formatCompact(rtMarketCap)} BNB`
+                : "—",
       volume: window24h && window24h !== "—" ? window24h : stats?.volume ?? "—",
       holders: stats?.holders ?? "—",
       price:
         topazPrice != null && Number.isFinite(topazPrice) && topazPrice > 0
           ? formatPriceBnb(topazPrice)
-          : rtPrice != null && Number.isFinite(rtPrice)
-            ? formatPriceBnb(rtPrice)
-            : formatPriceFromWei(metrics?.currentPrice ?? null),
+          : !contractGraduatedEarly && metrics?.currentPrice != null
+            ? formatPriceFromWei(metrics.currentPrice)
+            : rtPrice != null && Number.isFinite(rtPrice)
+              ? formatPriceBnb(rtPrice)
+              : formatPriceFromWei(metrics?.currentPrice ?? null),
       liquidity:
         topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
           ? `${formatCompact(topazLiquidity)} BNB`
@@ -1356,8 +1383,12 @@ const bnbUsd = useMemo(() => {
 
     if (displayDenom === "BNB") return bnbLabel;
 
-    const raw = rtStats?.marketcapBnb;
-    const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(bnbLabel);
+    // Prefer the same BNB figure already chosen for tokenData (on-chain for bonding).
+    const mcBnb =
+      parseBnbLabel(bnbLabel) ??
+      (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
+        ? Number(rtStats.marketcapBnb)
+        : null);
     if (mcBnb == null) return "—";
 
     if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
@@ -1366,10 +1397,12 @@ const bnbUsd = useMemo(() => {
   }, [displayDenom, tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
-  // IMPORTANT: Use raw numeric marketcapBnb when available; never parse from a formatted label.
   const marketCapUsdLabel = useMemo(() => {
-    const raw = rtStats?.marketcapBnb;
-    const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(tokenData.marketCap);
+    const mcBnb =
+      parseBnbLabel(tokenData.marketCap) ??
+      (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
+        ? Number(rtStats.marketcapBnb)
+        : null);
     if (mcBnb == null) return null;
     if (!bnbUsd) return null;
     const usd = mcBnb * bnbUsd;
@@ -1641,14 +1674,20 @@ const bnbUsd = useMemo(() => {
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
   const contractGraduated = contractGraduatedEarly;
   const verifiedMarketStage = unifiedMarket.state?.marketStage;
-  const isDexStage = verifiedMarketStage
-    ? ["TOPAZ_PENDING", "TOPAZ_ACTIVE", "TOPAZ_DEGRADED"].includes(verifiedMarketStage)
-    : contractGraduated;
-  // Allow Topaz quotes/trades when backend marks TOPAZ_ACTIVE, or when the campaign is
-  // graduated on-chain and the route can be verified directly from the campaign.
+  // Do NOT treat TOPAZ_PENDING alone as DEX UI — that broke bonding metrics when
+  // handoff rows existed without a live pair. Require on-chain graduation or ACTIVE.
+  const isDexStage =
+    contractGraduated ||
+    verifiedMarketStage === "TOPAZ_ACTIVE" ||
+    (verifiedMarketStage === "TOPAZ_DEGRADED" && contractGraduated);
+  // Allow Topaz quotes/trades when backend marks TOPAZ_ACTIVE, or when graduated on-chain.
   const isTopazTradingActive =
     (verifiedMarketStage === "TOPAZ_ACTIVE" && Boolean(unifiedMarket.state?.tradingEnabled)) ||
-    (contractGraduated && (!verifiedMarketStage || verifiedMarketStage === "TOPAZ_ACTIVE" || verifiedMarketStage === "TOPAZ_PENDING"));
+    (contractGraduated &&
+      (!verifiedMarketStage ||
+        verifiedMarketStage === "TOPAZ_ACTIVE" ||
+        verifiedMarketStage === "TOPAZ_PENDING" ||
+        verifiedMarketStage === "TOPAZ_DEGRADED"));
 
   const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
   const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
