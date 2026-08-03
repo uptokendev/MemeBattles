@@ -2,11 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useTopazMarket } from "@/hooks/useTopazMarket";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
-import {
-  fetchTopazTradeReports,
-  loadLocalTopazTrades,
-  saveLocalTopazTrades,
-} from "@/lib/localTopazTrades";
+import { loadLocalTopazTrades, saveLocalTopazTrades } from "@/lib/localTopazTrades";
+import { fetchTopazTradeReports } from "@/lib/topazTradeReports";
 import { mergeTradePoints } from "@/lib/tradeDedupe";
 
 /**
