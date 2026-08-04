@@ -184,7 +184,7 @@ async function getLogsSafe(
   provider: ethers.JsonRpcProvider,
   filter: any,
   depth = 0,
-  opts: { skipDelay?: boolean } = {}
+  opts: { skipDelay?: boolean; softFail?: boolean } = {}
 ): Promise<ethers.Log[]> {
   if (!opts.skipDelay && ENV.INDEXER_LOG_CALL_DELAY_MS > 0 && depth === 0) {
     await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS + Math.floor(Math.random() * 100));
@@ -194,11 +194,17 @@ async function getLogsSafe(
     return await provider.getLogs(filter);
   } catch (e: any) {
     // Pruned history should not be retried on the SAME provider.
-    if (isPrunedHistoryError(e)) throw e;
+    if (isPrunedHistoryError(e)) {
+      if (opts.softFail) return [];
+      throw e;
+    }
 
     // Some public RPCs fail eth_getLogs with transport-layer issues.
     // Treat those as transient so we can split ranges / retry.
-    if (!isRateLimitError(e) && !isRpcTransportError(e)) throw e;
+    if (!isRateLimitError(e) && !isRpcTransportError(e)) {
+      if (opts.softFail) return [];
+      throw e;
+    }
 
     const from = typeof filter?.fromBlock === "number" ? filter.fromBlock : null;
     const to = typeof filter?.toBlock === "number" ? filter.toBlock : null;
@@ -206,7 +212,8 @@ async function getLogsSafe(
     // If the range is large, split it (dramatically reduces eth_getLogs load on public RPCs)
     if (from !== null && to !== null) {
       const span = to - from + 1;
-      if (span > ENV.MIN_LOG_CHUNK_SIZE && depth < 12) {
+      // Cap split depth — depth 12 with retries burned multi-minute passes with zero progress.
+      if (span > ENV.MIN_LOG_CHUNK_SIZE && depth < 6) {
         const mid = Math.floor((from + to) / 2);
         const left = await getLogsSafe(provider, { ...filter, fromBlock: from, toBlock: mid }, depth + 1, opts);
         const right = await getLogsSafe(provider, { ...filter, fromBlock: mid + 1, toBlock: to }, depth + 1, opts);
@@ -214,19 +221,34 @@ async function getLogsSafe(
       }
     }
 
-    // Otherwise, backoff + retry a few times
-    let delay = 750;
-    for (let attempt = 0; attempt < 6; attempt++) {
-      await sleep(delay + Math.floor(Math.random() * 250));
+    // Bounded retries. Soft-fail (tip/history chunk) returns [] so the cursor can advance.
+    let delay = 400;
+    const maxAttempts = opts.softFail ? 2 : 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await sleep(delay + Math.floor(Math.random() * 200));
       try {
         return await provider.getLogs(filter);
       } catch (e2: any) {
-        if (isPrunedHistoryError(e2)) throw e2;
-        if (!isRateLimitError(e2) && !isRpcTransportError(e2)) throw e2;
+        if (isPrunedHistoryError(e2)) {
+          if (opts.softFail) return [];
+          throw e2;
+        }
+        if (!isRateLimitError(e2) && !isRpcTransportError(e2)) {
+          if (opts.softFail) return [];
+          throw e2;
+        }
       }
-      delay = Math.min(15_000, delay * 2);
+      delay = Math.min(4_000, delay * 2);
     }
 
+    if (opts.softFail) {
+      console.warn("[indexer] getLogs soft-fail; skipping chunk", {
+        from: filter?.fromBlock,
+        to: filter?.toBlock,
+        err: String(e?.shortMessage || e?.message || e),
+      });
+      return [];
+    }
     throw e;
   }
 }
@@ -1165,28 +1187,34 @@ async function scanCampaignRange(
     const end = Math.min(toBlock, start + step - 1);
 
     // Prefer separate topic queries on tip — some providers mishandle multi-topic OR.
+    // softFail: never abort the whole campaign on one bad eth_getLogs chunk; advance past it.
     let logs: ethers.Log[];
     if (tradesOnly) {
       const buyLogs = await getLogsSafe(
         provider,
         { address: campaign, fromBlock: start, toBlock: end, topics: [buyTopic] },
         0,
-        { skipDelay: true }
+        { skipDelay: true, softFail: true }
       );
       const sellLogs = await getLogsSafe(
         provider,
         { address: campaign, fromBlock: start, toBlock: end, topics: [sellTopic] },
         0,
-        { skipDelay: true }
+        { skipDelay: true, softFail: true }
       );
       logs = buyLogs.concat(sellLogs);
     } else {
-      logs = await getLogsSafe(provider, {
-        address: campaign,
-        fromBlock: start,
-        toBlock: end,
-        topics: [[buyTopic, sellTopic, finTopic]],
-      });
+      logs = await getLogsSafe(
+        provider,
+        {
+          address: campaign,
+          fromBlock: start,
+          toBlock: end,
+          topics: [[buyTopic, sellTopic, finTopic]],
+        },
+        0,
+        { softFail: true }
+      );
     }
 
     logs.sort((a, b) => a.blockNumber - b.blockNumber || ((a.index ?? 0) - (b.index ?? 0)));
@@ -1797,28 +1825,49 @@ async function runIndexerCore(opts: {
 
     // Phase A — tip scan ALL campaigns first so a slow history backfill on AWTT/WIC
     // cannot starve TTA (or any other) live trades for the whole stale window.
+    // Prefer a public recent-log RPC as first tip endpoint: BlockPI often rate-limits
+    // eth_getLogs while publicnode still serves the last few thousand blocks.
     if (opts.mode === "normal" && tipScanBlocks > 0) {
       const tipFrom = Math.max(0, target - tipScanBlocks);
+      const tipRpcList = Array.from(
+        new Set([
+          ...(chain.chainId === 97 ? ["https://bsc-testnet.publicnode.com"] : []),
+          ...rpcList,
+        ])
+      );
       for (const c of campaigns) {
         if (pastDeadline()) {
           console.warn("[indexer] pass deadline during tip phase", { chainId: chain.chainId });
           break;
         }
         const campaign = c.campaign;
-        try {
-          await withProviderRetry((p) =>
-            scanCampaignRange(p, chain.chainId, campaign, tipFrom, target, {
+        let tipOk = false;
+        for (const tipUrl of tipRpcList) {
+          try {
+            const tipProvider = createStaticJsonRpcProvider(tipUrl, chain.chainId, {
+              timeoutMs: Math.min(ENV.RPC_REQUEST_TIMEOUT_MS, 15_000),
+            });
+            await scanCampaignRange(tipProvider, chain.chainId, campaign, tipFrom, target, {
               advanceCursor: false,
               label: "tip",
               tradesOnly: true,
               deadlineMs: deadlineMs || undefined,
-            })
-          );
-        } catch (tipErr) {
-          console.warn("[indexer] tip scan failed", {
+            });
+            tipOk = true;
+            break;
+          } catch (tipErr) {
+            console.warn("[indexer] tip scan endpoint failed", {
+              chainId: chain.chainId,
+              campaign: campaign.toLowerCase(),
+              rpc: tipUrl.replace(/\/v1\/rpc\/.*/, "/v1/rpc/…"),
+              err: String((tipErr as any)?.message || tipErr),
+            });
+          }
+        }
+        if (!tipOk) {
+          console.warn("[indexer] tip scan failed all endpoints", {
             chainId: chain.chainId,
             campaign: campaign.toLowerCase(),
-            err: String((tipErr as any)?.message || tipErr),
           });
         }
       }
