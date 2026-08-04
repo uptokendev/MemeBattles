@@ -1,0 +1,46 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployedAt": "2026-08-04T14:35:44.420Z",
+  "purpose": "clean-slate single factory — no dual inventory",
+  "templateFactory": "0x8d4937D3BEe8A750411c0a24f888C0088754D3eD",
+  "previousFactoriesPaused": [
+    "0xA2B19f194826b6D930D18F3fBCad662FaDC9459E",
+    "0x8d4937D3BEe8A750411c0a24f888C0088754D3eD"
+  ],
+  "newFactory": {
+    "address": "0x77Af7634837643d4f93d1086b492571268b30B5F",
+    "locker": "0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a",
+    "startBlock": 123128434,
+    "live": true,
+    "creationEnabled": true
+  },
+  "reused": {
+    "campaignImplementation": "0x43A65f33F29cB1A2558255064D1F8C55D2C45827",
+    "treasuryRouter": "0x0b0b3412bebaf92ABf1b3c977ee1664344e2d35d",
+    "creatorRegistry": "0x4B8dc2453D8d5692Ac43B4600d82997850175fa9",
+    "riskRegistry": "0xb37bFEDb889E33a31Fe23A4CF2e2329C436bcE39",
+    "graduationOracle": "0xc9Ee6b5bAA4c7b6C5fA0995FE29D358C59bC52Cb",
+    "router": "0xC49895Ee36Ad19aa5Cb1405761f6272aD7be6357",
+    "routeAuthority": "0xb989A99823eA96552c3E3198A40CdBF682EDf1aA"
+  },
+  "activationTransactions": {
+    "enableLive": "0xb7c7c8c3cfab6e3384f128df199fb4bdbfb51ac4d5f4ebf955f65b73918c4a87",
+    "pause_0x8d4937D3": "0x2e49e2ee525ea1ee41cc60a657adfd96e22fee739744c2a653be0192c23b73ec"
+  },
+  "factoryGeneration": 3,
+  "campaignGeneration": 2,
+  "contracts": {
+    "LaunchFactory": "0x77Af7634837643d4f93d1086b492571268b30B5F",
+    "LaunchCampaignImplementation": "0x43A65f33F29cB1A2558255064D1F8C55D2C45827",
+    "PermanentLpLocker": "0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a",
+    "TreasuryRouter": "0x0b0b3412bebaf92ABf1b3c977ee1664344e2d35d",
+    "CreatorRegistry": "0x4B8dc2453D8d5692Ac43B4600d82997850175fa9",
+    "RiskRegistry": "0xb37bFEDb889E33a31Fe23A4CF2e2329C436bcE39",
+    "GraduationOracle": "0xc9Ee6b5bAA4c7b6C5fA0995FE29D358C59bC52Cb"
+  },
+  "env": {
+    "supportedFactories": "0x77Af7634837643d4f93d1086b492571268b30B5F",
+    "startBlocks": "123128434"
+  }
+}\n
