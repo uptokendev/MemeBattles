@@ -1570,13 +1570,17 @@ function computeStartBlock(chain: ChainCfg, headTarget: number, existingState: n
 // ---------------------------------------------------------------------------
 
 export async function runIndexerOnce() {
+  // "core" historically meant factory registry + campaign trades. Factory discovery
+  // already runs on its own interval (factoryDiscovery.ts). Doing registry sync on
+  // every trade tick starves tip scans and leaves TTA/AWTT/WIC cursors frozen.
+  // Default the always-on loop to campaigns-only; use scope=full/factory for repair.
   const scope = ENV.INDEXER_NORMAL_SCOPE === "full"
     ? "full"
     : ENV.INDEXER_NORMAL_SCOPE === "factory"
     ? "factory"
-    : ENV.INDEXER_NORMAL_SCOPE === "campaigns"
-    ? "campaigns"
-    : "core";
+    : ENV.INDEXER_NORMAL_SCOPE === "core"
+    ? "core"
+    : "campaigns";
 
   // Hard wall-clock budget so a slow getLogs cannot hold the loop lock forever.
   // Tip phase runs first inside this budget.

@@ -90,9 +90,10 @@ export const ENV = {
   // Always re-scan this recent tip every tick for live trades, even when the historical
   // cursor is far behind (does not advance the historical cursor past holes).
   INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "3000"),
-  // "core" is the launch-safe default: factory registry calls + campaign trade logs.
-  // "full" also scans factory/vote/router logs and should use a paid/indexed RPC.
-  INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "core",
+  // "campaigns" (default): trade/finalize log scans only — factory discovery has its own loop.
+  // "core": factory registry + campaign trades (heavier; can starve tip scans on small RPC budgets).
+  // "full": factory/vote/router + campaigns. "factory": registry only.
+  INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "campaigns",
   // 100ms is enough spacing for BlockPI; 400ms made 250k-block catch-ups take forever.
   INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 100),
   // eth_getLogs on free tiers often exceeds 12s under load — default 30s.
