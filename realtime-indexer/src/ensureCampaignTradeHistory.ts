@@ -25,9 +25,13 @@ function isAddress(value: string): boolean {
   return /^0x[a-f0-9]{40}$/.test(value);
 }
 
+function rpcUrlsFor(chainId: number): string[] {
+  if (chainId === 56) return parseRpcList(ENV.BSC_RPC_HTTP_56);
+  return parseRpcList(ENV.BSC_RPC_HTTP_97);
+}
+
 function rpcUrlFor(chainId: number): string {
-  if (chainId === 56) return parseRpcList(ENV.BSC_RPC_HTTP_56)[0] || "";
-  return parseRpcList(ENV.BSC_RPC_HTTP_97)[0] || "";
+  return rpcUrlsFor(chainId)[0] || "";
 }
 
 function toDec18(raw: bigint): number {
@@ -265,17 +269,35 @@ export async function backfillEmptyCampaignTrades(
   const existing = Number(countRes.rows[0]?.n || 0);
   if (existing > 0) return { inserted: 0, scanned: 0, reason: "has_trades" };
 
-  const rpcUrl = rpcUrlFor(chainId);
-  if (!rpcUrl) return { inserted: 0, scanned: 0, reason: "no_rpc" };
+  const rpcUrls = rpcUrlsFor(chainId);
+  if (!rpcUrls.length) return { inserted: 0, scanned: 0, reason: "no_rpc" };
 
   try {
-    const provider = createStaticJsonRpcProvider(rpcUrl, chainId, { timeoutMs: 25_000 });
+    // Prefer Railway BSC_RPC_HTTP_97 first entry (BlockPI, etc.). Fall back down the CSV.
+    let provider: ethers.JsonRpcProvider | null = null;
+    let activeRpc = "";
+    let latest = 0;
+    for (const url of rpcUrls) {
+      try {
+        const candidate = createStaticJsonRpcProvider(url, chainId, { timeoutMs: 25_000 });
+        latest = await candidate.getBlockNumber();
+        provider = candidate;
+        activeRpc = url;
+        break;
+      } catch (error) {
+        console.warn("[indexer] trade backfill RPC unusable", {
+          chainId,
+          error: String((error as any)?.message || error),
+        });
+      }
+    }
+    if (!provider || !activeRpc) return { inserted: 0, scanned: 0, reason: "no_rpc" };
+
     const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
     const buyTopic = iface.getEvent("TokensPurchased")?.topicHash;
     const sellTopic = iface.getEvent("TokensSold")?.topicHash;
     if (!buyTopic || !sellTopic) return { inserted: 0, scanned: 0, reason: "no_topics" };
 
-    const latest = await provider.getBlockNumber();
     const campRow = await pool.query(
       `select coalesce(created_block,0)::bigint as created_block
        from public.campaigns where chain_id=$1 and campaign_address=$2 limit 1`,
@@ -286,20 +308,18 @@ export async function backfillEmptyCampaignTrades(
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
     // Dual-test A2B19f start when env missing — WIC lives on this factory.
     const knownFactoryFloor = chainId === 97 ? 122_024_169 : 0;
-    // Free public nodes only retain a limited recent log window. Prefer that
-    // window first so backfill finishes and inserts what is still available.
-    // (Historical rows after cleanup are gone from free nodes — same as before
-    // cleanup when the DB still held them we never needed to re-scan.)
-    const freeRpcRetainBlocks = 80_000;
-    const lookback = Math.max(10_000, Math.min(freeRpcRetainBlocks, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 3));
-    const floorCandidates = [
-      createdBlock > 0 ? createdBlock : 0,
-      factoryStart > 0 ? factoryStart : 0,
-      knownFactoryFloor,
-      Math.max(0, latest - lookback),
-    ].filter((n) => Number.isFinite(n) && n > 0);
-    // Start from the *newest* viable floor so we finish within free-RPC retention.
-    const fromBlock = Math.max(0, Math.max(...floorCandidates.map((n) => Math.min(n, latest - lookback))) - 5);
+    // BlockPI / shared free tiers usually allow eth_getLogs with small chunks.
+    // Prefer created_block when known so cleanup recovery can still re-scan.
+    const lookback = Math.max(20_000, Math.min(200_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 5));
+    const floor =
+      createdBlock > 0
+        ? createdBlock
+        : factoryStart > 0
+          ? factoryStart
+          : knownFactoryFloor > 0
+            ? knownFactoryFloor
+            : Math.max(0, latest - lookback);
+    const fromBlock = Math.max(0, Math.min(floor, Math.max(0, latest - lookback)) - 5);
 
     console.log("[indexer] trade backfill scan window", {
       chainId,
@@ -308,6 +328,13 @@ export async function backfillEmptyCampaignTrades(
       latest,
       createdBlock,
       factoryStart,
+      rpcHost: (() => {
+        try {
+          return new URL(activeRpc).host;
+        } catch {
+          return "unknown";
+        }
+      })(),
     });
 
     // Scan buy + sell separately — some RPC providers mishandle multi-topic OR filters.

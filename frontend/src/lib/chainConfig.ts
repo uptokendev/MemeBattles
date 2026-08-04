@@ -255,8 +255,9 @@ export function getPublicRpcUrls(chainId: SupportedChainId): string[] {
     (import.meta.env.VITE_BSC_TESTNET_RPC as string | undefined) ??
     (import.meta.env.VITE_PUBLIC_RPC_TESTNET as string | undefined);
   const list = fromCsv(v);
-  // Prefer configured RPCs, then public nodes that still serve eth_getLogs for
-  // recent Chapel history. Binance public seeds frequently reject getLogs.
+  // Browser-only fallbacks when VITE_BSC_TESTNET_RPC / VITE_PUBLIC_RPC_97 are unset.
+  // The Railway indexer does NOT use these — it uses BSC_RPC_HTTP_97 (e.g. BlockPI).
+  // Prefer publicnode over Binance seeds for eth_getLogs (seeds often rate-limit).
   const defaults = [
     "https://bsc-testnet.publicnode.com",
     "https://data-seed-prebsc-1-s1.binance.org:8545/",
