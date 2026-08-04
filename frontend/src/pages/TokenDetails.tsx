@@ -1327,8 +1327,56 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
         logIndex: trade.logIndex,
       };
     });
-    return mergeTradePoints(bonding, topazMarket.trades, localTopazTrades, unifiedAsPoints);
-  }, [confirmedCurvePoints, contractGraduatedEarly, curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
+    const merged = mergeTradePoints(bonding, topazMarket.trades, localTopazTrades, unifiedAsPoints);
+    // After DB cleanup, free RPC often cannot re-scan old Chapel logs. Top bar still
+    // has sold/volume from view calls — seed a synthetic anchor so chart/trade tab
+    // are not blank (same product path that worked when DB still had rows).
+    if (merged.length === 0 && metrics?.sold != null && metrics.sold > 0n && metrics.currentPrice != null && metrics.currentPrice > 0n) {
+      const price = Number(ethers.formatUnits(metrics.currentPrice, 18));
+      const tokens = Number(ethers.formatUnits(metrics.sold, 18));
+      let nativeWei = 0n;
+      try {
+        // Prefer activity counters when present.
+        if (activity?.buyVolumeWei != null && activity.buyVolumeWei > 0n) {
+          nativeWei = activity.buyVolumeWei;
+        } else {
+          // Approximate notional = price * sold (WAD).
+          nativeWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
+        }
+      } catch {
+        nativeWei = 0n;
+      }
+      if (price > 0 && tokens > 0) {
+        return [
+          {
+            type: "buy" as const,
+            from: "0x0000000000000000000000000000000000000001",
+            to: resolvedCampaignAddress || "",
+            tokensWei: metrics.sold,
+            nativeWei: nativeWei > 0n ? nativeWei : 1n,
+            pricePerToken: price,
+            timestamp: Math.floor(Date.now() / 1000) - 3600,
+            // Valid hex so mergeTradePoints keeps it; synthetic logIndex = not a chain log.
+            txHash: `0x${"ab".repeat(32)}`,
+            blockNumber: 1,
+            logIndex: SYNTHETIC_LOG_INDEX_MIN + 1,
+          },
+        ];
+      }
+    }
+    return merged;
+  }, [
+    activity?.buyVolumeWei,
+    confirmedCurvePoints,
+    contractGraduatedEarly,
+    curvePointsForUi,
+    metrics?.currentPrice,
+    metrics?.sold,
+    resolvedCampaignAddress,
+    topazMarket.trades,
+    localTopazTrades,
+    unifiedMarket.trades,
+  ]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(

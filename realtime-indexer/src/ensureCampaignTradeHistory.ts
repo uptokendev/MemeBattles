@@ -204,29 +204,40 @@ async function getLogsChunked(
   fromBlock: number,
   toBlock: number,
 ): Promise<ethers.Log[]> {
-  const chunk = Math.max(50, Math.min(ENV.LOG_CHUNK_SIZE || 500, 1_000));
+  // Free Chapel public nodes reject wide eth_getLogs (coalesce / max range).
+  // 500-block windows match what works without a paid provider.
+  const chunk = Math.max(100, Math.min(ENV.LOG_CHUNK_SIZE || 500, 500));
   const out: ethers.Log[] = [];
   for (let start = fromBlock; start <= toBlock; start += chunk) {
     const end = Math.min(toBlock, start + chunk - 1);
-    try {
-      if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
-        await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS);
-      }
-      const logs = await provider.getLogs({ ...filter, fromBlock: start, toBlock: end });
-      out.push(...logs);
-    } catch (error) {
-      // Bisect once on failure (public RPC range limits).
-      if (end > start) {
-        const mid = Math.floor((start + end) / 2);
-        const left = await getLogsChunked(provider, filter, start, mid);
-        const right = await getLogsChunked(provider, filter, mid + 1, end);
-        out.push(...left, ...right);
-      } else {
-        console.warn("[indexer] trade backfill getLogs failed", {
-          fromBlock: start,
-          toBlock: end,
-          error: String((error as any)?.message || error),
-        });
+    let attempt = 0;
+    while (attempt < 3) {
+      attempt += 1;
+      try {
+        if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
+          await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS);
+        }
+        const logs = await provider.getLogs({ ...filter, fromBlock: start, toBlock: end });
+        out.push(...logs);
+        break;
+      } catch (error) {
+        if (attempt < 3) {
+          await sleep(150 * attempt);
+          continue;
+        }
+        // Bisect on hard failure (public RPC range limits).
+        if (end > start && end - start > 50) {
+          const mid = Math.floor((start + end) / 2);
+          const left = await getLogsChunked(provider, filter, start, mid);
+          const right = await getLogsChunked(provider, filter, mid + 1, end);
+          out.push(...left, ...right);
+        } else {
+          console.warn("[indexer] trade backfill getLogs failed", {
+            fromBlock: start,
+            toBlock: end,
+            error: String((error as any)?.message || error),
+          });
+        }
       }
     }
   }
@@ -275,12 +286,20 @@ export async function backfillEmptyCampaignTrades(
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
     // Dual-test A2B19f start when env missing — WIC lives on this factory.
     const knownFactoryFloor = chainId === 97 ? 122_024_169 : 0;
-    // Prefer created_block / factory start so graduations are not missed by a short window.
-    const lookback = Math.max(20_000, Math.min(250_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 6));
-    const floorCandidates = [createdBlock, factoryStart, knownFactoryFloor, Math.max(0, latest - lookback)].filter(
-      (n) => Number.isFinite(n) && n > 0,
-    );
-    const fromBlock = Math.max(0, Math.min(...floorCandidates, latest) - 5);
+    // Free public nodes only retain a limited recent log window. Prefer that
+    // window first so backfill finishes and inserts what is still available.
+    // (Historical rows after cleanup are gone from free nodes — same as before
+    // cleanup when the DB still held them we never needed to re-scan.)
+    const freeRpcRetainBlocks = 80_000;
+    const lookback = Math.max(10_000, Math.min(freeRpcRetainBlocks, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 3));
+    const floorCandidates = [
+      createdBlock > 0 ? createdBlock : 0,
+      factoryStart > 0 ? factoryStart : 0,
+      knownFactoryFloor,
+      Math.max(0, latest - lookback),
+    ].filter((n) => Number.isFinite(n) && n > 0);
+    // Start from the *newest* viable floor so we finish within free-RPC retention.
+    const fromBlock = Math.max(0, Math.max(...floorCandidates.map((n) => Math.min(n, latest - lookback))) - 5);
 
     console.log("[indexer] trade backfill scan window", {
       chainId,
