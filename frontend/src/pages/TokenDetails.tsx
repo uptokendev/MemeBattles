@@ -3505,11 +3505,13 @@ const bnbUsd = useMemo(() => {
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      isTopazTradingActive && quoteWei != null ? (
+                      (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
                         <p>
                           Topaz execution · min received protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.
                           {` Est. ${formatBnbFromWei(quoteWei)}.`}
                         </p>
+                      ) : isTopazTradingActive || onChainLaunched ? (
+                        <p>Enter an amount to quote a Topaz sell.</p>
                       ) : (
                         <p>Topaz market verification is in progress. Bonding history remains available.</p>
                       )
