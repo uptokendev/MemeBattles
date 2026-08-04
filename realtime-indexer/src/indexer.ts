@@ -1099,9 +1099,10 @@ async function scanCampaignRange(
   campaign: string,
   fromBlock: number,
   toBlock: number,
-  opts: { advanceCursor?: boolean; label?: string } = {}
+  opts: { advanceCursor?: boolean; label?: string; tradesOnly?: boolean } = {}
 ) {
   const advanceCursor = opts.advanceCursor !== false;
+  const tradesOnly = opts.tradesOnly === true || opts.label === "tip";
   const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
 
   const buyFrag = iface.getEvent("TokensPurchased");
@@ -1114,7 +1115,10 @@ async function scanCampaignRange(
   const finTopic = finFrag.topicHash;
 
   const cursor = `campaign:${campaign.toLowerCase()}`;
-  const step = Math.max(50, ENV.LOG_CHUNK_SIZE);
+  // Tip scans stay small/fast so every campaign gets live trades each tick.
+  const step = tradesOnly
+    ? Math.max(50, Math.min(ENV.LOG_CHUNK_SIZE, 500))
+    : Math.max(50, ENV.LOG_CHUNK_SIZE);
   const blockTimeCache = new Map<number, number>();
   const campaignInfo = await getCampaignInfo(chainId, campaign);
   const tokenAddr = campaignInfo?.tokenAddress ?? null;
@@ -1122,32 +1126,53 @@ async function scanCampaignRange(
   const startedAt = Date.now();
 
   // Best-effort: hydrate campaign feeRecipient for anti-abuse checks (Largest Buys).
-  try {
-    const rr = await pool.query(
-      `select fee_recipient_address from public.campaigns where chain_id=$1 and campaign_address=$2`,
-      [chainId, campaign.toLowerCase()]
-    );
-    const existing = rr.rows?.[0]?.fee_recipient_address ? String(rr.rows[0].fee_recipient_address) : "";
-    if (!existing) {
-      const c = new ethers.Contract(campaign, LAUNCH_CAMPAIGN_ABI, provider);
-      const fr = String(await c.feeRecipient());
-      if (/^0x[a-fA-F0-9]{40}$/.test(fr)) {
-        await setCampaignFeeRecipient(chainId, campaign, fr);
+  // Skip on tip scans — latency-sensitive path for live TokenDetails trades.
+  if (!tradesOnly) {
+    try {
+      const rr = await pool.query(
+        `select fee_recipient_address from public.campaigns where chain_id=$1 and campaign_address=$2`,
+        [chainId, campaign.toLowerCase()]
+      );
+      const existing = rr.rows?.[0]?.fee_recipient_address ? String(rr.rows[0].fee_recipient_address) : "";
+      if (!existing) {
+        const c = new ethers.Contract(campaign, LAUNCH_CAMPAIGN_ABI, provider);
+        const fr = String(await c.feeRecipient());
+        if (/^0x[a-fA-F0-9]{40}$/.test(fr)) {
+          await setCampaignFeeRecipient(chainId, campaign, fr);
+        }
       }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
   for (let start = fromBlock; start <= toBlock; start += step) {
     const end = Math.min(toBlock, start + step - 1);
 
-    const logs = await getLogsSafe(provider, {
-      address: campaign,
-      fromBlock: start,
-      toBlock: end,
-      topics: [[buyTopic, sellTopic, finTopic]]
-    });
+    // Prefer separate topic queries on tip — some providers mishandle multi-topic OR.
+    let logs: ethers.Log[];
+    if (tradesOnly) {
+      const buyLogs = await getLogsSafe(provider, {
+        address: campaign,
+        fromBlock: start,
+        toBlock: end,
+        topics: [buyTopic],
+      });
+      const sellLogs = await getLogsSafe(provider, {
+        address: campaign,
+        fromBlock: start,
+        toBlock: end,
+        topics: [sellTopic],
+      });
+      logs = buyLogs.concat(sellLogs);
+    } else {
+      logs = await getLogsSafe(provider, {
+        address: campaign,
+        fromBlock: start,
+        toBlock: end,
+        topics: [[buyTopic, sellTopic, finTopic]],
+      });
+    }
 
     logs.sort((a, b) => a.blockNumber - b.blockNumber || ((a.index ?? 0) - (b.index ?? 0)));
 
@@ -1739,6 +1764,31 @@ async function runIndexerCore(opts: {
       tipScanBlocks,
     });
 
+    // Phase A — tip scan ALL campaigns first so a slow history backfill on AWTT/WIC
+    // cannot starve TTA (or any other) live trades for the whole stale window.
+    if (opts.mode === "normal" && tipScanBlocks > 0) {
+      const tipFrom = Math.max(0, target - tipScanBlocks);
+      for (const c of campaigns) {
+        const campaign = c.campaign;
+        try {
+          await withProviderRetry((p) =>
+            scanCampaignRange(p, chain.chainId, campaign, tipFrom, target, {
+              advanceCursor: false,
+              label: "tip",
+              tradesOnly: true,
+            })
+          );
+        } catch (tipErr) {
+          console.warn("[indexer] tip scan failed", {
+            chainId: chain.chainId,
+            campaign: campaign.toLowerCase(),
+            err: String((tipErr as any)?.message || tipErr),
+          });
+        }
+      }
+    }
+
+    // Phase B — historical catch-up (bounded per campaign).
     for (const c of campaigns) {
       const campaign = c.campaign;
       try {
@@ -1782,29 +1832,6 @@ async function runIndexerCore(opts: {
           state = rewound;
         }
 
-        // Live tip first: when the historical cursor lags, still pick up brand-new
-        // buys/sells (TTA) without waiting for a multi-hour catch-up to finish.
-        // Tip scan does NOT advance the historical cursor past holes.
-        if (opts.mode === "normal" && tipScanBlocks > 0) {
-          const tipFrom = Math.max(0, target - tipScanBlocks);
-          if (state < tipFrom) {
-            try {
-              await withProviderRetry((p) =>
-                scanCampaignRange(p, chain.chainId, campaign, tipFrom, target, {
-                  advanceCursor: false,
-                  label: "tip",
-                })
-              );
-            } catch (tipErr) {
-              console.warn("[indexer] tip scan failed", {
-                chainId: chain.chainId,
-                campaign: campaign.toLowerCase(),
-                err: String((tipErr as any)?.message || tipErr),
-              });
-            }
-          }
-        }
-
         // Historical catch-up. Critical rule: once we have a campaign cursor at or
         // after created_block, NEVER clamp forward to windowStart — that skips the
         // bonding window (WIC/AWTT) after cleanup rewinds. Cap range per pass so
@@ -1836,9 +1863,16 @@ async function runIndexerCore(opts: {
         }
 
         // Bound normal-mode work so every active campaign is visited each tick.
+        // Campaigns that already have trades but lag the tip get a larger catch-up
+        // window so TTA-style gaps close in one or two passes.
         let passTarget = target;
         if (opts.mode === "normal" && !requestedToBlock) {
-          passTarget = Math.min(target, from + blocksPerPass - 1);
+          const lag = Math.max(0, target - from);
+          const catchUp =
+            c.tradeCount > 0 && lag > blocksPerPass
+              ? Math.min(25_000, Math.max(blocksPerPass, Math.floor(lag / 2)))
+              : blocksPerPass;
+          passTarget = Math.min(target, from + catchUp - 1);
         }
 
         if (from > passTarget) {
