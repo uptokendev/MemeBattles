@@ -132,8 +132,9 @@ async function upgradeGraduatedMarketStateFromChain(
 
     const token = normalizeAddress(tokenRaw);
     const router = normalizeAddress(routerRaw);
-    const finalCurve = String(graduation?.[1] ?? graduation?.finalCurvePrice ?? "0");
-    const initialDex = String(graduation?.[2] ?? graduation?.initialDexPrice ?? "0");
+    // Raw wei strings from getGraduationState — numeric BNB columns need /1e18 cast.
+    const finalCurveRaw = String(graduation?.[1] ?? graduation?.finalCurvePrice ?? "0");
+    const initialDexRaw = String(graduation?.[2] ?? graduation?.initialDexPrice ?? "0");
     const liqToken = String(graduation?.[3] ?? graduation?.graduatedLiquidityTokens ?? "0");
     const liqBnb = String(graduation?.[4] ?? graduation?.graduatedLiquidityBnb ?? "0");
     const liqLp = String(graduation?.[5] ?? graduation?.graduatedLiquidityLp ?? "0");
@@ -148,27 +149,28 @@ async function upgradeGraduatedMarketStateFromChain(
          final_curve_price_bnb,initial_dex_price_bnb,
          graduated_liquidity_token_raw,graduated_liquidity_bnb_raw,graduated_lp_raw,
          burned_unsold_token_raw,burned_unused_lp_token_raw,post_burn_total_supply_raw,
-         pool_verified,indexing_enabled,last_verified_at,created_at,updated_at
+         pool_verified,indexing_enabled,last_verified_at,last_error,created_at,updated_at
        )
        select
          c.chain_id,
          c.campaign_address,
-         coalesce(nullif($3,''), c.token_address, c.campaign_address),
+         coalesce(nullif($3::text,''), c.token_address, c.campaign_address),
          c.factory_address,
          'TOPAZ_ACTIVE',
-         $4,
-         nullif($5,''),
-         nullif($6,'0'),
-         nullif($7,'0'),
-         nullif($8,'0'),
-         nullif($9,'0'),
-         nullif($10,'0'),
-         nullif($11,'0'),
-         nullif($12,'0'),
-         nullif($13,'0'),
+         $4::text,
+         nullif($5::text,''),
+         case when nullif($6::text,'') is null or $6::text = '0' then null else ($6::numeric / 1e18) end,
+         case when nullif($7::text,'') is null or $7::text = '0' then null else ($7::numeric / 1e18) end,
+         nullif($8::text,'0'),
+         nullif($9::text,'0'),
+         nullif($10::text,'0'),
+         nullif($11::text,'0'),
+         nullif($12::text,'0'),
+         nullif($13::text,'0'),
          true,
          true,
          now(),
+         null,
          now(),
          now()
        from public.campaigns c
@@ -197,8 +199,8 @@ async function upgradeGraduatedMarketStateFromChain(
         isEvmAddress(token) ? token : "",
         pair,
         isEvmAddress(router) ? router : "",
-        finalCurve,
-        initialDex,
+        finalCurveRaw,
+        initialDexRaw,
         liqToken,
         liqBnb,
         liqLp,
@@ -208,30 +210,47 @@ async function upgradeGraduatedMarketStateFromChain(
       ],
     );
 
-    await pool.query(
-      `update public.campaigns
-       set market_stage='TOPAZ_ACTIVE',
-           bonding_active=false,
-           graduated_at_chain=coalesce(graduated_at_chain, now()),
-           dex_pair_address=coalesce(nullif(dex_pair_address,''), $3),
-           updated_at=now()
-       where chain_id=$1 and campaign_address=$2`,
-      [chainId, campaign, pair],
-    );
+    // Best-effort campaigns row update (columns vary slightly across migrations).
+    try {
+      await pool.query(
+        `update public.campaigns
+         set market_stage='TOPAZ_ACTIVE',
+             bonding_active=false,
+             graduated_at_chain=coalesce(graduated_at_chain, now()),
+             updated_at=now()
+         where chain_id=$1 and campaign_address=$2`,
+        [chainId, campaign],
+      );
+    } catch (campaignUpdateError) {
+      console.warn("[wtr] campaigns graduation fields update skipped", {
+        chainId,
+        campaign,
+        error: String((campaignUpdateError as any)?.message || campaignUpdateError),
+      });
+    }
 
-    await pool.query(
-      `insert into public.dex_pools(
-         chain_id,pair_address,campaign_address,token_address,
-         support_enabled,indexing_enabled,created_at,updated_at
-       ) values ($1,$2,$3,$4,true,true,now(),now())
-       on conflict (chain_id,pair_address) do update set
-         campaign_address=excluded.campaign_address,
-         token_address=coalesce(nullif(excluded.token_address,''), public.dex_pools.token_address),
-         support_enabled=true,
-         indexing_enabled=true,
-         updated_at=now()`,
-      [chainId, pair, campaign, isEvmAddress(token) ? token : null],
-    );
+    try {
+      await pool.query(
+        `insert into public.dex_pools(
+           chain_id,pair_address,campaign_address,token_address,
+           support_enabled,indexing_enabled,created_at,updated_at
+         ) values ($1,$2,$3,$4,true,true,now(),now())
+         on conflict (chain_id,pair_address) do update set
+           campaign_address=excluded.campaign_address,
+           token_address=coalesce(nullif(excluded.token_address,''), public.dex_pools.token_address),
+           support_enabled=true,
+           indexing_enabled=true,
+           updated_at=now()`,
+        [chainId, pair, campaign, isEvmAddress(token) ? token : null],
+      );
+    } catch (poolInsertError) {
+      console.warn("[wtr] dex_pools upsert skipped", {
+        chainId,
+        campaign,
+        pair,
+        error: String((poolInsertError as any)?.message || poolInsertError),
+      });
+    }
 
     console.log("[wtr] upgraded CMS to TOPAZ_ACTIVE from on-chain graduation", {
       chainId,

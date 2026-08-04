@@ -273,27 +273,38 @@ export async function backfillEmptyCampaignTrades(
     const createdBlock = Number(campRow.rows[0]?.created_block || 0);
     const factoryStart =
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
-    // Prefer created_block / factory start when known so dual-test graduations
-    // (WIC) are not missed by a short recent-only window.
-    const lookback = Math.max(20_000, Math.min(120_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 4));
-    const floor =
-      createdBlock > 0
-        ? createdBlock
-        : factoryStart > 0
-          ? factoryStart
-          : Math.max(0, latest - lookback);
-    // If created_block is known, start there even when older than lookback.
-    const fromBlock =
-      createdBlock > 0
-        ? Math.max(0, createdBlock - 5)
-        : Math.max(0, Math.max(floor, latest - lookback));
+    // Dual-test A2B19f start when env missing — WIC lives on this factory.
+    const knownFactoryFloor = chainId === 97 ? 122_024_169 : 0;
+    // Prefer created_block / factory start so graduations are not missed by a short window.
+    const lookback = Math.max(20_000, Math.min(250_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 6));
+    const floorCandidates = [createdBlock, factoryStart, knownFactoryFloor, Math.max(0, latest - lookback)].filter(
+      (n) => Number.isFinite(n) && n > 0,
+    );
+    const fromBlock = Math.max(0, Math.min(...floorCandidates, latest) - 5);
 
-    const logs = await getLogsChunked(
+    console.log("[indexer] trade backfill scan window", {
+      chainId,
+      campaign,
+      fromBlock,
+      latest,
+      createdBlock,
+      factoryStart,
+    });
+
+    // Scan buy + sell separately — some RPC providers mishandle multi-topic OR filters.
+    const buyLogs = await getLogsChunked(
       provider,
-      { address: campaign, topics: [[buyTopic, sellTopic]] },
+      { address: campaign, topics: [buyTopic] },
       fromBlock,
       latest,
     );
+    const sellLogs = await getLogsChunked(
+      provider,
+      { address: campaign, topics: [sellTopic] },
+      fromBlock,
+      latest,
+    );
+    const logs = [...buyLogs, ...sellLogs];
 
     logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0));
 
@@ -367,18 +378,17 @@ export async function backfillEmptyCampaignTrades(
       }
     }
 
-    if (inserted > 0 || logs.length > 0) {
-      console.log("[indexer] backfilled empty campaign trades", {
-        chainId,
-        campaign,
-        fromBlock,
-        toBlock: latest,
-        scanned: logs.length,
-        inserted,
-      });
-    }
+    console.log("[indexer] backfilled empty campaign trades", {
+      chainId,
+      campaign,
+      fromBlock,
+      toBlock: latest,
+      scanned: logs.length,
+      inserted,
+      reason: logs.length === 0 ? "no_logs_in_window" : inserted > 0 ? "inserted" : "already_present",
+    });
 
-    return { inserted, scanned: logs.length };
+    return { inserted, scanned: logs.length, reason: logs.length === 0 ? "no_logs_in_window" : undefined };
   } catch (error) {
     console.warn("[indexer] backfillEmptyCampaignTrades failed", {
       chainId,
