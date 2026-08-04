@@ -4,7 +4,7 @@ import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
-import { ingestCampaignTransaction, runDiscoveryOnce, runIndexerOnce, runRepairOnce, runTradeRepairOnce } from "./indexer.js";
+import { ingestCampaignTransaction, runDiscoveryOnce, runIndexerOnce, runRepairOnce, runTipScanOnce, runTradeRepairOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
@@ -337,7 +337,13 @@ app.get("/healthz", (_req, res) => {
 app.get("/health", async (_req, res) => {
   try {
     const r = await pool.query("select 1 as ok");
-    res.json({ ok: true, db: r.rows[0].ok });
+    res.json({
+      ok: true,
+      db: r.rows[0].ok,
+      // Bump when shipping indexer loop fixes so deploy can be confirmed from /health.
+      indexerBuild: "tip-only-2026-08-04c",
+      normalScope: ENV.INDEXER_NORMAL_SCOPE,
+    });
   } catch (e: any) {
     res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
@@ -2584,3 +2590,29 @@ async function getRpcDiagnostics(chainId: number, campaign?: string | null) {
 setInterval(async () => {
   await runIndexerJob("normal", "loop");
 }, INTERVAL_MS);
+
+// Fast tip-only loop: concurrent with history so live buys (TTA) never wait on
+// multi-minute AWTT/WIC catch-up. Soft deadline inside runTipScanOnce.
+let tipRunning = false;
+const TIP_INTERVAL_MS = Math.max(8_000, Math.min(ENV.INDEXER_INTERVAL_MS, 15_000));
+setInterval(async () => {
+  if (tipRunning) return;
+  tipRunning = true;
+  try {
+    await runTipScanOnce();
+  } catch (e) {
+    console.error("[indexer] tip-only loop error", e);
+  } finally {
+    tipRunning = false;
+  }
+}, TIP_INTERVAL_MS);
+// Kick once shortly after boot so deploy verification is quick.
+setTimeout(() => {
+  if (tipRunning) return;
+  tipRunning = true;
+  void runTipScanOnce()
+    .catch((e) => console.error("[indexer] tip-only boot error", e))
+    .finally(() => {
+      tipRunning = false;
+    });
+}, 3_000);

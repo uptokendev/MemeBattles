@@ -1621,6 +1621,80 @@ export async function runIndexerOnce() {
   });
 }
 
+/**
+ * Fast concurrent path: only recent TokensPurchased/TokensSold for active campaigns.
+ * Uses publicnode first (recent eth_getLogs works there) with a hard deadline so it
+ * never contends with the slow history backfill lock.
+ */
+export async function runTipScanOnce() {
+  const tipScanBlocks = Math.max(1_000, Math.min(ENV.INDEXER_TIP_SCAN_BLOCKS || 3_000, 4_000));
+  const deadlineMs = Date.now() + 20_000;
+
+  for (const chain of CHAINS) {
+    if (Date.now() >= deadlineMs) break;
+    const rpcList = parseRpcList(chain.rpcHttp);
+    const tipRpcList = Array.from(
+      new Set([
+        ...(chain.chainId === 97 ? ["https://bsc-testnet.publicnode.com"] : []),
+        ...rpcList,
+      ])
+    );
+    if (!tipRpcList.length) continue;
+
+    let head = 0;
+    let headProvider: ethers.JsonRpcProvider | null = null;
+    for (const url of tipRpcList) {
+      try {
+        const p = createStaticJsonRpcProvider(url, chain.chainId, { timeoutMs: 8_000 });
+        head = await p.getBlockNumber();
+        headProvider = p;
+        break;
+      } catch {
+        // try next
+      }
+    }
+    if (!headProvider || head <= 0) continue;
+
+    const target = Math.max(0, head - ENV.CONFIRMATIONS);
+    const tipFrom = Math.max(0, target - tipScanBlocks);
+    let campaigns: Array<{ campaign: string; createdBlock: number; tradeCount: number }> = [];
+    try {
+      campaigns = await listScannableCampaigns(chain.chainId);
+    } catch (e) {
+      console.error("[indexer] tip-only list campaigns failed", e);
+      continue;
+    }
+
+    console.log("[indexer] tip-only pass", {
+      chainId: chain.chainId,
+      campaigns: campaigns.length,
+      tipFrom,
+      target,
+    });
+
+    for (const c of campaigns) {
+      if (Date.now() >= deadlineMs) break;
+      for (const tipUrl of tipRpcList) {
+        try {
+          const tipProvider = createStaticJsonRpcProvider(tipUrl, chain.chainId, { timeoutMs: 8_000 });
+          await scanCampaignRange(tipProvider, chain.chainId, c.campaign, tipFrom, target, {
+            advanceCursor: false,
+            label: "tip-only",
+            tradesOnly: true,
+            deadlineMs,
+          });
+          break;
+        } catch (err) {
+          console.warn("[indexer] tip-only endpoint failed", {
+            campaign: c.campaign.toLowerCase(),
+            err: String((err as any)?.message || err),
+          });
+        }
+      }
+    }
+  }
+}
+
 // Runs a bounded repair window: rewinds per-cursor state and replays recent logs.
 export async function runRepairOnce() {
   await runIndexerCore({
