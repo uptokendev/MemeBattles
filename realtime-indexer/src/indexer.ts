@@ -1859,56 +1859,53 @@ async function runIndexerCore(opts: {
     // Featured row ranks by vote_aggregates. Votes must run on every trade-capable
     // pass (campaigns/core/full), not only INDEXER_NORMAL_SCOPE=full — otherwise
     // upvotes succeed on-chain but never appear in Featured (DDT clean-slate case).
-    if (opts.scope !== "factory") {
-      try {
-        if (chain.voteTreasuryAddress) {
-          const state = await getState(chain.chainId, "votes");
-          const tipBlocks = Math.max(3_000, ENV.INDEXER_TIP_SCAN_BLOCKS || 20_000);
-          const histBlocks = Math.max(
-            5_000,
-            Math.min(opts.lookbackBlocks || 20_000, ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 8_000),
-          );
-          const startHint = chain.voteTreasuryStartBlock || 0;
+    // (scope===factory already continued above.)
+    try {
+      if (chain.voteTreasuryAddress) {
+        const state = await getState(chain.chainId, "votes");
+        const tipBlocks = Math.max(3_000, ENV.INDEXER_TIP_SCAN_BLOCKS || 20_000);
+        const histBlocks = Math.max(
+          5_000,
+          Math.min(opts.lookbackBlocks || 20_000, ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 8_000),
+        );
+        const startHint = chain.voteTreasuryStartBlock || 0;
 
-          // Tip-first: pick up brand-new VoteCast quickly (publicnode-friendly range).
-          if (opts.mode === "normal") {
-            const tipFrom = Math.max(0, target - tipBlocks);
-            if (state < tipFrom) {
-              try {
-                await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, tipFrom, target));
-                // Do not jump the historical votes cursor past unscanned ranges —
-                // scanVoteTreasuryRange advances setStateMax continuously.
-              } catch (tipVoteErr) {
-                console.warn("[indexer] vote tip scan failed", {
-                  chainId: chain.chainId,
-                  err: String((tipVoteErr as any)?.message || tipVoteErr),
-                });
-              }
+        // Tip-first: pick up brand-new VoteCast quickly (publicnode-friendly range).
+        if (opts.mode === "normal") {
+          const tipFrom = Math.max(0, target - tipBlocks);
+          if (state < tipFrom) {
+            try {
+              await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, tipFrom, target));
+            } catch (tipVoteErr) {
+              console.warn("[indexer] vote tip scan failed", {
+                chainId: chain.chainId,
+                err: String((tipVoteErr as any)?.message || tipVoteErr),
+              });
             }
           }
-
-          let from = opts.mode === "repair"
-            ? Math.max(0, Math.max(0, state - opts.rewindBlocks))
-            : state > 0
-              ? state
-              : (startHint > 0 ? startHint : Math.max(0, target - tipBlocks));
-
-          // Bound work per pass so votes cannot monopolize the lock.
-          let passTarget = target;
-          if (opts.mode === "normal") {
-            passTarget = Math.min(target, from + histBlocks - 1);
-          } else {
-            const windowStart = Math.max(0, target - opts.lookbackBlocks);
-            from = Math.max(windowStart, from);
-          }
-
-          if (from <= passTarget) {
-            await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, from, passTarget));
-          }
         }
-      } catch (e) {
-        console.error("scanVoteTreasury error (all RPCs failed)", { chainId: chain.chainId }, e);
+
+        let from = opts.mode === "repair"
+          ? Math.max(0, Math.max(0, state - opts.rewindBlocks))
+          : state > 0
+            ? state
+            : (startHint > 0 ? startHint : Math.max(0, target - tipBlocks));
+
+        // Bound work per pass so votes cannot monopolize the lock.
+        let passTarget = target;
+        if (opts.mode === "normal") {
+          passTarget = Math.min(target, from + histBlocks - 1);
+        } else {
+          const windowStart = Math.max(0, target - opts.lookbackBlocks);
+          from = Math.max(windowStart, from);
+        }
+
+        if (from <= passTarget) {
+          await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, from, passTarget));
+        }
       }
+    } catch (e) {
+      console.error("scanVoteTreasury error (all RPCs failed)", { chainId: chain.chainId }, e);
     }
 
     // ---------------- Campaign scans ----------------
