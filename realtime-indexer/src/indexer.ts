@@ -180,8 +180,13 @@ async function insertActivityEvent(row: {
   }
 }
 
-async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth = 0): Promise<ethers.Log[]> {
-  if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0 && depth === 0) {
+async function getLogsSafe(
+  provider: ethers.JsonRpcProvider,
+  filter: any,
+  depth = 0,
+  opts: { skipDelay?: boolean } = {}
+): Promise<ethers.Log[]> {
+  if (!opts.skipDelay && ENV.INDEXER_LOG_CALL_DELAY_MS > 0 && depth === 0) {
     await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS + Math.floor(Math.random() * 100));
   }
 
@@ -203,8 +208,8 @@ async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth 
       const span = to - from + 1;
       if (span > ENV.MIN_LOG_CHUNK_SIZE && depth < 12) {
         const mid = Math.floor((from + to) / 2);
-        const left = await getLogsSafe(provider, { ...filter, fromBlock: from, toBlock: mid }, depth + 1);
-        const right = await getLogsSafe(provider, { ...filter, fromBlock: mid + 1, toBlock: to }, depth + 1);
+        const left = await getLogsSafe(provider, { ...filter, fromBlock: from, toBlock: mid }, depth + 1, opts);
+        const right = await getLogsSafe(provider, { ...filter, fromBlock: mid + 1, toBlock: to }, depth + 1, opts);
         return left.concat(right);
       }
     }
@@ -1099,7 +1104,7 @@ async function scanCampaignRange(
   campaign: string,
   fromBlock: number,
   toBlock: number,
-  opts: { advanceCursor?: boolean; label?: string; tradesOnly?: boolean } = {}
+  opts: { advanceCursor?: boolean; label?: string; tradesOnly?: boolean; deadlineMs?: number } = {}
 ) {
   const advanceCursor = opts.advanceCursor !== false;
   const tradesOnly = opts.tradesOnly === true || opts.label === "tip";
@@ -1147,23 +1152,33 @@ async function scanCampaignRange(
   }
 
   for (let start = fromBlock; start <= toBlock; start += step) {
+    if (opts.deadlineMs && Date.now() >= opts.deadlineMs) {
+      console.warn("[indexer] campaign scan hit pass deadline", {
+        chainId,
+        campaign: campaign.toLowerCase(),
+        label: opts.label || "history",
+        atBlock: start,
+        toBlock,
+      });
+      break;
+    }
     const end = Math.min(toBlock, start + step - 1);
 
     // Prefer separate topic queries on tip — some providers mishandle multi-topic OR.
     let logs: ethers.Log[];
     if (tradesOnly) {
-      const buyLogs = await getLogsSafe(provider, {
-        address: campaign,
-        fromBlock: start,
-        toBlock: end,
-        topics: [buyTopic],
-      });
-      const sellLogs = await getLogsSafe(provider, {
-        address: campaign,
-        fromBlock: start,
-        toBlock: end,
-        topics: [sellTopic],
-      });
+      const buyLogs = await getLogsSafe(
+        provider,
+        { address: campaign, fromBlock: start, toBlock: end, topics: [buyTopic] },
+        0,
+        { skipDelay: true }
+      );
+      const sellLogs = await getLogsSafe(
+        provider,
+        { address: campaign, fromBlock: start, toBlock: end, topics: [sellTopic] },
+        0,
+        { skipDelay: true }
+      );
       logs = buyLogs.concat(sellLogs);
     } else {
       logs = await getLogsSafe(provider, {
@@ -1212,7 +1227,8 @@ async function scanCampaignRange(
 
         if (inserted) {
           insertedTotal += 1;
-          await publishTrade(chainId, campaign, {
+          // Do not await Ably — a slow realtime fanout must not block trade DB writes.
+          void publishTrade(chainId, campaign, {
             type: "trade",
             chainId,
             token: campaign.toLowerCase(),
@@ -1225,9 +1241,9 @@ async function scanCampaignRange(
             priceBnb: priceBnb !== null ? String(priceBnb) : null,
             ts: tsSec,
             blockNumber: log.blockNumber
-          });
+          }).catch(() => undefined);
 
-          await insertActivityEvent({
+          void insertActivityEvent({
             chainId,
             eventType: "BUY",
             txHash,
@@ -1241,7 +1257,7 @@ async function scanCampaignRange(
             amountOutWei: amountOut,
             costWei: cost,
             meta: { priceBnb },
-          });
+          }).catch(() => undefined);
 
           if (priceBnb !== null) {
             for (const tf of TIMEFRAMES) {
@@ -1273,7 +1289,7 @@ async function scanCampaignRange(
           // Home feed progress: sells subtract from raisedTotalBnb
           leagueFeed.queueRaisedDelta(chainId, campaign, -bnbAmount);
 
-          await publishTrade(chainId, campaign, {
+          void publishTrade(chainId, campaign, {
             type: "trade",
             chainId,
             token: campaign.toLowerCase(),
@@ -1286,9 +1302,9 @@ async function scanCampaignRange(
             priceBnb: priceBnb !== null ? String(priceBnb) : null,
             ts: tsSec,
             blockNumber: log.blockNumber
-          });
+          }).catch(() => undefined);
 
-          await insertActivityEvent({
+          void insertActivityEvent({
             chainId,
             eventType: "SELL",
             txHash,
@@ -1302,7 +1318,7 @@ async function scanCampaignRange(
             amountOutWei: payout,
             payoutWei: payout,
             meta: { priceBnb },
-          });
+          }).catch(() => undefined);
 
           if (priceBnb !== null) {
             for (const tf of TIMEFRAMES) {
@@ -1562,11 +1578,16 @@ export async function runIndexerOnce() {
     ? "campaigns"
     : "core";
 
+  // Hard wall-clock budget so a slow getLogs cannot hold the loop lock forever.
+  // Tip phase runs first inside this budget.
+  const deadlineMs = Date.now() + Math.max(20_000, Math.min(ENV.INDEXER_STALE_AFTER_MS - 5_000, 75_000));
+
   await runIndexerCore({
     mode: "normal",
     lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
     rewindBlocks: 0,
-    scope
+    scope,
+    deadlineMs,
   });
 }
 
@@ -1620,8 +1641,16 @@ async function runIndexerCore(opts: {
   forceCampaignStart?: boolean;
   fromBlock?: number;
   toBlock?: number;
+  deadlineMs?: number;
 }) {
+  const deadlineMs = Number(opts.deadlineMs || 0);
+  const pastDeadline = () => deadlineMs > 0 && Date.now() >= deadlineMs;
+
   for (const chain of CHAINS) {
+    if (pastDeadline()) {
+      console.warn("[indexer] pass deadline before chain work", { chainId: chain.chainId });
+      break;
+    }
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
       console.error("No RPC URLs configured for chain", chain.chainId);
@@ -1769,6 +1798,10 @@ async function runIndexerCore(opts: {
     if (opts.mode === "normal" && tipScanBlocks > 0) {
       const tipFrom = Math.max(0, target - tipScanBlocks);
       for (const c of campaigns) {
+        if (pastDeadline()) {
+          console.warn("[indexer] pass deadline during tip phase", { chainId: chain.chainId });
+          break;
+        }
         const campaign = c.campaign;
         try {
           await withProviderRetry((p) =>
@@ -1776,6 +1809,7 @@ async function runIndexerCore(opts: {
               advanceCursor: false,
               label: "tip",
               tradesOnly: true,
+              deadlineMs: deadlineMs || undefined,
             })
           );
         } catch (tipErr) {
@@ -1790,6 +1824,10 @@ async function runIndexerCore(opts: {
 
     // Phase B — historical catch-up (bounded per campaign).
     for (const c of campaigns) {
+      if (pastDeadline()) {
+        console.warn("[indexer] pass deadline during history phase", { chainId: chain.chainId });
+        break;
+      }
       const campaign = c.campaign;
       try {
         const cursor = `campaign:${campaign.toLowerCase()}`;
@@ -1884,6 +1922,7 @@ async function runIndexerCore(opts: {
           scanCampaignRange(p, chain.chainId, campaign, from, passTarget, {
             advanceCursor: true,
             label: "history",
+            deadlineMs: deadlineMs || undefined,
           })
         );
       } catch (e) {

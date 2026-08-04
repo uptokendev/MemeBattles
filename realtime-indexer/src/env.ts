@@ -89,7 +89,7 @@ export const ENV = {
   INDEXER_CAMPAIGN_BLOCKS_PER_PASS: Number(process.env.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || "8000"),
   // Always re-scan this recent tip every tick for live trades, even when the historical
   // cursor is far behind (does not advance the historical cursor past holes).
-  INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "5000"),
+  INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "3000"),
   // "core" is the launch-safe default: factory registry calls + campaign trade logs.
   // "full" also scans factory/vote/router logs and should use a paid/indexed RPC.
   INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "core",

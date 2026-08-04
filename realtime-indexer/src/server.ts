@@ -2456,15 +2456,19 @@ async function runIndexerJob(
 ) {
   const allowConcurrentRecovery = mode === "discover" || mode === "trades" || mode === "campaigns";
   const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
-  // Critical: a wedged normal pass used to hold `running=true` forever while the
-  // loop trigger could never take over (only manual could). Live tip trades then
-  // never indexed (TTA). Allow both loop and manual to reclaim after stale.
-  const isStaleTakeover =
-    running &&
-    runningForMs != null &&
-    runningForMs > ENV.INDEXER_STALE_AFTER_MS;
 
-  if (running && !allowConcurrentRecovery && !isStaleTakeover) {
+  // Never start a second normal/repair pass while one is in flight. Cooperative
+  // deadline inside runIndexerOnce ends wedged work; concurrent reclaim only
+  // stacked RPC load and prevented cursor advances (TTA tip stuck for hours).
+  if (running && !allowConcurrentRecovery) {
+    if (runningForMs != null && runningForMs > ENV.INDEXER_STALE_AFTER_MS) {
+      console.warn("[indexer] pass still running past stale budget; waiting for cooperative exit", {
+        trigger,
+        mode,
+        runningForMs,
+        staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
+      });
+    }
     return {
       ok: false,
       skipped: true,
@@ -2474,17 +2478,6 @@ async function runIndexerJob(
       staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
       error: "indexer already running"
     };
-  }
-
-  if (isStaleTakeover) {
-    console.warn("[indexer] reclaiming stale run lock", {
-      trigger,
-      mode,
-      runningForMs,
-      staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
-    });
-    running = false;
-    runningStartedAt = 0;
   }
 
   const startedAt = Date.now();
