@@ -273,15 +273,20 @@ export async function backfillEmptyCampaignTrades(
     const createdBlock = Number(campRow.rows[0]?.created_block || 0);
     const factoryStart =
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
-    // Cap lookback so API-triggered backfill cannot scan 100k+ blocks and hang /trades.
-    const lookback = Math.max(5_000, Math.min(40_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 2));
+    // Prefer created_block / factory start when known so dual-test graduations
+    // (WIC) are not missed by a short recent-only window.
+    const lookback = Math.max(20_000, Math.min(120_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 4));
     const floor =
       createdBlock > 0
         ? createdBlock
         : factoryStart > 0
           ? factoryStart
           : Math.max(0, latest - lookback);
-    const fromBlock = Math.max(0, Math.max(floor, latest - lookback));
+    // If created_block is known, start there even when older than lookback.
+    const fromBlock =
+      createdBlock > 0
+        ? Math.max(0, createdBlock - 5)
+        : Math.max(0, Math.max(floor, latest - lookback));
 
     const logs = await getLogsChunked(
       provider,

@@ -2138,8 +2138,8 @@ async function handleTokenTrades(req: any, res: any) {
     return;
   }
 
-  // Empty history: try a *bounded* ensure+backfill with a hard timeout, then re-query.
-  // If it times out we still return [] so the browser can fall through to on-chain recovery.
+  // Empty history: bounded ensure+backfill (paid RPC). Graduated tokens often need
+  // a longer window than bonding (WIC had 0 rows after cleanup).
   try {
     const { ensureCampaignTradeHistory } = await import("./ensureCampaignTradeHistory.js");
     const { rewindEmptyCampaignTradeCursor } = await import("./emptyTradeCursorRewind.js");
@@ -2149,7 +2149,7 @@ async function handleTokenTrades(req: any, res: any) {
         if (ensured.campaign) campaign = ensured.campaign;
         await rewindEmptyCampaignTradeCursor(chainId, campaign);
       })(),
-      new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+      new Promise<void>((resolve) => setTimeout(resolve, 20_000)),
     ]);
   } catch (error) {
     console.warn("[api] ensureCampaignTradeHistory skipped", String((error as any)?.message || error));

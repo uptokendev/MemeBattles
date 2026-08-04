@@ -1,8 +1,11 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { Contract, ethers } from "ethers";
+import { LAUNCH_CAMPAIGN_ABI } from "./abis.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { rewindEmptyCampaignTradeCursor } from "./emptyTradeCursorRewind.js";
 import { isEvmAddress, resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
+import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -95,6 +98,155 @@ async function ensureBondingMarketState(chainId: number, campaign: string): Prom
 
 async function maybeRewindEmptyTradeCursor(chainId: number, campaign: string): Promise<void> {
   await rewindEmptyCampaignTradeCursor(chainId, campaign);
+}
+
+function rpcUrlForChain(chainId: number): string {
+  if (chainId === 56) return parseRpcList(ENV.BSC_RPC_HTTP_56)[0] || "";
+  return parseRpcList(ENV.BSC_RPC_HTTP_97)[0] || "";
+}
+
+/**
+ * WIC-class bug: campaigns table + CMS stay on BONDING after on-chain graduation
+ * (cleanup / missed CampaignFinalized log). Heal from view functions only (no getLogs).
+ */
+async function upgradeGraduatedMarketStateFromChain(
+  chainId: number,
+  campaign: string,
+): Promise<boolean> {
+  const rpcUrl = rpcUrlForChain(chainId);
+  if (!rpcUrl || !isEvmAddress(campaign)) return false;
+
+  try {
+    const provider = createStaticJsonRpcProvider(rpcUrl, chainId, { timeoutMs: 20_000 });
+    const c = new Contract(campaign, LAUNCH_CAMPAIGN_ABI, provider) as any;
+    const [launched, tokenRaw, routerRaw, graduation] = await Promise.all([
+      c.launched().catch(() => false),
+      c.token().catch(() => ethers.ZeroAddress),
+      c.router().catch(() => ethers.ZeroAddress),
+      c.getGraduationState().catch(() => null),
+    ]);
+    if (!launched || !graduation) return false;
+
+    const pair = normalizeAddress(graduation?.[0] ?? graduation?.dexPair ?? "");
+    if (!isEvmAddress(pair) || pair === normalizeAddress(ethers.ZeroAddress)) return false;
+
+    const token = normalizeAddress(tokenRaw);
+    const router = normalizeAddress(routerRaw);
+    const finalCurve = String(graduation?.[1] ?? graduation?.finalCurvePrice ?? "0");
+    const initialDex = String(graduation?.[2] ?? graduation?.initialDexPrice ?? "0");
+    const liqToken = String(graduation?.[3] ?? graduation?.graduatedLiquidityTokens ?? "0");
+    const liqBnb = String(graduation?.[4] ?? graduation?.graduatedLiquidityBnb ?? "0");
+    const liqLp = String(graduation?.[5] ?? graduation?.graduatedLiquidityLp ?? "0");
+    const burnedUnsold = String(graduation?.[6] ?? graduation?.burnedUnsoldTokens ?? "0");
+    const burnedLp = String(graduation?.[7] ?? graduation?.burnedUnusedLpTokens ?? "0");
+    const postBurn = String(graduation?.[8] ?? graduation?.postBurnTotalSupply ?? "0");
+
+    await pool.query(
+      `insert into public.campaign_market_state(
+         chain_id,campaign_address,token_address,factory_address,market_stage,
+         dex_pair_address,dex_router_address,
+         final_curve_price_bnb,initial_dex_price_bnb,
+         graduated_liquidity_token_raw,graduated_liquidity_bnb_raw,graduated_lp_raw,
+         burned_unsold_token_raw,burned_unused_lp_token_raw,post_burn_total_supply_raw,
+         pool_verified,indexing_enabled,last_verified_at,created_at,updated_at
+       )
+       select
+         c.chain_id,
+         c.campaign_address,
+         coalesce(nullif($3,''), c.token_address, c.campaign_address),
+         c.factory_address,
+         'TOPAZ_ACTIVE',
+         $4,
+         nullif($5,''),
+         nullif($6,'0'),
+         nullif($7,'0'),
+         nullif($8,'0'),
+         nullif($9,'0'),
+         nullif($10,'0'),
+         nullif($11,'0'),
+         nullif($12,'0'),
+         nullif($13,'0'),
+         true,
+         true,
+         now(),
+         now(),
+         now()
+       from public.campaigns c
+       where c.chain_id=$1 and c.campaign_address=$2
+       on conflict (chain_id,campaign_address) do update set
+         market_stage='TOPAZ_ACTIVE',
+         token_address=coalesce(nullif(excluded.token_address,''), public.campaign_market_state.token_address),
+         dex_pair_address=coalesce(excluded.dex_pair_address, public.campaign_market_state.dex_pair_address),
+         dex_router_address=coalesce(excluded.dex_router_address, public.campaign_market_state.dex_router_address),
+         final_curve_price_bnb=coalesce(excluded.final_curve_price_bnb, public.campaign_market_state.final_curve_price_bnb),
+         initial_dex_price_bnb=coalesce(excluded.initial_dex_price_bnb, public.campaign_market_state.initial_dex_price_bnb),
+         graduated_liquidity_token_raw=coalesce(excluded.graduated_liquidity_token_raw, public.campaign_market_state.graduated_liquidity_token_raw),
+         graduated_liquidity_bnb_raw=coalesce(excluded.graduated_liquidity_bnb_raw, public.campaign_market_state.graduated_liquidity_bnb_raw),
+         graduated_lp_raw=coalesce(excluded.graduated_lp_raw, public.campaign_market_state.graduated_lp_raw),
+         burned_unsold_token_raw=coalesce(excluded.burned_unsold_token_raw, public.campaign_market_state.burned_unsold_token_raw),
+         burned_unused_lp_token_raw=coalesce(excluded.burned_unused_lp_token_raw, public.campaign_market_state.burned_unused_lp_token_raw),
+         post_burn_total_supply_raw=coalesce(excluded.post_burn_total_supply_raw, public.campaign_market_state.post_burn_total_supply_raw),
+         pool_verified=true,
+         indexing_enabled=true,
+         last_verified_at=now(),
+         last_error=null,
+         updated_at=now()`,
+      [
+        chainId,
+        campaign,
+        isEvmAddress(token) ? token : "",
+        pair,
+        isEvmAddress(router) ? router : "",
+        finalCurve,
+        initialDex,
+        liqToken,
+        liqBnb,
+        liqLp,
+        burnedUnsold,
+        burnedLp,
+        postBurn,
+      ],
+    );
+
+    await pool.query(
+      `update public.campaigns
+       set market_stage='TOPAZ_ACTIVE',
+           bonding_active=false,
+           graduated_at_chain=coalesce(graduated_at_chain, now()),
+           dex_pair_address=coalesce(nullif(dex_pair_address,''), $3),
+           updated_at=now()
+       where chain_id=$1 and campaign_address=$2`,
+      [chainId, campaign, pair],
+    );
+
+    await pool.query(
+      `insert into public.dex_pools(
+         chain_id,pair_address,campaign_address,token_address,
+         support_enabled,indexing_enabled,created_at,updated_at
+       ) values ($1,$2,$3,$4,true,true,now(),now())
+       on conflict (chain_id,pair_address) do update set
+         campaign_address=excluded.campaign_address,
+         token_address=coalesce(nullif(excluded.token_address,''), public.dex_pools.token_address),
+         support_enabled=true,
+         indexing_enabled=true,
+         updated_at=now()`,
+      [chainId, pair, campaign, isEvmAddress(token) ? token : null],
+    );
+
+    console.log("[wtr] upgraded CMS to TOPAZ_ACTIVE from on-chain graduation", {
+      chainId,
+      campaign,
+      pair,
+    });
+    return true;
+  } catch (error) {
+    console.warn("[wtr] upgradeGraduatedMarketStateFromChain failed", {
+      chainId,
+      campaign,
+      error: String((error as any)?.message || error),
+    });
+    return false;
+  }
 }
 
 async function readMarketState(chainId: number, campaign: string) {
@@ -209,19 +361,81 @@ async function readMarketState(chainId: number, campaign: string) {
     return null;
   }
 
+  // Heal stale BONDING CMS when the contract already graduated (WIC path).
+  const stageNow = String(row.market_stage || "BONDING");
+  if (stageNow === "BONDING" || stageNow === "GRADUATING" || stageNow === "TOPAZ_PENDING") {
+    const upgraded = await upgradeGraduatedMarketStateFromChain(chainId, campaign);
+    if (upgraded) {
+      const healed = await pool.query(
+        `select
+           cms.chain_id,
+           cms.campaign_address,
+           cms.token_address,
+           cms.factory_address,
+           cms.campaign_generation,
+           cms.market_stage,
+           cms.graduation_tx_hash,
+           cms.graduation_block,
+           cms.graduation_time,
+           cms.dex_pair_address,
+           cms.dex_router_address,
+           cms.dex_factory_address,
+           cms.wrapped_native_address,
+           cms.pool_stable,
+           cms.pool_fee_bps,
+           cms.final_curve_price_bnb,
+           cms.initial_dex_price_bnb,
+           cms.graduated_liquidity_token_raw,
+           cms.graduated_liquidity_bnb_raw,
+           cms.graduated_lp_raw,
+           cms.burned_unsold_token_raw,
+           cms.burned_unused_lp_token_raw,
+           cms.post_burn_total_supply_raw,
+           cms.pool_verified,
+           cms.indexing_enabled,
+           cms.last_verified_at,
+           cms.last_error,
+           c.bonding_active,
+           c.support_enabled,
+           c.indexing_enabled as campaign_indexing_enabled,
+           dp.last_indexed_block,
+           dp.last_finalized_block,
+           dp.last_swap_at,
+           dp.last_sync_at,
+           dp.reserve_token_raw,
+           dp.reserve_native_raw,
+           dp.support_enabled as pool_support_enabled,
+           dp.indexing_enabled as pool_indexing_enabled
+         from public.campaign_market_state cms
+         join public.campaigns c
+           on c.chain_id=cms.chain_id and c.campaign_address=cms.campaign_address
+         left join public.dex_pools dp
+           on dp.chain_id=cms.chain_id and dp.pair_address=cms.dex_pair_address
+         where cms.chain_id=$1 and cms.campaign_address=$2
+         limit 1`,
+        [chainId, campaign],
+      );
+      if (healed.rows[0]) row = healed.rows[0];
+    }
+  }
+
   const topazActive = row.market_stage === "TOPAZ_ACTIVE";
   const bondingActive = row.market_stage === "BONDING" && Boolean(row.bonding_active);
+  // After on-chain heal, pair is enough for quotes even if pool indexer row lags.
+  const hasPair = Boolean(row.dex_pair_address);
   const topazRouteReady =
     topazActive &&
-    Boolean(row.pool_verified) &&
-    Boolean(row.pool_support_enabled) &&
-    Boolean(row.pool_indexing_enabled);
+    Boolean(row.pool_verified || hasPair) &&
+    (row.pool_support_enabled == null || Boolean(row.pool_support_enabled)) &&
+    (row.pool_indexing_enabled == null || Boolean(row.pool_indexing_enabled) || hasPair);
   const quotesEnabled =
     Boolean(row.support_enabled) &&
-    (bondingActive || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES));
+    (bondingActive || (topazActive && hasPair) || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES));
   const tradingEnabled =
     Boolean(row.support_enabled) &&
-    (bondingActive || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES && ENV.ENABLE_TOPAZ_TRADING));
+    (bondingActive ||
+      (topazActive && hasPair) ||
+      (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES && ENV.ENABLE_TOPAZ_TRADING));
 
   const lagSeconds = row.last_sync_at
     ? Math.max(0, Math.floor((Date.now() - new Date(row.last_sync_at).getTime()) / 1000))

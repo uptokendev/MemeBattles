@@ -397,17 +397,33 @@ export async function resolveVerifiedTopazRoute(input: {
   // can still quote and execute Topaz trades during rollout.
   // Skip when the unified market flag is off so we do not spam 503 trade-route calls.
   // Bound the API wait: a degraded/slow Railway indexer must not block Topaz quotes.
-  const marketApiEnabled =
-    String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1" ||
-    String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
-  if (marketApiEnabled) {
+  // Prefer on-chain graduation first for reliability when CMS is stuck on BONDING
+  // (WIC after cleanup). API route is a fast-path only when already TOPAZ_ACTIVE.
+  try {
+    return await resolveTopazRouteOnChain({
+      provider: input.provider,
+      campaignAddress,
+      chainId: input.chainId,
+      expectedTokenAddress: input.expectedTokenAddress,
+    });
+  } catch (onChainError) {
+    const marketApiEnabled =
+      String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1" ||
+      String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
+    if (!marketApiEnabled) throw onChainError;
+
     const apiController = new AbortController();
     const parentAbort = () => apiController.abort();
     input.signal?.addEventListener("abort", parentAbort, { once: true });
     const apiTimer = window.setTimeout(() => apiController.abort(), 3_500);
     try {
       const market = await fetchMarketRoute(campaignAddress, input.chainId, apiController.signal);
-      if (market.marketStage === "TOPAZ_ACTIVE" && market.verified && market.tradingEnabled && market.stable === false) {
+      if (
+        market.marketStage === "TOPAZ_ACTIVE" &&
+        market.pair &&
+        market.tradingEnabled !== false &&
+        market.stable !== true
+      ) {
         return finalizeResolvedRoute({
           provider: input.provider,
           campaignAddress,
@@ -421,20 +437,14 @@ export async function resolveVerifiedTopazRoute(input: {
           market,
         });
       }
+      throw onChainError;
     } catch {
-      // On-chain fallback below (API 500 / timeout / BONDING-without-pair).
+      throw onChainError;
     } finally {
       window.clearTimeout(apiTimer);
       input.signal?.removeEventListener("abort", parentAbort);
     }
   }
-
-  return resolveTopazRouteOnChain({
-    provider: input.provider,
-    campaignAddress,
-    chainId: input.chainId,
-    expectedTokenAddress: input.expectedTokenAddress,
-  });
 }
 
 async function quoteExactInput(

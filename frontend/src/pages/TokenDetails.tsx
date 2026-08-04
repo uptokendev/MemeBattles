@@ -1172,8 +1172,45 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     enabled: hasValidCampaignAddress,
   });
 
+  // On-chain launched() — independent of metrics/CMS so WIC-class graduated tokens
+  // still open Topaz even when market-state is stuck on BONDING.
+  const [onChainLaunched, setOnChainLaunched] = useState(false);
+  const [onChainPair, setOnChainPair] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    const addr = resolvedCampaignAddress;
+    if (!hasValidCampaignAddress || !addr) {
+      setOnChainLaunched(false);
+      setOnChainPair("");
+      return;
+    }
+    void (async () => {
+      try {
+        const provider = getReadProvider(chainIdForStorage as SupportedChainId);
+        const c = new Contract(addr, CAMPAIGN_ABI, provider) as any;
+        const [launched, graduation] = await Promise.all([
+          c.launched().catch(() => false),
+          c.getGraduationState().catch(() => null),
+        ]);
+        if (cancelled) return;
+        const pair = String(graduation?.[0] ?? graduation?.dexPair ?? "").toLowerCase();
+        setOnChainLaunched(Boolean(launched) || (ethers.isAddress(pair) && pair !== ethers.ZeroAddress.toLowerCase()));
+        setOnChainPair(ethers.isAddress(pair) ? pair : "");
+      } catch {
+        if (!cancelled) {
+          setOnChainLaunched(false);
+          setOnChainPair("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasValidCampaignAddress, resolvedCampaignAddress, chainIdForStorage]);
+
   // Early graduation flag so Topaz market data can load before the full stage UI block.
   const contractGraduatedEarly = useMemo(() => {
+    if (onChainLaunched) return true;
     const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
     return hasLaunchFlag
       ? Boolean((metrics as any)?.launched) ||
@@ -1181,7 +1218,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
             ? (metrics as any).finalizedAt > 0n
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
-  }, [metrics]);
+  }, [metrics, onChainLaunched]);
 
   // Topaz pair scan only after graduation. Running it on pure bonding campaigns
   // can resolve a wrong/empty route and poison price/mcap/chart streams.
@@ -1259,8 +1296,10 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
   // or circulating mcap / price change tiles go wildly wrong.
   // Graduated: bonding history + Topaz scan + wallet reports + unified market API.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
+    // Always keep bonding curve history (including after graduation).
+    const bonding = mergeTradePoints(curvePointsForUi, confirmedCurvePoints);
     if (!contractGraduatedEarly) {
-      return mergeTradePoints(curvePointsForUi);
+      return bonding;
     }
     const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
       let tokensWei = 0n;
@@ -1288,8 +1327,8 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
         logIndex: trade.logIndex,
       };
     });
-    return mergeTradePoints(curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedAsPoints);
-  }, [contractGraduatedEarly, curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
+    return mergeTradePoints(bonding, topazMarket.trades, localTopazTrades, unifiedAsPoints);
+  }, [confirmedCurvePoints, contractGraduatedEarly, curvePointsForUi, topazMarket.trades, localTopazTrades, unifiedMarket.trades]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
@@ -1816,8 +1855,10 @@ const bnbUsd = useMemo(() => {
   // Allow Topaz when on-chain graduated even if market-state is a soft BONDING skeleton
   // (common after cleanup / CMS lag). Soft BONDING must not block WIC-style trades.
   const isTopazTradingActive =
+    onChainLaunched ||
     contractGraduated ||
-    (verifiedMarketStage === "TOPAZ_ACTIVE" && Boolean(unifiedMarket.state?.tradingEnabled));
+    (verifiedMarketStage === "TOPAZ_ACTIVE" &&
+      (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
 
   const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
   const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
@@ -1948,9 +1989,18 @@ const bnbUsd = useMemo(() => {
         setQuoteError(null);
 
         if (isDexStage) {
-          if (!isTopazTradingActive || !campaign?.campaign || !campaign?.token) {
+          if (!campaign?.campaign || !campaign?.token) {
             setQuoteWei(null);
-            setQuoteError(unifiedMarket.state?.lastError || "Topaz market verification is still in progress.");
+            setQuoteError("Campaign address is not ready yet.");
+            return;
+          }
+          // Prefer on-chain launched over CMS BONDING lag.
+          if (!isTopazTradingActive && !onChainLaunched) {
+            setQuoteWei(null);
+            setQuoteError(
+              unifiedMarket.state?.lastError ||
+                "Topaz market verification is still in progress. Bonding history remains available.",
+            );
             return;
           }
           // Avoid route RPC work until the user enters an amount.
@@ -1966,6 +2016,7 @@ const bnbUsd = useMemo(() => {
             return;
           }
           setQuoteLoading(true);
+          // Always resolve on-chain when CMS is stale BONDING — do not require TOPAZ_ACTIVE API.
           const resolved = await resolveVerifiedTopazRoute({
             provider: readProvider,
             campaignAddress: campaign.campaign,
@@ -2156,7 +2207,7 @@ const bnbUsd = useMemo(() => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb]);
+  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
@@ -3323,13 +3374,15 @@ const bnbUsd = useMemo(() => {
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      isTopazTradingActive && quoteWei != null ? (
+                      (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
                         <p>
                           Topaz execution · min received protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.
                           {tradeTab === "buy" && effectiveTokenWei > 0n
                             ? ` Est. ${formatTokenFromWei(effectiveTokenWei)} ${tokenData.ticker}.`
                             : ""}
                         </p>
+                      ) : isTopazTradingActive || onChainLaunched ? (
+                        <p>Enter an amount to quote on Topaz{onChainPair ? ` · pair ${onChainPair.slice(0, 6)}…${onChainPair.slice(-4)}` : ""}.</p>
                       ) : (
                         <p>Topaz market verification is in progress. Bonding history remains available.</p>
                       )
