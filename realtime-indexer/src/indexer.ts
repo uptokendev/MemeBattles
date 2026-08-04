@@ -1627,8 +1627,9 @@ export async function runIndexerOnce() {
  * never contends with the slow history backfill lock.
  */
 export async function runTipScanOnce() {
-  const tipScanBlocks = Math.max(1_000, Math.min(ENV.INDEXER_TIP_SCAN_BLOCKS || 3_000, 4_000));
-  const deadlineMs = Date.now() + 20_000;
+  // Cap tip-only at 20k so the concurrent loop stays under ~20s on publicnode.
+  const tipScanBlocks = Math.max(3_000, Math.min(ENV.INDEXER_TIP_SCAN_BLOCKS || 20_000, 20_000));
+  const deadlineMs = Date.now() + 25_000;
 
   for (const chain of CHAINS) {
     if (Date.now() >= deadlineMs) break;

@@ -89,7 +89,9 @@ export const ENV = {
   INDEXER_CAMPAIGN_BLOCKS_PER_PASS: Number(process.env.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || "8000"),
   // Always re-scan this recent tip every tick for live trades, even when the historical
   // cursor is far behind (does not advance the historical cursor past holes).
-  INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "3000"),
+  // Keep wide enough that a buy from ~1h ago on Chapel (~3s blocks) still lands
+  // in the tip window while history catch-up is lagging (TTA trade aged out of 3k).
+  INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "20000"),
   // "campaigns" (default): trade/finalize log scans only — factory discovery has its own loop.
   // "core": factory registry + campaign trades (heavier; can starve tip scans on small RPC budgets).
   // "full": factory/vote/router + campaigns. "factory": registry only.
