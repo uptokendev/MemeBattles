@@ -1888,11 +1888,20 @@ async function runIndexerCore(opts: {
     const blocksPerPass = Math.max(500, ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 8000);
     const tipScanBlocks = Math.max(0, ENV.INDEXER_TIP_SCAN_BLOCKS || 0);
 
+    // Prefer empty-history campaigns first so AWTT/WIC rewinds are not starved by
+    // TTA catch-up after every tip pass.
+    campaigns = [...campaigns].sort((a, b) => {
+      if (a.tradeCount === 0 && b.tradeCount > 0) return -1;
+      if (a.tradeCount > 0 && b.tradeCount === 0) return 1;
+      return 0;
+    });
+
     console.log("[indexer] campaign pass", {
       chainId: chain.chainId,
       mode: opts.mode,
       scope: opts.scope,
       campaigns: campaigns.length,
+      emptyHistory: campaigns.filter((c) => c.tradeCount === 0).length,
       target,
       blocksPerPass,
       tipScanBlocks,
