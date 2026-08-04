@@ -26,6 +26,8 @@
     "deploy:creator-arm-cooldown-factory:bsc-testnet": "hardhat run scripts/deploy-creator-arm-cooldown-factory.ts --network bscTestnet",
     "activate:creator-arm-cooldown-factory:bsc-testnet": "hardhat run scripts/activate-creator-arm-cooldown-factory.ts --network bscTestnet",
     "deploy:dual-test-factory:bsc-testnet": "hardhat run scripts/deploy-dual-test-factory.ts --network bscTestnet",
+    "deploy:clean-slate-factory:bsc-testnet": "hardhat run scripts/deploy-clean-slate-factory.ts --network bscTestnet",
+    "cleanup:clean-slate-97": "npm --prefix realtime-indexer exec -- tsx scripts/cleanupCleanSlate97.ts",
     "verify:scheduled-active:bsc-testnet": "cross-env DEPLOYMENT_FILE=deployments/bscTestnet.scheduled-test-factory.json hardhat run scripts/verify-deployment.ts --network bscTestnet",
     "verify:scheduled-explorer:bsc-testnet": "hardhat run scripts/verify-scheduled-test-contracts.ts --network bscTestnet",
     "audit:scheduled-settings:bsc-testnet": "hardhat run scripts/audit-scheduled-test-settings.ts --network bscTestnet",

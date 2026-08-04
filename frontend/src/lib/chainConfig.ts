@@ -287,11 +287,10 @@ function isEvmAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-// BSC testnet dual-factory inventory only (cleanup dropped e0FbBa / F787 generations).
-// Env VITE_SUPPORTED_FACTORY_ADDRESSES_97 can still extend; defaults stay tight.
+// BSC testnet clean-slate: single creation factory only (no dual inventory).
+// Env VITE_SUPPORTED_FACTORY_ADDRESSES_97 can still extend.
 const DEFAULT_SUPPORTED_FACTORIES_97 = [
-  "0xA2B19f194826b6D930D18F3fBCad662FaDC9459E", // previous gen-3 (support / tradable)
-  "0x8d4937D3BEe8A750411c0a24f888C0088754D3eD", // dual-test creation factory
+  "0x77Af7634837643d4f93d1086b492571268b30B5F", // clean-slate 2026-08-04
 ];
 
 /**
