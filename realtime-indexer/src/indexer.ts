@@ -398,29 +398,34 @@ async function listActiveCampaigns(
   chainId: number,
   factoryAddress?: string,
   campaignAddress?: string
-): Promise<Array<{ campaign: string; createdBlock: number }>> {
+): Promise<Array<{ campaign: string; createdBlock: number; tradeCount: number }>> {
   const normalizedFactory = factoryAddress ? factoryAddress.toLowerCase() : "";
   const normalizedCampaign = campaignAddress ? campaignAddress.toLowerCase() : "";
   const r = await pool.query(
-    `select campaign_address, coalesce(created_block, 0) as created_block
-     from public.campaigns
-     where chain_id=$1
-       and is_active=true
-       and ($2::text = '' or lower(factory_address) = $2)
-       and ($3::text = '' or lower(campaign_address) = $3)
-     order by coalesce(created_at_chain, updated_at, now()) desc`,
+    `select
+       c.campaign_address,
+       coalesce(c.created_block, 0) as created_block,
+       (select count(*)::int from public.curve_trades t
+         where t.chain_id=c.chain_id and t.campaign_address=c.campaign_address) as trade_count
+     from public.campaigns c
+     where c.chain_id=$1
+       and c.is_active=true
+       and ($2::text = '' or lower(c.factory_address) = $2)
+       and ($3::text = '' or lower(c.campaign_address) = $3)
+     order by coalesce(c.created_at_chain, c.updated_at, now()) desc`,
     [chainId, normalizedFactory, normalizedCampaign]
   );
   return r.rows.map((x) => ({
     campaign: String(x.campaign_address),
-    createdBlock: Number(x.created_block || 0)
+    createdBlock: Number(x.created_block || 0),
+    tradeCount: Number(x.trade_count || 0),
   }));
 }
 
 async function listScannableCampaigns(
   chainId: number,
   campaignAddress?: string
-): Promise<Array<{ campaign: string; createdBlock: number }>> {
+): Promise<Array<{ campaign: string; createdBlock: number; tradeCount: number }>> {
   // Campaign contracts are durable even when the launch factory changes.
   // Factory addresses are discovery sources, not liveness filters. Filtering
   // campaign scans by the currently configured factory silently strands legacy
@@ -1093,8 +1098,10 @@ async function scanCampaignRange(
   chainId: number,
   campaign: string,
   fromBlock: number,
-  toBlock: number
+  toBlock: number,
+  opts: { advanceCursor?: boolean; label?: string } = {}
 ) {
+  const advanceCursor = opts.advanceCursor !== false;
   const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
 
   const buyFrag = iface.getEvent("TokensPurchased");
@@ -1107,10 +1114,12 @@ async function scanCampaignRange(
   const finTopic = finFrag.topicHash;
 
   const cursor = `campaign:${campaign.toLowerCase()}`;
-  const step = ENV.LOG_CHUNK_SIZE;
+  const step = Math.max(50, ENV.LOG_CHUNK_SIZE);
   const blockTimeCache = new Map<number, number>();
   const campaignInfo = await getCampaignInfo(chainId, campaign);
   const tokenAddr = campaignInfo?.tokenAddress ?? null;
+  let insertedTotal = 0;
+  const startedAt = Date.now();
 
   // Best-effort: hydrate campaign feeRecipient for anti-abuse checks (Largest Buys).
   try {
@@ -1177,6 +1186,7 @@ async function scanCampaignRange(
         });
 
         if (inserted) {
+          insertedTotal += 1;
           await publishTrade(chainId, campaign, {
             type: "trade",
             chainId,
@@ -1234,6 +1244,7 @@ async function scanCampaignRange(
         });
 
         if (inserted) {
+          insertedTotal += 1;
           // Home feed progress: sells subtract from raisedTotalBnb
           leagueFeed.queueRaisedDelta(chainId, campaign, -bnbAmount);
 
@@ -1305,8 +1316,23 @@ async function scanCampaignRange(
       }
     }
 
-    await setStateMax(chainId, cursor, end + 1);
+    if (advanceCursor) {
+      await setStateMax(chainId, cursor, end + 1);
+    }
     if (logs.length > 0) await patchStats(chainId, campaign);
+  }
+
+  if (insertedTotal > 0 || opts.label) {
+    console.log("[indexer] campaign scan done", {
+      chainId,
+      campaign: campaign.toLowerCase(),
+      label: opts.label || "history",
+      fromBlock,
+      toBlock,
+      inserted: insertedTotal,
+      advanceCursor,
+      durationMs: Date.now() - startedAt,
+    });
   }
 }
 
@@ -1692,7 +1718,7 @@ async function runIndexerCore(opts: {
     }
 
     // ---------------- Campaign scans ----------------
-    let campaigns: Array<{ campaign: string; createdBlock: number }> = [];
+    let campaigns: Array<{ campaign: string; createdBlock: number; tradeCount: number }> = [];
     try {
       campaigns = await listScannableCampaigns(chain.chainId, opts.campaignAddress);
     } catch (e) {
@@ -1700,11 +1726,24 @@ async function runIndexerCore(opts: {
       continue;
     }
 
+    const blocksPerPass = Math.max(500, ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 8000);
+    const tipScanBlocks = Math.max(0, ENV.INDEXER_TIP_SCAN_BLOCKS || 0);
+
+    console.log("[indexer] campaign pass", {
+      chainId: chain.chainId,
+      mode: opts.mode,
+      scope: opts.scope,
+      campaigns: campaigns.length,
+      target,
+      blocksPerPass,
+      tipScanBlocks,
+    });
+
     for (const c of campaigns) {
       const campaign = c.campaign;
       try {
         const cursor = `campaign:${campaign.toLowerCase()}`;
-        const state = await getState(chain.chainId, cursor);
+        let state = await getState(chain.chainId, cursor);
         const windowStart = Math.max(0, target - opts.lookbackBlocks);
 
         // Prefer a deterministic start block when we have no state yet.
@@ -1714,33 +1753,81 @@ async function runIndexerCore(opts: {
           ? c.createdBlock
           : (chain.factoryStartBlock || 0);
 
-        // In normal mode, never let stale per-campaign cursors replay months of
-        // logs. A deployment that points the indexer at a newer factory may
-        // still have old campaign cursors in the shared DB; clamping to the
-        // rolling window keeps the always-on loop responsive. Use repair mode
-        // for intentional bounded backfills.
-        let from = opts.mode === "repair"
-          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : Math.max(windowStart, state > 0 ? state : (campaignStart > 0 ? campaignStart : windowStart));
-
-        // If the cursor never left the create block (common after failed getLogs),
-        // do not clamp up to windowStart — that can skip the only recent trades
-        // when combined with other bugs. Prefer campaignStart when state is stuck.
+        // Empty trade history + cursor far past created_block means getLogs advanced
+        // without inserting (cleanup / prune / bad range). Rewind so bonding history
+        // is re-scanned (AWTT/WIC after dual-factory cleanup).
         if (
           opts.mode === "normal" &&
+          c.tradeCount === 0 &&
           campaignStart > 0 &&
-          state > 0 &&
-          state <= campaignStart + 5
+          state > campaignStart + 100
         ) {
-          from = Math.min(from, campaignStart);
+          const rewound = Math.max(0, campaignStart - 1);
+          console.warn("[indexer] rewinding empty-trade cursor to created_block", {
+            chainId: chain.chainId,
+            campaign: campaign.toLowerCase(),
+            from: state,
+            to: rewound,
+            campaignStart,
+          });
+          // setStateMax is max-only; force lower value for empty-history recovery.
+          await pool.query(
+            `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
+             values ($1,$2,$3)
+             on conflict (chain_id,cursor) do update
+               set last_indexed_block = least(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
+                   updated_at = now()`,
+            [chain.chainId, cursor, rewound],
+          );
+          state = rewound;
         }
 
-        if (opts.forceCampaignStart && campaignStart > 0) {
-          // Targeted manual repair is intentionally operator-driven. If a prior
-          // bad RPC advanced or created a stale campaign cursor below the
-          // current deployment, replay this one campaign from its deterministic
-          // launch floor rather than the small rolling repair window.
-          from = Math.min(from, campaignStart);
+        // Live tip first: when the historical cursor lags, still pick up brand-new
+        // buys/sells (TTA) without waiting for a multi-hour catch-up to finish.
+        // Tip scan does NOT advance the historical cursor past holes.
+        if (opts.mode === "normal" && tipScanBlocks > 0) {
+          const tipFrom = Math.max(0, target - tipScanBlocks);
+          if (state < tipFrom) {
+            try {
+              await withProviderRetry((p) =>
+                scanCampaignRange(p, chain.chainId, campaign, tipFrom, target, {
+                  advanceCursor: false,
+                  label: "tip",
+                })
+              );
+            } catch (tipErr) {
+              console.warn("[indexer] tip scan failed", {
+                chainId: chain.chainId,
+                campaign: campaign.toLowerCase(),
+                err: String((tipErr as any)?.message || tipErr),
+              });
+            }
+          }
+        }
+
+        // Historical catch-up. Critical rule: once we have a campaign cursor at or
+        // after created_block, NEVER clamp forward to windowStart — that skips the
+        // bonding window (WIC/AWTT) after cleanup rewinds. Cap range per pass so
+        // one campaign cannot hold the global lock for 20+ minutes.
+        let from: number;
+        if (opts.mode === "repair") {
+          from = opts.forceCampaignStart && campaignStart > 0
+            ? Math.min(Math.max(0, state - opts.rewindBlocks), campaignStart)
+            : Math.max(windowStart, Math.max(0, state - opts.rewindBlocks));
+          if (opts.forceCampaignStart && campaignStart > 0) {
+            from = Math.min(from, campaignStart);
+          }
+        } else if (state > 0) {
+          // Continuous catch-up from cursor. Do not jump to windowStart.
+          from = state;
+          // Safety: if cursor is absurdly far below any known floor (corrupt),
+          // re-seed at campaignStart / windowStart rather than replaying millions.
+          const floor = campaignStart > 0 ? campaignStart : windowStart;
+          if (floor > 0 && state + 1 < floor - 5) {
+            from = floor;
+          }
+        } else {
+          from = campaignStart > 0 ? campaignStart : windowStart;
         }
 
         const requestedFromBlock = Number(opts.fromBlock || 0);
@@ -1748,19 +1835,23 @@ async function runIndexerCore(opts: {
           from = Math.max(0, requestedFromBlock);
         }
 
-        if (from > target) {
-          console.warn("Skipping campaign scan because fromBlock is after target", {
-            chainId: chain.chainId,
-            campaign: campaign.toLowerCase(),
-            from,
-            target,
-            requestedFromBlock: requestedFromBlock || null,
-            requestedToBlock: requestedToBlock || null
-          });
+        // Bound normal-mode work so every active campaign is visited each tick.
+        let passTarget = target;
+        if (opts.mode === "normal" && !requestedToBlock) {
+          passTarget = Math.min(target, from + blocksPerPass - 1);
+        }
+
+        if (from > passTarget) {
+          // Already caught up for this tip (or empty range).
           continue;
         }
 
-        await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, target));
+        await withProviderRetry((p) =>
+          scanCampaignRange(p, chain.chainId, campaign, from, passTarget, {
+            advanceCursor: true,
+            label: "history",
+          })
+        );
       } catch (e) {
         console.error("scanCampaign error (all RPCs failed)", { chainId: chain.chainId, campaign }, e);
       }

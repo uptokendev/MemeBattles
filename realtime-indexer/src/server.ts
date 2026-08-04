@@ -2456,13 +2456,15 @@ async function runIndexerJob(
 ) {
   const allowConcurrentRecovery = mode === "discover" || mode === "trades" || mode === "campaigns";
   const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
-  const isStaleManualTakeover =
-    trigger === "manual" &&
+  // Critical: a wedged normal pass used to hold `running=true` forever while the
+  // loop trigger could never take over (only manual could). Live tip trades then
+  // never indexed (TTA). Allow both loop and manual to reclaim after stale.
+  const isStaleTakeover =
     running &&
     runningForMs != null &&
     runningForMs > ENV.INDEXER_STALE_AFTER_MS;
 
-  if (running && !allowConcurrentRecovery && !isStaleManualTakeover) {
+  if (running && !allowConcurrentRecovery && !isStaleTakeover) {
     return {
       ok: false,
       skipped: true,
@@ -2472,6 +2474,17 @@ async function runIndexerJob(
       staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
       error: "indexer already running"
     };
+  }
+
+  if (isStaleTakeover) {
+    console.warn("[indexer] reclaiming stale run lock", {
+      trigger,
+      mode,
+      runningForMs,
+      staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
+    });
+    running = false;
+    runningStartedAt = 0;
   }
 
   const startedAt = Date.now();

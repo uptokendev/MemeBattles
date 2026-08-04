@@ -66,9 +66,10 @@ export const ENV = {
   FACTORY_LOOKBACK_BLOCKS: Number(process.env.FACTORY_LOOKBACK_BLOCKS || 250000),
 
   // Log scanning chunk sizes (smaller = slower but friendlier to free RPC tiers).
-  LOG_CHUNK_SIZE: Number(process.env.LOG_CHUNK_SIZE || "1000"),
+  // BlockPI / public Chapel nodes are happier with 500 than 1000.
+  LOG_CHUNK_SIZE: Number(process.env.LOG_CHUNK_SIZE || "500"),
   // When we need to split ranges due to public RPC limits, don't split below this span.
-  MIN_LOG_CHUNK_SIZE: Number(process.env.MIN_LOG_CHUNK_SIZE || "100"),
+  MIN_LOG_CHUNK_SIZE: Number(process.env.MIN_LOG_CHUNK_SIZE || "50"),
 
   // Optional daily repair job settings
   REPAIR_LOOKBACK_BLOCKS: Number(process.env.REPAIR_LOOKBACK_BLOCKS || 20000),
@@ -80,11 +81,20 @@ export const ENV = {
   // Factory discovery (registry + CampaignCreated logs) is heavier than trade ticks —
   // do not share the aggressive trade interval on free RPCs.
   FACTORY_DISCOVERY_INTERVAL_MS: Number(process.env.FACTORY_DISCOVERY_INTERVAL_MS || 60000),
-  INDEXER_STALE_AFTER_MS: Number(process.env.INDEXER_STALE_AFTER_MS || 120000),
+  // If a single pass holds the lock longer than this, the next loop tick takes over.
+  // Previously only *manual* jobs could take over — a wedged normal pass blocked forever.
+  INDEXER_STALE_AFTER_MS: Number(process.env.INDEXER_STALE_AFTER_MS || 90000),
+  // Cap historical catch-up per campaign per tick so 3 campaigns never monopolize RPC
+  // for 20+ minutes (which left TTA tip trades invisible).
+  INDEXER_CAMPAIGN_BLOCKS_PER_PASS: Number(process.env.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || "8000"),
+  // Always re-scan this recent tip every tick for live trades, even when the historical
+  // cursor is far behind (does not advance the historical cursor past holes).
+  INDEXER_TIP_SCAN_BLOCKS: Number(process.env.INDEXER_TIP_SCAN_BLOCKS || "5000"),
   // "core" is the launch-safe default: factory registry calls + campaign trade logs.
   // "full" also scans factory/vote/router logs and should use a paid/indexed RPC.
   INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "core",
-  INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 400),
+  // 100ms is enough spacing for BlockPI; 400ms made 250k-block catch-ups take forever.
+  INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 100),
   // eth_getLogs on free tiers often exceeds 12s under load — default 30s.
   RPC_REQUEST_TIMEOUT_MS: Number(process.env.RPC_REQUEST_TIMEOUT_MS || 30000),
 

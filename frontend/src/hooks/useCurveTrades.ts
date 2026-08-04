@@ -29,6 +29,10 @@ function resolveRealtimeApiBase(): string {
 
 const API_BASE = resolveRealtimeApiBase();
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+// Always light-poll trade history unless explicitly disabled. Session cache + Ably alone
+// caused Chrome vs Vivaldi divergence after buys (one browser painted local cache only).
+const ENABLE_TRADE_POLL =
+  String(import.meta.env.VITE_DISABLE_TRADE_POLL || "").trim() !== "1";
 // Browser eth_getLogs is optional recovery only — primary history comes from the Railway indexer.
 const ENABLE_ONCHAIN_TRADE_FALLBACK =
   String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
@@ -259,7 +263,7 @@ async function fetchOnChainTradeSnapshot(
  *  1) Snapshot: Railway realtime-indexer REST endpoint
  *  2) Explicit dev-only fallback: recent on-chain campaign logs
  *  3) Realtime: Ably channel updates
- *  4) Optional safety reconcile when VITE_ENABLE_TOKEN_POLLING=1
+ *  4) Light HTTP poll (~12s) so browsers without Ably/session cache converge
  */
 export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOptions) {
   const enabled = opts?.enabled ?? true;
@@ -275,7 +279,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   const inFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  const reconcileMs = opts?.reconcileMs ?? 60_000;
+  // 12s is enough for tip-scan inserts without hammering the indexer.
+  const reconcileMs = opts?.reconcileMs ?? 12_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
@@ -424,7 +429,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
     void pullSnapshot(ac.signal);
 
-    if (!canLoadTrades || !ENABLE_TOKEN_POLLING) return () => ac.abort();
+    // Poll trade history by default (or when VITE_ENABLE_TOKEN_POLLING=1).
+    if (!canLoadTrades || (!ENABLE_TRADE_POLL && !ENABLE_TOKEN_POLLING)) return () => ac.abort();
 
     const timer = setInterval(() => {
       void pullSnapshot(ac.signal);

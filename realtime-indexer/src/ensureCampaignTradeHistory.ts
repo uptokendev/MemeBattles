@@ -308,9 +308,6 @@ export async function backfillEmptyCampaignTrades(
       chainId === 56 ? Number(ENV.FACTORY_START_BLOCK_56 || 0) : Number(ENV.FACTORY_START_BLOCK_97 || 0);
     // Dual-test A2B19f start when env missing — WIC lives on this factory.
     const knownFactoryFloor = chainId === 97 ? 122_024_169 : 0;
-    // BlockPI / shared free tiers usually allow eth_getLogs with small chunks.
-    // Prefer created_block when known so cleanup recovery can still re-scan.
-    const lookback = Math.max(20_000, Math.min(200_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 5));
     const floor =
       createdBlock > 0
         ? createdBlock
@@ -318,16 +315,35 @@ export async function backfillEmptyCampaignTrades(
           ? factoryStart
           : knownFactoryFloor > 0
             ? knownFactoryFloor
-            : Math.max(0, latest - lookback);
-    const fromBlock = Math.max(0, Math.min(floor, Math.max(0, latest - lookback)) - 5);
+            : Math.max(0, latest - 50_000);
 
-    console.log("[indexer] trade backfill scan window", {
+    // Never try to walk 1M blocks in one API-triggered backfill (hangs /trades).
+    // Scan tip first for live UX, then one bounded historical window from floor.
+    const tipBlocks = Math.max(3_000, Number(ENV.INDEXER_TIP_SCAN_BLOCKS || 5_000));
+    const histBlocks = Math.max(
+      8_000,
+      Math.min(60_000, Number(ENV.REPAIR_LOOKBACK_BLOCKS || 20_000) * 3),
+    );
+    const tipFrom = Math.max(0, latest - tipBlocks);
+    // Prefer starting historical at created_block; if that range is huge, take the
+    // oldest histBlocks window first so bonding-era trades are not permanently skipped.
+    const histFrom = Math.max(0, floor - 2);
+    const histTo = Math.min(latest, histFrom + histBlocks);
+
+    const windows: Array<{ label: string; from: number; to: number }> = [
+      { label: "tip", from: tipFrom, to: latest },
+    ];
+    if (histFrom < tipFrom) {
+      windows.push({ label: "history", from: histFrom, to: Math.min(histTo, tipFrom) });
+    }
+
+    console.log("[indexer] trade backfill scan windows", {
       chainId,
       campaign,
-      fromBlock,
       latest,
       createdBlock,
       factoryStart,
+      windows,
       rpcHost: (() => {
         try {
           return new URL(activeRpc).host;
@@ -337,104 +353,116 @@ export async function backfillEmptyCampaignTrades(
       })(),
     });
 
-    // Scan buy + sell separately — some RPC providers mishandle multi-topic OR filters.
-    const buyLogs = await getLogsChunked(
-      provider,
-      { address: campaign, topics: [buyTopic] },
-      fromBlock,
-      latest,
-    );
-    const sellLogs = await getLogsChunked(
-      provider,
-      { address: campaign, topics: [sellTopic] },
-      fromBlock,
-      latest,
-    );
-    const logs = [...buyLogs, ...sellLogs];
+    const insertLogs = async (logs: ethers.Log[]): Promise<number> => {
+      let insertedLocal = 0;
+      const tsCache = new Map<number, number>();
+      logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0));
+      for (const log of logs) {
+        const parsed = iface.parseLog(log);
+        if (!parsed) continue;
+        const isSell = parsed.name === "TokensSold";
+        const isBuy = parsed.name === "TokensPurchased";
+        if (!isBuy && !isSell) continue;
 
-    logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0));
+        const txHash = String(log.transactionHash || "").toLowerCase();
+        if (!/^0x[a-f0-9]{64}$/.test(txHash)) continue;
+        const logIndex = Number(log.index ?? 0);
+        const blockNumber = Number(log.blockNumber ?? 0);
+
+        let tsSec = tsCache.get(blockNumber);
+        if (!tsSec) {
+          const blk = await provider.getBlock(blockNumber);
+          tsSec = Number(blk?.timestamp ?? Math.floor(Date.now() / 1000));
+          tsCache.set(blockNumber, tsSec);
+        }
+
+        const tokenRaw = BigInt(String(isSell ? (parsed.args as any).amountIn : (parsed.args as any).amountOut));
+        const bnbRaw = BigInt(String(isSell ? (parsed.args as any).payout : (parsed.args as any).cost));
+        const wallet = normalizeAddress(isSell ? (parsed.args as any).seller : (parsed.args as any).buyer);
+        if (!isAddress(wallet) || tokenRaw <= 0n) continue;
+
+        const tokenAmount = toDec18(tokenRaw);
+        const bnbAmount = toDec18(bnbRaw);
+        const priceBnb = tokenAmount > 0 ? bnbAmount / tokenAmount : null;
+
+        const result = await pool.query(
+          `insert into public.curve_trades(
+             chain_id,campaign_address,tx_hash,log_index,block_number,block_time,
+             side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           on conflict (chain_id,tx_hash,log_index) do nothing`,
+          [
+            chainId,
+            campaign,
+            txHash,
+            logIndex,
+            blockNumber,
+            new Date(tsSec * 1000),
+            isSell ? "sell" : "buy",
+            wallet,
+            tokenRaw.toString(),
+            bnbRaw.toString(),
+            tokenAmount,
+            bnbAmount,
+            priceBnb,
+          ],
+        );
+        if ((result.rowCount ?? 0) > 0) insertedLocal += 1;
+      }
+      return insertedLocal;
+    };
 
     let inserted = 0;
-    const tsCache = new Map<number, number>();
-    for (const log of logs) {
-      const parsed = iface.parseLog(log);
-      if (!parsed) continue;
-      const isSell = parsed.name === "TokensSold";
-      const isBuy = parsed.name === "TokensPurchased";
-      if (!isBuy && !isSell) continue;
+    let scanned = 0;
+    let maxSeenBlock = 0;
 
-      const txHash = String(log.transactionHash || "").toLowerCase();
-      if (!/^0x[a-f0-9]{64}$/.test(txHash)) continue;
-      const logIndex = Number(log.index ?? 0);
-      const blockNumber = Number(log.blockNumber ?? 0);
-
-      let tsSec = tsCache.get(blockNumber);
-      if (!tsSec) {
-        const blk = await provider.getBlock(blockNumber);
-        tsSec = Number(blk?.timestamp ?? Math.floor(Date.now() / 1000));
-        tsCache.set(blockNumber, tsSec);
-      }
-
-      const tokenRaw = BigInt(String(isSell ? (parsed.args as any).amountIn : (parsed.args as any).amountOut));
-      const bnbRaw = BigInt(String(isSell ? (parsed.args as any).payout : (parsed.args as any).cost));
-      const wallet = normalizeAddress(isSell ? (parsed.args as any).seller : (parsed.args as any).buyer);
-      if (!isAddress(wallet) || tokenRaw <= 0n) continue;
-
-      const tokenAmount = toDec18(tokenRaw);
-      const bnbAmount = toDec18(bnbRaw);
-      const priceBnb = tokenAmount > 0 ? bnbAmount / tokenAmount : null;
-
-      const result = await pool.query(
-        `insert into public.curve_trades(
-           chain_id,campaign_address,tx_hash,log_index,block_number,block_time,
-           side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         on conflict (chain_id,tx_hash,log_index) do nothing`,
-        [
-          chainId,
-          campaign,
-          txHash,
-          logIndex,
-          blockNumber,
-          new Date(tsSec * 1000),
-          isSell ? "sell" : "buy",
-          wallet,
-          tokenRaw.toString(),
-          bnbRaw.toString(),
-          tokenAmount,
-          bnbAmount,
-          priceBnb,
-        ],
+    for (const win of windows) {
+      if (win.from > win.to) continue;
+      // Scan buy + sell separately — some RPC providers mishandle multi-topic OR filters.
+      const buyLogs = await getLogsChunked(
+        provider,
+        { address: campaign, topics: [buyTopic] },
+        win.from,
+        win.to,
       );
-      if ((result.rowCount ?? 0) > 0) inserted += 1;
+      const sellLogs = await getLogsChunked(
+        provider,
+        { address: campaign, topics: [sellTopic] },
+        win.from,
+        win.to,
+      );
+      const logs = [...buyLogs, ...sellLogs];
+      scanned += logs.length;
+      for (const log of logs) {
+        maxSeenBlock = Math.max(maxSeenBlock, Number(log.blockNumber || 0));
+      }
+      inserted += await insertLogs(logs);
     }
 
-    // Advance cursor so the live indexer continues from here.
-    if (logs.length) {
-      const maxBlock = Math.max(...logs.map((l) => Number(l.blockNumber || 0)));
-      if (maxBlock > 0) {
-        await pool.query(
-          `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
-           values ($1,$2,$3)
-           on conflict (chain_id,cursor) do update
-             set last_indexed_block = greatest(public.indexer_state.last_indexed_block, excluded.last_indexed_block),
-                 updated_at = now()`,
-          [chainId, `campaign:${campaign}`, maxBlock],
-        );
-      }
-    }
+    // Empty-campaign recovery: pin the historical cursor to the end of the history
+    // window we just scanned (from created_block). The live loop continues from here
+    // without jumping over bonding-era blocks to a far tip.
+    const cursorSeed = Math.max(histFrom, histTo);
+    await pool.query(
+      `insert into public.indexer_state(chain_id,cursor,last_indexed_block)
+       values ($1,$2,$3)
+       on conflict (chain_id,cursor) do update
+         set last_indexed_block = excluded.last_indexed_block,
+             updated_at = now()`,
+      [chainId, `campaign:${campaign}`, cursorSeed],
+    );
 
     console.log("[indexer] backfilled empty campaign trades", {
       chainId,
       campaign,
-      fromBlock,
-      toBlock: latest,
-      scanned: logs.length,
+      scanned,
       inserted,
-      reason: logs.length === 0 ? "no_logs_in_window" : inserted > 0 ? "inserted" : "already_present",
+      maxSeenBlock: maxSeenBlock || null,
+      cursorSeed,
+      reason: scanned === 0 ? "no_logs_in_window" : inserted > 0 ? "inserted" : "already_present",
     });
 
-    return { inserted, scanned: logs.length, reason: logs.length === 0 ? "no_logs_in_window" : undefined };
+    return { inserted, scanned, reason: scanned === 0 ? "no_logs_in_window" : undefined };
   } catch (error) {
     console.warn("[indexer] backfillEmptyCampaignTrades failed", {
       chainId,
