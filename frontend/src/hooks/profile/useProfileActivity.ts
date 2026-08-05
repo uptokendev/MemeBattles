@@ -68,6 +68,7 @@ export function useProfileActivity({
           bnbAmount: it?.bnbAmount == null ? null : Number(it.bnbAmount),
           priceBnb: it?.priceBnb == null ? null : Number(it.priceBnb),
           campaignAddress: String(it?.campaignAddress ?? ""),
+          tokenAddress: it?.tokenAddress ? String(it.tokenAddress) : null,
           campaignName: it?.campaignName ?? null,
           campaignSymbol: it?.campaignSymbol ?? null,
           logoUri: it?.logoUri ?? null,

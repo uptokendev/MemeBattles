@@ -20,6 +20,7 @@ export type ActivityTradeRow = {
   bnbAmount: number | null;
   priceBnb: number | null;
   campaignAddress: string;
+  tokenAddress?: string | null;
   campaignName: string | null;
   campaignSymbol: string | null;
   logoUri: string | null;

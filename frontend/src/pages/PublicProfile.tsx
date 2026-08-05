@@ -130,6 +130,7 @@ function tradeFromApiItem(item: any): ActivityTradeRow {
     bnbAmount: item?.bnbAmount == null ? null : Number(item.bnbAmount),
     priceBnb: item?.priceBnb == null ? null : Number(item.priceBnb),
     campaignAddress: String(item?.campaignAddress ?? ""),
+    tokenAddress: item?.tokenAddress ? String(item.tokenAddress) : null,
     campaignName: item?.campaignName ?? null,
     campaignSymbol: item?.campaignSymbol ?? null,
     logoUri: item?.logoUri ?? null,
