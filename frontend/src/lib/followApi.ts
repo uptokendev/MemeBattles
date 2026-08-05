@@ -72,7 +72,8 @@ function resolveChainId(chainId: number, ...addresses: string[]) {
   if (addresses.some((address) => isSolanaAddress(address))) {
     return isSolanaChainId(chainId) ? chainId : SOLANA_CHAIN_ID;
   }
-  return chainId;
+  // EVM user-follows are wallet-global (not per 56/97). API stores them under 0.
+  return 0;
 }
 
 export async function followUser(followerAddress: string, followingAddress: string, chainId = 0): Promise<void> {

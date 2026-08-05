@@ -134,8 +134,26 @@ async function loadJoinedRows(startIso, endIso, limit) {
             r.created_at,
             count(distinct l.wallet_address)::int as linked_wallet_count,
             count(distinct s.wallet_address)::int as active_squad_member_count,
-            count(distinct s.wallet_address) filter (where s.member_role = 'creator')::int as linked_creators_count,
-            count(distinct s.wallet_address) filter (where s.member_role = 'trader')::int as linked_traders_count,
+            count(distinct coalesce(nullif(s.wallet_address, ''), l.wallet_address)) filter (
+              where lower(coalesce(s.member_role, '')) = 'creator'
+                 or (
+                   lower(coalesce(s.member_role, 'member')) not in ('creator', 'trader')
+                   and exists (
+                     select 1 from public.campaigns c
+                      where lower(c.creator_address) = lower(coalesce(s.wallet_address, l.wallet_address))
+                   )
+                 )
+            )::int as linked_creators_count,
+            count(distinct coalesce(nullif(s.wallet_address, ''), l.wallet_address)) filter (
+              where lower(coalesce(s.member_role, '')) = 'trader'
+                 or (
+                   lower(coalesce(s.member_role, 'member')) not in ('creator', 'trader')
+                   and not exists (
+                     select 1 from public.campaigns c
+                      where lower(c.creator_address) = lower(coalesce(s.wallet_address, l.wallet_address))
+                   )
+                 )
+            )::int as linked_traders_count,
             max(l.linked_at) as latest_linked_activity_at,
             (
               count(distinct l.wallet_address) * 10

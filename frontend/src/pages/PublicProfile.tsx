@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
@@ -18,6 +18,7 @@ import {
   type SquadSummary,
   type WalletAttributionPublicState,
 } from "@/lib/recruiterApi";
+import { followUser, isFollowingUser, unfollowUser } from "@/lib/followApi";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 import type { ActivityTradeRow } from "@/types/profilePage";
 import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
@@ -169,6 +170,8 @@ export default function PublicProfile({
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
   const [loadingPortfolio, setLoadingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   // Rich client-side portfolio metrics (same as Command Center).
   // Used when viewing your own public profile for accurate live TOTAL VALUE, TOP HOLDING, COINS, and on-chain WALLET AGE.
@@ -193,6 +196,52 @@ export default function PublicProfile({
 
   const explorerUrl = useMemo(() => `${getExplorerBase(activeChainId)}/address/${profileWallet}`, [activeChainId, profileWallet]);
   const rank = useMemo(() => safeRank(profile), [profile]);
+  const viewerAccount = wallet.account || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isOwnProfile || !viewerAccount || !profileWallet) {
+      setIsFollowing(false);
+      return;
+    }
+    void isFollowingUser(viewerAccount, profileWallet, 0)
+      .then((v) => {
+        if (!cancelled) setIsFollowing(Boolean(v));
+      })
+      .catch(() => {
+        if (!cancelled) setIsFollowing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwnProfile, viewerAccount, profileWallet]);
+
+  const handleToggleFollow = useCallback(async () => {
+    if (isOwnProfile || !profileWallet) return;
+    if (!viewerAccount) {
+      toast.error("Connect wallet to follow");
+      try {
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    if (followBusy) return;
+    setFollowBusy(true);
+    const next = !isFollowing;
+    setIsFollowing(next);
+    try {
+      if (next) await followUser(viewerAccount, profileWallet, 0);
+      else await unfollowUser(viewerAccount, profileWallet, 0);
+      toast.success(next ? "Following" : "Unfollowed");
+    } catch (err: any) {
+      setIsFollowing(!next);
+      toast.error(String(err?.message || "Failed to update follow"));
+    } finally {
+      setFollowBusy(false);
+    }
+  }, [followBusy, isFollowing, isOwnProfile, profileWallet, viewerAccount]);
 
   const profileCompleteness = useMemo(() => {
     let score = 0;
@@ -520,7 +569,16 @@ export default function PublicProfile({
                 <Button onClick={() => navigate("/profile")} className="w-full font-retro">
                   Open Command Center
                 </Button>
-              ) : null}
+              ) : (
+                <Button
+                  onClick={() => void handleToggleFollow()}
+                  disabled={followBusy}
+                  variant={isFollowing ? "outline" : "default"}
+                  className="w-full font-retro"
+                >
+                  {followBusy ? "Updating…" : isFollowing ? "Unfollow" : "Follow"}
+                </Button>
+              )}
             </div>
           </div>
         </section>

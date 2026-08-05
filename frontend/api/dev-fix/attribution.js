@@ -282,7 +282,11 @@ async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress
 }
 
 async function getRecruiterStats(recruiterId, recruiterWalletAddress = "") {
-  const [{ rows: linkRows }, { rows: squadRows }] = await Promise.all([
+  // Count creators/traders from both squad memberships AND recruiter links.
+  // Role defaults: explicit member_role wins; otherwise wallets that created campaigns
+  // count as creators; remaining linked wallets count as traders (so public pages
+  // no longer show 0/0 when everyone is still role=member).
+  const [{ rows: linkRows }, { rows: roleRows }] = await Promise.all([
     pool.query(
       `select count(*)::int as linked_wallet_count,
               max(linked_at) as latest_linked_activity_at
@@ -296,25 +300,54 @@ async function getRecruiterStats(recruiterId, recruiterWalletAddress = "") {
       [recruiterId, recruiterWalletAddress || ""],
     ),
     pool.query(
-      `select count(*)::int as active_squad_member_count,
-              count(*) filter (where member_role = 'creator')::int as linked_creators_count,
-              count(*) filter (where member_role = 'trader')::int as linked_traders_count
-         from public.wallet_squad_memberships s
-         left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
-         left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower($2)
-        where s.recruiter_id = $1
-          and s.is_active = true
-          and lower(s.wallet_address) <> lower($2)
-          and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)`,
+      `with members as (
+         select lower(s.wallet_address) as wallet,
+                lower(coalesce(s.member_role, 'member')) as member_role
+           from public.wallet_squad_memberships s
+           left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+           left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower($2)
+          where s.recruiter_id = $1
+            and s.is_active = true
+            and lower(s.wallet_address) <> lower($2)
+            and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)
+         union
+         select lower(l.wallet_address) as wallet,
+                'member'::text as member_role
+           from public.wallet_recruiter_links l
+           left join public.wallet_risk_profiles lwr on lower(lwr.wallet_address) = lower(l.wallet_address)
+           left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower($2)
+          where l.recruiter_id = $1
+            and l.is_active = true
+            and lower(l.wallet_address) <> lower($2)
+            and not (lwr.cluster_id is not null and rwr.cluster_id is not null and lwr.cluster_id = rwr.cluster_id)
+       ),
+       classified as (
+         select distinct m.wallet,
+                case
+                  when m.member_role = 'creator' then 'creator'
+                  when m.member_role = 'trader' then 'trader'
+                  when exists (
+                    select 1 from public.campaigns c
+                     where lower(c.creator_address) = m.wallet
+                  ) then 'creator'
+                  else 'trader'
+                end as role
+           from members m
+       )
+       select
+         count(*)::int as active_squad_member_count,
+         count(*) filter (where role = 'creator')::int as linked_creators_count,
+         count(*) filter (where role = 'trader')::int as linked_traders_count
+         from classified`,
       [recruiterId, recruiterWalletAddress || ""],
     ),
   ]);
 
   return {
     linkedWalletCount: linkRows[0]?.linked_wallet_count || 0,
-    activeSquadMemberCount: squadRows[0]?.active_squad_member_count || 0,
-    linkedCreatorsCount: squadRows[0]?.linked_creators_count || 0,
-    linkedTradersCount: squadRows[0]?.linked_traders_count || 0,
+    activeSquadMemberCount: roleRows[0]?.active_squad_member_count || 0,
+    linkedCreatorsCount: roleRows[0]?.linked_creators_count || 0,
+    linkedTradersCount: roleRows[0]?.linked_traders_count || 0,
     latestLinkedActivityAt: linkRows[0]?.latest_linked_activity_at || null,
   };
 }

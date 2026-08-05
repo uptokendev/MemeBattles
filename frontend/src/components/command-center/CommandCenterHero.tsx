@@ -67,13 +67,13 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
                 <Copy className="h-3 w-3" />
                 Copy
               </button>
-              <a
-                href={publicProfileBase}
+              <Link
+                to={publicProfileBase}
                 className="inline-flex items-center gap-1 border border-border/45 bg-white/[0.025] px-3 py-1 transition hover:border-accent/50 hover:text-foreground"
               >
                 Public profile
                 <ExternalLink className="h-3 w-3" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>

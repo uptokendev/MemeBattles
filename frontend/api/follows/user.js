@@ -1,11 +1,18 @@
 import { pool } from "../../server/db.js";
 import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json, readJson } from "../../server/http.js";
 
+// Social follows are wallet-to-wallet, not per-chain. Store EVM follows under chain_id=0 so
+// profile views on 56/97/unconnected wallets share the same graph. Solana keeps its chain id.
+function socialChainId(chainId) {
+  return isSolanaChain(chainId) ? Number(chainId) : 0;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const q = getQuery(req);
-      const chainId = Number(q.chainId ?? 0) || 0;
+      const rawChainId = Number(q.chainId ?? 0) || 0;
+      const chainId = socialChainId(rawChainId);
       const rawFollower = String(q.follower ?? "").trim();
       const rawFollowing = String(q.following ?? "").trim();
       const isSol = isSolanaChain(chainId);
@@ -14,18 +21,21 @@ export default async function handler(req, res) {
       if (!follower || !following) return json(res, 400, { error: "Invalid address" });
       if (!isSol && (!isAddress(follower) || !isAddress(following))) return json(res, 400, { error: "Invalid address" });
 
+      // Accept legacy rows stored under the caller's chainId as well as canonical 0.
       const { rows } = await pool.query(
         `SELECT 1 FROM public.user_follows
-          WHERE chain_id = $1 AND follower_address = $2 AND following_address = $3
+          WHERE follower_address = $1 AND following_address = $2
+            AND (chain_id = $3 OR ($3 = 0 AND chain_id IN (0, 56, 97)))
           LIMIT 1`,
-        [chainId, follower, following]
+        [follower, following, chainId]
       );
       return json(res, 200, { isFollowing: rows.length > 0 });
     }
 
     if (req.method === "POST") {
       const body = await readJson(req);
-      const chainId = Number(body.chainId ?? 0) || 0;
+      const rawChainId = Number(body.chainId ?? 0) || 0;
+      const chainId = socialChainId(rawChainId);
       const action = String(body.action ?? "").toLowerCase();
       const rawFollower = String(body.followerAddress ?? "").trim();
       const rawFollowing = String(body.followingAddress ?? "").trim();
@@ -43,13 +53,22 @@ export default async function handler(req, res) {
            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [chainId, follower, following]
         );
+        // Collapse legacy per-chain EVM duplicates into the canonical row.
+        if (chainId === 0) {
+          await pool.query(
+            `DELETE FROM public.user_follows
+              WHERE follower_address = $1 AND following_address = $2 AND chain_id IN (56, 97)`,
+            [follower, following]
+          );
+        }
         return json(res, 200, { ok: true });
       }
 
       await pool.query(
         `DELETE FROM public.user_follows
-          WHERE chain_id = $1 AND follower_address = $2 AND following_address = $3`,
-        [chainId, follower, following]
+          WHERE follower_address = $1 AND following_address = $2
+            AND (chain_id = $3 OR ($3 = 0 AND chain_id IN (0, 56, 97)))`,
+        [follower, following, chainId]
       );
       return json(res, 200, { ok: true });
     }
