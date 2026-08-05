@@ -2,12 +2,12 @@
  * Share a Prepare Mode campaign to X with the generated share-card image.
  *
  * X web intents cannot attach media — only text + URL (link preview / OG card).
- * Apps like Binance attach a real image via native share or paste.
+ * Desktop contest flow is therefore guided:
+ *   1) Download the PNG
+ *   2) Open X compose with text + promotion page link
+ *   3) User attaches the downloaded image in X
  *
- * Strategy (best → fallback):
- * 1) Web Share API with image file (mobile: pick X → image + text attached)
- * 2) Copy PNG to clipboard + open X compose with text/link (desktop: Ctrl/Cmd+V)
- * 3) Download PNG + open X compose with text/link
+ * On mobile, Web Share with a File can hand the PNG to the X app when available.
  */
 
 export type SharePrepareToXInput = {
@@ -19,26 +19,38 @@ export type SharePrepareToXInput = {
   tweetText: string;
   /** Optional filename for the PNG */
   fileName?: string;
+  /**
+   * `guided` (default): always download PNG, then open X (clearest for contest).
+   * `auto`: try Web Share / clipboard first, then download fallback.
+   */
+  mode?: "guided" | "auto";
 };
 
 export type SharePrepareToXResult =
   | { method: "web-share" }
   | { method: "clipboard-image"; openedComposer: boolean }
-  | { method: "download-fallback"; openedComposer: boolean }
+  | { method: "download-and-compose"; openedComposer: boolean; downloaded: boolean }
   | { method: "intent-only"; openedComposer: boolean };
 
-function buildComposerUrl(textWithUrl: string) {
-  // Prefer x.com; intent only supports text (and optional url — we embed url in text once).
+export function buildXComposerUrl(textWithUrl: string) {
   return `https://x.com/intent/tweet?text=${encodeURIComponent(textWithUrl)}`;
 }
 
+export function buildTweetBody(tweetText: string, pageUrl: string) {
+  const text = String(tweetText || "").trim();
+  const url = String(pageUrl || "").trim();
+  if (!url) return text;
+  if (!text) return url;
+  return text.includes(url) ? text : `${text}\n\n${url}`;
+}
+
 function openComposer(textWithUrl: string) {
-  const href = buildComposerUrl(textWithUrl);
+  const href = buildXComposerUrl(textWithUrl);
   const win = window.open(href, "_blank", "noopener,noreferrer");
   return Boolean(win);
 }
 
-function triggerDownload(blob: Blob, fileName: string) {
+export function triggerDownload(blob: Blob, fileName: string) {
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;
@@ -50,7 +62,7 @@ function triggerDownload(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2_000);
 }
 
-async function fetchShareCardBlob(imageUrl: string): Promise<Blob> {
+export async function fetchShareCardBlob(imageUrl: string): Promise<Blob> {
   const res = await fetch(imageUrl, {
     mode: "cors",
     credentials: "omit",
@@ -63,7 +75,6 @@ async function fetchShareCardBlob(imageUrl: string): Promise<Blob> {
   if (!blob || blob.size < 32) {
     throw new Error("Share card image was empty");
   }
-  // Normalize type for Web Share / clipboard (some proxies omit content-type).
   if (blob.type === "image/png" || blob.type === "image/jpeg" || blob.type === "image/webp") {
     return blob;
   }
@@ -86,13 +97,11 @@ async function tryWebShare(file: File, textWithUrl: string, pageUrl: string): Pr
     await navigator.share(payloadWithFiles);
     return true;
   } catch (err) {
-    // User cancelled — treat as handled so we don't open a second composer.
     if (err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError") {
       return true;
     }
   }
 
-  // Some browsers accept share without files only — not useful for our image goal.
   try {
     await navigator.share({ text: textWithUrl, url: pageUrl, title: "MemeWarzone" });
     return true;
@@ -106,7 +115,6 @@ async function tryClipboardImage(blob: Blob): Promise<boolean> {
     return false;
   }
   try {
-    // Safari often requires a Promise-valued ClipboardItem.
     const item = new ClipboardItem({
       "image/png": Promise.resolve(blob),
     });
@@ -123,23 +131,40 @@ async function tryClipboardImage(blob: Blob): Promise<boolean> {
   }
 }
 
+/** Download share-card PNG only (step 1 of guided flow). */
+export async function downloadPrepareShareCard(input: {
+  imageUrl: string;
+  fileName?: string;
+}): Promise<{ fileName: string }> {
+  const imageUrl = String(input.imageUrl || "").trim();
+  if (!imageUrl) throw new Error("Missing share card URL");
+  const fileName =
+    String(input.fileName || "").trim() || "memewarzone-prepare-share-card.png";
+  const blob = await fetchShareCardBlob(imageUrl);
+  triggerDownload(blob, fileName);
+  return { fileName };
+}
+
+/** Open X compose with standard text + promotion page link (step 2). */
+export function openPrepareXComposer(input: { tweetText: string; pageUrl: string }): boolean {
+  const textWithUrl = buildTweetBody(input.tweetText, input.pageUrl);
+  return openComposer(textWithUrl);
+}
+
 /**
  * Best-effort share of promotion page + share-card PNG to X.
+ * Default `guided` mode matches contest UX: download then open compose.
  */
 export async function sharePrepareToX(input: SharePrepareToXInput): Promise<SharePrepareToXResult> {
   const pageUrl = String(input.pageUrl || "").trim();
   const tweetText = String(input.tweetText || "").trim();
   const imageUrl = String(input.imageUrl || "").trim();
+  const mode = input.mode || "guided";
   const fileName =
     String(input.fileName || "").trim() ||
     `memewarzone-${pageUrl.split("/").filter(Boolean).pop() || "prepare"}-share-card.png`;
 
-  // One URL in the body (avoid intent url= + text both adding the same link).
-  const textWithUrl = pageUrl
-    ? tweetText.includes(pageUrl)
-      ? tweetText
-      : `${tweetText}\n\n${pageUrl}`
-    : tweetText;
+  const textWithUrl = buildTweetBody(tweetText, pageUrl);
 
   if (!imageUrl) {
     const opened = openComposer(textWithUrl);
@@ -156,25 +181,37 @@ export async function sharePrepareToX(input: SharePrepareToXInput): Promise<Shar
 
   const file = new File([blob], fileName, { type: blob.type || "image/png" });
 
-  // 1) Native share sheet with image (mobile / supported desktop).
-  if (await tryWebShare(file, textWithUrl, pageUrl)) {
-    return { method: "web-share" };
+  if (mode === "auto") {
+    if (await tryWebShare(file, textWithUrl, pageUrl)) {
+      return { method: "web-share" };
+    }
+    if (await tryClipboardImage(blob)) {
+      const opened = openComposer(textWithUrl);
+      return { method: "clipboard-image", openedComposer: opened };
+    }
+  } else {
+    // Guided: on mobile, still try native share first (image + text together).
+    const isCoarsePointer =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    if (isCoarsePointer && (await tryWebShare(file, textWithUrl, pageUrl))) {
+      return { method: "web-share" };
+    }
   }
 
-  // 2) Copy image → open X compose with text (user pastes image).
-  if (await tryClipboardImage(blob)) {
-    const opened = openComposer(textWithUrl);
-    return { method: "clipboard-image", openedComposer: opened };
-  }
-
-  // 3) Download PNG + open compose (user attaches downloaded file).
+  // Contest-clear path: download PNG, then open X with text.
   try {
     triggerDownload(blob, fileName);
   } catch {
-    // ignore
+    const opened = openComposer(textWithUrl);
+    return { method: "intent-only", openedComposer: opened };
   }
+
+  // Small delay so the download starts before the tab switch on some browsers.
+  await new Promise((r) => window.setTimeout(r, 350));
   const opened = openComposer(textWithUrl);
-  return { method: "download-fallback", openedComposer: opened };
+  return { method: "download-and-compose", openedComposer: opened, downloaded: true };
 }
 
 export function sharePrepareToXToastMessage(result: SharePrepareToXResult): string {
@@ -182,11 +219,11 @@ export function sharePrepareToXToastMessage(result: SharePrepareToXResult): stri
     case "web-share":
       return "Share sheet opened — pick X to post with your share card image.";
     case "clipboard-image":
-      return "Share card image copied. In the X post, paste it (Ctrl+V / Cmd+V), then Post.";
-    case "download-fallback":
-      return "Share card downloaded. Attach that PNG in the X post (image button), then Post.";
+      return "Share card copied. In X, paste it (Ctrl+V / Cmd+V), then Post.";
+    case "download-and-compose":
+      return "Share card downloaded. In X: click the image button → select the downloaded PNG → Post.";
     case "intent-only":
     default:
-      return "X compose opened. If no image appears, use Download PNG and attach it to the post.";
+      return "X compose opened. Download the share card first, then attach it in the post.";
   }
 }

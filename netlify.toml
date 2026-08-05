@@ -34,6 +34,21 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Social platforms fetch OG images cross-origin. Site-wide CORP:same-origin
+# blocks many unfurls — open the dedicated OG asset (and prepare PNGs).
+[[headers]]
+  for = "/assets/og.png"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=86400, s-maxage=604800"
+    Content-Type = "image/png"
+
+[[headers]]
+  for = "/assets/memewarzone.png"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=86400, s-maxage=604800"
+
 # Social crawlers need to fetch prepare share-card PNGs (override site-wide CORP).
 [[headers]]
   for = "/api/prepare-share-card"
