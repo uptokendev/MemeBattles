@@ -183,6 +183,13 @@ async function dispatchDashboardSubmissionNotes(pathname, req, res) {
   return true;
 }
 
+async function dispatchDashboardLpFees(pathname, req, res) {
+  if (pathname !== "/api/dashboard/lp-fees" && !pathname.startsWith("/api/dashboard/lp-fees?")) return false;
+  const lpFees = (await import("../api/dashboard/lp-fees.js")).default;
+  await lpFees(req, res);
+  return true;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -200,7 +207,7 @@ function shouldProxyToRailway(path) {
 
 function copyRequestHeaders(req, hasBody) {
   const headers = {};
-  const passthrough = ["authorization", "content-type", "x-diagnostics-token", "x-rank-events-token"];
+  const passthrough = ["authorization", "content-type", "x-diagnostics-token", "x-rank-events-token", "x-ops-key"];
 
   for (const name of passthrough) {
     const value = req.headers?.[name];
@@ -227,6 +234,7 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (await dispatchDashboardPromotors(pathname, req, res)) return;
     if (await dispatchDashboardRecruiters(pathname, req, res)) return;
     if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
+    if (await dispatchDashboardLpFees(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
     const isDevIP = isDevAllowedIP(req);

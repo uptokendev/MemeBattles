@@ -47,9 +47,9 @@ async function authorize(req, res) {
   const provided = String(req.headers["x-ops-key"] || getQuery(req).opsKey || "").trim();
   if (opsKey && provided && opsKey === provided) return { mode: "ops-key" };
 
-  // Testnet convenience: if no ops key is configured, allow open read on chain 97 only.
+  // Testnet convenience: chain 97 is open-read for fee monitoring (no secrets returned).
   const chainId = Number(getQuery(req).chainId ?? 97);
-  if (!opsKey && chainId === 97 && !String(req.headers?.authorization || "").trim()) {
+  if (chainId === 97) {
     return { mode: "testnet-open" };
   }
 
@@ -59,6 +59,8 @@ async function authorize(req, res) {
 }
 
 async function loadGraduatedRows(chainId, limit) {
+  // Prefer market-state pair when present; still list every graduated campaign
+  // so admins can see DDY-style rows before Topaz registration is complete.
   try {
     const { rows } = await pool.query(
       `select c.chain_id,
@@ -77,26 +79,49 @@ async function loadGraduatedRows(chainId, limit) {
            on cms.chain_id = c.chain_id
           and lower(cms.campaign_address) = lower(c.campaign_address)
         where c.chain_id = $1
-          and (c.graduated_at_chain is not null or cms.market_stage ilike '%TOPAZ%' or cms.dex_pair_address is not null)
-        order by c.graduated_at_chain desc nulls last
+          and (
+            c.graduated_at_chain is not null
+            or c.graduated_block is not null
+            or cms.market_stage ilike '%TOPAZ%'
+            or cms.dex_pair_address is not null
+          )
+        order by c.graduated_at_chain desc nulls last, c.created_at_chain desc nulls last
         limit $2`,
       [chainId, limit],
     );
     return rows;
   } catch (error) {
-    // Fallback without market state table.
+    // Fallback without market state / optional columns.
     if (error?.code === "42P01" || error?.code === "42703") {
-      const { rows } = await pool.query(
-        `select chain_id, campaign_address, token_address, creator_address, name, symbol,
-                graduated_at_chain, factory_address,
-                null::text as dex_pair_address, null::text as market_stage, null::text as dex_router_address
-           from public.campaigns
-          where chain_id = $1 and graduated_at_chain is not null
-          order by graduated_at_chain desc nulls last
-          limit $2`,
-        [chainId, limit],
-      );
-      return rows;
+      try {
+        const { rows } = await pool.query(
+          `select chain_id, campaign_address, token_address, creator_address, name, symbol,
+                  graduated_at_chain, factory_address,
+                  null::text as dex_pair_address, null::text as market_stage, null::text as dex_router_address
+             from public.campaigns
+            where chain_id = $1
+              and (graduated_at_chain is not null or graduated_block is not null)
+            order by graduated_at_chain desc nulls last
+            limit $2`,
+          [chainId, limit],
+        );
+        return rows;
+      } catch (inner) {
+        if (inner?.code === "42P01" || inner?.code === "42703") {
+          const { rows } = await pool.query(
+            `select chain_id, campaign_address, token_address, creator_address, name, symbol,
+                    graduated_at_chain, factory_address,
+                    null::text as dex_pair_address, null::text as market_stage, null::text as dex_router_address
+               from public.campaigns
+              where chain_id = $1 and graduated_at_chain is not null
+              order by graduated_at_chain desc nulls last
+              limit $2`,
+            [chainId, limit],
+          );
+          return rows;
+        }
+        throw inner;
+      }
     }
     throw error;
   }

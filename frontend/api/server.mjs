@@ -147,6 +147,7 @@ import {
   internalRewardBatches,
 } from "./dev-fix/reward-batch-ops.js";
 import { rewardClaimConfig, rewardClaimIntent, rewardClaimRecord } from "./dev-fix/reward-claim-intent.js";
+import dashboardLpFees from "./dashboard/lp-fees.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -215,7 +216,7 @@ app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token, x-ops-key");
   }
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
@@ -347,6 +348,7 @@ router.all("/ably/token", wrap(ablyToken));
 router.all("/auth/nonce", wrap(authNonce));
 router.all("/campaigns/upsert", wrap(campaignsUpsert));
 router.all("/campaigns", wrap(campaigns));
+router.all("/dashboard/lp-fees", wrap(dashboardLpFees));
 router.all("/comments", wrap(comments));
 router.all("/chat/history", wrap(chatHistory));
 router.all("/chat/join", wrap(chatJoin));
