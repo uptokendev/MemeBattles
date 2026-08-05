@@ -72,7 +72,13 @@ type CreatorTradePin = {
   timestamp: number;
 };
 
-type PlacedCreatorPin = CreatorTradePin & { x: number; y: number };
+type PlacedCreatorPin = CreatorTradePin & {
+  x: number;
+  y: number;
+  /** 0 = on the candle; higher = stacked upward (1h multi-trade buckets). */
+  stackIndex: number;
+  stackCount: number;
+};
 
 type CandleRow = {
   time: Time;
@@ -564,12 +570,49 @@ export function UnifiedMarketChart({
       return;
     }
     const pins = creatorPinsRef.current;
-    const next: PlacedCreatorPin[] = [];
+    // First pass: chart coordinates
+    const raw: Array<CreatorTradePin & { x: number; y: number }> = [];
     for (const pin of pins) {
       const x = chart.timeScale().timeToCoordinate(pin.timeSec as Time);
       const y = series.priceToCoordinate(pin.value);
       if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-      next.push({ ...pin, x, y });
+      raw.push({ ...pin, x, y });
+    }
+
+    // Group pins that share the same candle time (or nearly same X after zoom).
+    // On 1h / 4h many creator prints collapse to one bar — stack avatars upward like Pump.
+    const PIN_STACK_PX = 22;
+    const X_COLLIDE_PX = 12;
+    raw.sort((a, b) => a.x - b.x || a.timestamp - b.timestamp);
+
+    const groups: Array<Array<(typeof raw)[number]>> = [];
+    for (const pin of raw) {
+      const last = groups[groups.length - 1];
+      if (last && Math.abs(last[0].x - pin.x) <= X_COLLIDE_PX) {
+        last.push(pin);
+      } else {
+        groups.push([pin]);
+      }
+    }
+
+    const next: PlacedCreatorPin[] = [];
+    for (const group of groups) {
+      // Chronological bottom→top within a stack (oldest closest to candle).
+      group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
+      const stackCount = group.length;
+      // Anchor Y: use highest value in the group so stack sits above the bar.
+      const anchorY = Math.min(...group.map((p) => p.y));
+      const anchorX = group.reduce((s, p) => s + p.x, 0) / stackCount;
+      group.forEach((pin, stackIndex) => {
+        next.push({
+          ...pin,
+          x: anchorX,
+          // stackIndex 0 on candle; 1,2,… step upward (smaller y)
+          y: anchorY - stackIndex * PIN_STACK_PX,
+          stackIndex,
+          stackCount,
+        });
+      });
     }
     setPlacedPins(next);
   }, []);
@@ -803,10 +846,20 @@ export function UnifiedMarketChart({
               <button
                 key={pin.id}
                 type="button"
-                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-20 hover:scale-125 ${ring} ${glow} ${
-                  active ? "z-20 scale-125" : ""
+                title={
+                  pin.stackCount > 1
+                    ? `Creator ${pin.side} (${pin.stackIndex + 1}/${pin.stackCount} in this bar)`
+                    : `Creator ${pin.side}`
+                }
+                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-30 hover:scale-125 ${ring} ${glow} ${
+                  active ? "z-30 scale-125" : ""
                 }`}
-                style={{ left: pin.x, top: pin.y }}
+                style={{
+                  left: pin.x,
+                  top: pin.y,
+                  // Higher stack = slightly higher z so the top avatar is easiest to hit
+                  zIndex: 10 + pin.stackIndex,
+                }}
                 onMouseEnter={() => openCreatorTooltip(pin.id)}
                 onMouseLeave={scheduleHideCreatorTooltip}
                 onFocus={() => openCreatorTooltip(pin.id)}
@@ -817,7 +870,7 @@ export function UnifiedMarketChart({
                   clearHideTooltipTimer();
                   setHoverPinId((cur) => (cur === pin.id ? null : pin.id));
                 }}
-                aria-label={`Creator ${pin.side}`}
+                aria-label={`Creator ${pin.side}${pin.stackCount > 1 ? ` ${pin.stackIndex + 1} of ${pin.stackCount}` : ""}`}
               >
                 <img
                   src={avatarSrc}
