@@ -687,11 +687,14 @@ async function readMarketState(chainId: number, campaign: string) {
   // If CMS is TOPAZ_ACTIVE with a pair but dex_pools is missing/incomplete, repair.
   // Triggers when: no dex_pools join (null), indexing disabled, or reserves never filled.
   let dexPoolRepair: { attempted: boolean; ok: boolean; error?: string; pair?: string } | null = null;
-  const stageNow = String(row.market_stage || "").toUpperCase();
+  // Re-read stage after optional on-chain upgrade above (do not redeclare stageNow).
+  const stageForRepair = String(row.market_stage || "").toUpperCase();
   const needsDexPoolRepair =
-    (stageNow === "TOPAZ_ACTIVE" || stageNow === "TOPAZ_DEGRADED" || stageNow === "TOPAZ_PENDING") &&
+    (stageForRepair === "TOPAZ_ACTIVE" ||
+      stageForRepair === "TOPAZ_DEGRADED" ||
+      stageForRepair === "TOPAZ_PENDING") &&
     Boolean(row.dex_pair_address) &&
-    (stageNow === "TOPAZ_DEGRADED" ||
+    (stageForRepair === "TOPAZ_DEGRADED" ||
       row.pool_indexing_enabled == null ||
       row.pool_indexing_enabled === false ||
       row.reserve_token_raw == null ||
