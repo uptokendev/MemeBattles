@@ -34,7 +34,12 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 import { buildPrepareTweetText } from "@/lib/prepareShareText";
-import { sharePrepareToX, sharePrepareToXToastMessage } from "@/lib/sharePrepareToX";
+import {
+  downloadPrepareShareCard,
+  openPrepareXComposer,
+  sharePrepareToX,
+  sharePrepareToXToastMessage,
+} from "@/lib/sharePrepareToX";
 
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
@@ -275,43 +280,86 @@ function ShareModal({
   bundle: PrepareDraftBundle;
   onClose: () => void;
 }) {
-  const [postingToX, setPostingToX] = useState(false);
+  const [busy, setBusy] = useState<"download" | "open-x" | "guided" | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  const [openedX, setOpenedX] = useState(false);
   const pngUrl = buildShareCardUrl(bundle, false, "4");
-  const downloadUrl = buildShareCardUrl(bundle, true, "4");
   const pageUrl = buildPreparePageUrl(bundle.draft.slug);
-
-  const copyPage = async () => {
-    await navigator.clipboard?.writeText(pageUrl).catch(() => undefined);
-    toast.success("Prepare page link copied.");
-  };
-
-  const copyImage = async () => {
-    // pngUrl is already absolute (public app host).
-    await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
-    toast.success("Generated PNG link copied.");
-  };
+  const fileName = `memewarzone-${bundle.draft.slug || "prepare"}-share-card.png`;
 
   const tweetText = buildPrepareTweetText({
     name: bundle.draft.name,
     shareMessage: bundle.promotion.shareMessage,
   });
 
-  const postToX = async () => {
-    if (postingToX) return;
-    setPostingToX(true);
+  const copyPage = async () => {
+    await navigator.clipboard?.writeText(pageUrl).catch(() => undefined);
+    toast.success("Promotion page link copied.");
+  };
+
+  const downloadCard = async () => {
+    if (busy) return;
+    setBusy("download");
+    try {
+      await downloadPrepareShareCard({ imageUrl: pngUrl, fileName });
+      setDownloaded(true);
+      toast.success("Share card saved. Next: open X and attach that PNG to your post.", {
+        duration: 7_000,
+      });
+    } catch (err) {
+      console.error("[PrepareBase] download share card failed", err);
+      toast.error("Download failed. Try again or right-click the preview → Save image.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openXOnly = () => {
+    if (busy) return;
+    setBusy("open-x");
+    try {
+      const opened = openPrepareXComposer({ tweetText, pageUrl });
+      setOpenedX(true);
+      if (!downloaded) {
+        toast.message("X opened with your text. Attach the share card PNG before posting.", {
+          duration: 8_000,
+        });
+      } else {
+        toast.success("In X: image button → pick the downloaded share card → Post.", {
+          duration: 9_000,
+        });
+      }
+      if (!opened) {
+        toast.error("Pop-up blocked. Allow pop-ups for this site, then try again.");
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const guidedShare = async () => {
+    if (busy) return;
+    setBusy("guided");
     try {
       const result = await sharePrepareToX({
         imageUrl: pngUrl,
         pageUrl,
         tweetText,
-        fileName: `memewarzone-${bundle.draft.slug || "prepare"}-share-card.png`,
+        fileName,
+        mode: "guided",
       });
-      toast.success(sharePrepareToXToastMessage(result), { duration: 8_000 });
+      if (result.method === "download-and-compose" || result.method === "web-share") {
+        setDownloaded(true);
+      }
+      if (result.method !== "web-share") {
+        setOpenedX(true);
+      }
+      toast.success(sharePrepareToXToastMessage(result), { duration: 10_000 });
     } catch (err) {
       console.error("[PrepareBase] share to X failed", err);
-      toast.error("Could not prepare share card for X. Try Download PNG and attach it manually.");
+      toast.error("Could not start X share. Use Step 1 + Step 2 below.");
     } finally {
-      setPostingToX(false);
+      setBusy(null);
     }
   };
 
@@ -321,18 +369,14 @@ function ShareModal({
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.22em] text-orange-300">
-              // Dynamic OG share card
+              // Dynamic share card
             </div>
             <h3 className="mt-1 font-retro text-3xl uppercase tracking-[0.08em] text-foreground">
-              Generate share card
+              Share on X
             </h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              This PNG is generated from the live promotion data: logo, ticker, name,
-              description, recruits, heat, creator, and promotion link.
-            </p>
-            <p className="mt-2 text-xs text-orange-200/90">
-              Post to X attaches the share card image (or copies it so you can paste). The
-              promotion page link stays in the text so people open your page — not just the PNG.
+              X cannot auto-attach images from a website button. Save the share card, open
+              your post, then attach the PNG — same pattern as trade P&amp;L cards.
             </p>
           </div>
 
@@ -345,32 +389,120 @@ function ShareModal({
           <img src={pngUrl} alt="Generated Prepare Mode share card" className="w-full" />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <Button onClick={copyPage} className="mwz-button font-retro">
-            <Share2 className="mr-2 h-4 w-4" />
-            Copy page
-          </Button>
-
-          <Button onClick={copyImage} className="mwz-button font-retro">
-            <ImageDown className="mr-2 h-4 w-4" />
-            Copy PNG link
-          </Button>
-
-          <Button asChild className="mwz-button font-retro">
-            <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <Download className="mr-2 h-4 w-4" />
-              Download PNG
-            </a>
-          </Button>
-
+        {/* Primary guided CTA */}
+        <div className="mt-4 rounded-lg border border-orange-400/40 bg-orange-500/10 p-4">
+          <div className="text-xs uppercase tracking-[0.18em] text-orange-300">
+            Fast path (recommended)
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Downloads your share card, then opens X with the Warzone message and promotion
+            page link. You only attach the image in X and hit Post.
+          </p>
           <Button
             type="button"
-            onClick={() => void postToX()}
-            disabled={postingToX}
-            className="mwz-button mwz-button-orange font-retro"
+            onClick={() => void guidedShare()}
+            disabled={Boolean(busy)}
+            className="mwz-button mwz-button-orange mt-3 w-full font-retro sm:w-auto"
           >
             <ExternalLink className="mr-2 h-4 w-4" />
-            {postingToX ? "Preparing…" : "Post to X"}
+            {busy === "guided" ? "Preparing…" : "1 · Download card & open X"}
+          </Button>
+        </div>
+
+        {/* Explicit 3 steps */}
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div
+            className={`rounded-lg border p-4 ${
+              downloaded ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                1
+              </span>
+              Save the card
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Downloads a PNG of this preview to your device (usually Downloads folder).
+            </p>
+            <Button
+              type="button"
+              onClick={() => void downloadCard()}
+              disabled={Boolean(busy)}
+              className="mwz-button mt-3 w-full font-retro text-xs"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {busy === "download" ? "Saving…" : downloaded ? "Download again" : "Download share card"}
+            </Button>
+            {downloaded ? (
+              <p className="mt-2 text-[11px] text-emerald-300">Saved ✓ — continue to step 2</p>
+            ) : null}
+          </div>
+
+          <div
+            className={`rounded-lg border p-4 ${
+              openedX ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                2
+              </span>
+              Open X
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Opens compose with your message + promotion page link (not the raw image URL).
+            </p>
+            <Button
+              type="button"
+              onClick={openXOnly}
+              disabled={Boolean(busy)}
+              className="mwz-button mt-3 w-full font-retro text-xs"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              {busy === "open-x" ? "Opening…" : "Open X compose"}
+            </Button>
+            {openedX ? (
+              <p className="mt-2 text-[11px] text-emerald-300">Compose opened ✓ — finish step 3 in X</p>
+            ) : null}
+          </div>
+
+          <div className="rounded-lg border border-border/70 bg-black/40 p-4">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                3
+              </span>
+              Attach in X
+            </div>
+            <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+              <li>In the X post, click the <strong className="text-foreground">image / media</strong> button</li>
+              <li>Choose the share card you just downloaded</li>
+              <li>Check the text, then <strong className="text-foreground">Post</strong></li>
+            </ol>
+            <p className="mt-3 text-[11px] leading-relaxed text-orange-200/90">
+              Phone tip: the fast path may open a share sheet — pick <strong>X</strong> so the
+              image is attached automatically.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-border/50 pt-4">
+          <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
+            <Share2 className="mr-2 h-4 w-4" />
+            Copy page link
+          </Button>
+          <Button
+            type="button"
+            onClick={async () => {
+              await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
+              toast.message("PNG link copied — for Discord/Telegram previews only, not for X media.", {
+                duration: 6_000,
+              });
+            }}
+            className="mwz-button font-retro text-xs"
+          >
+            <ImageDown className="mr-2 h-4 w-4" />
+            Copy PNG link
           </Button>
         </div>
       </div>
