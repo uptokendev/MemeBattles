@@ -70,6 +70,7 @@ export default async function handler(req, res) {
          t.bnb_amount as "bnbAmount",
          t.price_bnb as "priceBnb",
          t.campaign_address as "campaignAddress",
+         c.token_address as "tokenAddress",
          c.name as "campaignName",
          c.symbol as "campaignSymbol",
          c.logo_uri as "logoUri"
@@ -97,6 +98,7 @@ export default async function handler(req, res) {
       bnbAmount: row.bnbAmount == null ? null : Number(row.bnbAmount),
       priceBnb: row.priceBnb == null ? null : Number(row.priceBnb),
       campaignAddress: row.campaignAddress ? String(row.campaignAddress).toLowerCase() : "",
+      tokenAddress: row.tokenAddress ? String(row.tokenAddress).toLowerCase() : null,
       campaignName: row.campaignName ?? null,
       campaignSymbol: row.campaignSymbol ?? null,
       logoUri: row.logoUri ?? null,

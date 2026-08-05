@@ -56,9 +56,11 @@ export function CommandPalette({ open, onOpenChange, allCampaigns }: Props) {
 
   const placeholder = useMemo(() => HINT_ROTATION[hintIndex], [hintIndex]);
 
-  const handleSelectToken = (campaignAddress: string) => {
+  const handleSelectToken = (tokenOrCampaignAddress: string, tokenAddress?: string) => {
     onOpenChange(false);
-    navigate(`/token/${campaignAddress.toLowerCase()}`);
+    const preferred = String(tokenAddress || tokenOrCampaignAddress || "").toLowerCase();
+    if (!preferred) return;
+    navigate(`/token/${preferred}`);
   };
 
   const handleNavigate = (path: string) => {
@@ -87,11 +89,13 @@ export function CommandPalette({ open, onOpenChange, allCampaigns }: Props) {
 
         {results.length > 0 ? (
           <CommandGroup heading="Tokens">
-            {results.map((r) => (
+            {results.map((r) => {
+              const publicAddr = String(r.tokenAddress || r.campaignAddress || "").toLowerCase();
+              return (
               <CommandItem
-                key={r.campaignAddress}
-                value={`${r.name} ${r.symbol} ${r.campaignAddress}`}
-                onSelect={() => handleSelectToken(r.campaignAddress)}
+                key={publicAddr || r.campaignAddress}
+                value={`${r.name} ${r.symbol} ${publicAddr} ${r.campaignAddress}`}
+                onSelect={() => handleSelectToken(r.campaignAddress, r.tokenAddress)}
               >
                 <Search className="mr-2 h-4 w-4 text-accent/70" />
                 <div className="min-w-0 flex-1">
@@ -99,10 +103,10 @@ export function CommandPalette({ open, onOpenChange, allCampaigns }: Props) {
                     <span className="truncate text-foreground">{r.name}</span>
                     <span className="font-mono text-[11px] text-muted-foreground">${r.symbol}</span>
                   </div>
-                  <div className="truncate font-mono text-[10px] text-muted-foreground">{r.campaignAddress}</div>
+                  <div className="truncate font-mono text-[10px] text-muted-foreground">{publicAddr}</div>
                 </div>
               </CommandItem>
-            ))}
+            )})}
           </CommandGroup>
         ) : null}
 

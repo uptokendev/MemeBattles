@@ -21,7 +21,7 @@ type CarouselCard = {
   // Keep original campaign info around for lightweight stat refresh polling.
   campaignInfo?: CampaignInfo;
 
-  // IMPORTANT: TokenDetails expects /token/:campaignAddress
+  // campaignAddress = bonding/vote contract; public URL prefers tokenAddress.
   campaignAddress: string;
 
   // Optional token contract (post-graduation / or already known in your system)
@@ -684,6 +684,9 @@ const CardView = ({
   const wallet = useWallet();
 
   const campaignAddr = String(card.campaignAddress ?? "").trim().toLowerCase();
+  const tokenAddr = String(card.tokenAddress ?? "").trim().toLowerCase();
+  const publicTokenAddr =
+    tokenAddr && isAddress(tokenAddr) && !isZeroAddress(tokenAddr) ? tokenAddr : campaignAddr;
   const isDummy = !campaignAddr || !isAddress(campaignAddr) || isZeroAddress(campaignAddr);
 
   // Realtime stats from Railway/Ably (same hook TokenDetails uses)
@@ -705,8 +708,8 @@ const CardView = ({
 
   const handleClick = () => {
     if (isCentered && !isDummy) {
-      // Navigate to token details if centered/highlighted AND we have a real campaign address
-      navigate(`/token/${campaignAddr}`);
+      // Public token pages prefer the ERC-20 address; campaign is only a fallback.
+      navigate(`/token/${publicTokenAddr}`);
       return;
     }
 

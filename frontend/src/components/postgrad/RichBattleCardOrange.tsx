@@ -86,7 +86,7 @@ function getParticipantTone(isLeading: boolean, tied: boolean) {
 }
 
 function getParticipantRoute(participant: any) {
-  return getArenaTokenRoute(participant?.campaignAddress ?? participant?.tokenId ?? participant?.tokenAddress ?? null);
+  return getArenaTokenRoute(participant?.tokenAddress ?? participant?.tokenId ?? participant?.campaignAddress ?? null);
 }
 
 function BattleParticipantPanel({

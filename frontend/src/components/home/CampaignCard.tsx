@@ -91,18 +91,28 @@ export function CampaignCard({
     }
 
     setCampaignImage("");
-    if (!addr) return () => { cancelled = true; };
+    if (!addr && !publicTokenAddr) return () => { cancelled = true; };
 
-    void fetchCampaignLogoURI(addr)
-      .then((uri) => {
-        if (cancelled) return;
-        const resolved = resolveImageUri(uri);
-        if (usefulCampaignImage(resolved)) setCampaignImage(resolved);
-      })
-      .catch(() => undefined);
+    // Prefer token-keyed on-chain/API logo, then campaign (metadata often stored under either).
+    void (async () => {
+      for (const identity of [publicTokenAddr, addr]) {
+        if (!identity || cancelled) continue;
+        try {
+          const uri = await fetchCampaignLogoURI(identity);
+          if (cancelled) return;
+          const resolved = resolveImageUri(uri);
+          if (usefulCampaignImage(resolved)) {
+            setCampaignImage(resolved);
+            return;
+          }
+        } catch {
+          // try next identity
+        }
+      }
+    })();
 
     return () => { cancelled = true; };
-  }, [addr, vm.logoURI, fetchCampaignLogoURI]);
+  }, [addr, publicTokenAddr, vm.logoURI, fetchCampaignLogoURI]);
 
   const openProfile = () => {
     if (!canOpenProfile) return;

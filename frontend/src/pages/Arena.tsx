@@ -116,7 +116,11 @@ const Arena = () => {
           </div>
           {openForBattleQueue.length ? (
             openForBattleQueue.map((battle) => {
-              const tokenRoute = getArenaTokenRoute((battle.participants[0] as any)?.campaignAddress ?? battle.participants[0].tokenId);
+              const tokenRoute = getArenaTokenRoute(
+                (battle.participants[0] as any)?.tokenAddress
+                  ?? battle.participants[0].tokenId
+                  ?? (battle.participants[0] as any)?.campaignAddress,
+              );
               return (
                 <div key={battle.id} className="mwz-hud-frame p-4">
                   <div className="flex flex-wrap items-center gap-2">

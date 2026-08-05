@@ -164,17 +164,20 @@ export default async function handler(req, res) {
     if (!tokenAddress) return json(res, 400, { error: "Invalid tokenAddress" });
     if (!creatorAddress) return json(res, 400, { error: "Invalid creatorAddress" });
 
+    const logoUri = cleanText(b.logoURI ?? b.logoUri ?? b.logo_url, 1000) || null;
+
     await pool.query(
-      `INSERT INTO campaigns (chain_id, campaign_address, token_address, creator_address, name, symbol)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO campaigns (chain_id, campaign_address, token_address, creator_address, name, symbol, logo_uri)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (chain_id, campaign_address)
        DO UPDATE SET
          token_address = EXCLUDED.token_address,
          creator_address = EXCLUDED.creator_address,
          name = EXCLUDED.name,
          symbol = EXCLUDED.symbol,
+         logo_uri = COALESCE(NULLIF(BTRIM(EXCLUDED.logo_uri), ''), public.campaigns.logo_uri),
          updated_at = NOW()`,
-      [chainId, campaignAddress, tokenAddress, creatorAddress, name, symbol]
+      [chainId, campaignAddress, tokenAddress, creatorAddress, name, symbol, logoUri]
     );
 
     await mirrorTokenMetadata(req, b);

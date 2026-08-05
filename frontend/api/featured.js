@@ -25,15 +25,32 @@ const LIFECYCLE_SELECT = `
        dl.scheduled_launch_at AS "scheduledLaunchAt",
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "tradingLaunchAt",`;
 
-// Prefer non-empty campaign logo, then Prepare Mode draft logo (common for older factory rows
-// that never got logo_uri backfilled into public.campaigns).
+// Prefer registry metadata (keyed by campaign OR token), then campaigns.logo_uri,
+// then Prepare Mode draft logo (matched by campaign OR token address).
 const LOGO_URI_SELECT = `
        COALESCE(
+         NULLIF(BTRIM(tm.logo_uri), ''),
          NULLIF(BTRIM(c.logo_uri), ''),
          NULLIF(BTRIM(dl.draft_logo_url), '')
        ) AS "logoUri",`;
 
-const LIFECYCLE_JOIN = `
+const LOGO_JOINS = `
+      LEFT JOIN LATERAL (
+        SELECT m.logo_uri
+          FROM public.token_metadata_registry m
+         WHERE m.chain_id = c.chain_id
+           AND (
+             lower(m.campaign_address) = lower(c.campaign_address)
+             OR (
+               c.token_address IS NOT NULL
+               AND lower(m.token_address) = lower(c.token_address)
+             )
+           )
+         ORDER BY
+           CASE WHEN lower(m.campaign_address) = lower(c.campaign_address) THEN 0 ELSE 1 END,
+           m.id ASC
+         LIMIT 1
+      ) tm ON true
       LEFT JOIN LATERAL (
         SELECT
           d.created_at AS draft_created_at,
@@ -42,11 +59,28 @@ const LIFECYCLE_JOIN = `
           d.logo_url AS draft_logo_url
         FROM campaign_drafts d
         WHERE d.chain_id = c.chain_id
-          AND d.campaign_address IS NOT NULL
-          AND lower(d.campaign_address) = lower(c.campaign_address)
-        ORDER BY d.updated_at DESC
+          AND (
+            (
+              d.campaign_address IS NOT NULL
+              AND lower(d.campaign_address) = lower(c.campaign_address)
+            )
+            OR (
+              c.token_address IS NOT NULL
+              AND d.token_address IS NOT NULL
+              AND lower(d.token_address) = lower(c.token_address)
+            )
+          )
+        ORDER BY
+          CASE
+            WHEN d.campaign_address IS NOT NULL
+             AND lower(d.campaign_address) = lower(c.campaign_address) THEN 0
+            ELSE 1
+          END,
+          d.updated_at DESC
         LIMIT 1
       ) dl ON true`;
+
+const LIFECYCLE_JOIN = LOGO_JOINS;
 
 async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
   const orderByExpr = sortCol === "last_activity_at" ? "ca.last_activity_at" : `va.${sortCol}`;

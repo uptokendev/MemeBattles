@@ -9,6 +9,7 @@ import { resolveImageUri } from "@/lib/media";
 import { getReadProvider } from "@/lib/readProvider";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
+import { getPublicTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import type { SupportedChainId } from "@/lib/chainConfig";
@@ -150,12 +151,38 @@ async function loadOnChainCandidates(chainId: number): Promise<FeaturedItem[]> {
   }
 }
 
+async function fetchRegisteredLogo(chainId: number, address?: string | null): Promise<string | null> {
+  const raw = String(address ?? "").trim();
+  if (!isAddress(raw)) return null;
+  try {
+    const response = await apiFetch(`/api/token-metadata/${chainId}/${raw}`, { cache: "no-store" });
+    const json = await response.json().catch(() => null);
+    if (!response.ok || !json) return null;
+    const logo = json.image || json.image_url || json.logoUri || json.logo_uri || json.logoURI || null;
+    return usefulImage(logo) ? String(logo) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function hydrateMissingLogo(item: FeaturedItem): Promise<FeaturedItem> {
+  if (usefulImage(item.logoUri)) return item;
+  // Prefer token-keyed metadata, then campaign-keyed (common mix-up after direct deploy).
+  for (const address of [item.tokenAddress, item.campaignAddress]) {
+    const logo = await fetchRegisteredLogo(item.chainId, address);
+    if (logo) return { ...item, logoUri: logo };
+  }
+  return item;
+}
+
 async function hydrateMissingSummary(item: FeaturedItem, options?: { includeOnChainMcap?: boolean }): Promise<FeaturedItem> {
-  let next = item;
+  let next = await hydrateMissingLogo(item);
 
   if (next.marketcapBnb == null || next.marketcapBnb === "" || Number(next.votes24h || 0) <= 0) {
     try {
-      const response = await apiFetch(`/api/token/${next.campaignAddress}/summary?chainId=${next.chainId}`, {
+      // Summary endpoints accept either identity; prefer token for public consistency.
+      const identity = next.tokenAddress || next.campaignAddress;
+      const response = await apiFetch(`/api/token/${identity}/summary?chainId=${next.chainId}`, {
         cache: "no-store",
       });
       const json = await response.json().catch(() => null);
@@ -165,6 +192,9 @@ async function hydrateMissingSummary(item: FeaturedItem, options?: { includeOnCh
           marketcapBnb: json.marketcapBnb ?? json.marketcap_bnb ?? next.marketcapBnb ?? null,
           votes24h: Number(json.votes24h ?? json.votes_24h ?? next.votes24h ?? 0),
           votesAllTime: Number(json.votesAllTime ?? json.votes_all_time ?? next.votesAllTime ?? 0),
+          logoUri: usefulImage(next.logoUri)
+            ? next.logoUri
+            : (json.logoUri ?? json.logo_uri ?? json.logoURI ?? next.logoUri),
         };
       }
     } catch {
@@ -223,7 +253,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
     if (item.graduatedAtChain || item.isDexTrading) return null;
     // Trust API rows that already have identity; skip multi-RPC hydration.
     if (item.name && item.symbol && isAddress(item.tokenAddress) && Number(item.votes24h || 0) >= 0) {
-      if (item.marketcapBnb != null && item.marketcapBnb !== "") {
+      if (item.marketcapBnb != null && item.marketcapBnb !== "" && usefulImage(item.logoUri)) {
         return item;
       }
       return hydrateMissingSummary(item, { includeOnChainMcap: false });
@@ -323,17 +353,25 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           loadApiCandidates(chainId),
           fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
         ]);
-        const draftLogoByCampaign = new Map(
-          publicDrafts
-            .filter((draft) => isAddress(draft.campaignAddress) && usefulImage(draft.logoUrl))
-            .map((draft) => [String(draft.campaignAddress).toLowerCase(), String(draft.logoUrl)]),
-        );
+        const draftLogoByIdentity = new Map<string, string>();
+        for (const draft of publicDrafts) {
+          if (!usefulImage(draft.logoUrl)) continue;
+          const logo = String(draft.logoUrl);
+          if (isAddress(draft.campaignAddress)) {
+            draftLogoByIdentity.set(String(draft.campaignAddress).toLowerCase(), logo);
+          }
+          if (isAddress((draft as any).tokenAddress)) {
+            draftLogoByIdentity.set(String((draft as any).tokenAddress).toLowerCase(), logo);
+          }
+        }
         const rawCandidates = apiCandidates.length ? apiCandidates : await loadOnChainCandidates(chainId);
         const candidates = rawCandidates.map((item) => ({
           ...item,
           logoUri: usefulImage(item.logoUri)
             ? item.logoUri
-            : draftLogoByCampaign.get(item.campaignAddress.toLowerCase()) || item.logoUri,
+            : draftLogoByIdentity.get(item.campaignAddress.toLowerCase())
+              || (item.tokenAddress ? draftLogoByIdentity.get(String(item.tokenAddress).toLowerCase()) : null)
+              || item.logoUri,
         }));
         const live = await verifyAndHydrateLive(candidates, chainId);
         if (cancelled) return;
@@ -383,20 +421,37 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           <div className="mwz-muted py-8 text-sm">No live featured campaigns yet.</div>
         ) : cards.map((item, index) => {
           const image = usefulImage(item.logoUri) ? resolveImageUri(item.logoUri) : null;
-          const target = item.tokenAddress || item.campaignAddress;
+          const targetRoute = getPublicTokenDetailRoute({
+            tokenAddress: item.tokenAddress,
+            campaignAddress: item.campaignAddress,
+            chainId: item.chainId,
+          }) || `/token/${item.tokenAddress || item.campaignAddress}?chainId=${item.chainId}`;
           return (
             <div
               key={item.campaignAddress}
               className="mwz-hud-frame group flex h-[150px] w-full cursor-pointer overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
               role="button"
               tabIndex={0}
-              onClick={() => navigate(`/token/${target}?chainId=${item.chainId}`)}
+              onClick={() => navigate(targetRoute)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") navigate(`/token/${target}?chainId=${item.chainId}`);
+                if (event.key === "Enter" || event.key === " ") navigate(targetRoute);
               }}
             >
               <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
-                <img src={image || "/placeholder.svg"} alt={item.name || "Campaign"} className="h-full w-full object-cover" draggable={false} />
+                <img
+                  src={image || "/placeholder.svg"}
+                  alt={item.name || "Campaign"}
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(event) => {
+                    const el = event.currentTarget;
+                    if (el.dataset.fallbackApplied === "1") return;
+                    el.dataset.fallbackApplied = "1";
+                    el.src = "/placeholder.svg";
+                  }}
+                />
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_40%,rgba(0,0,0,0.78))]" />
                 <div className="absolute left-2 top-2 border border-orange-400/70 bg-black/75 px-2 py-1 text-xs font-bold text-orange-300">#{index + 1}</div>
                 <div className="absolute inset-x-2 bottom-2" onClick={(event) => event.stopPropagation()}>

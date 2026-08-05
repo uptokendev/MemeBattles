@@ -513,7 +513,9 @@ export function getMockTokenById(tokenId?: string | null) {
 
 export function getMockTokenRouteById(tokenId?: string | null) {
   const token = getMockTokenById(tokenId);
-  return token ? `/token/${token.campaignAddress.toLowerCase()}` : null;
+  if (!token) return null;
+  const preferred = String(token.tokenAddress || token.campaignAddress || "").toLowerCase();
+  return preferred ? `/token/${preferred}` : null;
 }
 
 export function getMockBattleById(battleId?: string | null) {

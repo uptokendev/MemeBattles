@@ -27,7 +27,7 @@ const TokenCard = ({ token, className }: { token: Token; className?: string }) =
         className ?? ""
       }`}
       onClick={() => {
-        const addr = (token.campaignAddress ?? "").trim();
+        const addr = String(token.tokenAddress || token.campaignAddress || "").trim();
         if (!addr || !isAddress(addr)) return;
         navigate(`/token/${addr.toLowerCase()}`);
       }}

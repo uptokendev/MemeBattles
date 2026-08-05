@@ -628,8 +628,7 @@ export default function PublicProfile({
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-retro text-lg text-foreground">Reputation</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Public signals only — no hidden score yet.</p>
-              </div>
+                   </div>
               <div className="rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-retro text-accent">
                 {profileCompleteness}% complete
               </div>
@@ -665,7 +664,6 @@ export default function PublicProfile({
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-retro text-lg text-foreground">Created Coins</h2>
-              <p className="text-xs text-muted-foreground">Public coins created by this wallet.</p>
             </div>
             <div className="text-xs text-muted-foreground">{createdCoins.length} visible</div>
           </div>
@@ -717,7 +715,6 @@ export default function PublicProfile({
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-retro text-lg text-foreground">Visible Drafts</h2>
-              <p className="text-xs text-muted-foreground">Only public Prepare Mode drafts are shown here.</p>
             </div>
             <div className="text-xs text-muted-foreground">{visibleDrafts.length} visible</div>
           </div>
@@ -764,7 +761,7 @@ export default function PublicProfile({
             </div>
           ) : (
             <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
-              No public drafts yet. Private and unlisted drafts stay out of the public profile.
+              No public drafts yet.
             </div>
           )}
         </section>
@@ -773,7 +770,6 @@ export default function PublicProfile({
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-retro text-lg text-foreground">Public Activity</h2>
-              <p className="text-xs text-muted-foreground">Recent public trade activity for this wallet.</p>
             </div>
             <div className="text-xs text-muted-foreground">{publicTrades.length} recent</div>
           </div>
@@ -787,7 +783,10 @@ export default function PublicProfile({
               {publicTrades.map((trade) => (
                 <button
                   key={trade.id}
-                  onClick={() => trade.campaignAddress && navigate(`/token/${trade.campaignAddress}`)}
+                  onClick={() => {
+                    const target = String(trade.tokenAddress || trade.campaignAddress || "").toLowerCase();
+                    if (target) navigate(`/token/${target}`);
+                  }}
                   className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
                 >
                   <div className="flex min-w-0 items-center gap-3">
@@ -812,7 +811,7 @@ export default function PublicProfile({
             </div>
           ) : (
             <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
-              No public trade activity yet. Private notifications, balances, and claims stay inside the Command Center.
+              No public trade activity yet.
             </div>
           )}
         </section>

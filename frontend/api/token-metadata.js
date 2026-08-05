@@ -28,7 +28,8 @@ function absoluteUrl(req, path) {
 }
 
 function campaignUrl(req, chainId, campaignAddress, tokenAddress) {
-  const identifier = campaignAddress || tokenAddress || "";
+  // Public token pages use the ERC-20 address; campaign is only a fallback.
+  const identifier = tokenAddress || campaignAddress || "";
   return absoluteUrl(req, `/token/${identifier}?chainId=${chainId}`);
 }
 

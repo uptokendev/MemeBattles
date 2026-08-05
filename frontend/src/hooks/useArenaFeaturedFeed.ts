@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchPostGradCampaignFeed, fetchPostGradFeaturedFeed } from "@/features/postgrad/apiClient";
-import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
+import { getPublicTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -21,6 +21,7 @@ export type ArenaFeaturedRailItem = {
 
 type FeaturedCampaignRecord = {
   campaignAddress: string;
+  tokenAddress?: string | null;
   name: string;
   symbol: string;
   votes24h: number;
@@ -45,9 +46,12 @@ function toOptionalNumber(value: unknown): number | undefined {
 function normalizeFeaturedCampaign(item: any, source: "upvotes" | "campaigns"): FeaturedCampaignRecord | null {
   const campaignAddress = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").trim().toLowerCase();
   if (!campaignAddress) return null;
+  const tokenRaw = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").trim().toLowerCase();
+  const tokenAddress = /^0x[a-f0-9]{40}$/.test(tokenRaw) ? tokenRaw : null;
 
   return {
     campaignAddress,
+    tokenAddress,
     name: String(item?.name ?? item?.symbol ?? "Unknown"),
     symbol: String(item?.symbol ?? ""),
     votes24h: toNumber(item?.votes24h ?? item?.votes_24h),
@@ -123,7 +127,10 @@ export function useArenaFeaturedFeed(limit = 6) {
   const railItems = useMemo<ArenaFeaturedRailItem[]>(() => {
     return items
       .map((item, index) => {
-        const href = getPostGradTokenDetailRoute(item.campaignAddress);
+        const href = getPublicTokenDetailRoute({
+          tokenAddress: item.tokenAddress,
+          campaignAddress: item.campaignAddress,
+        });
         if (!href) return null;
 
         const isUpvoteSource = item.source === "upvotes";
@@ -134,7 +141,7 @@ export function useArenaFeaturedFeed(limit = 6) {
         ].filter(Boolean);
 
         return {
-          id: item.campaignAddress,
+          id: item.tokenAddress || item.campaignAddress,
           title: item.name,
           symbol: item.symbol,
           href,

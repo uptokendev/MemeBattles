@@ -34,10 +34,13 @@ function toNumber(value, fallback = 0) {
 }
 
 function participant(row) {
+  const campaignAddress = normalizeAddress(row.campaign_address);
+  const tokenAddress = normalizeAddress(row.token_address);
   return {
-    tokenId: normalizeAddress(row.campaign_address),
-    campaignAddress: normalizeAddress(row.campaign_address),
-    tokenAddress: normalizeAddress(row.token_address),
+    // Public identity is the ERC-20; keep campaign for vote/bonding actions.
+    tokenId: tokenAddress || campaignAddress,
+    campaignAddress,
+    tokenAddress,
     tokenName: String(row.name || row.symbol || "Unknown token"),
     symbol: String(row.symbol || "TBD"),
     score: Math.max(0, Math.round(toNumber(row.marketcap_bnb, 0) * 100) / 100),
@@ -151,7 +154,15 @@ async function statusFor(row) {
   const battle = await activeBattleFor(row);
   const graduated = Boolean(row.graduated_at_chain);
   const active = Boolean(row.is_active);
-  const base = { tokenId: normalizeAddress(row.campaign_address), campaignAddress: normalizeAddress(row.campaign_address), tokenAddress: normalizeAddress(row.token_address), tokenName: String(row.name || row.symbol || "Unknown token"), symbol: String(row.symbol || "") };
+  const campaignAddress = normalizeAddress(row.campaign_address);
+  const tokenAddress = normalizeAddress(row.token_address);
+  const base = {
+    tokenId: tokenAddress || campaignAddress,
+    campaignAddress,
+    tokenAddress,
+    tokenName: String(row.name || row.symbol || "Unknown token"),
+    symbol: String(row.symbol || ""),
+  };
   if (battle) return { ...base, eligibility: false, currentState: battle.state, battleState: battle.state, battleId: battle.id, openForBattleState: battle.state === "open_for_battle" ? "open" : "matched", unavailableReason: battle.state === "open_for_battle" ? "already_open_for_battle" : "already_in_battle" };
   if (graduated) return { ...base, eligibility: false, currentState: "unavailable", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: "graduated_to_dex" };
   if (!active) return { ...base, eligibility: false, currentState: "unavailable", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: "campaign_inactive" };

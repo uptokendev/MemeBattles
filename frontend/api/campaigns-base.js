@@ -172,9 +172,24 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        select d.logo_url as draft_logo_url
          from public.campaign_drafts d
         where d.chain_id = c.chain_id
-          and d.campaign_address is not null
-          and lower(d.campaign_address) = lower(c.campaign_address)
-        order by d.updated_at desc
+          and (
+            (
+              d.campaign_address is not null
+              and lower(d.campaign_address) = lower(c.campaign_address)
+            )
+            or (
+              c.token_address is not null
+              and d.token_address is not null
+              and lower(d.token_address) = lower(c.token_address)
+            )
+          )
+        order by
+          case
+            when d.campaign_address is not null
+             and lower(d.campaign_address) = lower(c.campaign_address) then 0
+            else 1
+          end,
+          d.updated_at desc
         limit 1
      ) dl on true
      ${where}
@@ -293,9 +308,24 @@ export default async function handler(req, res) {
           select d.logo_url as draft_logo_url
             from public.campaign_drafts d
            where d.chain_id = c.chain_id
-             and d.campaign_address is not null
-             and lower(d.campaign_address) = lower(c.campaign_address)
-           order by d.updated_at desc
+             and (
+               (
+                 d.campaign_address is not null
+                 and lower(d.campaign_address) = lower(c.campaign_address)
+               )
+               or (
+                 c.token_address is not null
+                 and d.token_address is not null
+                 and lower(d.token_address) = lower(c.token_address)
+               )
+             )
+           order by
+             case
+               when d.campaign_address is not null
+                and lower(d.campaign_address) = lower(c.campaign_address) then 0
+               else 1
+             end,
+             d.updated_at desc
            limit 1
         ) dl on true
         left join public.vote_aggregates va
