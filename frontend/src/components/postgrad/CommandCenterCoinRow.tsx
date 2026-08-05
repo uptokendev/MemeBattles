@@ -144,7 +144,7 @@ export function CommandCenterCoinRow({
                   {item.canClaimLpFees && onClaimLpFees ? (
                     <Button
                       size="sm"
-                      className="bg-accent text-black hover:bg-accent/90"
+                      className="bg-accent text-white hover:bg-accent/90 hover:text-white"
                       disabled={item.claimingLpFees}
                       onClick={(e) => {
                         e.stopPropagation();
