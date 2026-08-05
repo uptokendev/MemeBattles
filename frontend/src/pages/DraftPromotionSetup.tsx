@@ -243,7 +243,10 @@ export default function DraftPromotionSetup() {
         docs: normalizedDocs,
         creatorNote,
         bannerUrl: "",
-        shareMessage: `Incoming transmission: ${draft?.name || "this draft"} is preparing for war on MemeWarzone.`,
+        shareMessage:
+          `Incoming transmission from the Warzone:\n\n` +
+          `${draft?.name || "this draft"} is preparing for war on MemeWarzone.\n\n` +
+          `Follow the signal \u2192 @memewarzone`,
         visibility: publish ? "public" : nextVisibility,
         publish,
       });

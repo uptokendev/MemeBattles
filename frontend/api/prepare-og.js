@@ -42,12 +42,11 @@ function ogHtml({ title, description, pageUrl, imageUrl, siteName = "MemeWarzone
   <meta name="twitter:description" content="${esc(description)}" />
   <meta name="twitter:image" content="${esc(imageUrl)}" />
   <meta name="twitter:image:alt" content="${esc(title)}" />
-
-  <meta http-equiv="refresh" content="0;url=${esc(pageUrl)}" />
+  <!-- No meta-refresh: some crawlers (incl. X) re-fetch the target as a browser and drop OG tags. -->
 </head>
 <body style="background:#050505;color:#f5f5f5;font-family:system-ui,sans-serif;padding:2rem;">
-  <p>Opening <a href="${esc(pageUrl)}" style="color:#f06a1a;">${esc(title)}</a>…</p>
-  <p><img src="${esc(imageUrl)}" alt="${esc(title)}" style="max-width:100%;height:auto;border:1px solid #333;" /></p>
+  <p><a href="${esc(pageUrl)}" style="color:#f06a1a;">${esc(title)}</a></p>
+  <p><img src="${esc(imageUrl)}" alt="${esc(title)}" width="1002" height="668" style="max-width:100%;height:auto;border:1px solid #333;" /></p>
 </body>
 </html>`;
 }
@@ -91,24 +90,31 @@ export default async function handler(req, res) {
 
     const appBase = String(process.env.PUBLIC_APP_URL || "https://app.memewar.zone").replace(/\/+$/, "");
     const pageUrl = `${appBase}/prepare/${draft.slug}`;
+    const name = String(draft.name || "Campaign").trim() || "Campaign";
 
     const title = isPrivate
       ? "MemeWarzone Prepare Mode"
-      : `${draft.name || "Campaign"} ($${String(draft.ticker || "").toUpperCase()}) — MemeWarzone`;
+      : `${name} ($${String(draft.ticker || "").toUpperCase()}) — MemeWarzone`;
+
+    const shareMsg = String(promotion.share_message || "").trim();
+    const isLegacyShare =
+      !shareMsg ||
+      /^Incoming transmission:\s/i.test(shareMsg) ||
+      /^Prepare Mode dossier/i.test(shareMsg);
 
     const description = isPrivate
       ? "A private Prepare Mode dossier on MemeWarzone."
       : String(
-          promotion.share_message ||
+          (!isLegacyShare ? shareMsg : "") ||
             draft.description ||
             promotion.mission_statement ||
             promotion.creator_note ||
-            `Incoming transmission: ${draft.name || "this campaign"} is preparing for war on MemeWarzone.`,
+            `Incoming transmission from the Warzone: ${name} is preparing for war on MemeWarzone. Follow @memewarzone`,
         ).slice(0, 200);
 
-    // Short absolute image URL (slug only). Long query strings break some crawlers.
+    // Short absolute image URL (slug only). Cache-bust query helps X re-fetch after OG fixes.
     // prepare-share-card loads draft/metrics by slug and renders the PNG.
-    const imageUrl = `${appBase}/api/prepare-share-card?slug=${encodeURIComponent(draft.slug)}`;
+    const imageUrl = `${appBase}/api/prepare-share-card?slug=${encodeURIComponent(draft.slug)}&v=3`;
 
     const html = ogHtml({ title, description, pageUrl, imageUrl });
     res.statusCode = 200;

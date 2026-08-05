@@ -1,12 +1,31 @@
 [build]
+  # Netlify is a static frontend deploy. Contract compilation and ABI generation
+  # run in the repository CI and the resulting frontend ABIs are committed.
   command = "npm run build"
   publish = "dist"
   functions = "netlify/no-functions"
 
+[build.environment]
+  # Vite, React SWC, PostCSS and Tailwind CSS are direct build-only
+  # devDependencies. Include them even when the Netlify UI sets NODE_ENV=production.
+  # frontend/.nvmrc is kept on the same Node 20 major used by repository CI.
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--include=dev"
+  VITE_ENABLE_WAR_ROOM = "true"
+  VITE_ENABLE_POSTGRAD = "false"
+  VITE_ENABLE_POSTGRAD_ARENA = "false"
+  VITE_ENABLE_POSTGRAD_BATTLE = "false"
+  VITE_ENABLE_POSTGRAD_EVENTS = "false"
+  VITE_ENABLE_POSTGRAD_LEAGUE = "false"
+  VITE_ENABLE_POSTGRAD_MOCKS = "false"
+  VITE_ENABLE_POSTGRAD_TOURNAMENT = "false"
+  VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
+  VITE_LAUNCHPAD_WRITES_ENABLED = "true"
+
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' https://www.googletagmanager.com 'sha256-9dQG469HAOg+SZvXSF1aGN7kkDz07AiPt0ecQOkMA1E='; connect-src 'self' https: wss: https://www.google-analytics.com https://www.googletagmanager.com; media-src 'self' data: blob: https:; worker-src 'self' blob:; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self'; connect-src 'self' https: wss:; media-src 'self' data: blob: https:; worker-src 'self' blob:; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
@@ -20,18 +39,32 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Proxy /api/* to the Railway API gateway. Netlify must stay static-only (see AGENTS.md).
-# Fallback target when no VITE_API_BASE* is set in the Netlify env.
-# Keep this on the active frontend API gateway; the legacy frontend API
-# service is deprecated and can return stale data.
+# Social crawlers need to fetch prepare share-card PNGs (override site-wide CORP).
+[[headers]]
+  for = "/api/prepare-share-card"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=120, s-maxage=300"
+
+[[headers]]
+  for = "/api/prepare-og/*"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=60, s-maxage=120"
+
+# Proxy /api/* to the Railway API gateway. Netlify should stay static-only;
+# backend runtime, database writes, OpenAI, Ably, uploads, and private envs live
+# on Railway. The empty functions directory above prevents Netlify from trying
+# to package legacy netlify/functions as AWS Lambda functions, which can fail
+# when the site environment exceeds Lambda's 4KB env limit.
 [[redirects]]
   from = "/api/*"
   to = "https://memebattles-frontend-7dcf.up.railway.app/api/:splat"
   status = 200
   force = true
 
-# Social crawlers for Prepare Mode: edge serves dynamic OG HTML with twitter:image
-# → /api/prepare-share-card?slug=…. Humans still get the SPA.
+# Social crawlers for Prepare Mode: edge function serves dynamic OG HTML
+# (twitter:image → /api/prepare-share-card?slug=…). Humans still get the SPA.
 [[edge_functions]]
   function = "prepare-og"
   path = "/prepare/*"
