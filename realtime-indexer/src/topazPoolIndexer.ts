@@ -106,6 +106,7 @@ async function getLogsAdaptive(
   try {
     return await provider.getLogs({
       address: pairAddress,
+      // Nested array = OR on topic0 (Swap or Sync).
       topics: [topics],
       fromBlock,
       toBlock,
@@ -117,6 +118,46 @@ async function getLogsAdaptive(
     const right = await getLogsAdaptive(provider, pairAddress, topics, mid + 1, toBlock);
     return left.concat(right);
   }
+}
+
+/** Always walk the range in fixed chunks — free RPCs timeout on 20k–200k block eth_getLogs. */
+async function getLogsChunked(
+  provider: ethers.JsonRpcProvider,
+  pairAddress: string,
+  topics: string[],
+  fromBlock: number,
+  toBlock: number,
+): Promise<{ logs: ethers.Log[]; scannedTo: number }> {
+  if (fromBlock > toBlock) return { logs: [], scannedTo: toBlock };
+  const chunk = Math.max(50, Number(ENV.LOG_CHUNK_SIZE || 500));
+  const all: ethers.Log[] = [];
+  let cursor = fromBlock;
+  while (cursor <= toBlock) {
+    const end = Math.min(toBlock, cursor + chunk - 1);
+    const part = await getLogsAdaptive(provider, pairAddress, topics, cursor, end);
+    all.push(...part);
+    cursor = end + 1;
+    if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
+      await new Promise((r) => setTimeout(r, ENV.INDEXER_LOG_CALL_DELAY_MS));
+    }
+  }
+  return { logs: all, scannedTo: toBlock };
+}
+
+function isTransientRpcError(error: unknown): boolean {
+  const msg = String((error as any)?.shortMessage || (error as any)?.message || error || "").toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("429") ||
+    msg.includes("rate limit") ||
+    msg.includes("too many requests") ||
+    msg.includes("503") ||
+    msg.includes("502") ||
+    msg.includes("econnreset") ||
+    msg.includes("socket hang up") ||
+    msg.includes("limit exceeded")
+  );
 }
 
 async function upsertDexCandle(input: {
@@ -448,10 +489,30 @@ async function scanPool(
   indexedPool: IndexedPool,
   finalizedHead: number,
 ) {
-  const startBlock = Math.max(
-    indexedPool.graduationBlock,
-    indexedPool.lastIndexedBlock == null ? indexedPool.graduationBlock : indexedPool.lastIndexedBlock + 1,
+  // Cap catch-up per tick so BlockPI free tiers don't timeout on huge first scans.
+  const maxBlocksPerPass = Math.max(
+    500,
+    Number(process.env.TOPAZ_POOL_INDEXER_BLOCKS_PER_PASS || ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 3000),
   );
+  // If we never indexed, don't start from a bad/ancient graduation_block (e.g. 1).
+  const maxLookback = Math.max(
+    2_000,
+    Number(process.env.TOPAZ_POOL_INDEXER_MAX_LOOKBACK_BLOCKS || 25_000),
+  );
+  const floorFromHead = Math.max(0, finalizedHead - maxLookback);
+  const graduationFloor =
+    Number.isFinite(indexedPool.graduationBlock) && indexedPool.graduationBlock > 1
+      ? indexedPool.graduationBlock
+      : floorFromHead;
+
+  let startBlock: number;
+  if (indexedPool.lastIndexedBlock == null) {
+    startBlock = Math.max(graduationFloor, floorFromHead);
+  } else {
+    startBlock = Math.max(graduationFloor, indexedPool.lastIndexedBlock + 1);
+  }
+  const endBlock = Math.min(finalizedHead, startBlock + maxBlocksPerPass - 1);
+
   const pair = new ethers.Contract(indexedPool.pairAddress, TOPAZ_POOL_ABI, provider) as any;
   const token = new ethers.Contract(indexedPool.tokenAddress, ERC20_METADATA_ABI, provider) as any;
   const tokenDecimals = Number(await token.decimals());
@@ -463,17 +524,17 @@ async function scanPool(
   let insertedTrades = 0;
   let lastSwapAt: Date | null = null;
   let lastSyncAt: Date | null = null;
-  let reserve0 = 0n;
-  let reserve1 = 0n;
+  let scannedTo = Math.max(0, startBlock - 1);
 
-  if (startBlock <= finalizedHead) {
-    const logs = await getLogsAdaptive(
+  if (startBlock <= endBlock) {
+    const { logs, scannedTo: to } = await getLogsChunked(
       provider,
       indexedPool.pairAddress,
       [swapEvent.topicHash, syncEvent.topicHash],
       startBlock,
-      finalizedHead,
+      endBlock,
     );
+    scannedTo = to;
     logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index) - Number(b.index));
 
     const blockCache = new Map<number, ethers.Block>();
@@ -491,8 +552,6 @@ async function scanPool(
       const eventTime = new Date(Number(block.timestamp) * 1000);
 
       if (parsed.name === "Sync") {
-        reserve0 = BigInt(parsed.args.reserve0 ?? parsed.args[0]);
-        reserve1 = BigInt(parsed.args.reserve1 ?? parsed.args[1]);
         lastSyncAt = eventTime;
         continue;
       }
@@ -523,11 +582,14 @@ async function scanPool(
   }
 
   const reserves = await pair.getReserves();
-  reserve0 = BigInt(reserves[0]);
-  reserve1 = BigInt(reserves[1]);
+  const reserve0 = BigInt(reserves[0]);
+  const reserve1 = BigInt(reserves[1]);
   const token0IsLaunch = indexedPool.token0Address === indexedPool.tokenAddress;
   const reserveTokenRaw = token0IsLaunch ? reserve0 : reserve1;
   const reserveNativeRaw = token0IsLaunch ? reserve1 : reserve0;
+
+  // Advance cursor to what we actually scanned (partial catch-up), not always tip.
+  const cursorBlock = startBlock <= endBlock ? scannedTo : finalizedHead;
 
   await pool.query(
     `update public.dex_pools
@@ -542,7 +604,7 @@ async function scanPool(
     [
       indexedPool.chainId,
       indexedPool.pairAddress,
-      finalizedHead,
+      cursorBlock,
       lastSwapAt,
       lastSyncAt,
       reserveTokenRaw.toString(),
@@ -551,7 +613,15 @@ async function scanPool(
   );
 
   const summary = await refreshMarketStats(indexedPool, reserveTokenRaw, reserveNativeRaw);
-  return { insertedTrades, startBlock, finalizedHead, reserveTokenRaw, reserveNativeRaw, summary };
+  return {
+    insertedTrades,
+    startBlock,
+    endBlock: cursorBlock,
+    finalizedHead,
+    reserveTokenRaw,
+    reserveNativeRaw,
+    summary,
+  };
 }
 
 export async function runTopazPoolIndexerOnce() {
@@ -590,20 +660,33 @@ export async function runTopazPoolIndexerOnce() {
           }
         } catch (error: any) {
           errors += 1;
-          await pool.query(
-            `update public.campaign_market_state
-                set market_stage='TOPAZ_DEGRADED',
-                    pool_verified=false,
-                    last_error=$3,
-                    updated_at=now()
-              where chain_id=$1 and campaign_address=$2`,
-            [config.chainId, indexedPool.campaignAddress, error?.shortMessage || error?.message || String(error)],
-          );
+          const message = error?.shortMessage || error?.message || String(error);
+          // Transient RPC timeouts must NOT mark the market TOPAZ_DEGRADED — that breaks trading UX.
+          if (!isTransientRpcError(error)) {
+            await pool.query(
+              `update public.campaign_market_state
+                  set market_stage='TOPAZ_DEGRADED',
+                      pool_verified=false,
+                      last_error=$3,
+                      updated_at=now()
+                where chain_id=$1 and campaign_address=$2`,
+              [config.chainId, indexedPool.campaignAddress, message],
+            );
+          } else {
+            await pool.query(
+              `update public.campaign_market_state
+                  set last_error=$3,
+                      updated_at=now()
+                where chain_id=$1 and campaign_address=$2`,
+              [config.chainId, indexedPool.campaignAddress, `pool_index_transient: ${message}`],
+            );
+          }
           console.error("[wtr] Topaz pool indexing failed", {
             chainId: config.chainId,
             pair: indexedPool.pairAddress,
             campaign: indexedPool.campaignAddress,
-            error: error?.shortMessage || error?.message || String(error),
+            transient: isTransientRpcError(error),
+            error: message,
           });
         }
       }

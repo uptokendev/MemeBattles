@@ -892,6 +892,14 @@ export function registerMarketContinuityRoutes(app: Express) {
     }
   });
 
+  // Accidental browser GET → helpful message (must be POST).
+  app.get("/api/token/:campaign/repair-dex-pool", async (req, res) => {
+    res.status(405).json({
+      ok: false,
+      error: "Use POST, not GET. Example: curl.exe -X POST \"$TOKEN_API/api/token/0xCAMPAIGN/repair-dex-pool?chainId=97&index=1\"",
+    });
+  });
+
   // Public testnet repair (no internal token). Production chain 56 still requires internal auth via /internal/wtr/*.
   app.post("/api/token/:campaign/repair-dex-pool", async (req, res) => {
     try {
