@@ -363,6 +363,29 @@ async function readPoolFees(input: {
   };
 }
 
+function authorizeOpsWrite(req: Request): { ok: true } | { ok: false; error: string; status: number } {
+  const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
+  const provided = String(req.headers["x-ops-key"] || req.body?.opsKey || req.query.opsKey || "").trim();
+  // Testnet convenience: allow harvest without ops key when HARVEST_OPS_PRIVATE_KEY is set
+  // and chain is 97, still prefer ops key when configured.
+  if (opsKey) {
+    if (provided !== opsKey) return { ok: false, status: 401, error: "Invalid or missing ops key." };
+    return { ok: true };
+  }
+  const chainId = Number(req.body?.chainId ?? req.query.chainId ?? 97);
+  if (chainId === 97) return { ok: true };
+  return { ok: false, status: 401, error: "Ops key required for harvest on this chain." };
+}
+
+function resolveHarvestSignerKey(): string {
+  return String(
+    process.env.HARVEST_OPS_PRIVATE_KEY ||
+      process.env.LP_FEE_HARVEST_PRIVATE_KEY ||
+      process.env.DEPLOYER_PK ||
+      "",
+  ).trim();
+}
+
 export function registerLpFeesRoutes(app: express.Application) {
   // Dashboard / security API base points at the indexer for token/market ops.
   app.get(
@@ -372,6 +395,7 @@ export function registerLpFeesRoutes(app: express.Application) {
       const limit = Math.max(1, Math.min(50, Number(req.query.limit ?? 20)));
       const pairFilter = toAddr(req.query.pair || req.query.pool);
       const campaignFilter = toAddr(req.query.campaign);
+      const creatorFilter = toAddr(req.query.creator);
 
       if (!Number.isFinite(chainId) || chainId <= 0) {
         res.status(400).json({ ok: false, error: "Invalid chainId" });
@@ -414,6 +438,9 @@ export function registerLpFeesRoutes(app: express.Application) {
         }
         if (pairFilter) {
           rows = rows.filter((r: any) => String(r.dex_pair_address || "").toLowerCase() === pairFilter);
+        }
+        if (creatorFilter) {
+          rows = rows.filter((r: any) => String(r.creator_address || "").toLowerCase() === creatorFilter);
         }
 
         const items = [];
@@ -478,6 +505,99 @@ export function registerLpFeesRoutes(app: express.Application) {
           ],
           items,
           updatedAt: new Date().toISOString(),
+        });
+      } finally {
+        try {
+          provider.destroy();
+        } catch {
+          // ignore
+        }
+      }
+    }),
+  );
+
+  /**
+   * Ops harvest: server wallet calls PermanentLpLocker.harvest(pair).
+   * Creator still receives 80% to their payout wallet automatically inside harvest.
+   * Set HARVEST_OPS_PRIVATE_KEY (or DEPLOYER_PK) on the indexer.
+   */
+  app.post(
+    "/api/dashboard/lp-fees/harvest",
+    wrap(async (req, res) => {
+      const auth = authorizeOpsWrite(req);
+      if (!auth.ok) {
+        res.status(auth.status).json({ ok: false, error: auth.error });
+        return;
+      }
+
+      const chainId = Number(req.body?.chainId ?? 97);
+      const pairAddress = toAddr(req.body?.pair || req.body?.pool || req.body?.pairAddress);
+      if (!pairAddress) {
+        res.status(400).json({ ok: false, error: "pair (Topaz pool) address is required." });
+        return;
+      }
+
+      const lockerAddress = resolveLockerAddress(chainId);
+      if (!lockerAddress) {
+        res.status(400).json({ ok: false, error: "LP locker address not configured." });
+        return;
+      }
+
+      const pk = resolveHarvestSignerKey();
+      if (!pk) {
+        res.status(503).json({
+          ok: false,
+          error:
+            "Harvest signer not configured. Set HARVEST_OPS_PRIVATE_KEY (or DEPLOYER_PK) on the indexer service.",
+        });
+        return;
+      }
+
+      const rpcUrl = resolveRpcUrl(chainId);
+      if (!rpcUrl) {
+        res.status(503).json({ ok: false, error: `Missing RPC for chain ${chainId}` });
+        return;
+      }
+
+      const provider = createStaticJsonRpcProvider(rpcUrl, chainId, { timeoutMs: 30_000 });
+      try {
+        const wallet = new ethers.Wallet(pk, provider);
+        const locker = new ethers.Contract(
+          lockerAddress,
+          [
+            "function harvest(address pool) returns (uint256 collected0, uint256 collected1)",
+            "function poolInfo(address) view returns (address campaign,address creator,address creatorFeeRecipient,address pool,address token0,address token1,uint256 lockedLpAmount,uint16 creatorFeeBps,uint16 protocolFeeBps,bool registered)",
+          ],
+          wallet,
+        );
+
+        const info = await locker.poolInfo(pairAddress);
+        const registered = Boolean(info?.registered ?? info?.[9]);
+        if (!registered) {
+          res.status(400).json({
+            ok: false,
+            error: "Pool is not registered on PermanentLpLocker; cannot harvest.",
+          });
+          return;
+        }
+
+        const tx = await locker.harvest(pairAddress);
+        const receipt = await tx.wait();
+        res.json({
+          ok: true,
+          chainId,
+          pairAddress,
+          lockerAddress: lockerAddress.toLowerCase(),
+          harvester: wallet.address.toLowerCase(),
+          creator: String(info.creator || info[1] || "").toLowerCase(),
+          creatorFeeRecipient: String(info.creatorFeeRecipient || info[2] || "").toLowerCase(),
+          txHash: String(receipt?.hash || tx.hash),
+          note: "Creator 80% is transferred to creatorFeeRecipient on success; protocol 20% routes via TreasuryRouter.",
+        });
+      } catch (error: any) {
+        res.status(500).json({
+          ok: false,
+          error: String(error?.shortMessage || error?.reason || error?.message || error),
         });
       } finally {
         try {

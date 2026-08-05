@@ -25,16 +25,28 @@ interface CoinRowItem {
   raw?: any;
   isOpening?: boolean;
   creatorState?: string;
+  /** Graduated Topaz pool address when known */
+  pairAddress?: string | null;
+  lpFeeSummary?: string | null;
+  canClaimLpFees?: boolean;
+  claimingLpFees?: boolean;
 }
 
 interface CommandCenterCoinRowProps {
   item: CoinRowItem;
   onOpenForBattle?: (campaignAddress: string, name: string) => void;
+  onClaimLpFees?: (campaignAddress: string) => void;
   battleBusyToken?: string | null;
   battleFeaturesEnabled?: boolean;
 }
 
-export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken, battleFeaturesEnabled = false }: CommandCenterCoinRowProps) {
+export function CommandCenterCoinRow({
+  item,
+  onOpenForBattle,
+  onClaimLpFees,
+  battleBusyToken,
+  battleFeaturesEnabled = false,
+}: CommandCenterCoinRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const isDraft = item.type === 'draft';
@@ -128,6 +140,23 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken, b
                       <Link to={item.tokenRoute}>Token Details</Link>
                     </Button>
                   )}
+
+                  {item.canClaimLpFees && onClaimLpFees ? (
+                    <Button
+                      size="sm"
+                      className="bg-accent text-black hover:bg-accent/90"
+                      disabled={item.claimingLpFees}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClaimLpFees(item.id);
+                      }}
+                    >
+                      {item.claimingLpFees ? "Claiming LP fees…" : "Claim LP fees"}
+                    </Button>
+                  ) : null}
+                  {item.lpFeeSummary ? (
+                    <div className="w-full text-[11px] text-white/55">{item.lpFeeSummary}</div>
+                  ) : null}
 
                   {battleFeaturesEnabled && item.creatorState === "eligible" && onOpenForBattle && (
                     <Button

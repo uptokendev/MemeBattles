@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Coins, FileText, Rocket } from "lucide-react";
+import { toast } from "sonner";
 import { resolveImageUri } from "@/lib/media";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
@@ -8,6 +9,13 @@ import { useCommandCenterData } from "@/components/command-center/CommandCenterC
 import { CommandCenterCoinRow } from "@/components/postgrad/CommandCenterCoinRow";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { fetchOwnerCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { useWallet } from "@/contexts/WalletContext";
+import {
+  fetchLpFeePools,
+  harvestLpFeesWithWallet,
+  hasUnharvestedFees,
+  type LpFeePoolRow,
+} from "@/lib/lpFeeHarvest";
 
 const BATTLE_FEATURES_ENABLED = false;
 
@@ -78,10 +86,77 @@ function getCreatedCoinMarketCap(coin: any) {
 
 export default function CommandCenterCoins() {
   const { walletAddress, chainId, created } = useCommandCenterData();
+  const wallet = useWallet();
   const [drafts, setDrafts] = useState<CampaignDraft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<CoinFilter>("all");
+  const [lpFeeByCampaign, setLpFeeByCampaign] = useState<Record<string, LpFeePoolRow>>({});
+  const [claimingCampaign, setClaimingCampaign] = useState<string | null>(null);
+  const [lpFeeError, setLpFeeError] = useState<string | null>(null);
+
+  const refreshLpFees = useCallback(async () => {
+    if (!walletAddress) {
+      setLpFeeByCampaign({});
+      return;
+    }
+    try {
+      setLpFeeError(null);
+      const { items } = await fetchLpFeePools({
+        chainId: Number(chainId || 97),
+        creatorAddress: walletAddress,
+        limit: 50,
+      });
+      const next: Record<string, LpFeePoolRow> = {};
+      for (const row of items) {
+        const key = String(row.campaignAddress || "").toLowerCase();
+        if (key) next[key] = row;
+      }
+      setLpFeeByCampaign(next);
+    } catch (err: any) {
+      setLpFeeError(String(err?.message || "Could not load LP fee status."));
+    }
+  }, [walletAddress, chainId]);
+
+  useEffect(() => {
+    void refreshLpFees();
+  }, [refreshLpFees]);
+
+  const handleClaimLpFees = useCallback(
+    async (campaignAddress: string) => {
+      const key = String(campaignAddress || "").toLowerCase();
+      const row = lpFeeByCampaign[key];
+      const pair = String(row?.pairAddress || "").toLowerCase();
+      if (!pair) {
+        toast.error("No Topaz pool registered for this coin yet.");
+        return;
+      }
+      if (!wallet.signer || !wallet.account) {
+        toast.error("Connect wallet to claim LP fees.");
+        try {
+          window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      setClaimingCampaign(key);
+      try {
+        const result = await harvestLpFeesWithWallet({
+          chainId: Number(chainId || 97),
+          pairAddress: pair,
+          signer: wallet.signer,
+        });
+        toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 10)}…`);
+        await refreshLpFees();
+      } catch (err: any) {
+        toast.error(String(err?.shortMessage || err?.reason || err?.message || "Harvest failed"));
+      } finally {
+        setClaimingCampaign(null);
+      }
+    },
+    [lpFeeByCampaign, wallet.signer, wallet.account, chainId, refreshLpFees],
+  );
 
   const visibleFilters = useMemo(
     () => (BATTLE_FEATURES_ENABLED ? [...baseFilters, ...battleFilters] : baseFilters),
@@ -162,6 +237,19 @@ export default function CommandCenterCoins() {
     createdCoins.forEach((coin) => {
       const creatorState = coin.status === "draft" ? "unavailable" : "eligible";
       const tokenRoute = getPostGradTokenDetailRoute(coin.tokenAddress || coin.campaignAddress);
+      const feeRow = lpFeeByCampaign[coin.campaignAddress];
+      const canClaim = Boolean(feeRow?.pairAddress && feeRow?.fees?.registered && hasUnharvestedFees(feeRow));
+      const s0 = feeRow?.fees?.unharvested?.token0Symbol || feeRow?.fees?.token0Meta?.symbol || "token0";
+      const s1 = feeRow?.fees?.unharvested?.token1Symbol || feeRow?.fees?.token1Meta?.symbol || "token1";
+      const u = feeRow?.fees?.unharvested;
+      const lpFeeSummary =
+        feeRow?.pairAddress && feeRow?.fees?.registered
+          ? canClaim
+            ? `Unclaimed LP fees: ${u?.token0Display ?? u?.token0 ?? "0"} ${s0} + ${u?.token1Display ?? u?.token1 ?? "0"} ${s1} (80% to your wallet on claim)`
+            : "No unclaimed LP fees right now"
+          : feeRow?.marketStage
+            ? "Graduated — Topaz pool not ready for fee claim yet"
+            : undefined;
 
       items.push({
         id: coin.campaignAddress,
@@ -170,18 +258,22 @@ export default function CommandCenterCoins() {
         ticker: coin.ticker,
         image: resolveImageUri(coin.image) || "/placeholder.svg",
         marketCap: coin.marketCap,
-        statusLabel: getCreatorStateLabel(creatorState),
-        statusTone: getCreatorStateTone(creatorState),
+        statusLabel: feeRow?.pairAddress ? "Graduated" : getCreatorStateLabel(creatorState),
+        statusTone: feeRow?.pairAddress ? "success" : getCreatorStateTone(creatorState),
         battleInfo: "",
         battleRouteId: null,
         tokenRoute,
         creatorState,
         isOpening: false,
+        pairAddress: feeRow?.pairAddress || null,
+        lpFeeSummary,
+        canClaimLpFees: canClaim,
+        claimingLpFees: claimingCampaign === coin.campaignAddress,
       });
     });
 
     return items;
-  }, [drafts, createdCoins]);
+  }, [drafts, createdCoins, lpFeeByCampaign, claimingCampaign]);
 
   const filteredItems = useMemo(() => {
     if (activeFilter === "all") return unifiedItems;
@@ -227,6 +319,11 @@ export default function CommandCenterCoins() {
         description="All your coins in one place: prepare drafts, bonding coins, and graduated coins."
       >
         {draftsError ? <div className="mb-3 mwz-hud-frame p-3 text-sm text-muted-foreground">{draftsError}</div> : null}
+        {lpFeeError ? (
+          <div className="mb-3 mwz-hud-frame p-3 text-sm text-muted-foreground">
+            LP fee status unavailable: {lpFeeError}
+          </div>
+        ) : null}
 
         <div className="mb-4 flex flex-wrap gap-2">
           {visibleFilters.map((filter) => {
@@ -262,6 +359,7 @@ export default function CommandCenterCoins() {
                 key={item.id}
                 item={item}
                 battleFeaturesEnabled={BATTLE_FEATURES_ENABLED}
+                onClaimLpFees={item.type === "coin" ? handleClaimLpFees : undefined}
               />
             ))}
           </div>

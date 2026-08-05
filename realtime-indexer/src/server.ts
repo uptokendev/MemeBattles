@@ -342,7 +342,7 @@ app.get("/health", async (_req, res) => {
       ok: true,
       db: r.rows[0].ok,
       // Bump when shipping indexer loop fixes so deploy can be confirmed from /health.
-      indexerBuild: "lp-fees-display-labels-2026-08-05",
+      indexerBuild: "lp-fees-harvest-action-2026-08-05",
       normalScope: ENV.INDEXER_NORMAL_SCOPE,
     });
   } catch (e: any) {
