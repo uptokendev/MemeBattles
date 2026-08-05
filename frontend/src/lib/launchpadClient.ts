@@ -270,7 +270,7 @@ function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | 
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
     timeAgo: String(item?.timeAgo ?? item?.time_ago ?? item?.ageLabel ?? item?.age_label ?? "").trim() || undefined,
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
-    dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
+
   };
 }
 
@@ -368,7 +368,7 @@ function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignIn
     extraLink: isUseful(base.extraLink) ? base.extraLink : incoming.extraLink,
     createdAt: base.createdAt || incoming.createdAt,
     dexPairAddress: base.dexPairAddress || incoming.dexPairAddress,
-    dexScreenerUrl: base.dexScreenerUrl || incoming.dexScreenerUrl,
+
   });
 
   // Keep canonical factory addresses/order, but backfill partial direct-deploy

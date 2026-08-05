@@ -71,7 +71,7 @@ function getAgeSeconds(campaign: CampaignInfo) {
 export function getWarRoomCampaignStatus(campaign: CampaignInfo): WarRoomCampaignStatus {
   const rich = campaign as any;
   // Graduated always wins over stale scheduled/draft lifecycle metadata.
-  if (rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress || campaign.dexScreenerUrl) {
+  if (rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress) {
     return "graduated";
   }
   // Pre-launch armed timed campaigns and prepare drafts must never look tradeable.

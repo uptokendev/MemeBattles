@@ -112,7 +112,7 @@ function safeCount(value: unknown): number {
 function normalizeStatus(item: any): "graduated" | "live" | "draft" | "ended" | undefined {
   const status = String(item?.status ?? item?.state ?? item?.lifecycleStatus ?? item?.lifecycle_status ?? "").toLowerCase();
   if (["graduated", "ended", "live", "draft"].includes(status)) return status as "graduated" | "live" | "draft" | "ended";
-  if (Boolean(item?.isDexTrading ?? item?.is_dex_trading) || item?.dexPairAddress || item?.dex_pair_address || item?.dexScreenerUrl || item?.dex_screener_url) return "graduated";
+  if (Boolean(item?.isDexTrading ?? item?.is_dex_trading) || item?.dexPairAddress || item?.dex_pair_address) return "graduated";
   if (typeof item?.isDraft === "boolean" && item.isDraft) return "draft";
   if (typeof item?.is_draft === "boolean" && item.is_draft) return "draft";
   if (typeof item?.isActive === "boolean") return item.isActive ? "live" : "draft";
@@ -161,7 +161,6 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
     votes24h: toNumber(item?.votes24h ?? item?.votes_24h),
     votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
-    dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
   } as WarRoomCampaign;
 }
 
@@ -236,7 +235,6 @@ function isGraduatedCampaign(campaign: WarRoomCampaign) {
       rich.status === "graduated" ||
       rich.status === "ended" ||
       rich.dexPairAddress ||
-      rich.dexScreenerUrl ||
       rich.graduatedAt,
   );
 }

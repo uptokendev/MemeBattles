@@ -50,7 +50,7 @@ export type CampaignInfo = {
   telegram?: string;
   discord?: string;
   dexPairAddress?: string;
-  dexScreenerUrl?: string;
+
 };
 
 export type CampaignMetrics = {

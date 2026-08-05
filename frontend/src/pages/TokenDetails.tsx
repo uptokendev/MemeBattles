@@ -24,7 +24,7 @@ import {
 } from "@/lib/chainConfig";
 import { resolveMarketIdentity, resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
 import { getReadProvider } from "@/lib/readProvider";
-import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
+
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
@@ -1908,14 +1908,7 @@ const bnbUsd = useMemo(() => {
     (verifiedMarketStage === "TOPAZ_ACTIVE" &&
       (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
 
-  const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
-  // External DexScreener link only — never Pancake-first. Prefer known Topaz pair.
-  const preferredTopazPair =
-    String(topazMarket.pairAddress || onChainPair || "").trim().toLowerCase() || null;
-  const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } = useDexScreenerChart(
-    dexTokenAddress,
-    { preferredPairAddress: preferredTopazPair, chainIdHint: "bsc" },
-  );
+
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:
@@ -2007,14 +2000,13 @@ const bnbUsd = useMemo(() => {
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
-    // Prefer on-chain Topaz pool liquidity (2 × WBNB reserve).
+    // On-chain Topaz pool liquidity only (2 × WBNB reserve). No external DEX APIs.
     if (topazMarket.liquidityBnb != null && Number.isFinite(topazMarket.liquidityBnb) && topazMarket.liquidityBnb > 0) {
       return `${formatCompact(topazMarket.liquidityBnb)} BNB`;
     }
     if (tokenData.liquidity && tokenData.liquidity !== "—") return tokenData.liquidity;
-    // Optional external fallback only.
-    return formatBnb(dexLiquidityBnb ?? null);
-  })()
+    return "—";
+  })();
 
   const liquidityDisplay = useMemo(() => {
     const bnbLabel = liquidityValue;
@@ -2977,17 +2969,6 @@ const bnbUsd = useMemo(() => {
                   className="w-full md:w-auto md:max-w-[320px]"
                 />
 
-                {isDexStage && dexBaseUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                    onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    External
-                  </Button>
-                )}
               </div>
             </div>
 

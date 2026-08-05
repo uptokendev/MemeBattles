@@ -77,7 +77,7 @@ function normalizeCampaign(item: any, index: number): CampaignInfo | null {
     votes24h: toNumber(item?.votes24h ?? item?.votes_24h),
     votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
-    dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
+
   };
 }
 
