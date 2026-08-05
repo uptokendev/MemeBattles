@@ -8,6 +8,7 @@ import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
 import { type SupportedChainId } from "@/lib/chainConfig";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 
@@ -46,9 +47,19 @@ type CampaignFeedItemApi = {
   graduatedAtChain?: string | null;
   isDexTrading?: boolean;
   marketcapBnb?: string | null;
+  athMarketcapBnb?: string | null;
+  raisedTotalBnb?: string | null;
+  gradTargetBnb?: number | null;
   votes24h?: number;
   progressPct?: number | null;
   etaSec?: number | null;
+};
+
+type OnChainCardPatch = {
+  marketcapBnb?: string;
+  raisedTotalBnb?: string;
+  progressPct?: number;
+  isDexTrading?: boolean;
 };
 
 type CampaignFeedResponse = {
@@ -196,18 +207,22 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
   const [items, setItems] = useState<CampaignFeedItemApi[]>([]);
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
+  const [onChainByCampaign, setOnChainByCampaign] = useState<Record<string, OnChainCardPatch>>({});
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
+  const onChainHydrateRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     initialLoadedRef.current = false;
     setItems([]);
     setNextCursor(0);
     setLogoCache({});
+    setOnChainByCampaign({});
+    onChainHydrateRef.current = new Set();
   }, [activeChainId]);
 
   useEffect(() => {
@@ -329,6 +344,68 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     return () => { cancelled = true; };
   }, [items, logoCache, fetchCampaignLogoURI, query.tab]);
 
+  // Indexer token_stats is often empty on testnet — fill mcap/raised from bonding contracts.
+  useEffect(() => {
+    if (query.tab === "drafts") return;
+    let cancelled = false;
+    const need = (items || [])
+      .filter((it) => {
+        const addr = String(it.campaignAddress ?? "").toLowerCase();
+        if (!addr || onChainHydrateRef.current.has(addr)) return false;
+        const mcap = Number(it.marketcapBnb ?? NaN);
+        const raised = Number(it.raisedTotalBnb ?? NaN);
+        const missingMcap = !Number.isFinite(mcap) || mcap <= 0;
+        const missingRaised = !Number.isFinite(raised) || raised <= 0;
+        return missingMcap || missingRaised;
+      })
+      .slice(0, 12);
+
+    if (!need.length) return;
+    for (const it of need) {
+      const addr = String(it.campaignAddress ?? "").toLowerCase();
+      if (addr) onChainHydrateRef.current.add(addr);
+    }
+
+    void (async () => {
+      const patches: Record<string, OnChainCardPatch> = {};
+      await Promise.all(
+        need.map(async (it) => {
+          const addr = String(it.campaignAddress ?? "").toLowerCase();
+          try {
+            const stats = await fetchOnChainCampaignStats({
+              chainId: Number(it.chainId || activeChainId) as SupportedChainId,
+              campaignAddress: addr,
+              tokenAddress: it.tokenAddress,
+            });
+            if (!stats) return;
+            const target = Number(it.gradTargetBnb ?? 50) || 50;
+            const raised = Number(stats.raisedTotalBnb ?? NaN);
+            const mcap = Number(stats.marketCapBnb ?? NaN);
+            const graduated = Boolean(stats.isDexTrading || stats.status === "graduated" || it.isDexTrading || it.graduatedAtChain);
+            patches[addr] = {
+              ...(Number.isFinite(mcap) && mcap > 0 ? { marketcapBnb: String(mcap) } : {}),
+              ...(Number.isFinite(raised) && raised > 0 ? { raisedTotalBnb: String(raised) } : {}),
+              progressPct: graduated
+                ? 100
+                : Number.isFinite(raised) && raised > 0
+                  ? Math.max(0, Math.min(100, (raised / target) * 100))
+                  : undefined,
+              isDexTrading: graduated || undefined,
+            };
+          } catch {
+            // leave API values
+          }
+        }),
+      );
+      if (cancelled || !Object.keys(patches).length) return;
+      setOnChainByCampaign((prev) => ({ ...prev, ...patches }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, activeChainId, query.tab]);
+
   const loadMore = async () => {
     if (query.tab === "drafts" || loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
@@ -357,19 +434,44 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams, query.tab]);
 
   const vms: CampaignCardVM[] = useMemo(() => {
-    const GRAD_TARGET_BNB = 50;
+    const DEFAULT_GRAD_TARGET_BNB = 50;
     const isTrendingDefault = baseParams.tab === "trending" && baseParams.sort === "default";
     const mapped = (items || []).map((it) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const patch = patchByCampaign[addr];
-      const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
+      const onChain = onChainByCampaign[addr];
+      const gradTarget = Number(it.gradTargetBnb ?? DEFAULT_GRAD_TARGET_BNB) || DEFAULT_GRAD_TARGET_BNB;
+      const isDex = Boolean(it.isDexTrading || it.graduatedAtChain || onChain?.isDexTrading);
+
+      const mcapBnb = Number(
+        (patch?.marketcapBnb ?? onChain?.marketcapBnb ?? it.marketcapBnb) ?? NaN,
+      );
       const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
       const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
+
+      const athBnb = Number((it.athMarketcapBnb ?? mcapBnb) ?? NaN);
+      const athUsd = Number.isFinite(athBnb) && bnbUsd ? athBnb * bnbUsd : NaN;
+      const athLabel = Number.isFinite(athUsd)
+        ? formatCompactUsd(athUsd)
+        : marketCapUsdLabel;
+
       const rawLogo = it.logoUri || logoCache[addr] || null;
-      let progressPct: number | null = it.progressPct ?? null;
+      const raised = Number(
+        (patch?.raisedTotalBnb ?? onChain?.raisedTotalBnb ?? it.raisedTotalBnb) ?? NaN,
+      );
+
+      let progressPct: number | null = null;
+      if (isDex) {
+        progressPct = 100;
+      } else if (Number.isFinite(raised) && raised >= 0 && gradTarget > 0) {
+        progressPct = Math.max(0, Math.min(100, (raised / gradTarget) * 100));
+      } else if (onChain?.progressPct != null && Number.isFinite(onChain.progressPct)) {
+        progressPct = Math.max(0, Math.min(100, Number(onChain.progressPct)));
+      } else if (it.progressPct != null && Number.isFinite(Number(it.progressPct))) {
+        progressPct = Math.max(0, Math.min(100, Number(it.progressPct)));
+      }
+
       const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
-      const raised = Number(patch?.raisedTotalBnb ?? NaN);
-      if (Number.isFinite(raised)) progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
       return {
         campaignAddress: addr,
         tokenAddress: it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null,
@@ -380,9 +482,9 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
         lastActivityAtSec: activitySec,
         marketCapUsdLabel,
-        athLabel: marketCapUsdLabel,
+        athLabel,
         progressPct,
-        isDexTrading: Boolean(it.isDexTrading),
+        isDexTrading: isDex,
         votes24h: Number(patch?.votes24h ?? it.votes24h ?? 0),
       } as CampaignCardVM;
     });
@@ -396,23 +498,13 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       if (bc !== ac) return bc - ac;
       return String(a.campaignAddress).localeCompare(String(b.campaignAddress));
     });
-  }, [items, bnbUsd, logoCache, patchByCampaign, baseParams]);
-
-  const resultsMeta = useMemo(() => {
-    const count = vms.length;
-    const updated = lastUpdatedAt ? Math.floor((Date.now() - Date.parse(lastUpdatedAt)) / 1000) : null;
-    const updatedLabel = updated != null && Number.isFinite(updated) ? `${Math.max(0, updated)}s ago` : "—";
-    return `Showing ${count} campaigns - Updated ${updatedLabel}`;
-  }, [vms.length, lastUpdatedAt]);
+  }, [items, bnbUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);
 
   const gridClass = "grid grid-cols-2 gap-3 justify-items-stretch sm:[grid-template-columns:repeat(auto-fill,minmax(180px,220px))] sm:justify-start sm:gap-4";
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <div className="text-xs text-muted-foreground">{resultsMeta}</div>
-      </div>
-
+      
       {loading && !vms.length ? (
         <div className={gridClass}>
           {Array.from({ length: 12 }).map((_, i) => (

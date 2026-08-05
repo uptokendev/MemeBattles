@@ -136,6 +136,9 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
     return `${p}%`;
   }, [ratio]);
 
+  // No mcap yet → text only. Avoid an empty rounded "pill" track that looks broken.
+  const hasAthData = ath != null && ath > 0 && current != null && Number.isFinite(current);
+
   return (
     <div className={className}>
       <style>
@@ -152,91 +155,88 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
         `}
       </style>
 
-      <div className="flex items-center gap-2">
-        <div
-          className="relative h-[10px] rounded-full bg-muted/40 overflow-hidden border border-border/40"
-          style={{
-            width: `${barWidthPx ?? 240}px`,
-            maxWidth: barMaxWidth ?? "55vw",
-          }}
-        >
-          {/* Fill */}
+      <div className="flex items-center gap-2 min-w-0">
+        {hasAthData ? (
           <div
-            className="absolute inset-y-0 left-0 rounded-full"
+            className="relative h-[8px] flex-1 min-w-0 overflow-hidden border border-orange-400/35 bg-black/70"
             style={{
-              width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
-              // MemeBattles look: yellow -> orange -> red, with subtle vertical "block" stripes.
-              background:
-                "linear-gradient(90deg, #80350f 0%, #f06a1a 55%, #ff4b24 100%)",
-              transition: "width 350ms ease",
+              width: barWidthPx != null ? `${barWidthPx}px` : undefined,
+              maxWidth: barMaxWidth ?? "100%",
             }}
-          />
-
-          {/* Stripes overlay (visual only) */}
-          <div
-            className="absolute inset-y-0 left-0 rounded-full pointer-events-none"
-            style={{
-              width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
-              background:
-                "repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 6px, rgba(0,0,0,0) 6px, rgba(0,0,0,0) 12px)",
-              mixBlendMode: "overlay",
-              opacity: 0.55,
-              transition: "width 350ms ease",
-            }}
-          />
-
-          {/* Subtle moving highlight at the leading edge */}
-          <div
-            className="absolute top-0 bottom-0 w-10"
-            style={{
-              left: `calc(${Math.max(0, Math.min(100, ratio * 100))}% - 20px)`,
-              background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)",
-              filter: "blur(0.2px)",
-              animation: "athGlowPulse 1.4s ease-in-out infinite",
-              pointerEvents: "none",
-            }}
-          />
-
-          {/* Spark burst on new ATH */}
-          {burst > 0 && (
+          >
+            {/* Fill — square tactical track (not a soft rounded pill) */}
             <div
-              key={burst}
-              className="absolute top-1/2"
+              className="absolute inset-y-0 left-0"
               style={{
-                left: sparkLeft,
-                transform: "translate(-50%, -50%)",
+                width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
+                background:
+                  "linear-gradient(90deg, #80350f 0%, #f06a1a 55%, #ff4b24 100%)",
+                transition: "width 350ms ease",
+              }}
+            />
+
+            <div
+              className="absolute inset-y-0 left-0 pointer-events-none"
+              style={{
+                width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
+                background:
+                  "repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 6px, rgba(0,0,0,0) 6px, rgba(0,0,0,0) 12px)",
+                mixBlendMode: "overlay",
+                opacity: 0.55,
+                transition: "width 350ms ease",
+              }}
+            />
+
+            <div
+              className="absolute top-0 bottom-0 w-10"
+              style={{
+                left: `calc(${Math.max(0, Math.min(100, ratio * 100))}% - 20px)`,
+                background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)",
+                filter: "blur(0.2px)",
+                animation: "athGlowPulse 1.4s ease-in-out infinite",
                 pointerEvents: "none",
               }}
-            >
-              {Array.from({ length: 10 }).map((_, i) => {
-                // deterministic-ish randomness per burst+index
-                const dx = (Math.sin((burst + 1) * (i + 3)) * 18).toFixed(1);
-                const dy = (-8 - (Math.abs(Math.cos((burst + 2) * (i + 5))) * 18)).toFixed(1);
-                const delay = (i * 10).toFixed(0);
-                return (
-                  <span
-                    key={i}
-                    className="absolute block h-[2px] w-[8px] rounded-full"
-                    style={{
-  background: "rgba(240, 106, 26, 0.95)",
-  boxShadow: "0 0 10px rgba(240, 106, 26, 0.65)",
-  transform: "translate(0,0)",
-  opacity: 0.9,
-  animation: `athSparkUp 520ms ease-out ${delay}ms forwards`,
-  "--dx": `${dx}px`,
-  "--dy": `${dy}px`,
-} as any}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
+            />
 
-        <div className="text-[11px] whitespace-nowrap">
+            {burst > 0 && (
+              <div
+                key={burst}
+                className="absolute top-1/2"
+                style={{
+                  left: sparkLeft,
+                  transform: "translate(-50%, -50%)",
+                  pointerEvents: "none",
+                }}
+              >
+                {Array.from({ length: 10 }).map((_, i) => {
+                  const dx = (Math.sin((burst + 1) * (i + 3)) * 18).toFixed(1);
+                  const dy = (-8 - (Math.abs(Math.cos((burst + 2) * (i + 5))) * 18)).toFixed(1);
+                  const delay = (i * 10).toFixed(0);
+                  return (
+                    <span
+                      key={i}
+                      className="absolute block h-[2px] w-[8px]"
+                      style={{
+                        background: "rgba(240, 106, 26, 0.95)",
+                        boxShadow: "0 0 10px rgba(240, 106, 26, 0.65)",
+                        transform: "translate(0,0)",
+                        opacity: 0.9,
+                        animation: `athSparkUp 520ms ease-out ${delay}ms forwards`,
+                        "--dx": `${dx}px`,
+                        "--dy": `${dy}px`,
+                      } as any}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <div className="shrink-0 text-[11px] whitespace-nowrap">
           <span className="text-muted-foreground">ATH</span>{" "}
           <span className="font-semibold text-foreground">{athLabel}</span>
-          {ath != null && current != null && Number.isFinite(current) && ath > 0 && (
+          {hasAthData && (
             <span className="ml-1 text-[10px] text-muted-foreground/80">{pct}%</span>
           )}
         </div>

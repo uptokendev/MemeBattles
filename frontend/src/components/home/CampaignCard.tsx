@@ -75,7 +75,17 @@ export function CampaignCard({
   const publicTokenAddr = String(vm.tokenAddress || vm.campaignAddress || "").trim();
   const creatorAddr = String(vm.creator ?? "").trim();
   const canOpenProfile = creatorAddr.length > 0;
-  const progress = Math.max(0, Math.min(100, Number(vm.progressPct ?? 0)));
+  const progressRaw = Number(vm.progressPct);
+  const progress = Number.isFinite(progressRaw)
+    ? Math.max(0, Math.min(100, progressRaw))
+    : (vm.isDexTrading ? 100 : 0);
+  const progressLabel = !Number.isFinite(progress)
+    ? "—"
+    : progress >= 100
+      ? "100%"
+      : progress > 0 && progress < 1
+        ? `${progress.toFixed(2)}%`
+        : `${progress.toFixed(0)}%`;
   const statusLabel = vm.isDexTrading ? "DEX" : "LIVE";
   const [campaignImage, setCampaignImage] = useState(() => {
     const resolved = resolveImageUri(vm.logoURI);
@@ -280,19 +290,32 @@ export function CampaignCard({
             <div className="truncate text-sm text-success">{vm.marketCapUsdLabel ?? "—"}</div>
           </div>
           <div className="min-w-0 text-right">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">Curve</div>
-            <div className="truncate text-sm text-success">{Number.isFinite(progress) ? `${progress.toFixed(0)}%` : "—"}</div>
+            <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">
+              {vm.isDexTrading ? "Bonded" : "Curve"}
+            </div>
+            <div className="truncate text-sm text-success">{progressLabel}</div>
           </div>
         </div>
 
-        <div className="mt-3">
-          <div className="h-2 border border-success/30 bg-black/70 p-[1px] shadow-[inset_0_0_12px_rgba(57,255,79,0.08)]">
-            <div className="h-full bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]" style={{ width: `${progress}%` }} />
+        {/* Single square curve track — no extra empty rounded AthBar pill under it. */}
+        {!vm.isDexTrading ? (
+          <div className="mt-3">
+            <div className="h-2 border border-success/30 bg-black/70 p-[1px] shadow-[inset_0_0_12px_rgba(57,255,79,0.08)]">
+              <div
+                className="h-full bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]"
+                style={{ width: `${Math.max(progress > 0 ? 2 : 0, progress)}%` }}
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="mt-3">
-          <AthBar currentLabel={vm.athLabel ?? null} storageKey={`ath:${String(chainIdForStorage)}:${addr}`} className="text-[10px]" barWidthPx={220} barMaxWidth="100%" />
+          <AthBar
+            currentLabel={vm.athLabel ?? vm.marketCapUsdLabel ?? null}
+            storageKey={`ath:${String(chainIdForStorage)}:${addr}:card-v4`}
+            className="text-[10px] text-success"
+            barMaxWidth="100%"
+          />
         </div>
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-3" onClick={(e) => e.stopPropagation()}>
