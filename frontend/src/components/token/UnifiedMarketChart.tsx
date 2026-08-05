@@ -346,7 +346,51 @@ export function UnifiedMarketChart({
   const [hoverPinId, setHoverPinId] = useState<string | null>(null);
   const [resolvedAvatar, setResolvedAvatar] = useState<string | null>(null);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
+  const hideTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { price: liveBnbUsd } = useBnbUsdPrice(true);
+
+  const clearHideTooltipTimer = useCallback(() => {
+    if (hideTooltipTimerRef.current) {
+      clearTimeout(hideTooltipTimerRef.current);
+      hideTooltipTimerRef.current = null;
+    }
+  }, []);
+
+  const openCreatorTooltip = useCallback(
+    (pinId: string) => {
+      clearHideTooltipTimer();
+      setHoverPinId(pinId);
+    },
+    [clearHideTooltipTimer],
+  );
+
+  /** Delayed hide so the user can move from pin → popup (~1s). */
+  const scheduleHideCreatorTooltip = useCallback(() => {
+    clearHideTooltipTimer();
+    hideTooltipTimerRef.current = setTimeout(() => {
+      setHoverPinId(null);
+      hideTooltipTimerRef.current = null;
+    }, 1000);
+  }, [clearHideTooltipTimer]);
+
+  useEffect(() => {
+    return () => clearHideTooltipTimer();
+  }, [clearHideTooltipTimer]);
+
+  // Mobile: tap outside pin/popup dismisses immediately.
+  useEffect(() => {
+    if (!hoverPinId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const root = overlayRef.current;
+      if (root && root.contains(target)) return;
+      clearHideTooltipTimer();
+      setHoverPinId(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [clearHideTooltipTimer, hoverPinId]);
 
   useEffect(() => {
     if (liveBnbUsd && Number.isFinite(liveBnbUsd) && liveBnbUsd > 0) lastUsdRef.current = liveBnbUsd;
@@ -722,7 +766,7 @@ export function UnifiedMarketChart({
                 <img
                   src={avatarSrc}
                   alt=""
-                  className="h-3.5 w-3.5 rounded-full border border-emerald-400/70 object-cover"
+                  className="h-3.5 w-3.5 rounded-full border border-orange-400/80 object-cover"
                 />
                 Creator trades
               </span>
@@ -748,24 +792,31 @@ export function UnifiedMarketChart({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
-        {/* Creator avatar pins (Pump-style). Positioned in chart pixel space. */}
+        {/* Creator avatar pins + hover card. pointer-events only on pins/popup so chart pan still works. */}
         <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
           {placedPins.map((pin) => {
-            const ring = pin.side === "buy" ? "border-emerald-400" : "border-red-400";
-            const glow =
-              pin.side === "buy"
-                ? "shadow-[0_0_10px_rgba(34,197,94,0.55)]"
-                : "shadow-[0_0_10px_rgba(239,68,68,0.5)]";
+            const isBuy = pin.side === "buy";
+            const ring = isBuy ? "border-orange-400" : "border-orange-500/90";
+            const glow = "shadow-[0_0_12px_rgba(249,115,22,0.55)]";
+            const active = hoverPinId === pin.id;
             return (
               <button
                 key={pin.id}
                 type="button"
-                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-20 hover:scale-125 ${ring} ${glow}`}
+                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-20 hover:scale-125 ${ring} ${glow} ${
+                  active ? "z-20 scale-125" : ""
+                }`}
                 style={{ left: pin.x, top: pin.y }}
-                onMouseEnter={() => setHoverPinId(pin.id)}
-                onMouseLeave={() => setHoverPinId((id) => (id === pin.id ? null : id))}
-                onFocus={() => setHoverPinId(pin.id)}
-                onBlur={() => setHoverPinId((id) => (id === pin.id ? null : id))}
+                onMouseEnter={() => openCreatorTooltip(pin.id)}
+                onMouseLeave={scheduleHideCreatorTooltip}
+                onFocus={() => openCreatorTooltip(pin.id)}
+                onBlur={scheduleHideCreatorTooltip}
+                onClick={(e) => {
+                  // Mobile tap: open / toggle
+                  e.stopPropagation();
+                  clearHideTooltipTimer();
+                  setHoverPinId((cur) => (cur === pin.id ? null : pin.id));
+                }}
                 aria-label={`Creator ${pin.side}`}
               >
                 <img
@@ -780,19 +831,23 @@ export function UnifiedMarketChart({
 
           {hoverPin ? (
             <div
-              className="pointer-events-none absolute z-30 w-[220px] -translate-x-1/2 rounded-xl border border-emerald-500/40 bg-[#0b0f14]/96 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+              role="dialog"
+              aria-label={`Creator ${hoverPin.side} details`}
+              className="pointer-events-auto absolute z-30 w-[228px] -translate-x-1/2 rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
               style={{
                 left: Math.min(
-                  Math.max(hoverPin.x, 110),
-                  (overlayRef.current?.clientWidth || 400) - 110,
+                  Math.max(hoverPin.x, 114),
+                  (overlayRef.current?.clientWidth || 400) - 114,
                 ),
-                top: Math.max(8, hoverPin.y - 118),
+                top: Math.max(8, hoverPin.y - 124),
               }}
+              onMouseEnter={() => openCreatorTooltip(hoverPin.id)}
+              onMouseLeave={scheduleHideCreatorTooltip}
             >
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-400">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-300">
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    hoverPin.side === "buy" ? "bg-emerald-400" : "bg-red-400"
+                    hoverPin.side === "buy" ? "bg-orange-400" : "bg-orange-500"
                   }`}
                 />
                 Creator {hoverPin.side}
@@ -801,34 +856,35 @@ export function UnifiedMarketChart({
                 <img
                   src={avatarSrc}
                   alt=""
-                  className="h-7 w-7 rounded-full border border-white/15 object-cover"
+                  className="h-7 w-7 rounded-full border border-orange-400/40 object-cover"
                 />
                 <div className="min-w-0">
                   <div className="truncate text-xs font-semibold text-white">{displayName}</div>
-                  <div className="truncate text-[10px] text-white/50">
-                    {hoverPin.side === "buy" ? "Bought" : "Sold"} by {shortenAddr(String(creatorAddress || ""))}
+                  <div className="truncate text-[10px] text-orange-200/70">
+                    {hoverPin.side === "buy" ? "Bought" : "Sold"} by{" "}
+                    {shortenAddr(String(creatorAddress || ""))}
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                  <div className="text-white/45">BNB size</div>
+                <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
+                  <div className="text-orange-200/55">BNB size</div>
                   <div className="font-semibold text-white">{formatBnbAmt(hoverPin.nativeWei)}</div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                  <div className="text-white/45">Token size</div>
+                <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
+                  <div className="text-orange-200/55">Token size</div>
                   <div className="font-semibold text-white">{formatTokenAmt(hoverPin.tokensWei)}</div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                  <div className="text-white/45">Market cap</div>
+                <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
+                  <div className="text-orange-200/55">Market cap</div>
                   <div className="font-semibold text-white">
                     {hoverPin.mcapUsd != null
                       ? formatValue(hoverPin.mcapUsd, "marketcap", "USD")
                       : "—"}
                   </div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
-                  <div className="text-white/45">Price</div>
+                <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
+                  <div className="text-orange-200/55">Price</div>
                   <div className="font-semibold text-white">
                     {formatValue(
                       denomination === "USD" ? hoverPin.priceBnb * (bnbUsd || 1) : hoverPin.priceBnb,
@@ -843,8 +899,9 @@ export function UnifiedMarketChart({
                   href={explorerTxUrl(Number(chainId || 97), hoverPin.txHash)}
                   target="_blank"
                   rel="noreferrer"
-                  className="pointer-events-auto mt-2 flex w-full items-center justify-center rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20"
-                  onMouseEnter={() => setHoverPinId(hoverPin.id)}
+                  className="mt-2 flex w-full items-center justify-center rounded-lg border border-orange-400/45 bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25 hover:text-orange-100"
+                  onMouseEnter={() => openCreatorTooltip(hoverPin.id)}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   View tx
                 </a>
