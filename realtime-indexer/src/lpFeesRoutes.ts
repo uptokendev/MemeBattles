@@ -101,12 +101,20 @@ function resolveLockerAddress(chainId: number): string | null {
   const per = String(
     process.env[`LP_LOCKER_ADDRESS_${chainId}`] ||
       process.env[`VITE_LP_LOCKER_ADDRESS_${chainId}`] ||
+      process.env[`PERMANENT_LP_LOCKER_ADDRESS_${chainId}`] ||
+      process.env[`VITE_PERMANENT_LP_LOCKER_ADDRESS_${chainId}`] ||
       "",
   ).trim();
   if (isAddress(per)) return ethers.getAddress(per);
-  const generic = String(process.env.LP_LOCKER_ADDRESS || process.env.VITE_LP_LOCKER_ADDRESS || "").trim();
+  const generic = String(
+    process.env.LP_LOCKER_ADDRESS ||
+      process.env.VITE_LP_LOCKER_ADDRESS ||
+      process.env.PERMANENT_LP_LOCKER_ADDRESS ||
+      process.env.VITE_PERMANENT_LP_LOCKER_ADDRESS ||
+      "",
+  ).trim();
   if (isAddress(generic)) return ethers.getAddress(generic);
-  // Clean-slate BSC testnet locker
+  // Clean-slate BSC testnet locker (post dual-factory reset)
   if (chainId === 97) return "0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a";
   return null;
 }

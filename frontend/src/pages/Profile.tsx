@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Bell, Copy, ExternalLink } from "lucide-react";
@@ -36,6 +36,12 @@ import { useProfileActivity } from "@/hooks/profile/useProfileActivity";
 import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
 import { useProfileRewards } from "@/hooks/profile/useProfileRewards";
+import {
+  fetchLpFeePools,
+  harvestLpFeesWithWallet,
+  hasUnharvestedFees,
+  type LpFeePoolRow,
+} from "@/lib/lpFeeHarvest";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -136,9 +142,79 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
   const created = useCreatedCampaigns({
     viewedAddress,
     account,
+    chainId,
     fetchCampaigns,
     fetchCampaignSummary,
   });
+
+  const [lpFeeByCampaign, setLpFeeByCampaign] = useState<Record<string, LpFeePoolRow>>({});
+  const [claimingCampaign, setClaimingCampaign] = useState<string | null>(null);
+  const [lpFeeError, setLpFeeError] = useState<string | null>(null);
+
+  const refreshLpFees = useCallback(async () => {
+    if (!isOwnProfile || !viewedAddress) {
+      setLpFeeByCampaign({});
+      setLpFeeError(null);
+      return;
+    }
+    try {
+      setLpFeeError(null);
+      const { items } = await fetchLpFeePools({
+        chainId: Number(chainId || 97),
+        creatorAddress: viewedAddress,
+        limit: 50,
+      });
+      const next: Record<string, LpFeePoolRow> = {};
+      for (const row of items) {
+        const key = String(row.campaignAddress || "").toLowerCase();
+        if (key) next[key] = row;
+      }
+      setLpFeeByCampaign(next);
+    } catch (err: any) {
+      setLpFeeByCampaign({});
+      setLpFeeError(String(err?.message || "Could not load LP fee status."));
+    }
+  }, [isOwnProfile, viewedAddress, chainId]);
+
+  useEffect(() => {
+    void refreshLpFees();
+  }, [refreshLpFees]);
+
+  const handleClaimLpFees = useCallback(
+    async (campaignAddress: string) => {
+      const key = String(campaignAddress || "").toLowerCase();
+      const row = lpFeeByCampaign[key];
+      const pair = String(row?.pairAddress || "").toLowerCase();
+      if (!pair) {
+        toast.error("No Topaz pool registered for this coin yet.");
+        return;
+      }
+      if (!wallet.signer || !wallet.account) {
+        toast.error("Connect wallet to claim LP fees.");
+        try {
+          window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      setClaimingCampaign(key);
+      try {
+        const result = await harvestLpFeesWithWallet({
+          chainId: Number(chainId || 97),
+          pairAddress: pair,
+          signer: wallet.signer,
+        });
+        toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 10)}…`);
+        await refreshLpFees();
+      } catch (err: any) {
+        toast.error(String(err?.shortMessage || err?.reason || err?.message || "Harvest failed"));
+      } finally {
+        setClaimingCampaign(null);
+      }
+    },
+    [lpFeeByCampaign, wallet.signer, wallet.account, chainId, refreshLpFees],
+  );
 
   const { activityTrades, activityLoading, activityError } = useProfileActivity({
     activeTab,
@@ -627,40 +703,119 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                   created coins{" "}
                   <span className="text-muted-foreground">({created.length})</span>
                 </h3>
+                {isOwnProfile ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="font-retro text-[10px]"
+                    onClick={() => navigate("/command-center/coins")}
+                  >
+                    Command Center
+                  </Button>
+                ) : null}
               </div>
 
+              {isOwnProfile && lpFeeError ? (
+                <div className="mb-3 rounded-lg border border-border/60 bg-background/40 p-2 text-[11px] text-muted-foreground">
+                  LP fee status unavailable: {lpFeeError}
+                </div>
+              ) : null}
+
+              {isOwnProfile ? (
+                <p className="mb-3 text-[11px] text-muted-foreground">
+                  After graduation, claim Topaz LP fees here (or on Token Details / Command Center).
+                  Your wallet pays gas; 80% of harvested fees go to the creator payout wallet.
+                </p>
+              ) : null}
+
               <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
-                {created.map((coin) => (
-                  <div
-                    key={coin.id}
-                    className="flex items-center justify-between p-3 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/token/${String(coin.tokenAddress || coin.campaignAddress).toLowerCase()}`)}
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <img
-                        src={coin.image}
-                        alt={coin.name}
-                        className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-border object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-retro text-foreground text-xs md:text-sm truncate">
-                          {coin.name}
+                {created.map((coin) => {
+                  const campaignKey = String(coin.campaignAddress || "").toLowerCase();
+                  const feeRow = lpFeeByCampaign[campaignKey];
+                  const canClaim =
+                    isOwnProfile &&
+                    Boolean(feeRow?.pairAddress && feeRow?.fees?.registered && hasUnharvestedFees(feeRow));
+                  const s0 =
+                    feeRow?.fees?.unharvested?.token0Symbol ||
+                    feeRow?.fees?.token0Meta?.symbol ||
+                    "token0";
+                  const s1 =
+                    feeRow?.fees?.unharvested?.token1Symbol ||
+                    feeRow?.fees?.token1Meta?.symbol ||
+                    "token1";
+                  const u = feeRow?.fees?.unharvested;
+                  const feeHint =
+                    isOwnProfile && feeRow?.pairAddress && feeRow?.fees?.registered
+                      ? canClaim
+                        ? `Unclaimed: ${u?.token0Display ?? u?.token0 ?? "0"} ${s0} + ${u?.token1Display ?? u?.token1 ?? "0"} ${s1}`
+                        : "No unclaimed LP fees"
+                      : isOwnProfile && feeRow
+                        ? "Pool not ready for fee claim"
+                        : null;
+
+                  return (
+                    <div
+                      key={coin.id}
+                      className="flex flex-col gap-2 p-3 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors"
+                    >
+                      <div
+                        className="flex items-center justify-between cursor-pointer"
+                        onClick={() =>
+                          navigate(
+                            `/token/${String(coin.tokenAddress || coin.campaignAddress).toLowerCase()}`,
+                          )
+                        }
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <img
+                            src={coin.image}
+                            alt={coin.name}
+                            className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-border object-cover"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-retro text-foreground text-xs md:text-sm truncate">
+                              {coin.name}
+                            </div>
+                            <div className="font-retro text-muted-foreground text-xs">
+                              {coin.ticker}
+                            </div>
+                          </div>
                         </div>
-                        <div className="font-retro text-muted-foreground text-xs">
-                          {coin.ticker}
+                        <div className="text-right shrink-0 ml-4">
+                          <div className="font-retro text-foreground text-xs md:text-sm">
+                            {coin.marketCap}
+                          </div>
+                          <div className="font-retro text-muted-foreground text-xs">
+                            {coin.timeAgo}
+                          </div>
                         </div>
                       </div>
+
+                      {isOwnProfile && (feeHint || canClaim) ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-2">
+                          {feeHint ? (
+                            <div className="text-[10px] text-muted-foreground">{feeHint}</div>
+                          ) : (
+                            <span />
+                          )}
+                          {canClaim ? (
+                            <Button
+                              size="sm"
+                              className="h-7 font-retro text-[10px]"
+                              disabled={claimingCampaign === campaignKey}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleClaimLpFees(campaignKey);
+                              }}
+                            >
+                              {claimingCampaign === campaignKey ? "Claiming…" : "Claim LP fees"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="text-right shrink-0 ml-4">
-                      <div className="font-retro text-foreground text-xs md:text-sm">
-                        {coin.marketCap}
-                      </div>
-                      <div className="font-retro text-muted-foreground text-xs">
-                        {coin.timeAgo}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -84,6 +84,7 @@ export async function fetchLpFeePools(input: {
     limit: String(input.limit ?? 50),
   });
   if (input.campaignAddress) qs.set("campaign", String(input.campaignAddress).toLowerCase());
+  if (input.creatorAddress) qs.set("creator", String(input.creatorAddress).toLowerCase());
 
   const res = await fetch(`${base}/api/dashboard/lp-fees?${qs.toString()}`, {
     cache: "no-store",
@@ -93,6 +94,7 @@ export async function fetchLpFeePools(input: {
   if (!res.ok) throw new Error(String(json?.error || `LP fee fetch failed (${res.status})`));
 
   let items = Array.isArray(json?.items) ? (json.items as LpFeePoolRow[]) : [];
+  // Server already filters by creator when provided; keep a client guard for mixed responses.
   const creator = String(input.creatorAddress || "").trim().toLowerCase();
   if (creator) {
     items = items.filter((it) => String(it.creatorAddress || "").toLowerCase() === creator);
