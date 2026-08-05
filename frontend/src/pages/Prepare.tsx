@@ -132,52 +132,34 @@ function absoluteUrl(value: string | null | undefined) {
   return "";
 }
 
+/** Production app host for share/OG links (never localhost or preview hosts). */
+const PUBLIC_APP_ORIGIN = "https://app.memewar.zone";
+
+function publicAppOrigin() {
+  if (typeof window === "undefined") return PUBLIC_APP_ORIGIN;
+  const host = window.location.hostname.toLowerCase();
+  // Always share the live host so X crawls production OG edge tags + share-card PNG.
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".netlify.app")) {
+    return PUBLIC_APP_ORIGIN;
+  }
+  return window.location.origin;
+}
+
 function buildPreparePageUrl(slug: string) {
-  if (typeof window === "undefined") return `https://memewar.zone/prepare/${slug}`;
-  return `${window.location.origin}/prepare/${slug}`;
+  return `${publicAppOrigin()}/prepare/${slug}`;
 }
 
 function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version?: string) {
-  const { draft, promotion, popularity } = bundle;
-
-  const displayLink =
-    typeof window !== "undefined"
-      ? `${window.location.host}/prepare/${draft.slug}`
-      : `memewar.zone/prepare/${draft.slug}`;
-
-  const description =
-    draft.description ||
-    promotion?.missionStatement ||
-    promotion?.creatorNote ||
-    "The launchpad that turns every drop into a war.";
-
-  const recruits =
-    popularity.signedActions ||
-    popularity.follows ||
-    0;
-
-  const status =
-    draft.status === "promotion_published" || draft.status === "draft"
-      ? "DRAFT"
-      : statusLabel(draft.status);
-
+  const { draft } = bundle;
+  // Short slug URL: server loads draft + metrics and renders the PNG.
+  // Avoids long query strings that break X/Twitter image crawlers.
   const params = new URLSearchParams({
-    name: draft.name,
-    ticker: draft.ticker,
-    chain: "PREPARE",
-    status,
-    recruits: String(recruits),
-    heat: `${popularity.popularityPercentage}%`,
-    creator: creatorLabel(bundle),
-    link: displayLink,
-    description,
-    logo: absoluteUrl(draft.logoUrl),
+    slug: String(draft.slug || "").trim(),
   });
-
   if (download) params.set("download", "1");
   if (version) params.set("_v", version);
 
-  return `/api/prepare-share-card?${params.toString()}`;
+  return `${publicAppOrigin()}/api/prepare-share-card?${params.toString()}`;
 }
 
 function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: string }) {
@@ -311,9 +293,8 @@ function ShareModal({
   };
 
   const copyImage = async () => {
-    const fullPngUrl =
-      typeof window === "undefined" ? pngUrl : `${window.location.origin}${pngUrl}`;
-    await navigator.clipboard?.writeText(fullPngUrl).catch(() => undefined);
+    // pngUrl is already absolute (public app host) for crawler-safe sharing.
+    await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
     toast.success("Generated PNG link copied.");
   };
 
