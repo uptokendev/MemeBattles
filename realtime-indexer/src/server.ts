@@ -28,6 +28,7 @@ import {
 } from "./rpcProvider.js";
 import { resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 import { runGraduationReconcilerOnce } from "./graduationReconciler.js";
+import { registerLpFeesRoutes } from "./lpFeesRoutes.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
@@ -341,7 +342,7 @@ app.get("/health", async (_req, res) => {
       ok: true,
       db: r.rows[0].ok,
       // Bump when shipping indexer loop fixes so deploy can be confirmed from /health.
-      indexerBuild: "votes-in-campaigns-scope-2026-08-04",
+      indexerBuild: "lp-fees-dashboard-2026-08-05",
       normalScope: ENV.INDEXER_NORMAL_SCOPE,
     });
   } catch (e: any) {
@@ -2356,6 +2357,9 @@ app.get("/api/votes", wrap(async (req, res) => {
 }));
 
 // /api/featured?chainId=97&sort=trending|24h|7d|all&limit=50
+// Admin / web-dashboard: Topaz LP fee monitor (token/market authority lives here).
+registerLpFeesRoutes(app);
+
 app.get("/api/featured", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
   const sort = String(req.query.sort || "trending");
