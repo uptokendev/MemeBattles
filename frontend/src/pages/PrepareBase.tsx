@@ -34,6 +34,7 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 import { buildPrepareTweetText } from "@/lib/prepareShareText";
+import { sharePrepareToX, sharePrepareToXToastMessage } from "@/lib/sharePrepareToX";
 
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
@@ -274,8 +275,9 @@ function ShareModal({
   bundle: PrepareDraftBundle;
   onClose: () => void;
 }) {
-  const pngUrl = buildShareCardUrl(bundle);
-  const downloadUrl = buildShareCardUrl(bundle, true);
+  const [postingToX, setPostingToX] = useState(false);
+  const pngUrl = buildShareCardUrl(bundle, false, "4");
+  const downloadUrl = buildShareCardUrl(bundle, true, "4");
   const pageUrl = buildPreparePageUrl(bundle.draft.slug);
 
   const copyPage = async () => {
@@ -294,6 +296,25 @@ function ShareModal({
     shareMessage: bundle.promotion.shareMessage,
   });
 
+  const postToX = async () => {
+    if (postingToX) return;
+    setPostingToX(true);
+    try {
+      const result = await sharePrepareToX({
+        imageUrl: pngUrl,
+        pageUrl,
+        tweetText,
+        fileName: `memewarzone-${bundle.draft.slug || "prepare"}-share-card.png`,
+      });
+      toast.success(sharePrepareToXToastMessage(result), { duration: 8_000 });
+    } catch (err) {
+      console.error("[PrepareBase] share to X failed", err);
+      toast.error("Could not prepare share card for X. Try Download PNG and attach it manually.");
+    } finally {
+      setPostingToX(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <div className="mwz-card max-h-[92vh] w-full max-w-5xl overflow-auto border-orange-400/50 bg-black/95 p-4 md:p-6">
@@ -308,6 +329,10 @@ function ShareModal({
             <p className="mt-2 text-sm text-muted-foreground">
               This PNG is generated from the live promotion data: logo, ticker, name,
               description, recruits, heat, creator, and promotion link.
+            </p>
+            <p className="mt-2 text-xs text-orange-200/90">
+              Post to X attaches the share card image (or copies it so you can paste). The
+              promotion page link stays in the text so people open your page — not just the PNG.
             </p>
           </div>
 
@@ -338,20 +363,14 @@ function ShareModal({
             </a>
           </Button>
 
-          <Button asChild className="mwz-button mwz-button-orange font-retro">
-            <a
-              href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(
-                pageUrl,
-              )}&text=${encodeURIComponent(tweetText)}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => {
-                // X scrapes the page URL for the card. Ensure absolute app host
-                // (not localhost) so production OG edge tags + share-card PNG resolve.
-              }}
-            >
-              Post to X
-            </a>
+          <Button
+            type="button"
+            onClick={() => void postToX()}
+            disabled={postingToX}
+            className="mwz-button mwz-button-orange font-retro"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {postingToX ? "Preparing…" : "Post to X"}
           </Button>
         </div>
       </div>
