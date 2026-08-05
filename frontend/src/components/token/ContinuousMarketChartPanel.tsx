@@ -10,8 +10,10 @@ import { useContinuousMarketTrades } from "@/hooks/useContinuousMarketTrades";
 type ContinuousMarketChartPanelProps = {
   campaignAddress?: string;
   tokenAddress?: string;
-  /** Creator wallet — marked as circles on the continuous chart. */
+  /** Creator wallet — avatar pins on the continuous chart. */
   creatorAddress?: string | null;
+  creatorAvatarUrl?: string | null;
+  creatorDisplayName?: string | null;
   chainId: number;
   /** Compact War Room chrome vs full Token Details controls. */
   compact?: boolean;
@@ -28,6 +30,8 @@ export function ContinuousMarketChartPanel({
   campaignAddress,
   tokenAddress,
   creatorAddress,
+  creatorAvatarUrl,
+  creatorDisplayName,
   chainId,
   compact = false,
   className,
@@ -85,6 +89,9 @@ export function ContinuousMarketChartPanel({
           marketState={market.unifiedMarket.state}
           graduationMarker={market.unifiedMarket.graduationMarker}
           creatorAddress={creatorAddress}
+          creatorAvatarUrl={creatorAvatarUrl}
+          creatorDisplayName={creatorDisplayName}
+          chainId={chainId}
           resolution={resolution}
           onResolutionChange={setResolution}
           denomination={denomination}

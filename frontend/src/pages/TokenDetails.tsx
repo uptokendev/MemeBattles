@@ -2981,6 +2981,9 @@ const bnbUsd = useMemo(() => {
                   marketState={unifiedMarket.state}
                   graduationMarker={unifiedMarket.graduationMarker}
                   creatorAddress={campaign?.creator}
+                  creatorAvatarUrl={creatorProfile?.avatarUrl}
+                  creatorDisplayName={creatorProfile?.displayName}
+                  chainId={chainIdForStorage}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}

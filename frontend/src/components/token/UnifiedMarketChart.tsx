@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -15,6 +15,8 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import type { MarketCandle, MarketState } from "@/lib/marketContinuityApi";
 import { buildCandles, type CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
+import { fetchUserProfile } from "@/lib/profileApi";
+import { resolveImageUri } from "@/lib/media";
 
 export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 export type UnifiedChartMetric = "marketcap" | "price";
@@ -42,14 +44,35 @@ export type UnifiedMarketChartProps = {
     initialDexPriceBnb?: string | null;
     pairAddress?: string | null;
   } | null;
-  /** Campaign creator wallet — buys/sells from this address get circle markers. */
+  /** Campaign creator wallet — buys/sells from this address get avatar markers. */
   creatorAddress?: string | null;
+  /** Optional preloaded creator avatar/name (Token Details already has these). */
+  creatorAvatarUrl?: string | null;
+  creatorDisplayName?: string | null;
+  /** Used to resolve profile + explorer links (default 97). */
+  chainId?: number;
   resolution: UnifiedChartResolution;
   onResolutionChange: (resolution: UnifiedChartResolution) => void;
   denomination?: UnifiedChartDenomination;
   loading?: boolean;
   error?: string | null;
 };
+
+type CreatorTradePin = {
+  id: string;
+  timeSec: number;
+  /** Value on the active chart series (price or mcap) for Y placement. */
+  value: number;
+  side: "buy" | "sell";
+  tokensWei: bigint;
+  nativeWei: bigint;
+  priceBnb: number;
+  mcapUsd: number | null;
+  txHash: string;
+  timestamp: number;
+};
+
+type PlacedCreatorPin = CreatorTradePin & { x: number; y: number };
 
 type CandleRow = {
   time: Time;
@@ -253,8 +276,44 @@ function nearestCandleTime(data: CandleRow[], targetSec: number): Time | null {
       bestDist = d;
     }
   }
-  // Only attach if within ~2 buckets of something real (avoid floating markers).
-  return bestDist <= 120 ? best.time : best.time;
+  return best.time;
+}
+
+function shortenAddr(addr: string) {
+  const a = String(addr || "");
+  if (a.length < 12) return a;
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+function formatTokenAmt(wei: bigint): string {
+  try {
+    const n = Number(ethers.formatUnits(wei, 18));
+    if (!Number.isFinite(n)) return "—";
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+    if (n >= 1) return n.toFixed(2);
+    if (n >= 0.01) return n.toFixed(4);
+    return n.toFixed(6);
+  } catch {
+    return "—";
+  }
+}
+
+function formatBnbAmt(wei: bigint): string {
+  try {
+    const n = Number(ethers.formatEther(wei));
+    if (!Number.isFinite(n)) return "—";
+    if (n >= 1) return `${n.toFixed(3)} BNB`;
+    if (n >= 0.001) return `${n.toFixed(4)} BNB`;
+    return `${n.toFixed(6)} BNB`;
+  } catch {
+    return "—";
+  }
+}
+
+function explorerTxUrl(chainId: number, txHash: string): string {
+  const base = Number(chainId) === 56 ? "https://bscscan.com" : "https://testnet.bscscan.com";
+  return `${base}/tx/${txHash}`;
 }
 
 export function UnifiedMarketChart({
@@ -263,6 +322,9 @@ export function UnifiedMarketChart({
   marketState,
   graduationMarker,
   creatorAddress,
+  creatorAvatarUrl,
+  creatorDisplayName,
+  chainId = 97,
   resolution,
   onResolutionChange,
   denomination = "USD",
@@ -271,6 +333,7 @@ export function UnifiedMarketChart({
 }: UnifiedMarketChartProps) {
   const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markerPluginRef = useRef<ReturnType<typeof createSeriesMarkers> | null>(null);
@@ -278,6 +341,11 @@ export function UnifiedMarketChart({
   const previousDataRef = useRef<CandleRow[]>([]);
   const initialRangeSetRef = useRef(false);
   const lastUsdRef = useRef(0);
+  const creatorPinsRef = useRef<CreatorTradePin[]>([]);
+  const [placedPins, setPlacedPins] = useState<PlacedCreatorPin[]>([]);
+  const [hoverPinId, setHoverPinId] = useState<string | null>(null);
+  const [resolvedAvatar, setResolvedAvatar] = useState<string | null>(null);
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { price: liveBnbUsd } = useBnbUsdPrice(true);
 
   useEffect(() => {
@@ -317,50 +385,150 @@ export function UnifiedMarketChart({
     return mergeCandleRows(fromTrades, fromServer);
   }, [bnbUsd, denomination, intervalSeconds, marketCandles, marketState, metric, resolution, seriesPoints]);
 
-  const markers = useMemo((): SeriesMarker<Time>[] => {
-    if (!data.length) return [];
-    const out: SeriesMarker<Time>[] = [];
+  // Graduation only on built-in markers; creator trades use avatar HTML overlays.
+  const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
+    if (!data.length || graduationTimeSec <= 0) return [];
+    const t = nearestCandleTime(data, graduationTimeSec);
+    if (t == null) return [];
+    return [
+      {
+        time: t,
+        position: "aboveBar",
+        color: "#f59e0b",
+        shape: "arrowDown",
+        text: "Graduated",
+      },
+    ];
+  }, [data, graduationTimeSec]);
 
-    if (graduationTimeSec > 0) {
-      const t = nearestCandleTime(data, graduationTimeSec);
-      if (t != null) {
-        out.push({
-          time: t,
-          position: "aboveBar",
-          color: "#f59e0b",
-          shape: "arrowDown",
-          text: "Graduated",
-        });
-      }
-    }
-
+  const creatorPins = useMemo((): CreatorTradePin[] => {
     const creator = String(creatorAddress || "").trim().toLowerCase();
-    if (creator && /^0x[a-f0-9]{40}$/.test(creator)) {
-      // One marker per bucket per side so we don't spam the series.
-      const seen = new Set<string>();
-      for (const trade of curvePoints || []) {
-        const wallet = String(trade.from || "").toLowerCase();
-        if (!sameAddr(wallet, creator)) continue;
-        const ts = Number(trade.timestamp || 0);
-        if (!ts) continue;
-        const t = nearestCandleTime(data, ts);
-        if (t == null) continue;
-        const side = trade.type === "sell" ? "sell" : "buy";
-        const key = `${Number(t)}:${side}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({
-          time: t,
-          position: side === "buy" ? "belowBar" : "aboveBar",
-          color: side === "buy" ? "#22c55e" : "#ef4444",
-          shape: "circle",
-          text: side === "buy" ? "Creator buy" : "Creator sell",
-        });
-      }
-    }
+    if (!creator || !/^0x[a-f0-9]{40}$/.test(creator) || !data.length) return [];
 
-    return out.sort((a, b) => Number(a.time) - Number(b.time));
-  }, [creatorAddress, curvePoints, data, graduationTimeSec]);
+    const fixedGradSupply = postBurnSupply(marketState);
+    const marketGrad = isGraduatedStage(marketState);
+    let circulating = 0;
+    let peakCirc = 0;
+    const pins: CreatorTradePin[] = [];
+    const sorted = [...(curvePoints || [])].sort(
+      (a, b) =>
+        (a.timestamp ?? 0) - (b.timestamp ?? 0) ||
+        (a.blockNumber ?? 0) - (b.blockNumber ?? 0) ||
+        Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0),
+    );
+
+    for (const trade of sorted) {
+      const priceBnb = finite(trade.pricePerToken);
+      const ts = Number(trade.timestamp || 0);
+      if (!priceBnb || ts <= 0) continue;
+
+      const tokenAmount = tokensFromWei(trade.tokensWei);
+      const afterGrad =
+        (graduationTimeSec > 0 && ts >= graduationTimeSec) ||
+        (marketGrad && graduationTimeSec <= 0 && fixedGradSupply > 0);
+      if (!afterGrad || fixedGradSupply <= 0) {
+        circulating += trade.type === "sell" ? -tokenAmount : tokenAmount;
+        circulating = Math.max(0, circulating);
+        peakCirc = Math.max(peakCirc, circulating);
+      }
+      const supplyForMcap =
+        afterGrad && fixedGradSupply > 0
+          ? fixedGradSupply
+          : afterGrad && peakCirc > 0
+            ? peakCirc
+            : Math.max(circulating, 0);
+
+      if (!sameAddr(trade.from, creator)) continue;
+
+      const valueBnb = metric === "marketcap" ? priceBnb * Math.max(supplyForMcap, 1e-18) : priceBnb;
+      const value = denomination === "USD" ? valueBnb * (bnbUsd || 1) : valueBnb;
+      if (!Number.isFinite(value) || value <= 0) continue;
+
+      const candleTime = nearestCandleTime(data, ts);
+      const timeSec = candleTime != null ? Number(candleTime) : ts;
+      const side = trade.type === "sell" ? "sell" : "buy";
+      const txHash = String(trade.txHash || "").toLowerCase();
+      const mcapUsd =
+        denomination === "USD"
+          ? value
+          : priceBnb * Math.max(supplyForMcap, 0) * (bnbUsd || 0);
+
+      pins.push({
+        id: `${txHash || timeSec}:${side}:${trade.logIndex ?? 0}`,
+        timeSec,
+        value,
+        side,
+        tokensWei: trade.tokensWei ?? 0n,
+        nativeWei: trade.nativeWei ?? 0n,
+        priceBnb,
+        mcapUsd: Number.isFinite(mcapUsd) && mcapUsd > 0 ? mcapUsd : null,
+        txHash,
+        timestamp: ts,
+      });
+    }
+    // Cap density: keep latest 24 creator prints
+    return pins.slice(-24);
+  }, [
+    bnbUsd,
+    creatorAddress,
+    curvePoints,
+    data,
+    denomination,
+    graduationTimeSec,
+    marketState,
+    metric,
+  ]);
+
+  creatorPinsRef.current = creatorPins;
+
+  useEffect(() => {
+    const fromProp = resolveImageUri(creatorAvatarUrl || "") || null;
+    if (fromProp) {
+      setResolvedAvatar(fromProp);
+      setResolvedName(creatorDisplayName?.trim() || null);
+      return;
+    }
+    const addr = String(creatorAddress || "").trim();
+    if (!addr) {
+      setResolvedAvatar(null);
+      setResolvedName(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchUserProfile(Number(chainId || 97), addr)
+      .then((p) => {
+        if (cancelled) return;
+        setResolvedAvatar(resolveImageUri(p?.avatarUrl || "") || null);
+        setResolvedName(p?.displayName?.trim() || creatorDisplayName?.trim() || null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedAvatar(null);
+          setResolvedName(creatorDisplayName?.trim() || null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, creatorAddress, creatorAvatarUrl, creatorDisplayName]);
+
+  const repositionCreatorPins = useCallback(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series) {
+      setPlacedPins([]);
+      return;
+    }
+    const pins = creatorPinsRef.current;
+    const next: PlacedCreatorPin[] = [];
+    for (const pin of pins) {
+      const x = chart.timeScale().timeToCoordinate(pin.timeSec as Time);
+      const y = series.priceToCoordinate(pin.value);
+      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      next.push({ ...pin, x, y });
+    }
+    setPlacedPins(next);
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -385,7 +553,7 @@ export function UnifiedMarketChart({
         borderColor: "rgba(255,255,255,0.18)",
         ticksVisible: true,
         minimumWidth: 88,
-        scaleMargins: { top: 0.12, bottom: 0.1 },
+        scaleMargins: { top: 0.14, bottom: 0.12 },
       },
       timeScale: {
         borderVisible: true,
@@ -427,6 +595,10 @@ export function UnifiedMarketChart({
     seriesRef.current = series;
     markerPluginRef.current = createSeriesMarkers(series, []);
 
+    const onVisible = () => repositionCreatorPins();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisible);
+    chart.timeScale().subscribeVisibleTimeRangeChange(onVisible);
+
     const observer = new ResizeObserver(() => {
       const target = containerRef.current;
       if (!target || !chartRef.current) return;
@@ -435,6 +607,7 @@ export function UnifiedMarketChart({
         width: Math.max(10, bounds.width || target.clientWidth || 10),
         height: Math.max(140, bounds.height || target.clientHeight || 260),
       });
+      repositionCreatorPins();
     });
     observer.observe(element);
     resizeRef.current = observer;
@@ -442,6 +615,12 @@ export function UnifiedMarketChart({
     return () => {
       observer.disconnect();
       resizeRef.current = null;
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisible);
+        chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisible);
+      } catch {
+        // ignore
+      }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -491,12 +670,22 @@ export function UnifiedMarketChart({
       });
       initialRangeSetRef.current = true;
     }
-  }, [data]);
+    // Defer pin layout until after paint/layout.
+    requestAnimationFrame(() => repositionCreatorPins());
+  }, [data, repositionCreatorPins]);
 
   useEffect(() => {
     if (!markerPluginRef.current) return;
-    markerPluginRef.current.setMarkers(markers);
-  }, [markers]);
+    markerPluginRef.current.setMarkers(graduationMarkers);
+  }, [graduationMarkers]);
+
+  useEffect(() => {
+    repositionCreatorPins();
+  }, [creatorPins, repositionCreatorPins, metric, denomination]);
+
+  const hoverPin = hoverPinId ? placedPins.find((p) => p.id === hoverPinId) : null;
+  const avatarSrc = resolvedAvatar || "/placeholder.svg";
+  const displayName = resolvedName || shortenAddr(String(creatorAddress || ""));
 
   const hasData = data.length > 0;
   return (
@@ -530,10 +719,12 @@ export function UnifiedMarketChart({
           {creatorAddress ? (
             <div className="hidden items-center gap-2 text-[9px] text-muted-foreground sm:flex">
               <span className="inline-flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" /> Creator buy
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-red-500" /> Creator sell
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  className="h-3.5 w-3.5 rounded-full border border-emerald-400/70 object-cover"
+                />
+                Creator trades
               </span>
             </div>
           ) : null}
@@ -557,6 +748,110 @@ export function UnifiedMarketChart({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
+        {/* Creator avatar pins (Pump-style). Positioned in chart pixel space. */}
+        <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+          {placedPins.map((pin) => {
+            const ring = pin.side === "buy" ? "border-emerald-400" : "border-red-400";
+            const glow =
+              pin.side === "buy"
+                ? "shadow-[0_0_10px_rgba(34,197,94,0.55)]"
+                : "shadow-[0_0_10px_rgba(239,68,68,0.5)]";
+            return (
+              <button
+                key={pin.id}
+                type="button"
+                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-20 hover:scale-125 ${ring} ${glow}`}
+                style={{ left: pin.x, top: pin.y }}
+                onMouseEnter={() => setHoverPinId(pin.id)}
+                onMouseLeave={() => setHoverPinId((id) => (id === pin.id ? null : id))}
+                onFocus={() => setHoverPinId(pin.id)}
+                onBlur={() => setHoverPinId((id) => (id === pin.id ? null : id))}
+                aria-label={`Creator ${pin.side}`}
+              >
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  className="h-full w-full rounded-full object-cover"
+                  draggable={false}
+                />
+              </button>
+            );
+          })}
+
+          {hoverPin ? (
+            <div
+              className="pointer-events-none absolute z-30 w-[220px] -translate-x-1/2 rounded-xl border border-emerald-500/40 bg-[#0b0f14]/96 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+              style={{
+                left: Math.min(
+                  Math.max(hoverPin.x, 110),
+                  (overlayRef.current?.clientWidth || 400) - 110,
+                ),
+                top: Math.max(8, hoverPin.y - 118),
+              }}
+            >
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-400">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    hoverPin.side === "buy" ? "bg-emerald-400" : "bg-red-400"
+                  }`}
+                />
+                Creator {hoverPin.side}
+              </div>
+              <div className="mb-2 flex items-center gap-2">
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  className="h-7 w-7 rounded-full border border-white/15 object-cover"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-white">{displayName}</div>
+                  <div className="truncate text-[10px] text-white/50">
+                    {hoverPin.side === "buy" ? "Bought" : "Sold"} by {shortenAddr(String(creatorAddress || ""))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="text-white/45">BNB size</div>
+                  <div className="font-semibold text-white">{formatBnbAmt(hoverPin.nativeWei)}</div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="text-white/45">Token size</div>
+                  <div className="font-semibold text-white">{formatTokenAmt(hoverPin.tokensWei)}</div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="text-white/45">Market cap</div>
+                  <div className="font-semibold text-white">
+                    {hoverPin.mcapUsd != null
+                      ? formatValue(hoverPin.mcapUsd, "marketcap", "USD")
+                      : "—"}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="text-white/45">Price</div>
+                  <div className="font-semibold text-white">
+                    {formatValue(
+                      denomination === "USD" ? hoverPin.priceBnb * (bnbUsd || 1) : hoverPin.priceBnb,
+                      "price",
+                      denomination,
+                    )}
+                  </div>
+                </div>
+              </div>
+              {hoverPin.txHash?.startsWith("0x") && hoverPin.txHash.length === 66 ? (
+                <a
+                  href={explorerTxUrl(Number(chainId || 97), hoverPin.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="pointer-events-auto mt-2 flex w-full items-center justify-center rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20"
+                  onMouseEnter={() => setHoverPinId(hoverPin.id)}
+                >
+                  View tx
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {!hasData && (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">
             {loading
