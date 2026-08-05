@@ -1,6 +1,11 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { Contract, ethers } from "ethers";
-import { LAUNCH_CAMPAIGN_ABI } from "./abis.js";
+import {
+  LAUNCH_CAMPAIGN_ABI,
+  TOPAZ_POOL_ABI,
+  TOPAZ_PRODUCTION_ROUTER_ABI,
+  TOPAZ_ROUTER_ADAPTER_ABI,
+} from "./abis.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { rewindEmptyCampaignTradeCursor } from "./emptyTradeCursorRewind.js";
@@ -229,28 +234,16 @@ async function upgradeGraduatedMarketStateFromChain(
       });
     }
 
-    try {
-      await pool.query(
-        `insert into public.dex_pools(
-           chain_id,pair_address,campaign_address,token_address,
-           support_enabled,indexing_enabled,created_at,updated_at
-         ) values ($1,$2,$3,$4,true,true,now(),now())
-         on conflict (chain_id,pair_address) do update set
-           campaign_address=excluded.campaign_address,
-           token_address=coalesce(nullif(excluded.token_address,''), public.dex_pools.token_address),
-           support_enabled=true,
-           indexing_enabled=true,
-           updated_at=now()`,
-        [chainId, pair, campaign, isEvmAddress(token) ? token : null],
-      );
-    } catch (poolInsertError) {
-      console.warn("[wtr] dex_pools upsert skipped", {
-        chainId,
-        campaign,
-        pair,
-        error: String((poolInsertError as any)?.message || poolInsertError),
-      });
-    }
+    // Full dex_pools row required by schema (NOT NULL token0/1, WBNB, fee, graduation_block).
+    // The old minimal insert always failed and left poolEnabled=false forever.
+    await ensureDexPoolRowFromChain({
+      provider,
+      chainId,
+      campaign,
+      pair,
+      token: isEvmAddress(token) ? token : "",
+      routerHint: isEvmAddress(router) ? router : "",
+    });
 
     console.log("[wtr] upgraded CMS to TOPAZ_ACTIVE from on-chain graduation", {
       chainId,
@@ -265,6 +258,241 @@ async function upgradeGraduatedMarketStateFromChain(
       error: String((error as any)?.message || error),
     });
     return false;
+  }
+}
+
+/**
+ * Upsert a complete public.dex_pools row so ENABLE_TOPAZ_POOL_INDEXER can scan Swaps.
+ * Schema requires token0/1, wrapped native, router, factory, fee_bps, graduation_block.
+ */
+export async function ensureDexPoolRowFromChain(input: {
+  provider: ethers.Provider;
+  chainId: number;
+  campaign: string;
+  pair: string;
+  token?: string;
+  routerHint?: string;
+}): Promise<{ ok: boolean; error?: string; pair?: string }> {
+  const chainId = input.chainId;
+  const campaign = normalizeAddress(input.campaign);
+  const pair = normalizeAddress(input.pair);
+  if (!isEvmAddress(campaign) || !isEvmAddress(pair)) {
+    return { ok: false, error: "Invalid campaign or pair" };
+  }
+
+  try {
+    const poolC = new Contract(pair, TOPAZ_POOL_ABI, input.provider) as any;
+    const [token0Raw, token1Raw, reservesRaw, stableRaw, feeRaw] = await Promise.all([
+      poolC.token0(),
+      poolC.token1(),
+      poolC.getReserves().catch(() => [0n, 0n, 0]),
+      poolC.stable().catch(() => false),
+      poolC.fee().catch(() => null),
+    ]);
+    const token0 = normalizeAddress(token0Raw);
+    const token1 = normalizeAddress(token1Raw);
+    if (!isEvmAddress(token0) || !isEvmAddress(token1) || token0 === token1) {
+      return { ok: false, error: "Pool token0/token1 unavailable" };
+    }
+    if (Boolean(stableRaw)) {
+      return { ok: false, error: "Stable pools are not indexed for WTR (volatile only)" };
+    }
+
+    let feeBps = 100;
+    try {
+      const feeVal =
+        feeRaw != null
+          ? feeRaw
+          : await poolC.swapFee().catch(() => null);
+      if (feeVal != null) {
+        const n = Number(feeVal);
+        // Minimal Topaz often stores fee in bps (e.g. 100 = 1%).
+        if (Number.isFinite(n) && n > 0 && n <= 10_000) feeBps = Math.trunc(n);
+      }
+    } catch {
+      // keep default 100
+    }
+
+    let productionRouter = normalizeAddress(input.routerHint || "");
+    let factory = "";
+    let weth = "";
+    if (isEvmAddress(productionRouter)) {
+      try {
+        const adapter = new Contract(productionRouter, TOPAZ_ROUTER_ADAPTER_ABI, input.provider) as any;
+        const topazRouter = normalizeAddress(await adapter.topazRouter().catch(() => ""));
+        if (isEvmAddress(topazRouter)) {
+          productionRouter = topazRouter;
+          const prod = new Contract(topazRouter, TOPAZ_PRODUCTION_ROUTER_ABI, input.provider) as any;
+          factory = normalizeAddress(await prod.defaultFactory().catch(() => ""));
+          weth = normalizeAddress(await prod.weth().catch(() => ""));
+        } else {
+          const prod = new Contract(productionRouter, TOPAZ_PRODUCTION_ROUTER_ABI, input.provider) as any;
+          factory = normalizeAddress(await prod.defaultFactory().catch(() => ""));
+          weth = normalizeAddress(await prod.weth().catch(() => ""));
+        }
+      } catch {
+        // fall through
+      }
+    }
+
+    // Fallback WBNB: whichever pool side is not the campaign token.
+    const token = normalizeAddress(input.token || "");
+    if (!isEvmAddress(weth)) {
+      if (isEvmAddress(token)) {
+        weth = token0 === token ? token1 : token0;
+      } else {
+        // Prefer common testnet/mainnet WBNB if one side matches env later — here pick token1 as native-ish default.
+        weth = token1;
+      }
+    }
+    if (!isEvmAddress(factory)) {
+      // Still required NOT NULL — use zero-padded placeholder only if we must not; better fail.
+      factory = productionRouter || pair;
+    }
+    if (!isEvmAddress(productionRouter)) {
+      productionRouter = factory || pair;
+    }
+
+    let tokenAddr = token;
+    if (!isEvmAddress(tokenAddr)) {
+      tokenAddr = token0 === weth ? token1 : token0;
+    }
+
+    const r0 = BigInt(reservesRaw?.[0] ?? reservesRaw?.reserve0 ?? 0);
+    const r1 = BigInt(reservesRaw?.[1] ?? reservesRaw?.reserve1 ?? 0);
+    const tokenIs0 = token0 === tokenAddr;
+    const reserveTokenRaw = (tokenIs0 ? r0 : r1).toString();
+    const reserveNativeRaw = (tokenIs0 ? r1 : r0).toString();
+
+    let graduationBlock = 1;
+    try {
+      const cms = await pool.query(
+        `select graduation_block from public.campaign_market_state
+          where chain_id=$1 and campaign_address=$2 limit 1`,
+        [chainId, campaign],
+      );
+      const gb = Number(cms.rows[0]?.graduation_block);
+      if (Number.isFinite(gb) && gb > 0) graduationBlock = gb;
+      else {
+        const head = await input.provider.getBlockNumber();
+        if (Number.isFinite(head) && head > 0) graduationBlock = Math.max(1, head - 50_000);
+      }
+    } catch {
+      // keep 1
+    }
+
+    await pool.query(
+      `insert into public.dex_pools(
+         chain_id,pair_address,campaign_address,token_address,wrapped_native_address,
+         router_address,factory_address,token0_address,token1_address,stable,fee_bps,
+         graduation_block,support_enabled,indexing_enabled,last_sync_at,
+         reserve_token_raw,reserve_native_raw,created_at,updated_at
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,false,$10,$11,true,true,now(),$12,$13,now(),now())
+       on conflict (chain_id,pair_address) do update set
+         campaign_address=excluded.campaign_address,
+         token_address=excluded.token_address,
+         wrapped_native_address=excluded.wrapped_native_address,
+         router_address=excluded.router_address,
+         factory_address=excluded.factory_address,
+         token0_address=excluded.token0_address,
+         token1_address=excluded.token1_address,
+         stable=false,
+         fee_bps=excluded.fee_bps,
+         graduation_block=coalesce(nullif(public.dex_pools.graduation_block,0), excluded.graduation_block),
+         support_enabled=true,
+         indexing_enabled=true,
+         last_sync_at=now(),
+         reserve_token_raw=excluded.reserve_token_raw,
+         reserve_native_raw=excluded.reserve_native_raw,
+         updated_at=now()`,
+      [
+        chainId,
+        pair,
+        campaign,
+        tokenAddr,
+        weth,
+        productionRouter,
+        factory,
+        token0,
+        token1,
+        feeBps,
+        graduationBlock,
+        reserveTokenRaw,
+        reserveNativeRaw,
+      ],
+    );
+
+    // Enrich CMS with factory / wrapped native / fee when missing.
+    await pool.query(
+      `update public.campaign_market_state
+          set dex_factory_address=coalesce(nullif(dex_factory_address,''), $3),
+              wrapped_native_address=coalesce(nullif(wrapped_native_address,''), $4),
+              pool_fee_bps=coalesce(pool_fee_bps, $5),
+              dex_router_address=coalesce(nullif(dex_router_address,''), $6),
+              pool_verified=true,
+              indexing_enabled=true,
+              updated_at=now()
+        where chain_id=$1 and campaign_address=$2`,
+      [chainId, campaign, factory, weth, feeBps, productionRouter],
+    );
+
+    console.log("[wtr] dex_pools row ensured", { chainId, campaign, pair, feeBps });
+    return { ok: true, pair };
+  } catch (error: any) {
+    const message = String(error?.shortMessage || error?.message || error);
+    console.warn("[wtr] ensureDexPoolRowFromChain failed", { chainId, campaign, pair, error: message });
+    return { ok: false, error: message };
+  }
+}
+
+/** Public repair helper for one campaign (market-state self-heal + internal route). */
+export async function ensureDexPoolForCampaign(chainId: number, campaignRaw: string) {
+  const campaign = normalizeAddress(campaignRaw);
+  if (!validChainId(chainId) || !isEvmAddress(campaign)) {
+    return { ok: false, error: "Invalid chainId or campaign" };
+  }
+  const rpcUrl = rpcUrlForChain(chainId);
+  if (!rpcUrl) return { ok: false, error: `No RPC for chain ${chainId}` };
+
+  const provider = createStaticJsonRpcProvider(rpcUrl, chainId, { timeoutMs: 25_000 });
+  try {
+    const cms = await pool.query(
+      `select dex_pair_address, token_address, dex_router_address
+         from public.campaign_market_state
+        where chain_id=$1 and campaign_address=$2
+        limit 1`,
+      [chainId, campaign],
+    );
+    let pair = normalizeAddress(cms.rows[0]?.dex_pair_address || "");
+    let token = normalizeAddress(cms.rows[0]?.token_address || "");
+    let router = normalizeAddress(cms.rows[0]?.dex_router_address || "");
+
+    if (!isEvmAddress(pair)) {
+      const c = new Contract(campaign, LAUNCH_CAMPAIGN_ABI, provider) as any;
+      const graduation = await c.getGraduationState().catch(() => null);
+      pair = normalizeAddress(graduation?.[0] ?? graduation?.dexPair ?? "");
+      if (!isEvmAddress(token)) token = normalizeAddress(await c.token().catch(() => ""));
+      if (!isEvmAddress(router)) router = normalizeAddress(await c.router().catch(() => ""));
+    }
+
+    if (!isEvmAddress(pair)) {
+      return { ok: false, error: "No Topaz pair on CMS or on-chain graduation state" };
+    }
+
+    return await ensureDexPoolRowFromChain({
+      provider,
+      chainId,
+      campaign,
+      pair,
+      token,
+      routerHint: router,
+    });
+  } finally {
+    try {
+      (provider as any).destroy?.();
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -435,6 +663,74 @@ async function readMarketState(chainId: number, campaign: string) {
         [chainId, campaign],
       );
       if (healed.rows[0]) row = healed.rows[0];
+    }
+  }
+
+  // If CMS is TOPAZ_ACTIVE with a pair but dex_pools is missing (broken minimal insert),
+  // repair the full row so pool indexer can pick it up.
+  if (
+    row.market_stage === "TOPAZ_ACTIVE" &&
+    row.dex_pair_address &&
+    row.pool_indexing_enabled == null
+  ) {
+    try {
+      await ensureDexPoolForCampaign(chainId, campaign);
+      const refreshed = await pool.query(
+        `select
+           cms.chain_id,
+           cms.campaign_address,
+           cms.token_address,
+           cms.factory_address,
+           cms.campaign_generation,
+           cms.market_stage,
+           cms.graduation_tx_hash,
+           cms.graduation_block,
+           cms.graduation_time,
+           cms.dex_pair_address,
+           cms.dex_router_address,
+           cms.dex_factory_address,
+           cms.wrapped_native_address,
+           cms.pool_stable,
+           cms.pool_fee_bps,
+           cms.final_curve_price_bnb,
+           cms.initial_dex_price_bnb,
+           cms.graduated_liquidity_token_raw,
+           cms.graduated_liquidity_bnb_raw,
+           cms.graduated_lp_raw,
+           cms.burned_unsold_token_raw,
+           cms.burned_unused_lp_token_raw,
+           cms.post_burn_total_supply_raw,
+           cms.pool_verified,
+           cms.indexing_enabled,
+           cms.last_verified_at,
+           cms.last_error,
+           cms.support_enabled,
+           c.bonding_active,
+           c.indexing_enabled as campaign_indexing_enabled,
+           dp.indexing_enabled as pool_indexing_enabled,
+           dp.support_enabled as pool_support_enabled,
+           dp.last_indexed_block,
+           dp.last_finalized_block,
+           dp.last_swap_at,
+           dp.last_sync_at,
+           dp.reserve_token_raw,
+           dp.reserve_native_raw
+         from public.campaign_market_state cms
+         left join public.campaigns c
+           on c.chain_id=cms.chain_id and c.campaign_address=cms.campaign_address
+         left join public.dex_pools dp
+           on dp.chain_id=cms.chain_id and dp.pair_address=cms.dex_pair_address
+         where cms.chain_id=$1 and cms.campaign_address=$2
+         limit 1`,
+        [chainId, campaign],
+      );
+      if (refreshed.rows[0]) row = refreshed.rows[0];
+    } catch (repairError) {
+      console.warn("[wtr] dex_pools self-heal on market-state failed", {
+        chainId,
+        campaign,
+        error: String((repairError as any)?.message || repairError),
+      });
     }
   }
 

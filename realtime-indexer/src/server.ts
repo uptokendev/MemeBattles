@@ -28,7 +28,9 @@ import {
 } from "./rpcProvider.js";
 import { resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 import { runGraduationReconcilerOnce } from "./graduationReconciler.js";
+import { ensureDexPoolForCampaign } from "./marketApi.js";
 import { registerLpFeesRoutes } from "./lpFeesRoutes.js";
+import { runTopazPoolIndexerOnce } from "./topazPoolIndexer.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
@@ -465,6 +467,31 @@ app.post("/internal/wtr/reconcile-graduations", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
   const result = await runGraduationReconcilerOnce();
   res.status(result.errors ? 207 : 200).json({ ok: result.errors === 0, ...result });
+}));
+
+// Repair missing dex_pools row (full schema) for one graduated campaign, then optional index pass.
+app.post("/internal/wtr/ensure-dex-pool", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const chainId = Number(req.query.chainId || req.body?.chainId || 97);
+  const campaign = normalizeAddress(
+    req.query.campaign || req.query.campaignAddress || req.body?.campaign || req.body?.campaignAddress || "",
+  );
+  if (!campaign || !/^0x[a-f0-9]{40}$/.test(campaign)) {
+    return res.status(400).json({ ok: false, error: "campaign (0x…) required" });
+  }
+  const ensured = await ensureDexPoolForCampaign(chainId, campaign);
+  let indexResult: any = null;
+  if (ensured.ok && String(req.query.index || req.body?.index || "") === "1") {
+    indexResult = await runTopazPoolIndexerOnce();
+  }
+  res.status(ensured.ok ? 200 : 500).json({ ok: ensured.ok, ensured, indexResult });
+}));
+
+// One-shot Topaz pool swap indexer pass (fills dex_trades / candles when dex_pools rows exist).
+app.post("/internal/wtr/index-topaz-pools", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const result = await runTopazPoolIndexerOnce();
+  res.status(200).json({ ok: true, ...result });
 }));
 
 app.post("/internal/indexer/run", wrap(async (req, res) => {

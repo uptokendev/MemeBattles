@@ -38,15 +38,30 @@ VITE_REALTIME_API_BASE=<same indexer host>
 
 When `VITE_ENABLE_POSTGRAD=true`, the market continuity API client turns on automatically even without the two chart flags.
 
-**Smoke after deploy** (replace campaign):
+**Smoke after deploy** (PowerShell — use `curl.exe` and `$vars`):
 
-```bash
-curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-state?chainId=97"
-curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-trades?chainId=97&limit=20"
-curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-candles?chainId=97&resolution=1m&limit=100"
+```powershell
+$TOKEN_API = "https://YOUR-INDEXER.up.railway.app"
+$CAMPAIGN  = "0xYourCampaign"
+
+curl.exe -sS "$TOKEN_API/api/token/$CAMPAIGN/market-state?chainId=97"
+curl.exe -sS "$TOKEN_API/api/token/$CAMPAIGN/market-trades?chainId=97&limit=20"
+curl.exe -sS "$TOKEN_API/api/token/$CAMPAIGN/market-candles?chainId=97&resolution=1m&limit=100"
 ```
 
 Expect `marketStage` of `TOPAZ_ACTIVE` (or `TOPAZ_PENDING` while handoff finishes), `pairAddress` set, and trades/candles non-empty after Topaz volume.
+
+If `indexingStatus.poolEnabled` stays `false`, the indexer lacked a full `dex_pools` row (fixed by self-heal on market-state + full upsert). Redeploy indexer, hit market-state again, wait for the pool indexer loop, then re-check trades.
+
+**Internal repair** (needs `RANK_EVENTS_TOKEN` as Bearer — not public):
+
+```powershell
+# Wrong path (404): /internal/reconcile-graduations
+# Correct:
+curl.exe -sS -X POST "$TOKEN_API/internal/wtr/reconcile-graduations" -H "Authorization: Bearer $RANK_EVENTS_TOKEN"
+curl.exe -sS -X POST "$TOKEN_API/internal/wtr/ensure-dex-pool?chainId=97&campaign=$CAMPAIGN&index=1" -H "Authorization: Bearer $RANK_EVENTS_TOKEN"
+curl.exe -sS -X POST "$TOKEN_API/internal/wtr/index-topaz-pools" -H "Authorization: Bearer $RANK_EVENTS_TOKEN"
+```
 
 ## 1. Deploy Minimal Topaz
 
