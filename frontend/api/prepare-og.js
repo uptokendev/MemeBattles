@@ -33,20 +33,22 @@ function ogHtml({ title, description, pageUrl, imageUrl, siteName = "MemeWarzone
   <meta property="og:image:secure_url" content="${esc(imageUrl)}" />
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1002" />
-  <meta property="og:image:height" content="668" />
+  <meta property="og:image:height" content="531" />
   <meta property="og:image:alt" content="${esc(title)}" />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@memewarzone" />
+  <meta name="twitter:creator" content="@memewarzone" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(description)}" />
   <meta name="twitter:image" content="${esc(imageUrl)}" />
+  <meta name="twitter:image:src" content="${esc(imageUrl)}" />
   <meta name="twitter:image:alt" content="${esc(title)}" />
   <!-- No meta-refresh: some crawlers (incl. X) re-fetch the target as a browser and drop OG tags. -->
 </head>
 <body style="background:#050505;color:#f5f5f5;font-family:system-ui,sans-serif;padding:2rem;">
   <p><a href="${esc(pageUrl)}" style="color:#f06a1a;">${esc(title)}</a></p>
-  <p><img src="${esc(imageUrl)}" alt="${esc(title)}" width="1002" height="668" style="max-width:100%;height:auto;border:1px solid #333;" /></p>
+  <p><img src="${esc(imageUrl)}" alt="${esc(title)}" width="1002" height="531" style="max-width:100%;height:auto;border:1px solid #333;" /></p>
 </body>
 </html>`;
 }
@@ -114,7 +116,7 @@ export default async function handler(req, res) {
 
     // Short absolute image URL (slug only). Cache-bust query helps X re-fetch after OG fixes.
     // prepare-share-card loads draft/metrics by slug and renders the PNG.
-    const imageUrl = `${appBase}/api/prepare-share-card?slug=${encodeURIComponent(draft.slug)}&v=3`;
+    const imageUrl = `${appBase}/api/prepare-share-card?slug=${encodeURIComponent(draft.slug)}&v=4`;
 
     const html = ogHtml({ title, description, pageUrl, imageUrl });
     res.statusCode = 200;
