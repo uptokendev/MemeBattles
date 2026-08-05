@@ -18,6 +18,7 @@ import {
   solveNativeForExactTokens,
   solveTokensForExactNative,
 } from "@/lib/topazV2Trade";
+import { recordTopazFill } from "@/lib/recordTopazFill";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
@@ -444,6 +445,18 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
             title: "Buy confirmed",
             description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
           });
+          const tokensOut = quote.amountOutRaw > 0n ? quote.amountOutRaw : quote.minimumOutRaw;
+          void recordTopazFill({
+            chainId,
+            campaignAddress: campaign.campaign,
+            side: "buy",
+            txHash: String(receipt?.hash || tx?.hash || ""),
+            tokenAmountRaw: tokensOut,
+            nativeAmountRaw: nativeAmountInRaw,
+            wallet: wallet.account,
+            pairAddress: resolved.pairAddress,
+            blockNumber: Number(receipt?.blockNumber || 0),
+          });
         } else {
           const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
           if (tokenAmountInRaw <= 0n) throw new Error("Enter a valid token or BNB amount.");
@@ -480,6 +493,18 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
           toast({
             title: "Sell confirmed",
             description: receipt?.hash ? `Tx: ${receipt.hash.slice(0, 10)}...` : "Transaction confirmed.",
+          });
+          const nativeOut = quote.amountOutRaw > 0n ? quote.amountOutRaw : quote.minimumOutRaw;
+          void recordTopazFill({
+            chainId,
+            campaignAddress: campaign.campaign,
+            side: "sell",
+            txHash: String(receipt?.hash || tx?.hash || ""),
+            tokenAmountRaw: tokenAmountInRaw,
+            nativeAmountRaw: nativeOut,
+            wallet: wallet.account,
+            pairAddress: resolved.pairAddress,
+            blockNumber: Number(receipt?.blockNumber || 0),
           });
         }
         await Promise.all([loadMetrics(), loadBalances()]);

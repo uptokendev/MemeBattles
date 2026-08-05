@@ -6,6 +6,7 @@ import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarke
 import type { SupportedChainId } from "@/lib/chainConfig";
 import { loadLocalTopazTrades, saveLocalTopazTrades } from "@/lib/localTopazTrades";
 import { getReadProvider } from "@/lib/readProvider";
+import { TOPAZ_FILL_EVENT, type TopazFillDetail } from "@/lib/recordTopazFill";
 import { fetchTopazTradeReports } from "@/lib/topazTradeReports";
 import { mergeTradePoints } from "@/lib/tradeDedupe";
 
@@ -156,6 +157,25 @@ export function useContinuousMarketTrades(input: {
     enabled: topazScanEnabledResolved,
     pollMs: 45_000,
   });
+
+  // War Room / Token Details post-fill: merge optimistic trade without full page reload.
+  useEffect(() => {
+    if (!enabled) return;
+    const onFill = (event: Event) => {
+      const detail = (event as CustomEvent<TopazFillDetail>).detail;
+      if (!detail) return;
+      if (Number(detail.chainId) !== chainId) return;
+      if (String(detail.campaignAddress || "").toLowerCase() !== campaignAddress) return;
+      setLocalTopazTrades((prev) => {
+        const next = mergeTradePoints(prev, [detail.point]);
+        saveLocalTopazTrades(chainId, campaignAddress, next);
+        return next;
+      });
+      void topazMarket.refresh?.();
+    };
+    window.addEventListener(TOPAZ_FILL_EVENT, onFill as EventListener);
+    return () => window.removeEventListener(TOPAZ_FILL_EVENT, onFill as EventListener);
+  }, [enabled, campaignAddress, chainId, topazMarket]);
 
   const tradePoints = useMemo(() => {
     const curve = Array.isArray(curvePoints) ? curvePoints : [];
