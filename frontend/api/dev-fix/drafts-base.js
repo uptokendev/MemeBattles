@@ -128,7 +128,8 @@ function defaultPromotion(draftId, now = new Date().toISOString()) {
     docs: [],
     creatorNote: "No premature trading. No silent deployers. No rugs. This is Prepare Mode.",
     bannerUrl: "",
-    shareMessage: "Incoming transmission: this draft is preparing for war on MemeWarzone.",
+    shareMessage:
+      "Incoming transmission from the Warzone:\n\nthis draft is preparing for war on MemeWarzone.\n\nFollow the signal → @memewarzone",
     publishedAt: now,
     createdAt: now,
     updatedAt: now,

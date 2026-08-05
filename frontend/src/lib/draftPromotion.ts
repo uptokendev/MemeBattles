@@ -311,7 +311,10 @@ export function createDraft(input: CreateDraftInput) {
     mission: input.description?.trim() || "",
     launchStrategy: "",
     creatorNote: "",
-    shareMessage: `${name} is preparing to launch on MemeWarzone.`,
+    shareMessage:
+      `Incoming transmission from the Warzone:\n\n` +
+      `${name} is preparing for war on MemeWarzone.\n\n` +
+      `Follow the signal → @memewarzone`,
     communityLinks: {
       website: input.website || "",
       x: input.x || "",

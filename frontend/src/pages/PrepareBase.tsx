@@ -33,6 +33,7 @@ import {
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
+import { buildPrepareTweetText } from "@/lib/prepareShareText";
 
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
@@ -135,7 +136,8 @@ function publicAppOrigin() {
 }
 
 function buildPreparePageUrl(slug: string) {
-  return `${publicAppOrigin()}/prepare/${slug}`;
+  // utm helps X re-scrape after OG fixes (fresh URL, not cached SPA unfurl).
+  return `${publicAppOrigin()}/prepare/${slug}?utm_source=x&utm_medium=share`;
 }
 
 function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version?: string) {
@@ -282,15 +284,15 @@ function ShareModal({
   };
 
   const copyImage = async () => {
-    const fullPngUrl =
-      typeof window === "undefined" ? pngUrl : `${window.location.origin}${pngUrl}`;
-    await navigator.clipboard?.writeText(fullPngUrl).catch(() => undefined);
+    // pngUrl is already absolute (public app host).
+    await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
     toast.success("Generated PNG link copied.");
   };
 
-  const tweetText =
-    bundle.promotion.shareMessage ||
-    `Prepare Mode dossier for $${bundle.draft.ticker} is live on MemeWarzone.`;
+  const tweetText = buildPrepareTweetText({
+    name: bundle.draft.name,
+    shareMessage: bundle.promotion.shareMessage,
+  });
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">

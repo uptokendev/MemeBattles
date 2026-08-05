@@ -34,6 +34,19 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Social crawlers need to fetch prepare share-card PNGs (override site-wide CORP).
+[[headers]]
+  for = "/api/prepare-share-card"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=120, s-maxage=300"
+
+[[headers]]
+  for = "/api/prepare-og/*"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "cross-origin"
+    Cache-Control = "public, max-age=60, s-maxage=120"
+
 # Proxy /api/* to the Railway API gateway. Must come before the SPA fallback so
 # relative API URLs in rendered HTML (e.g. share-card <img> src) don't fall
 # through to /index.html.
