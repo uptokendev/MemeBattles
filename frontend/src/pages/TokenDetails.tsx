@@ -1909,8 +1909,13 @@ const bnbUsd = useMemo(() => {
       (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
 
   const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
-  const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
-    useDexScreenerChart(dexTokenAddress);
+  // External DexScreener link only — never Pancake-first. Prefer known Topaz pair.
+  const preferredTopazPair =
+    String(topazMarket.pairAddress || onChainPair || "").trim().toLowerCase() || null;
+  const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } = useDexScreenerChart(
+    dexTokenAddress,
+    { preferredPairAddress: preferredTopazPair, chainIdHint: "bsc" },
+  );
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:

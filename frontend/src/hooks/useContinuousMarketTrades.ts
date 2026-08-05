@@ -1,14 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Contract, ethers } from "ethers";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useTopazMarket } from "@/hooks/useTopazMarket";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
+import type { SupportedChainId } from "@/lib/chainConfig";
 import { loadLocalTopazTrades, saveLocalTopazTrades } from "@/lib/localTopazTrades";
+import { getReadProvider } from "@/lib/readProvider";
 import { fetchTopazTradeReports } from "@/lib/topazTradeReports";
 import { mergeTradePoints } from "@/lib/tradeDedupe";
+
+const CAMPAIGN_GRAD_ABI = [
+  "function launched() view returns (bool)",
+  "function getGraduationState() view returns (address dexPair,uint256 finalCurvePrice,uint256 initialDexPrice,uint256 graduatedLiquidityTokens,uint256 graduatedLiquidityBnb,uint256 graduatedLiquidityLp,uint256 burnedUnsoldTokens,uint256 burnedUnusedLpTokens,uint256 postBurnTotalSupply,uint256 graduationBalance,uint256 graduationOvershoot)",
+] as const;
 
 /**
  * Shared continuous trade stream for Token Details + War Room:
  * bonding indexer history + Topaz on-chain scan + wallet reports + unified market API.
+ *
+ * Topaz scan enablement matches Token Details: use market API stage when available,
+ * but also open on-chain launched/pair so CMS lag (stuck BONDING) does not blank War Room.
  */
 export function useContinuousMarketTrades(input: {
   campaignAddress?: string;
@@ -16,7 +27,7 @@ export function useContinuousMarketTrades(input: {
   chainId: number;
   resolution?: MarketResolution;
   enabled?: boolean;
-  /** When true, enable browser Topaz pair scan even if market stage API is down. */
+  /** When false, never enable browser Topaz pair scan. Default true. */
   enableTopazScan?: boolean;
 }) {
   const campaignAddress = String(input.campaignAddress || "").trim().toLowerCase();
@@ -33,6 +44,42 @@ export function useContinuousMarketTrades(input: {
 
   const [localTopazTrades, setLocalTopazTrades] = useState<CurveTradePoint[]>([]);
   const lastNonEmptyRef = useRef<CurveTradePoint[]>([]);
+
+  // On-chain graduation independent of campaign_market_state (same idea as TokenDetails).
+  const [onChainLaunched, setOnChainLaunched] = useState(false);
+  const [onChainPair, setOnChainPair] = useState("");
+
+  useEffect(() => {
+    if (!enabled || !campaignAddress) {
+      setOnChainLaunched(false);
+      setOnChainPair("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const provider = getReadProvider(chainId as SupportedChainId);
+        const c = new Contract(campaignAddress, CAMPAIGN_GRAD_ABI, provider) as any;
+        const [launched, graduation] = await Promise.all([
+          c.launched().catch(() => false),
+          c.getGraduationState().catch(() => null),
+        ]);
+        if (cancelled) return;
+        const pair = String(graduation?.[0] ?? graduation?.dexPair ?? "").toLowerCase();
+        const pairOk = ethers.isAddress(pair) && pair !== ethers.ZeroAddress.toLowerCase();
+        setOnChainLaunched(Boolean(launched) || pairOk);
+        setOnChainPair(pairOk ? pair : "");
+      } catch {
+        if (!cancelled) {
+          setOnChainLaunched(false);
+          setOnChainPair("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, campaignAddress, chainId]);
 
   useEffect(() => {
     if (!enabled) {
@@ -78,30 +125,51 @@ export function useContinuousMarketTrades(input: {
     enabled,
   });
 
-  const stage = unifiedMarket.state?.marketStage;
+  const stage = String(unifiedMarket.state?.marketStage || "").toUpperCase();
+  const apiPair = String(unifiedMarket.state?.pairAddress || "").toLowerCase();
+  const apiPairOk = /^0x[a-f0-9]{40}$/.test(apiPair) && apiPair !== ethers.ZeroAddress.toLowerCase();
+
   const graduatedFromApi =
     stage === "TOPAZ_ACTIVE" ||
     stage === "TOPAZ_DEGRADED" ||
-    stage === "TOPAZ_PENDING";
+    stage === "TOPAZ_PENDING" ||
+    stage === "GRADUATING";
 
-  // Only scan Topaz when market stage says post-bond — never on pure bonding.
-  const topazScanEnabled =
-    enabled && input.enableTopazScan !== false && graduatedFromApi && stage === "TOPAZ_ACTIVE";
+  // Post-grad if API says so, CMS has a pair, or on-chain launched/pair (CMS lag path).
+  const isPostGrad =
+    graduatedFromApi ||
+    onChainLaunched ||
+    apiPairOk ||
+    Boolean(onChainPair);
+
+  // Scan Topaz once graduated — including CMS lag (API still BONDING, on-chain launched).
+  // Do not scan pure bonding (no API post-grad, no on-chain launch/pair).
+  const topazScanEnabledResolved =
+    enabled &&
+    input.enableTopazScan !== false &&
+    (graduatedFromApi || onChainLaunched || apiPairOk || Boolean(onChainPair));
 
   const topazMarket = useTopazMarket({
     campaignAddress: enabled ? campaignAddress : undefined,
     tokenAddress: tokenAddress || undefined,
     chainId,
-    enabled: topazScanEnabled,
+    enabled: topazScanEnabledResolved,
     pollMs: 45_000,
   });
 
   const tradePoints = useMemo(() => {
     const curve = Array.isArray(curvePoints) ? curvePoints : [];
+    const postGrad =
+      isPostGrad ||
+      Boolean(topazMarket.pairAddress) ||
+      (Array.isArray(topazMarket.trades) && topazMarket.trades.length > 0) ||
+      localTopazTrades.length > 0;
+
     // Bonding-only: never mix DEX/unified rows into circulating mcap walks.
-    if (!graduatedFromApi || stage === "BONDING" || !stage) {
+    if (!postGrad) {
       return mergeTradePoints(curve);
     }
+
     const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
       let tokensWei = 0n;
       let nativeWei = 0n;
@@ -129,7 +197,14 @@ export function useContinuousMarketTrades(input: {
       };
     });
     return mergeTradePoints(curve, topazMarket.trades, localTopazTrades, unifiedAsPoints);
-  }, [curvePoints, topazMarket.trades, localTopazTrades, unifiedMarket.trades, graduatedFromApi, stage]);
+  }, [
+    curvePoints,
+    topazMarket.trades,
+    topazMarket.pairAddress,
+    localTopazTrades,
+    unifiedMarket.trades,
+    isPostGrad,
+  ]);
 
   useEffect(() => {
     if (tradePoints.length) lastNonEmptyRef.current = tradePoints;
@@ -159,8 +234,10 @@ export function useContinuousMarketTrades(input: {
     unifiedMarket,
     loading,
     error,
+    onChainLaunched,
+    onChainPair: onChainPair || null,
     isDexStage:
-      graduatedFromApi ||
+      isPostGrad ||
       Boolean(topazMarket.pairAddress) ||
       Boolean(unifiedMarket.state?.pairAddress),
   };
