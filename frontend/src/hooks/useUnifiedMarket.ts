@@ -10,14 +10,13 @@ import {
   type MarketSummary,
   type MarketTrade,
 } from "@/lib/marketContinuityApi";
+import { isMarketContinuityApiEnabled } from "@/lib/marketContinuityFlags";
 
 export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
-// Chart composition is always available from bonding curve points.
-// Remote Topaz candles/trades only load when the market API flag is on (avoids 503 spam).
-const ENABLE_MARKET_API =
-  String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1" ||
-  String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
+// Chart composition is always available from bonding curve points + browser Topaz scans.
+// Remote Topaz candles/trades only load when market continuity API is enabled.
+const ENABLE_MARKET_API = isMarketContinuityApiEnabled();
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
   const tx = String(trade.txHash || "").toLowerCase();

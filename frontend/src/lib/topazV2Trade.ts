@@ -1,5 +1,6 @@
 import { Contract, ethers } from "ethers";
 import { fetchMarketRoute, type MarketRoute } from "@/lib/marketContinuityApi";
+import { isMarketContinuityApiEnabled } from "@/lib/marketContinuityFlags";
 
 // Production Topaz router used for quotes and swaps.
 const EXECUTION_ROUTER_ABI = [
@@ -407,10 +408,7 @@ export async function resolveVerifiedTopazRoute(input: {
       expectedTokenAddress: input.expectedTokenAddress,
     });
   } catch (onChainError) {
-    const marketApiEnabled =
-      String(import.meta.env.VITE_ENABLE_UNIFIED_MARKET_CHART || "").trim() === "1" ||
-      String(import.meta.env.VITE_ENABLE_TOPAZ_MARKET_API || "").trim() === "1";
-    if (!marketApiEnabled) throw onChainError;
+    if (!isMarketContinuityApiEnabled()) throw onChainError;
 
     const apiController = new AbortController();
     const parentAbort = () => apiController.abort();

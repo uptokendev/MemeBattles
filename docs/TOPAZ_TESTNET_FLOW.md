@@ -2,6 +2,52 @@
 
 This runbook connects the Minimal Topaz deployment from `MemeWarzone-Topaz` to the MemeBattles `devpostgrad` deployment and produces the acceptance report required for the Topaz rollout.
 
+## 0. Product rules (do not regress)
+
+| Surface | Source of truth |
+|---------|-----------------|
+| Chart (bonding + post-grad) | **UnifiedMarketChart** (TradingView Lightweight) |
+| Trading after graduation | **Topaz only** (`topazV2Trade`) |
+| Not used | DexScreener, PancakeSwap |
+
+## 0.1 Market continuity flags (Slice C)
+
+**Realtime indexer (Railway)** — defaults are ON in code; set explicitly if your service still has `0`:
+
+```text
+ENABLE_GRADUATION_HANDOFF_RECONCILER=1
+ENABLE_TOPAZ_POOL_INDEXER=1
+ENABLE_UNIFIED_MARKET_API=1
+ENABLE_UNIFIED_MARKET_CHART=1
+ENABLE_TOPAZ_QUOTES=1
+ENABLE_TOPAZ_TRADING=1
+LP_LOCKER_ADDRESS_97=0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a
+```
+
+Also apply schema: `db/migrations/202607290001_war_trade_room_market_continuity_foundation.sql` (and any later WTR migrations).
+
+**Frontend (Netlify postgrad)**:
+
+```text
+VITE_ENABLE_POSTGRAD=true
+VITE_ENABLE_UNIFIED_MARKET_CHART=1
+VITE_ENABLE_TOPAZ_MARKET_API=1
+VITE_TOKEN_API_BASE=<postgrad indexer host>
+VITE_REALTIME_API_BASE=<same indexer host>
+```
+
+When `VITE_ENABLE_POSTGRAD=true`, the market continuity API client turns on automatically even without the two chart flags.
+
+**Smoke after deploy** (replace campaign):
+
+```bash
+curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-state?chainId=97"
+curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-trades?chainId=97&limit=20"
+curl -sS "%TOKEN_API%/api/token/0xCAMPAIGN/market-candles?chainId=97&resolution=1m&limit=100"
+```
+
+Expect `marketStage` of `TOPAZ_ACTIVE` (or `TOPAZ_PENDING` while handoff finishes), `pairAddress` set, and trades/candles non-empty after Topaz volume.
+
 ## 1. Deploy Minimal Topaz
 
 From `MemeWarzone-Topaz` on BSC testnet:

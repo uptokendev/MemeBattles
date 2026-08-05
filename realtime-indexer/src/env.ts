@@ -141,11 +141,14 @@ export const ENV = {
   ),
   // After a miss (launched but no log in window), skip log scans for this campaign awhile.
   GRADUATION_SCAN_COOLDOWN_MS: Number(process.env.GRADUATION_SCAN_COOLDOWN_MS || "300000"),
-  ENABLE_UNIFIED_MARKET_API: String(process.env.ENABLE_UNIFIED_MARKET_API || "0") === "1",
-  ENABLE_TOPAZ_POOL_INDEXER: String(process.env.ENABLE_TOPAZ_POOL_INDEXER || "0") === "1",
-  ENABLE_UNIFIED_MARKET_CHART: String(process.env.ENABLE_UNIFIED_MARKET_CHART || "0") === "1",
-  ENABLE_TOPAZ_QUOTES: String(process.env.ENABLE_TOPAZ_QUOTES || "0") === "1",
-  ENABLE_TOPAZ_TRADING: String(process.env.ENABLE_TOPAZ_TRADING || "0") === "1",
+  // Slice C defaults ON for postgrad/testnet continuity (durable dex_trades + market API).
+  // Set explicitly to "0" on a host that must stay dark.
+  ENABLE_UNIFIED_MARKET_API: String(process.env.ENABLE_UNIFIED_MARKET_API || "1") === "1",
+  ENABLE_TOPAZ_POOL_INDEXER: String(process.env.ENABLE_TOPAZ_POOL_INDEXER || "1") === "1",
+  ENABLE_UNIFIED_MARKET_CHART: String(process.env.ENABLE_UNIFIED_MARKET_CHART || "1") === "1",
+  // Quote/trade kill-switches for the market-route API only; wallet still uses on-chain Topaz.
+  ENABLE_TOPAZ_QUOTES: String(process.env.ENABLE_TOPAZ_QUOTES || "1") === "1",
+  ENABLE_TOPAZ_TRADING: String(process.env.ENABLE_TOPAZ_TRADING || "1") === "1",
 
   PORT: Number(process.env.PORT || "3000"),
 };
