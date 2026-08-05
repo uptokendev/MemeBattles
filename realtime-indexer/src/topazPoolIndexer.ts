@@ -527,62 +527,9 @@ async function scanPool(
   let lastSwapAt: Date | null = null;
   let lastSyncAt: Date | null = null;
   let scannedTo = Math.max(0, startBlock - 1);
+  let scanError: string | null = null;
 
-  if (startBlock <= endBlock) {
-    const { logs, scannedTo: to } = await getLogsChunked(
-      provider,
-      indexedPool.pairAddress,
-      [swapEvent.topicHash, syncEvent.topicHash],
-      startBlock,
-      endBlock,
-    );
-    scannedTo = to;
-    logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index) - Number(b.index));
-
-    const blockCache = new Map<number, ethers.Block>();
-    const txFromCache = new Map<string, string | null>();
-    for (const log of logs) {
-      const parsed = iface.parseLog(log);
-      if (!parsed) continue;
-      let block = blockCache.get(log.blockNumber);
-      if (!block) {
-        const fetched = await provider.getBlock(log.blockNumber);
-        if (!fetched) throw new Error(`Missing block ${log.blockNumber}`);
-        block = fetched;
-        blockCache.set(log.blockNumber, block);
-      }
-      const eventTime = new Date(Number(block.timestamp) * 1000);
-
-      if (parsed.name === "Sync") {
-        lastSyncAt = eventTime;
-        continue;
-      }
-      if (parsed.name !== "Swap") continue;
-
-      const txHash = log.transactionHash.toLowerCase();
-      let transactionFrom = txFromCache.get(txHash);
-      if (transactionFrom === undefined) {
-        const transaction = await provider.getTransaction(txHash);
-        transactionFrom = transaction?.from?.toLowerCase() ?? null;
-        txFromCache.set(txHash, transactionFrom);
-      }
-
-      if (
-        await insertSwap({
-          indexedPool,
-          log,
-          parsed,
-          block,
-          transactionFrom,
-          tokenDecimals,
-        })
-      ) {
-        insertedTrades += 1;
-      }
-      lastSwapAt = eventTime;
-    }
-  }
-
+  // Always refresh reserves first so market-state stays useful even if logs time out.
   const reserves = await pair.getReserves();
   const reserve0 = BigInt(reserves[0]);
   const reserve1 = BigInt(reserves[1]);
@@ -590,39 +537,158 @@ async function scanPool(
   const reserveTokenRaw = token0IsLaunch ? reserve0 : reserve1;
   const reserveNativeRaw = token0IsLaunch ? reserve1 : reserve0;
 
-  // Advance cursor to what we actually scanned (partial catch-up), not always tip.
-  const cursorBlock = startBlock <= endBlock ? scannedTo : finalizedHead;
-
   await pool.query(
     `update public.dex_pools
-        set last_indexed_block=$3,
-            last_finalized_block=$3,
-            last_swap_at=coalesce($4,last_swap_at),
-            last_sync_at=coalesce($5,now()),
-            reserve_token_raw=$6,
-            reserve_native_raw=$7,
+        set last_sync_at=now(),
+            reserve_token_raw=$3,
+            reserve_native_raw=$4,
             updated_at=now()
-      where chain_id=$1 and pair_address=$2`,
-    [
-      indexedPool.chainId,
-      indexedPool.pairAddress,
-      cursorBlock,
-      lastSwapAt,
-      lastSyncAt,
-      reserveTokenRaw.toString(),
-      reserveNativeRaw.toString(),
-    ],
+      where chain_id=$1 and lower(pair_address)=lower($2)`,
+    [indexedPool.chainId, indexedPool.pairAddress, reserveTokenRaw.toString(), reserveNativeRaw.toString()],
   );
+
+  if (startBlock <= endBlock) {
+    const chunk = Math.max(50, Number(ENV.LOG_CHUNK_SIZE || 500));
+    let cursor = startBlock;
+    const blockCache = new Map<number, ethers.Block>();
+    const txFromCache = new Map<string, string | null>();
+    const topics = [swapEvent.topicHash, syncEvent.topicHash];
+
+    while (cursor <= endBlock) {
+      const chunkEnd = Math.min(endBlock, cursor + chunk - 1);
+      try {
+        const logs = await getLogsAdaptive(
+          provider,
+          indexedPool.pairAddress,
+          topics,
+          cursor,
+          chunkEnd,
+        );
+        logs.sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index) - Number(b.index));
+
+        for (const log of logs) {
+          const parsed = iface.parseLog(log);
+          if (!parsed) continue;
+          let block = blockCache.get(log.blockNumber);
+          if (!block) {
+            const fetched = await provider.getBlock(log.blockNumber);
+            if (!fetched) throw new Error(`Missing block ${log.blockNumber}`);
+            block = fetched;
+            blockCache.set(log.blockNumber, block);
+          }
+          const eventTime = new Date(Number(block.timestamp) * 1000);
+
+          if (parsed.name === "Sync") {
+            lastSyncAt = eventTime;
+            continue;
+          }
+          if (parsed.name !== "Swap") continue;
+
+          const txHash = log.transactionHash.toLowerCase();
+          let transactionFrom = txFromCache.get(txHash);
+          if (transactionFrom === undefined) {
+            const transaction = await provider.getTransaction(txHash);
+            transactionFrom = transaction?.from?.toLowerCase() ?? null;
+            txFromCache.set(txHash, transactionFrom);
+          }
+
+          if (
+            await insertSwap({
+              indexedPool,
+              log,
+              parsed,
+              block,
+              transactionFrom,
+              tokenDecimals,
+            })
+          ) {
+            insertedTrades += 1;
+          }
+          lastSwapAt = eventTime;
+        }
+
+        scannedTo = chunkEnd;
+        // Commit cursor after every successful chunk so a later timeout still keeps progress.
+        await pool.query(
+          `update public.dex_pools
+              set last_indexed_block=$3,
+                  last_finalized_block=$3,
+                  last_swap_at=coalesce($4,last_swap_at),
+                  last_sync_at=coalesce($5,now()),
+                  updated_at=now()
+            where chain_id=$1 and lower(pair_address)=lower($2)`,
+          [indexedPool.chainId, indexedPool.pairAddress, scannedTo, lastSwapAt, lastSyncAt],
+        );
+      } catch (error: any) {
+        scanError = error?.shortMessage || error?.message || String(error);
+        console.warn("[wtr] Topaz pool chunk failed (keeping partial cursor)", {
+          chainId: indexedPool.chainId,
+          pair: indexedPool.pairAddress,
+          from: cursor,
+          to: chunkEnd,
+          scannedTo,
+          error: scanError,
+        });
+        // Stop this pass; next tick resumes from last committed cursor.
+        break;
+      }
+
+      cursor = chunkEnd + 1;
+      if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0) {
+        await new Promise((r) => setTimeout(r, ENV.INDEXER_LOG_CALL_DELAY_MS));
+      }
+    }
+  } else {
+    // Already at/ past tip for this pass — still stamp a cursor so UI doesn't stay null forever.
+    scannedTo = finalizedHead;
+    await pool.query(
+      `update public.dex_pools
+          set last_indexed_block=greatest(coalesce(last_indexed_block,0), $3),
+              last_finalized_block=greatest(coalesce(last_finalized_block,0), $3),
+              last_sync_at=now(),
+              updated_at=now()
+        where chain_id=$1 and lower(pair_address)=lower($2)`,
+      [indexedPool.chainId, indexedPool.pairAddress, scannedTo],
+    );
+  }
+
+  // If we never got a chunk committed but also never scanned, seed cursor at start-1
+  // so market-state shows a number and next pass continues cleanly.
+  if (indexedPool.lastIndexedBlock == null && scannedTo < startBlock) {
+    const seed = Math.max(0, startBlock - 1);
+    await pool.query(
+      `update public.dex_pools
+          set last_indexed_block=coalesce(last_indexed_block, $3),
+              last_finalized_block=coalesce(last_finalized_block, $3),
+              last_sync_at=now(),
+              updated_at=now()
+        where chain_id=$1 and lower(pair_address)=lower($2)`,
+      [indexedPool.chainId, indexedPool.pairAddress, seed],
+    );
+    scannedTo = seed;
+  }
+
+  if (scanError && insertedTrades === 0 && indexedPool.lastIndexedBlock == null && scannedTo < startBlock) {
+    // Surface soft error without throwing (caller used to mark TOPAZ_DEGRADED).
+    console.warn("[wtr] Topaz pool scan soft-fail", {
+      pair: indexedPool.pairAddress,
+      campaign: indexedPool.campaignAddress,
+      startBlock,
+      endBlock,
+      error: scanError,
+    });
+  }
 
   const summary = await refreshMarketStats(indexedPool, reserveTokenRaw, reserveNativeRaw);
   return {
     insertedTrades,
     startBlock,
-    endBlock: cursorBlock,
+    endBlock: scannedTo,
     finalizedHead,
     reserveTokenRaw,
     reserveNativeRaw,
     summary,
+    scanError,
   };
 }
 
@@ -650,16 +716,17 @@ export async function runTopazPoolIndexerOnce() {
         try {
           const result = await scanPool(provider, indexedPool, finalizedHead);
           insertedTrades += result.insertedTrades;
-          if (result.insertedTrades) {
-            console.log("[wtr] Topaz pool indexed", {
-              chainId: config.chainId,
-              pair: indexedPool.pairAddress,
-              campaign: indexedPool.campaignAddress,
-              insertedTrades: result.insertedTrades,
-              finalizedHead,
-              rpc: maskRpcUrl(working.url),
-            });
-          }
+          console.log("[wtr] Topaz pool pass", {
+            chainId: config.chainId,
+            pair: indexedPool.pairAddress,
+            campaign: indexedPool.campaignAddress,
+            insertedTrades: result.insertedTrades,
+            from: result.startBlock,
+            to: result.endBlock,
+            tip: finalizedHead,
+            scanError: result.scanError || null,
+            rpc: maskRpcUrl(working.url),
+          });
         } catch (error: any) {
           errors += 1;
           const message = error?.shortMessage || error?.message || String(error);
