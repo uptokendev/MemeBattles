@@ -54,6 +54,49 @@ function weiToDecimal(value: bigint | string | number): number {
   }
 }
 
+/** Human string with fixed decimals (no scientific notation). */
+function formatTokenAmount(value: bigint | string | number, decimals = 18, maxFrac = 8): string {
+  try {
+    const raw = BigInt(String(value ?? "0"));
+    const neg = raw < 0n;
+    const abs = neg ? -raw : raw;
+    const base = 10n ** BigInt(decimals);
+    const whole = abs / base;
+    const frac = abs % base;
+    if (frac === 0n) return `${neg ? "-" : ""}${whole.toString()}`;
+    let fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
+    if (fracStr.length > maxFrac) {
+      // Round by truncation for display only; keep enough for dust fees.
+      fracStr = fracStr.slice(0, maxFrac).replace(/0+$/, "");
+    }
+    if (!fracStr) return `${neg ? "-" : ""}${whole.toString()}`;
+    return `${neg ? "-" : ""}${whole.toString()}.${fracStr}`;
+  } catch {
+    return "0";
+  }
+}
+
+const ERC20_META_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function name() view returns (string)",
+];
+
+async function readErc20Meta(provider: ethers.Provider, token: string) {
+  const c = new ethers.Contract(token, ERC20_META_ABI, provider);
+  const [symbol, decimals, name] = await Promise.all([
+    c.symbol().catch(() => "???"),
+    c.decimals().catch(() => 18),
+    c.name().catch(() => ""),
+  ]);
+  return {
+    address: token.toLowerCase(),
+    symbol: String(symbol || "???"),
+    decimals: Number(decimals ?? 18),
+    name: String(name || ""),
+  };
+}
+
 function resolveLockerAddress(chainId: number): string | null {
   const per = String(
     process.env[`LP_LOCKER_ADDRESS_${chainId}`] ||
@@ -210,9 +253,12 @@ async function readPoolFees(input: {
     toAddr(info.creatorFeeRecipient || info[2]) ||
     creator;
 
-  // Minimal Topaz (Solidly-style): claimable0/1 views can return 0 even when fees
-  // are pending. Prefer staticcall claimFees() as the locker, then index math.
-  const unharvested = await readUnharvestedPoolFees(poolContract, input.lockerAddress, input.provider);
+  const [token0Meta, token1Meta, unharvested] = await Promise.all([
+    readErc20Meta(input.provider, token0),
+    readErc20Meta(input.provider, token1),
+    // Minimal Topaz: claimable0/1 often 0; prefer claimFees() staticcall as locker.
+    readUnharvestedPoolFees(poolContract, input.lockerAddress, input.provider),
+  ]);
 
   const [
     creatorPaid0,
@@ -242,13 +288,22 @@ async function readPoolFees(input: {
   const protocolFeeBps = Number(info.protocolFeeBps ?? info[8] ?? 2000);
   const c0 = unharvested.token0Raw;
   const c1 = unharvested.token1Raw;
+  const d0 = token0Meta.decimals;
+  const d1 = token1Meta.decimals;
+  const creator0 = (c0 * BigInt(creatorFeeBps)) / 10000n;
+  const creator1 = (c1 * BigInt(creatorFeeBps)) / 10000n;
+  const protocol0 = c0 - creator0;
+  const protocol1 = c1 - creator1;
 
   return {
     registered: true,
     lockerAddress: input.lockerAddress.toLowerCase(),
     pairAddress: input.pairAddress.toLowerCase(),
+    pairLabel: `vAMM-${token0Meta.symbol}/${token1Meta.symbol}`,
     token0,
     token1,
+    token0Meta,
+    token1Meta,
     creator,
     creatorRecipient,
     creatorFeeBps,
@@ -259,12 +314,19 @@ async function readPoolFees(input: {
       token1Raw: c1.toString(),
       token0: weiToDecimal(c0),
       token1: weiToDecimal(c1),
+      token0Display: formatTokenAmount(c0, d0),
+      token1Display: formatTokenAmount(c1, d1),
+      token0Symbol: token0Meta.symbol,
+      token1Symbol: token1Meta.symbol,
       source: unharvested.source,
-      creatorShareToken0: weiToDecimal((c0 * BigInt(creatorFeeBps)) / 10000n),
-      creatorShareToken1: weiToDecimal((c1 * BigInt(creatorFeeBps)) / 10000n),
-      protocolShareToken0: weiToDecimal((c0 * BigInt(protocolFeeBps)) / 10000n),
-      protocolShareToken1: weiToDecimal((c1 * BigInt(protocolFeeBps)) / 10000n),
-      // USD-ish helpers left to UI; raw is authoritative.
+      creatorShareToken0: weiToDecimal(creator0),
+      creatorShareToken1: weiToDecimal(creator1),
+      protocolShareToken0: weiToDecimal(protocol0),
+      protocolShareToken1: weiToDecimal(protocol1),
+      creatorShareToken0Display: formatTokenAmount(creator0, d0),
+      creatorShareToken1Display: formatTokenAmount(creator1, d1),
+      protocolShareToken0Display: formatTokenAmount(protocol0, d0),
+      protocolShareToken1Display: formatTokenAmount(protocol1, d1),
       note:
         unharvested.source === "claimFees_staticcall"
           ? "Unharvested from eth_call claimFees() as locker (claimable0/1 views are unreliable on Minimal Topaz)."
@@ -277,6 +339,10 @@ async function readPoolFees(input: {
       creatorToken1: weiToDecimal(creatorPaid1),
       protocolToken0: weiToDecimal(protocolRouted0),
       protocolToken1: weiToDecimal(protocolRouted1),
+      creatorToken0Display: formatTokenAmount(creatorPaid0, d0),
+      creatorToken1Display: formatTokenAmount(creatorPaid1, d1),
+      protocolToken0Display: formatTokenAmount(protocolRouted0, d0),
+      protocolToken1Display: formatTokenAmount(protocolRouted1, d1),
       creatorToken0Raw: BigInt(creatorPaid0).toString(),
       creatorToken1Raw: BigInt(creatorPaid1).toString(),
       protocolToken0Raw: BigInt(protocolRouted0).toString(),
@@ -289,6 +355,10 @@ async function readPoolFees(input: {
       protocolToken0: weiToDecimal(pendingProtocol0),
       protocolToken1: weiToDecimal(pendingProtocol1),
       protocolNative: weiToDecimal(pendingProtocolNative),
+      creatorToken0Display: formatTokenAmount(pendingCreator0, d0),
+      creatorToken1Display: formatTokenAmount(pendingCreator1, d1),
+      protocolToken0Display: formatTokenAmount(pendingProtocol0, d0),
+      protocolToken1Display: formatTokenAmount(pendingProtocol1, d1),
     },
   };
 }
