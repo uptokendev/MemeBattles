@@ -122,55 +122,34 @@ function absoluteUrl(value: string | null | undefined) {
   return "";
 }
 
+const PUBLIC_APP_ORIGIN = "https://app.memewar.zone";
+
+function publicAppOrigin() {
+  if (typeof window === "undefined") return PUBLIC_APP_ORIGIN;
+  const host = window.location.hostname.toLowerCase();
+  // Always share production URLs so X crawls the live OG edge tags + PNG.
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".netlify.app")) {
+    return PUBLIC_APP_ORIGIN;
+  }
+  return window.location.origin;
+}
+
 function buildPreparePageUrl(slug: string) {
-  if (typeof window === "undefined") return `https://memewar.zone/prepare/${slug}`;
-  return `${window.location.origin}/prepare/${slug}`;
+  return `${publicAppOrigin()}/prepare/${slug}`;
 }
 
 function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version?: string) {
-  const { draft, promotion, popularity } = bundle;
-
-  const displayLink =
-    typeof window !== "undefined"
-      ? `${window.location.host}/prepare/${draft.slug}`
-      : `memewar.zone/prepare/${draft.slug}`;
-
-  const description =
-    draft.description ||
-    promotion?.missionStatement ||
-    promotion?.creatorNote ||
-    "The launchpad that turns every drop into a war.";
-
-  const recruits =
-    popularity.signedActions ||
-    popularity.follows ||
-    0;
-
-  const status =
-    draft.status === "promotion_published" || draft.status === "draft"
-      ? "DRAFT"
-      : statusLabel(draft.status);
-
+  const { draft } = bundle;
+  // Short slug URL: server loads draft + metrics and renders the PNG.
+  // Avoids long query strings that break X/Twitter image crawlers.
   const params = new URLSearchParams({
-    name: draft.name,
-    ticker: draft.ticker,
-    chain:
-      Number(draft.chainId) === 101 || Number(draft.chainId) === 102
-        ? "SOLANA"
-        : "BNB CHAIN",
-    status,
-    recruits: String(recruits),
-    heat: `${popularity.popularityPercentage}%`,
-    creator: creatorLabel(bundle),
-    link: displayLink,
-    description,
-    logo: absoluteUrl(draft.logoUrl),
+    slug: String(draft.slug || "").trim(),
   });
-
   if (download) params.set("download", "1");
   if (version) params.set("_v", version);
 
-  return `/api/prepare-share-card?${params.toString()}`;
+  // Absolute URL so OG crawlers and "copy PNG link" always hit a public host.
+  return `${publicAppOrigin()}/api/prepare-share-card?${params.toString()}`;
 }
 
 function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: string }) {
@@ -364,6 +343,10 @@ function ShareModal({
               )}&text=${encodeURIComponent(tweetText)}`}
               target="_blank"
               rel="noreferrer"
+              onClick={() => {
+                // X scrapes the page URL for the card. Ensure absolute app host
+                // (not localhost) so production OG edge tags + share-card PNG resolve.
+              }}
             >
               Post to X
             </a>

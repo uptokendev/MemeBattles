@@ -1,3 +1,4 @@
+import { pool } from "../server/db.js";
 import { getQuery, json } from "../server/http.js";
 
 function esc(value) {
@@ -7,6 +8,102 @@ function esc(value) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function absoluteUrl(base, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (raw.startsWith("/")) return `${String(base || "").replace(/\/+$/, "")}${raw}`;
+  return raw;
+}
+
+function shortWallet(value) {
+  const v = String(value || "");
+  if (!v) return "Unknown";
+  if (v.startsWith("@")) return v;
+  return v.length > 10 ? `${v.slice(0, 6)}...${v.slice(-4)}` : v;
+}
+
+/**
+ * Short crawler-friendly share cards: load draft by slug so og:image URLs stay short.
+ * Query params still override when provided (PrepareBase "Copy PNG link").
+ */
+async function resolveShareCardQuery(req) {
+  const q = getQuery(req);
+  const slug = String(q.slug || "").trim();
+  if (!slug || !pool) return q;
+
+  try {
+    const draftRes = await pool.query(
+      `select id, chain_id, slug, name, ticker, description, logo_url, status, visibility, creator_wallet
+         from public.campaign_drafts
+        where lower(slug) = lower($1)
+        limit 1`,
+      [slug],
+    );
+    const draft = draftRes.rows[0];
+    if (!draft) return q;
+
+    const isPrivate = String(draft.visibility || "").toLowerCase() === "private";
+    const appBase = String(process.env.PUBLIC_APP_URL || "https://app.memewar.zone").replace(/\/+$/, "");
+
+    if (isPrivate) {
+      return {
+        ...q,
+        name: q.name || "MemeWarzone",
+        ticker: q.ticker || "MWZ",
+        chain: q.chain || "BNB CHAIN",
+        status: q.status || "PRIVATE",
+        recruits: q.recruits || "0",
+        heat: q.heat || "0%",
+        creator: q.creator || "CLASSIFIED",
+        link: q.link || `${appBase.replace(/^https?:\/\//i, "")}/prepare/${draft.slug}`,
+        description: q.description || "Private dossier",
+      };
+    }
+
+    const [promoRes, metricsRes] = await Promise.all([
+      pool
+        .query(
+          `select mission_statement, creator_note, share_message from public.campaign_draft_promotion where draft_id = $1 limit 1`,
+          [draft.id],
+        )
+        .catch(() => ({ rows: [] })),
+      pool
+        .query(`select * from public.campaign_draft_metrics where draft_id = $1 limit 1`, [draft.id])
+        .catch(() => ({ rows: [] })),
+    ]);
+    const promotion = promoRes.rows[0] || {};
+    const metrics = metricsRes.rows[0] || {};
+    const recruits = Number(metrics?.signed_actions || metrics?.follows || 0) || 0;
+    const heat = Number(metrics?.popularity_percentage || 0);
+    const chain =
+      Number(draft.chain_id) === 101 || Number(draft.chain_id) === 102 ? "SOLANA" : "BNB CHAIN";
+    const description =
+      String(draft.description || promotion.mission_statement || promotion.creator_note || "").trim() ||
+      "The launchpad that turns every drop into a war.";
+    const logo = absoluteUrl(appBase, draft.logo_url || "");
+
+    return {
+      ...q,
+      name: q.name || draft.name || "Campaign",
+      ticker: q.ticker || draft.ticker || "TOKEN",
+      chain: q.chain || chain,
+      status: q.status || String(draft.status || "draft").replace(/_/g, " ").toUpperCase(),
+      recruits: q.recruits || String(recruits),
+      heat: q.heat || `${Math.max(0, Math.min(100, heat))}%`,
+      creator: q.creator || shortWallet(draft.creator_wallet || ""),
+      link: q.link || `${appBase.replace(/^https?:\/\//i, "")}/prepare/${draft.slug}`,
+      description: q.description || description.slice(0, 280),
+      logo: q.logo || q.logoUrl || logo,
+      logoUrl: q.logoUrl || q.logo || logo,
+    };
+  } catch (err) {
+    console.warn("[prepare-share-card] slug resolve failed", err?.message || err);
+    return q;
+  }
 }
 
 function clampText(value, max) {
@@ -293,28 +390,58 @@ async function sendPng(req, res, svg, ticker) {
   const png = await renderPng(svg);
   const q = getQuery(req);
   const filename = `memewarzone-${String(ticker || "draft").toLowerCase()}-share-card.png`;
+  const forceDownload = String(q.download || "") === "1";
   res.statusCode = 200;
   res.setHeader("content-type", "image/png");
   res.setHeader("content-length", String(png.length));
-  setNoStoreHeaders(res);
-  res.setHeader("content-disposition", String(q.download || "") === "1" ? `attachment; filename="${filename}"` : `inline; filename="${filename}"`);
+  // Downloads stay uncached; crawler cards use short public cache (slug or query card).
+  if (forceDownload) {
+    setNoStoreHeaders(res);
+  } else {
+    res.setHeader("cache-control", "public, max-age=120, s-maxage=300");
+  }
+  res.setHeader(
+    "content-disposition",
+    forceDownload ? `attachment; filename="${filename}"` : `inline; filename="${filename}"`,
+  );
+  // Allow social platforms to fetch the PNG even when site-wide CORP is same-origin.
+  res.setHeader("cross-origin-resource-policy", "cross-origin");
   res.end(png);
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return json(res, 405, { error: "Method not allowed" });
+  }
   try {
-    const q = getQuery(req);
+    const q = await resolveShareCardQuery(req);
     const logoDataUrl = await imageToDataUrl(q.logoUrl || q.logo || "");
-    const brandLogoDataUrl = await imageToDataUrl(
-      q.brandLogo || q.brand || publicAssetUrl(req, "/assets/logo.png"),
-    );
+    // Prefer app-hosted brand logo; Railway host may not serve /assets.
+    const brandFallback =
+      q.brandLogo ||
+      q.brand ||
+      `${String(process.env.PUBLIC_APP_URL || "https://app.memewar.zone").replace(/\/+$/, "")}/assets/logo.png` ||
+      publicAssetUrl(req, "/assets/logo.png");
+    const brandLogoDataUrl = await imageToDataUrl(brandFallback);
     const svg = svgCard(q, logoDataUrl, brandLogoDataUrl);
     if (String(q.format || "png").toLowerCase() === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
-      setNoStoreHeaders(res);
+      // Short-lived public cache so X/Twitter can re-fetch reliably.
+      res.setHeader("cache-control", "public, max-age=120, s-maxage=300");
+      if (req.method === "HEAD") {
+        res.end();
+        return;
+      }
       res.end(svg);
+      return;
+    }
+    if (req.method === "HEAD") {
+      // Cheap HEAD for crawlers that probe before downloading the PNG.
+      res.statusCode = 200;
+      res.setHeader("content-type", "image/png");
+      res.setHeader("cache-control", "public, max-age=120, s-maxage=300");
+      res.end();
       return;
     }
     return sendPng(req, res, svg, q.ticker || "draft");

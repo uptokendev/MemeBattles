@@ -148,6 +148,7 @@ import {
 } from "./dev-fix/reward-batch-ops.js";
 import { rewardClaimConfig, rewardClaimIntent, rewardClaimRecord } from "./dev-fix/reward-claim-intent.js";
 import dashboardLpFees from "./dashboard/lp-fees.js";
+import prepareOg from "./prepare-og.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -379,7 +380,6 @@ router.all("/profile", wrap(profile));
 router.all("/profileCabinet", wrap(profileCabinet));
 router.all("/profile/portfolio", wrap(profilePortfolio));
 router.all("/shareCard", wrap(shareCard));
-router.all("/prepare-share-card", wrap(prepareShareCard));
 router.all("/status", wrap(status));
 router.all("/newsletter", wrap(newsletter));
 router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
@@ -412,6 +412,8 @@ router.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscri
 router.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 router.all("/drafts/:draftId", wrap(signedDraftById));
 router.all("/prepare/:slug", wrap(signedPrepareBySlug));
+router.get("/prepare-og/:slug", wrap(prepareOg));
+router.get("/prepare-share-card", wrap(prepareShareCard));
 router.all("/prepare-notifications", wrap(prepareNotifications));
 router.all("/rewards/me", wrap(rewardsMe));
 router.all("/rewards/me/history", wrap(rewardsHistory));

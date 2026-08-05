@@ -43,6 +43,12 @@
   status = 200
   force = true
 
+# Social crawlers for Prepare Mode: edge function serves dynamic OG HTML
+# (twitter:image → /api/prepare-share-card?slug=…). Humans still get the SPA.
+[[edge_functions]]
+  function = "prepare-og"
+  path = "/prepare/*"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
