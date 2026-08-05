@@ -916,11 +916,13 @@ export function registerMarketContinuityRoutes(app: Express) {
   app.get("/api/token/:campaign/repair-dex-pool", async (req, res) => {
     res.status(405).json({
       ok: false,
-      error: "Use POST, not GET. Example: curl.exe -X POST \"$TOKEN_API/api/token/0xCAMPAIGN/repair-dex-pool?chainId=97&index=1\"",
+      error:
+        "Use POST, not GET. Fast repair (no hang): curl.exe -X POST \"$TOKEN_API/api/token/0xCAMPAIGN/repair-dex-pool?chainId=97\"  (omit index=1 — pool indexer runs in background)",
     });
   });
 
   // Public testnet repair (no internal token). Production chain 56 still requires internal auth via /internal/wtr/*.
+  // IMPORTANT: Do not await a full pool-index pass on this request — free RPCs make that hang for minutes.
   app.post("/api/token/:campaign/repair-dex-pool", async (req, res) => {
     try {
       const chainId = asNumber(req.query.chainId ?? req.body?.chainId, 97);
@@ -932,18 +934,32 @@ export function registerMarketContinuityRoutes(app: Express) {
       }
       const campaign = await campaignFromParam(chainId, req.params.campaign);
       if (!campaign) return res.status(400).json({ ok: false, error: "Invalid campaign" });
-      const runIndex = String(req.query.index ?? req.body?.index ?? "1") !== "0";
+
+      // Default index=0 so curl returns after ensure + market-state (seconds, not minutes).
+      // index=1 kicks a background indexer pass only.
+      const runIndex = String(req.query.index ?? req.body?.index ?? "0") === "1";
       const ensured = await ensureDexPoolForCampaign(chainId, campaign);
-      let indexResult: any = null;
+
+      let indexScheduled = false;
       if (ensured.ok && runIndex && ENV.ENABLE_TOPAZ_POOL_INDEXER) {
-        const { runTopazPoolIndexerOnce } = await import("./topazPoolIndexer.js");
-        indexResult = await runTopazPoolIndexerOnce();
+        indexScheduled = true;
+        void import("./topazPoolIndexer.js")
+          .then(({ runTopazPoolIndexerOnce }) => runTopazPoolIndexerOnce())
+          .then((result) => console.log("[wtr] background topaz index after repair", result))
+          .catch((err) =>
+            console.warn("[wtr] background topaz index after repair failed", err?.message || String(err)),
+          );
       }
+
+      // Light re-read (skip re-triggering heavy repair loops if possible).
       const state = await readMarketState(chainId, campaign);
       return res.status(ensured.ok ? 200 : 500).json({
         ok: ensured.ok,
         ensured,
-        indexResult,
+        indexScheduled,
+        note: indexScheduled
+          ? "Pool index scheduled in background — re-check market-state/trades in 1–2 minutes."
+          : "dex_pools ensure only. Pass index=1 to schedule a background Topaz swap scan.",
         marketState: state,
       });
     } catch (error) {

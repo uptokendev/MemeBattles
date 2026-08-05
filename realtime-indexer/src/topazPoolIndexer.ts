@@ -491,14 +491,15 @@ async function scanPool(
   finalizedHead: number,
 ) {
   // Cap catch-up per tick so BlockPI free tiers don't timeout on huge first scans.
+  // Keep passes small — BlockPI free tier times out and also starves the bonding tip scanner.
   const maxBlocksPerPass = Math.max(
-    500,
-    Number(process.env.TOPAZ_POOL_INDEXER_BLOCKS_PER_PASS || ENV.INDEXER_CAMPAIGN_BLOCKS_PER_PASS || 3000),
+    200,
+    Number(process.env.TOPAZ_POOL_INDEXER_BLOCKS_PER_PASS || 1_500),
   );
   // If we never indexed, don't start from a bad/ancient graduation_block (e.g. 1).
   const maxLookback = Math.max(
-    2_000,
-    Number(process.env.TOPAZ_POOL_INDEXER_MAX_LOOKBACK_BLOCKS || 25_000),
+    1_000,
+    Number(process.env.TOPAZ_POOL_INDEXER_MAX_LOOKBACK_BLOCKS || 12_000),
   );
   const floorFromHead = Math.max(0, finalizedHead - maxLookback);
   const graduationFloor =
@@ -725,7 +726,8 @@ export function startTopazPoolIndexerLoop() {
 
   const initial = setTimeout(() => void tick(), 4_000);
   initial.unref?.();
-  const intervalMs = Math.max(5_000, Number(process.env.TOPAZ_POOL_INDEXER_INTERVAL_MS || 8_000));
+  // Slower than bonding tip scan so free RPCs aren't double-saturated.
+  const intervalMs = Math.max(10_000, Number(process.env.TOPAZ_POOL_INDEXER_INTERVAL_MS || 20_000));
   const timer = setInterval(() => void tick(), intervalMs);
   timer.unref?.();
 }
