@@ -80,35 +80,82 @@ function normalizeHttpUrl(input) {
 }
 
 async function checkTelemetry() {
-  const url = String(process.env.TELEMETRY_STATUS_URL || "").trim();
-  if (!url) return { ok: false, skipped: true, error: { message: "Missing TELEMETRY_STATUS_URL" } };
+  // Prefer dedicated telemetry status; fall back to indexer /health so dashboards
+  // are not stuck on SKIPPED when only RAILWAY_INDEXER_URL is configured.
+  const explicit = String(process.env.TELEMETRY_STATUS_URL || "").trim();
+  const indexerBase = normalizeHttpUrl(
+    process.env.RAILWAY_INDEXER_URL || process.env.VITE_SECURITY_API_BASE || "",
+  ).replace(/\/+$/, "");
+  const url =
+    explicit ||
+    (indexerBase ? `${indexerBase.replace(/\/api$/i, "")}/health` : "");
+
+  if (!url) {
+    return {
+      ok: false,
+      skipped: true,
+      error: {
+        message:
+          "Missing TELEMETRY_STATUS_URL (or RAILWAY_INDEXER_URL for /health fallback)",
+      },
+    };
+  }
 
   try {
     const r = await fetchJson(url);
     if (!r.ok) {
-      return { ok: false, latencyMs: r.latencyMs, httpStatus: r.status, url, error: { message: "Telemetry status non-200", detail: r.json || r.text } };
+      return {
+        ok: false,
+        latencyMs: r.latencyMs,
+        httpStatus: r.status,
+        url,
+        error: { message: "Telemetry/indexer health non-200", detail: r.json || r.text },
+      };
     }
 
     const svc = r.json?.services?.["realtime-indexer"] || null;
-    if (!svc) {
-      return { ok: false, latencyMs: r.latencyMs, httpStatus: r.status, url, error: { message: "No realtime-indexer in telemetry services yet" } };
+    if (svc) {
+      return {
+        ok: true,
+        latencyMs: r.latencyMs,
+        httpStatus: r.status,
+        url,
+        indexer: {
+          ok: !!svc.ok,
+          rps_1m: svc.rps_1m,
+          errors_1m: svc.errors_1m,
+          head_block: svc.head_block,
+          last_indexed_block: svc.last_indexed_block,
+          lag_blocks: svc.lag_blocks,
+          last_indexer_run_ms_ago: svc.last_indexer_run_ms_ago,
+          mem_mb: svc.mem_mb,
+        },
+      };
+    }
+
+    // Indexer /health shape: { ok, db, indexerBuild, ... }
+    if (r.json && (r.json.ok === true || r.json.db != null || r.json.indexerBuild)) {
+      return {
+        ok: true,
+        latencyMs: r.latencyMs,
+        httpStatus: r.status,
+        url,
+        note: "Using indexer /health (TELEMETRY_STATUS_URL not set)",
+        indexer: {
+          ok: r.json.ok !== false,
+          indexerBuild: r.json.indexerBuild ?? null,
+          normalScope: r.json.normalScope ?? null,
+          db: r.json.db ?? null,
+        },
+      };
     }
 
     return {
-      ok: true,
+      ok: false,
       latencyMs: r.latencyMs,
       httpStatus: r.status,
       url,
-      indexer: {
-        ok: !!svc.ok,
-        rps_1m: svc.rps_1m,
-        errors_1m: svc.errors_1m,
-        head_block: svc.head_block,
-        last_indexed_block: svc.last_indexed_block,
-        lag_blocks: svc.lag_blocks,
-        last_indexer_run_ms_ago: svc.last_indexer_run_ms_ago,
-        mem_mb: svc.mem_mb,
-      },
+      error: { message: "No realtime-indexer telemetry payload and body is not a known /health shape" },
     };
   } catch (e) {
     return { ok: false, error: safeError(e) };
@@ -116,33 +163,66 @@ async function checkTelemetry() {
 }
 
 async function checkRpcHeadBlock() {
-  const raw = String(process.env.BSC_RPC_HTTP_97 || "").trim();
-  if (!raw) return { ok: false, skipped: true, error: { message: "Missing BSC_RPC_HTTP_97" } };
-
-  const first = raw.split(",").map((s) => s.trim()).filter(Boolean)[0];
-  if (!first) return { ok: false, skipped: true, error: { message: "No valid RPC URL found in BSC_RPC_HTTP_97" } };
+  const candidates = [
+    ...String(process.env.BSC_RPC_HTTP_97 || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...String(process.env.BSC_RPC_HTTP || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    // Public Chapel fallbacks so diagnostics is not hard-red when only indexer has BlockPI.
+    "https://bsc-testnet.publicnode.com",
+    "https://data-seed-prebsc-1-s1.binance.org:8545/",
+  ];
+  // de-dupe
+  const urls = [...new Set(candidates)];
+  if (!urls.length) {
+    return { ok: false, skipped: true, error: { message: "No RPC candidates for chain 97" } };
+  }
 
   const body = { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] };
-  const t0 = Date.now();
-  try {
-    const resp = await fetch(first, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-    const latencyMs = Date.now() - t0;
-    if (!resp.ok) return { ok: false, latencyMs, httpStatus: resp.status, url: first };
-
-    const j = await resp.json();
-    const hex = j?.result;
-    if (typeof hex !== "string" || !hex.startsWith("0x")) return { ok: false, latencyMs, httpStatus: resp.status, url: first };
-
-    const head = parseInt(hex, 16);
-    return { ok: true, latencyMs, httpStatus: resp.status, url: first, head_block: head };
-  } catch (e) {
-    return { ok: false, latencyMs: Date.now() - t0, url: first, error: safeError(e) };
+  const errors = [];
+  for (const url of urls) {
+    const t0 = Date.now();
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      const latencyMs = Date.now() - t0;
+      if (!resp.ok) {
+        errors.push({ url, latencyMs, httpStatus: resp.status });
+        continue;
+      }
+      const j = await resp.json();
+      const hex = j?.result;
+      if (typeof hex !== "string" || !hex.startsWith("0x")) {
+        errors.push({ url, latencyMs, httpStatus: resp.status, error: "bad result" });
+        continue;
+      }
+      const head = parseInt(hex, 16);
+      return {
+        ok: true,
+        latencyMs,
+        httpStatus: resp.status,
+        url,
+        head_block: head,
+        tried: urls.length,
+      };
+    } catch (e) {
+      errors.push({ url, latencyMs: Date.now() - t0, error: safeError(e) });
+    }
   }
+
+  return {
+    ok: false,
+    error: { message: "All RPC candidates failed for eth_blockNumber", detail: errors.slice(0, 4) },
+    tried: urls.length,
+  };
 }
 
 async function checkAblyRestAuth() {

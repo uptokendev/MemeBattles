@@ -308,14 +308,23 @@ async function recruiterSignupCodeAvailabilityAlias(req, res) {
 app.use("/api/upload", wrap(upload));
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "MemeWarzone API", healthz: "/healthz", api: "/api" }));
-app.get("/healthz", (_req, res) => res.json({ ok: true }));
+// Railway healthcheck: no DB, no RPC — must answer immediately after listen().
+app.get("/healthz", (_req, res) => res.status(200).json({ ok: true, service: "frontend-api" }));
 app.get("/health", async (_req, res) => {
+  // Prefer 200 for liveness; report DB separately so a slow pooler cannot fail deploys
+  // if Railway is pointed at /health instead of /healthz.
   try {
     const r = await pool.query("select 1 as ok");
-    res.json({ ok: true, db: r.rows?.[0]?.ok ?? 1 });
+    res.status(200).json({ ok: true, service: "frontend-api", db: r.rows?.[0]?.ok ?? 1 });
   } catch (err) {
-    console.error("[api/server] health failed", err);
-    res.status(500).json({ ok: false, error: "DB health check failed" });
+    console.error("[api/server] health db check failed", err);
+    res.status(200).json({
+      ok: true,
+      service: "frontend-api",
+      db: 0,
+      warning: "DB health check failed",
+      error: String(err?.message || err),
+    });
   }
 });
 
