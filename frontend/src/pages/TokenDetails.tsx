@@ -63,12 +63,6 @@ import {
 } from "@/lib/localTopazTrades";
 import { fetchTopazTradeReports, reportTopazTrade } from "@/lib/topazTradeReports";
 import { mergeTradePoints, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
-import {
-  fetchLpFeePools,
-  harvestLpFeesWithWallet,
-  hasUnharvestedFees,
-  type LpFeePoolRow,
-} from "@/lib/lpFeeHarvest";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -624,11 +618,6 @@ const TokenDetails = () => {
 
   // Creator profile (best-effort; used in the header)
   const [creatorProfile, setCreatorProfile] = useState<UserProfile | null>(null);
-
-  // Graduated Topaz LP fees (creator claim path — same harvest as Command Center)
-  const [lpFeeRow, setLpFeeRow] = useState<LpFeePoolRow | null>(null);
-  const [lpFeeLoading, setLpFeeLoading] = useState(false);
-  const [lpFeeClaiming, setLpFeeClaiming] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1922,82 +1911,6 @@ const bnbUsd = useMemo(() => {
   const dexTokenAddress = isDexStage ? (campaign?.token ?? "") : "";
   const { baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
     useDexScreenerChart(dexTokenAddress);
-
-  const isConnectedCreator = useMemo(() => {
-    const creator = String(campaign?.creator ?? "").trim().toLowerCase();
-    const account = String(wallet.account ?? "").trim().toLowerCase();
-    return Boolean(creator && account && creator === account);
-  }, [campaign?.creator, wallet.account]);
-
-  const refreshLpFees = useCallback(async () => {
-    if (!isDexStage || !campaignAddr) {
-      setLpFeeRow(null);
-      return;
-    }
-    setLpFeeLoading(true);
-    try {
-      const { items } = await fetchLpFeePools({
-        chainId: Number(chainIdForStorage || 97),
-        campaignAddress: campaignAddr,
-        limit: 5,
-      });
-      const match =
-        items.find((row) => String(row.campaignAddress || "").toLowerCase() === campaignAddr) ||
-        items[0] ||
-        null;
-      setLpFeeRow(match);
-    } catch {
-      setLpFeeRow(null);
-    } finally {
-      setLpFeeLoading(false);
-    }
-  }, [isDexStage, campaignAddr, chainIdForStorage]);
-
-  useEffect(() => {
-    void refreshLpFees();
-  }, [refreshLpFees]);
-
-  const handleClaimLpFees = useCallback(async () => {
-    const pair = String(lpFeeRow?.pairAddress || onChainPair || "").toLowerCase();
-    if (!pair) {
-      toast({
-        title: "Pool not ready",
-        description: "No Topaz pair is registered for fee harvest yet.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!wallet.signer || !wallet.account) {
-      toast({ title: "Connect wallet", description: "Connect the creator wallet to claim LP fees." });
-      try {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
-      } catch {
-        // ignore
-      }
-      return;
-    }
-    setLpFeeClaiming(true);
-    try {
-      const result = await harvestLpFeesWithWallet({
-        chainId: Number(chainIdForStorage || 97),
-        pairAddress: pair,
-        signer: wallet.signer,
-      });
-      toast({
-        title: "LP fees claimed",
-        description: `Harvested. Tx ${result.txHash.slice(0, 10)}…`,
-      });
-      await refreshLpFees();
-    } catch (err: any) {
-      toast({
-        title: "Harvest failed",
-        description: String(err?.shortMessage || err?.reason || err?.message || "Could not claim LP fees"),
-        variant: "destructive",
-      });
-    } finally {
-      setLpFeeClaiming(false);
-    }
-  }, [lpFeeRow?.pairAddress, onChainPair, wallet.signer, wallet.account, chainIdForStorage, refreshLpFees, toast]);
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:
@@ -3451,81 +3364,6 @@ const bnbUsd = useMemo(() => {
                   </div>
                 </div>
               </div>
-
-              {isDexStage && (isConnectedCreator || (lpFeeRow && hasUnharvestedFees(lpFeeRow))) ? (
-                <div className="rounded-2xl border border-orange-400/30 bg-orange-500/10 p-3">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h3 className="text-sm font-semibold text-orange-100">Creator LP fees</h3>
-                    <span className="text-[11px] text-muted-foreground">Topaz · 80% creator</span>
-                  </div>
-                  {lpFeeLoading ? (
-                    <p className="text-xs text-muted-foreground">Checking unharvested fees…</p>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                        <div>
-                          <p className="text-muted-foreground">Unharvested</p>
-                          <p className="mt-1 font-mono text-foreground break-words">
-                            {lpFeeRow?.fees?.unharvested?.token0Display != null
-                              ? `${lpFeeRow.fees.unharvested.token0Display} ${lpFeeRow.fees.unharvested.token0Symbol || ""}`
-                              : "—"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Token side</p>
-                          <p className="mt-1 font-mono text-foreground break-words">
-                            {lpFeeRow?.fees?.unharvested?.token1Display != null
-                              ? `${lpFeeRow.fees.unharvested.token1Display} ${lpFeeRow.fees.unharvested.token1Symbol || ""}`
-                              : "—"}
-                          </p>
-                        </div>
-                        {lpFeeRow?.fees?.unharvested?.creatorShareToken0Display ? (
-                          <div className="col-span-2">
-                            <p className="text-muted-foreground">Your share (est. 80%)</p>
-                            <p className="mt-1 font-mono text-orange-100 break-words">
-                              {lpFeeRow.fees.unharvested.creatorShareToken0Display}
-                              {lpFeeRow.fees.unharvested.token0Symbol
-                                ? ` ${lpFeeRow.fees.unharvested.token0Symbol}`
-                                : ""}
-                              {lpFeeRow.fees.unharvested.creatorShareToken1Display
-                                ? ` · ${lpFeeRow.fees.unharvested.creatorShareToken1Display}${
-                                    lpFeeRow.fees.unharvested.token1Symbol
-                                      ? ` ${lpFeeRow.fees.unharvested.token1Symbol}`
-                                      : ""
-                                  }`
-                                : ""}
-                            </p>
-                          </div>
-                        ) : null}
-                      </div>
-                      <Button
-                        onClick={() => void handleClaimLpFees()}
-                        disabled={
-                          lpFeeClaiming ||
-                          !(lpFeeRow?.pairAddress || onChainPair) ||
-                          (lpFeeRow ? !hasUnharvestedFees(lpFeeRow) : false)
-                        }
-                        className={`w-full ${topbarButtonClass} py-4`}
-                      >
-                        {lpFeeClaiming
-                          ? "Claiming LP fees…"
-                          : lpFeeRow && hasUnharvestedFees(lpFeeRow)
-                            ? "Claim LP fees"
-                            : "No fees to claim"}
-                      </Button>
-                      {!isConnectedCreator ? (
-                        <p className="mt-2 text-[10px] text-muted-foreground leading-snug">
-                          Anyone can trigger harvest; creator share is always paid to the campaign creator wallet.
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-[10px] text-muted-foreground leading-snug">
-                          Harvest pulls Topaz LP fees from the permanent locker. You receive ~80%; protocol ~20%.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              ) : null}
 
               <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
                 <TabsList className={ctaTabsListClass}>
