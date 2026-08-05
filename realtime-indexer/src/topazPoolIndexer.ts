@@ -75,7 +75,8 @@ async function listPools(chainId: number): Promise<IndexedPool[]> {
        and dp.indexing_enabled=true
        and dp.stable=false
        and cms.pool_verified=true
-       and cms.market_stage='TOPAZ_ACTIVE'
+       -- Include DEGRADED so recovery after RPC timeouts can resume indexing.
+       and cms.market_stage in ('TOPAZ_ACTIVE','TOPAZ_DEGRADED','TOPAZ_PENDING')
      order by coalesce(dp.last_indexed_block,dp.graduation_block) asc
      limit $2`,
     [chainId, maxPools],

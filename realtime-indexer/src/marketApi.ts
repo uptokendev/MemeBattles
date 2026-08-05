@@ -436,21 +436,25 @@ export async function ensureDexPoolRowFromChain(input: {
       ],
     );
 
-    // Enrich CMS with factory / wrapped native / fee when missing.
+    // Enrich CMS + clear transient TOPAZ_DEGRADED from earlier RPC timeouts.
     await pool.query(
       `update public.campaign_market_state
-          set dex_factory_address=coalesce(nullif(dex_factory_address,''), $3),
+          set market_stage='TOPAZ_ACTIVE',
+              dex_pair_address=coalesce(nullif(dex_pair_address,''), $7),
+              dex_factory_address=coalesce(nullif(dex_factory_address,''), $3),
               wrapped_native_address=coalesce(nullif(wrapped_native_address,''), $4),
               pool_fee_bps=coalesce(pool_fee_bps, $5),
               dex_router_address=coalesce(nullif(dex_router_address,''), $6),
               pool_verified=true,
               indexing_enabled=true,
+              last_error=null,
+              last_verified_at=now(),
               updated_at=now()
         where chain_id=$1 and campaign_address=$2`,
-      [chainId, campaign, factory, weth, feeBps, productionRouter],
+      [chainId, campaign, factory, weth, feeBps, productionRouter, pair],
     );
 
-    console.log("[wtr] dex_pools row ensured", { chainId, campaign, pair, feeBps });
+    console.log("[wtr] dex_pools row ensured", { chainId, campaign, pair, feeBps, restoredStage: "TOPAZ_ACTIVE" });
     return { ok: true, pair };
   } catch (error: any) {
     const message = String(error?.shortMessage || error?.message || error);
@@ -683,14 +687,17 @@ async function readMarketState(chainId: number, campaign: string) {
   // If CMS is TOPAZ_ACTIVE with a pair but dex_pools is missing/incomplete, repair.
   // Triggers when: no dex_pools join (null), indexing disabled, or reserves never filled.
   let dexPoolRepair: { attempted: boolean; ok: boolean; error?: string; pair?: string } | null = null;
+  const stageNow = String(row.market_stage || "").toUpperCase();
   const needsDexPoolRepair =
-    String(row.market_stage || "").toUpperCase() === "TOPAZ_ACTIVE" &&
+    (stageNow === "TOPAZ_ACTIVE" || stageNow === "TOPAZ_DEGRADED" || stageNow === "TOPAZ_PENDING") &&
     Boolean(row.dex_pair_address) &&
-    (row.pool_indexing_enabled == null ||
+    (stageNow === "TOPAZ_DEGRADED" ||
+      row.pool_indexing_enabled == null ||
       row.pool_indexing_enabled === false ||
       row.reserve_token_raw == null ||
       row.reserve_native_raw == null ||
-      !row.wrapped_native_address);
+      !row.wrapped_native_address ||
+      String(row.last_error || "").toLowerCase().includes("timeout"));
 
   if (needsDexPoolRepair) {
     console.log("[wtr] market-state dex_pools repair starting", {
@@ -773,22 +780,32 @@ async function readMarketState(chainId: number, campaign: string) {
     }
   }
 
-  const topazActive = row.market_stage === "TOPAZ_ACTIVE";
-  const bondingActive = row.market_stage === "BONDING" && Boolean(row.bonding_active);
+  const stageUpper = String(row.market_stage || "").toUpperCase();
+  const topazActive = stageUpper === "TOPAZ_ACTIVE";
+  // Transient indexer timeouts used to stick stage on TOPAZ_DEGRADED and kill trading.
+  // If we still have a verified pair + reserves, treat as tradeable Topaz.
+  const topazDegradedButRoutable =
+    stageUpper === "TOPAZ_DEGRADED" &&
+    Boolean(row.dex_pair_address) &&
+    Boolean(row.pool_verified) &&
+    Boolean(row.pool_indexing_enabled);
+  const bondingActive = stageUpper === "BONDING" && Boolean(row.bonding_active);
   // After on-chain heal, pair is enough for quotes even if pool indexer row lags.
   const hasPair = Boolean(row.dex_pair_address);
   const topazRouteReady =
-    topazActive &&
+    (topazActive || topazDegradedButRoutable) &&
     Boolean(row.pool_verified || hasPair) &&
     (row.pool_support_enabled == null || Boolean(row.pool_support_enabled)) &&
     (row.pool_indexing_enabled == null || Boolean(row.pool_indexing_enabled) || hasPair);
   const quotesEnabled =
     Boolean(row.support_enabled) &&
-    (bondingActive || (topazActive && hasPair) || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES));
+    (bondingActive ||
+      ((topazActive || topazDegradedButRoutable) && hasPair) ||
+      (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES));
   const tradingEnabled =
     Boolean(row.support_enabled) &&
     (bondingActive ||
-      (topazActive && hasPair) ||
+      ((topazActive || topazDegradedButRoutable) && hasPair) ||
       (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES && ENV.ENABLE_TOPAZ_TRADING));
 
   const lagSeconds = row.last_sync_at
