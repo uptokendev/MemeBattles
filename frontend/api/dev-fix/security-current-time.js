@@ -294,12 +294,25 @@ export async function evaluateTradePreflight({ walletAddress, campaignAddress, c
     let fundingDetection = null;
 
     if (!directCreator && !onChainClusterMatch && !databaseClusterMatch) {
-      fundingDetection = await detectDirectCreatorFunding({
-        chainId: Number(chainId),
-        creatorAddress: onChain.creator,
-        walletAddress: wallet,
-        launchAt: onChain.launchAt,
-      });
+      // Soft-fail funding indexer: never block unrelated buyers when the worker/DB is lagging.
+      // Still hard-block when funding evidence proves a creator link (even if persist fails — handled below).
+      try {
+        fundingDetection = await detectDirectCreatorFunding({
+          chainId: Number(chainId),
+          creatorAddress: onChain.creator,
+          walletAddress: wallet,
+          launchAt: onChain.launchAt,
+        });
+      } catch (fundingError) {
+        fundingDetection = {
+          linked: false,
+          available: false,
+          funding: null,
+          clusterId: null,
+          error: String(fundingError?.shortMessage || fundingError?.message || fundingError),
+          provider: "rpc_indexer",
+        };
+      }
       if (fundingDetection?.linked && fundingDetection?.clusterId) {
         dbBuyerClusterId = fundingDetection.clusterId;
         dbCreatorClusterId = fundingDetection.clusterId;
