@@ -381,6 +381,20 @@ export async function ensureDexPoolRowFromChain(input: {
       // keep 1
     }
 
+    // Unique partial index: one active (support+index) row per campaign.
+    // Disable any other pair rows for this campaign so the correct pair can be active.
+    await pool.query(
+      `update public.dex_pools
+          set support_enabled=false,
+              indexing_enabled=false,
+              updated_at=now()
+        where chain_id=$1
+          and lower(campaign_address)=lower($2)
+          and lower(pair_address)<>lower($3)
+          and (support_enabled=true or indexing_enabled=true)`,
+      [chainId, campaign, pair],
+    );
+
     await pool.query(
       `insert into public.dex_pools(
          chain_id,pair_address,campaign_address,token_address,wrapped_native_address,
@@ -666,15 +680,35 @@ async function readMarketState(chainId: number, campaign: string) {
     }
   }
 
-  // If CMS is TOPAZ_ACTIVE with a pair but dex_pools is missing (broken minimal insert),
-  // repair the full row so pool indexer can pick it up.
-  if (
-    row.market_stage === "TOPAZ_ACTIVE" &&
-    row.dex_pair_address &&
-    row.pool_indexing_enabled == null
-  ) {
+  // If CMS is TOPAZ_ACTIVE with a pair but dex_pools is missing/incomplete, repair.
+  // Triggers when: no dex_pools join (null), indexing disabled, or reserves never filled.
+  let dexPoolRepair: { attempted: boolean; ok: boolean; error?: string; pair?: string } | null = null;
+  const needsDexPoolRepair =
+    String(row.market_stage || "").toUpperCase() === "TOPAZ_ACTIVE" &&
+    Boolean(row.dex_pair_address) &&
+    (row.pool_indexing_enabled == null ||
+      row.pool_indexing_enabled === false ||
+      row.reserve_token_raw == null ||
+      row.reserve_native_raw == null ||
+      !row.wrapped_native_address);
+
+  if (needsDexPoolRepair) {
+    console.log("[wtr] market-state dex_pools repair starting", {
+      chainId,
+      campaign,
+      pair: row.dex_pair_address,
+      pool_indexing_enabled: row.pool_indexing_enabled,
+      hasReserves: Boolean(row.reserve_token_raw || row.reserve_native_raw),
+    });
     try {
-      await ensureDexPoolForCampaign(chainId, campaign);
+      const repair = await ensureDexPoolForCampaign(chainId, campaign);
+      dexPoolRepair = {
+        attempted: true,
+        ok: Boolean(repair.ok),
+        error: repair.ok ? undefined : String(repair.error || "repair failed"),
+        pair: repair.pair,
+      };
+      console.log("[wtr] market-state dex_pools repair result", dexPoolRepair);
       const refreshed = await pool.query(
         `select
            cms.chain_id,
@@ -704,8 +738,8 @@ async function readMarketState(chainId: number, campaign: string) {
            cms.indexing_enabled,
            cms.last_verified_at,
            cms.last_error,
-           cms.support_enabled,
            c.bonding_active,
+           c.support_enabled,
            c.indexing_enabled as campaign_indexing_enabled,
            dp.indexing_enabled as pool_indexing_enabled,
            dp.support_enabled as pool_support_enabled,
@@ -717,19 +751,24 @@ async function readMarketState(chainId: number, campaign: string) {
            dp.reserve_native_raw
          from public.campaign_market_state cms
          left join public.campaigns c
-           on c.chain_id=cms.chain_id and c.campaign_address=cms.campaign_address
+           on c.chain_id=cms.chain_id and lower(c.campaign_address)=lower(cms.campaign_address)
          left join public.dex_pools dp
-           on dp.chain_id=cms.chain_id and dp.pair_address=cms.dex_pair_address
-         where cms.chain_id=$1 and cms.campaign_address=$2
+           on dp.chain_id=cms.chain_id and lower(dp.pair_address)=lower(cms.dex_pair_address)
+         where cms.chain_id=$1 and lower(cms.campaign_address)=lower($2)
          limit 1`,
         [chainId, campaign],
       );
       if (refreshed.rows[0]) row = refreshed.rows[0];
     } catch (repairError) {
+      dexPoolRepair = {
+        attempted: true,
+        ok: false,
+        error: String((repairError as any)?.message || repairError),
+      };
       console.warn("[wtr] dex_pools self-heal on market-state failed", {
         chainId,
         campaign,
-        error: String((repairError as any)?.message || repairError),
+        error: dexPoolRepair.error,
       });
     }
   }
@@ -804,6 +843,10 @@ async function readMarketState(chainId: number, campaign: string) {
     },
     lastVerifiedAt: row.last_verified_at,
     lastError: row.last_error,
+    // Diagnostics: shows whether this request attempted a dex_pools repair.
+    dexPoolRepair,
+    poolIndexerEnvEnabled: ENV.ENABLE_TOPAZ_POOL_INDEXER,
+    unifiedMarketApiEnvEnabled: ENV.ENABLE_UNIFIED_MARKET_API,
   };
 }
 
@@ -843,6 +886,37 @@ export function registerMarketContinuityRoutes(app: Express) {
         tokenAddress: identity.tokenAddress || null,
         publicUrlAddress: identity.tokenAddress || identity.campaignAddress,
         marketKey: identity.campaignAddress,
+      });
+    } catch (error) {
+      return sendServerError(res, error);
+    }
+  });
+
+  // Public testnet repair (no internal token). Production chain 56 still requires internal auth via /internal/wtr/*.
+  app.post("/api/token/:campaign/repair-dex-pool", async (req, res) => {
+    try {
+      const chainId = asNumber(req.query.chainId ?? req.body?.chainId, 97);
+      if (chainId !== 97) {
+        return res.status(403).json({
+          ok: false,
+          error: "Public repair-dex-pool is testnet-only (chainId=97). Use /internal/wtr/ensure-dex-pool on mainnet.",
+        });
+      }
+      const campaign = await campaignFromParam(chainId, req.params.campaign);
+      if (!campaign) return res.status(400).json({ ok: false, error: "Invalid campaign" });
+      const runIndex = String(req.query.index ?? req.body?.index ?? "1") !== "0";
+      const ensured = await ensureDexPoolForCampaign(chainId, campaign);
+      let indexResult: any = null;
+      if (ensured.ok && runIndex && ENV.ENABLE_TOPAZ_POOL_INDEXER) {
+        const { runTopazPoolIndexerOnce } = await import("./topazPoolIndexer.js");
+        indexResult = await runTopazPoolIndexerOnce();
+      }
+      const state = await readMarketState(chainId, campaign);
+      return res.status(ensured.ok ? 200 : 500).json({
+        ok: ensured.ok,
+        ensured,
+        indexResult,
+        marketState: state,
       });
     } catch (error) {
       return sendServerError(res, error);
