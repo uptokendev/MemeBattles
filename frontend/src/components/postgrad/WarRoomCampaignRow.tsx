@@ -314,6 +314,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <ContinuousMarketChartPanel
                 campaignAddress={campaign.campaign}
                 tokenAddress={campaign.token}
+                creatorAddress={(campaign as any).creator || (campaign as any).creatorAddress}
                 chainId={rowChainId}
                 compact
                 className="flex min-h-0 w-full flex-1 flex-col"

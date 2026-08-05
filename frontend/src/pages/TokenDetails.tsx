@@ -2980,6 +2980,7 @@ const bnbUsd = useMemo(() => {
                   marketCandles={unifiedMarket.candles}
                   marketState={unifiedMarket.state}
                   graduationMarker={unifiedMarket.graduationMarker}
+                  creatorAddress={campaign?.creator}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}
