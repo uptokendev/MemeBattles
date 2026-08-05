@@ -21,6 +21,12 @@ const LOCKER_ABI = [
 const POOL_ABI = [
   "function claimable0(address account) view returns (uint256)",
   "function claimable1(address account) view returns (uint256)",
+  "function claimFees() returns (uint256 amount0, uint256 amount1)",
+  "function index0() view returns (uint256)",
+  "function index1() view returns (uint256)",
+  "function supplyIndex0(address account) view returns (uint256)",
+  "function supplyIndex1(address account) view returns (uint256)",
+  "function balanceOf(address account) view returns (uint256)",
 ];
 
 function wrap(
@@ -117,6 +123,67 @@ async function loadGraduatedRows(chainId: number, limit: number) {
   }
 }
 
+/**
+ * Minimal Topaz pool fee accrual often leaves claimable0/1 at 0 while claimFees()
+ * still returns the pending LP fee amounts when called by the LP holder (locker).
+ */
+async function readUnharvestedPoolFees(
+  poolContract: ethers.Contract,
+  lockerAddress: string,
+  provider: ethers.Provider,
+): Promise<{ token0Raw: bigint; token1Raw: bigint; source: string }> {
+  // 1) Authoritative for harvest path: staticcall claimFees() from locker.
+  try {
+    const data = poolContract.interface.encodeFunctionData("claimFees");
+    const ret = await provider.call({ to: await poolContract.getAddress(), from: lockerAddress, data });
+    const decoded = poolContract.interface.decodeFunctionResult("claimFees", ret);
+    const a0 = BigInt(decoded[0] ?? decoded.amount0 ?? 0);
+    const a1 = BigInt(decoded[1] ?? decoded.amount1 ?? 0);
+    if (a0 > 0n || a1 > 0n) {
+      return { token0Raw: a0, token1Raw: a1, source: "claimFees_staticcall" };
+    }
+    // Zero can be real — still prefer this source when call succeeds.
+    const view0 = await poolContract.claimable0(lockerAddress).catch(() => 0n);
+    const view1 = await poolContract.claimable1(lockerAddress).catch(() => 0n);
+    if (BigInt(view0) > 0n || BigInt(view1) > 0n) {
+      return { token0Raw: BigInt(view0), token1Raw: BigInt(view1), source: "claimable_view" };
+    }
+    return { token0Raw: a0, token1Raw: a1, source: "claimFees_staticcall" };
+  } catch {
+    // fall through
+  }
+
+  // 2) Solidly index math: (index - supplyIndex) * balance / 1e18
+  try {
+    const [index0, index1, supply0, supply1, balance] = await Promise.all([
+      poolContract.index0(),
+      poolContract.index1(),
+      poolContract.supplyIndex0(lockerAddress),
+      poolContract.supplyIndex1(lockerAddress),
+      poolContract.balanceOf(lockerAddress),
+    ]);
+    const bal = BigInt(balance);
+    const a0 = ((BigInt(index0) - BigInt(supply0)) * bal) / 10n ** 18n;
+    const a1 = ((BigInt(index1) - BigInt(supply1)) * bal) / 10n ** 18n;
+    if (a0 > 0n || a1 > 0n) {
+      return { token0Raw: a0 < 0n ? 0n : a0, token1Raw: a1 < 0n ? 0n : a1, source: "index_math" };
+    }
+  } catch {
+    // fall through
+  }
+
+  // 3) claimable views (works on mocks / some deployments)
+  try {
+    const [view0, view1] = await Promise.all([
+      poolContract.claimable0(lockerAddress),
+      poolContract.claimable1(lockerAddress),
+    ]);
+    return { token0Raw: BigInt(view0), token1Raw: BigInt(view1), source: "claimable_view" };
+  } catch {
+    return { token0Raw: 0n, token1Raw: 0n, source: "unavailable" };
+  }
+}
+
 async function readPoolFees(input: {
   provider: ethers.Provider;
   lockerAddress: string;
@@ -143,9 +210,11 @@ async function readPoolFees(input: {
     toAddr(info.creatorFeeRecipient || info[2]) ||
     creator;
 
+  // Minimal Topaz (Solidly-style): claimable0/1 views can return 0 even when fees
+  // are pending. Prefer staticcall claimFees() as the locker, then index math.
+  const unharvested = await readUnharvestedPoolFees(poolContract, input.lockerAddress, input.provider);
+
   const [
-    claimable0,
-    claimable1,
     creatorPaid0,
     creatorPaid1,
     protocolRouted0,
@@ -157,8 +226,6 @@ async function readPoolFees(input: {
     pendingProtocol1,
     pendingProtocolNative,
   ] = await Promise.all([
-    poolContract.claimable0(input.lockerAddress).catch(() => 0n),
-    poolContract.claimable1(input.lockerAddress).catch(() => 0n),
     locker.cumulativeCreatorPaid(input.pairAddress, token0).catch(() => 0n),
     locker.cumulativeCreatorPaid(input.pairAddress, token1).catch(() => 0n),
     locker.cumulativeProtocolRouted(input.pairAddress, token0).catch(() => 0n),
@@ -173,8 +240,8 @@ async function readPoolFees(input: {
 
   const creatorFeeBps = Number(info.creatorFeeBps ?? info[7] ?? 8000);
   const protocolFeeBps = Number(info.protocolFeeBps ?? info[8] ?? 2000);
-  const c0 = BigInt(claimable0);
-  const c1 = BigInt(claimable1);
+  const c0 = unharvested.token0Raw;
+  const c1 = unharvested.token1Raw;
 
   return {
     registered: true,
@@ -192,10 +259,18 @@ async function readPoolFees(input: {
       token1Raw: c1.toString(),
       token0: weiToDecimal(c0),
       token1: weiToDecimal(c1),
+      source: unharvested.source,
       creatorShareToken0: weiToDecimal((c0 * BigInt(creatorFeeBps)) / 10000n),
       creatorShareToken1: weiToDecimal((c1 * BigInt(creatorFeeBps)) / 10000n),
       protocolShareToken0: weiToDecimal((c0 * BigInt(protocolFeeBps)) / 10000n),
       protocolShareToken1: weiToDecimal((c1 * BigInt(protocolFeeBps)) / 10000n),
+      // USD-ish helpers left to UI; raw is authoritative.
+      note:
+        unharvested.source === "claimFees_staticcall"
+          ? "Unharvested from eth_call claimFees() as locker (claimable0/1 views are unreliable on Minimal Topaz)."
+          : unharvested.source === "index_math"
+            ? "Unharvested estimated from (index - supplyIndex) * lpBalance / 1e18."
+            : "Unharvested from claimable0/1 views.",
     },
     harvestedLifetime: {
       creatorToken0: weiToDecimal(creatorPaid0),
@@ -326,10 +401,10 @@ export function registerLpFeesRoutes(app: express.Application) {
           split: { creatorBps: 8000, protocolBps: 2000 },
           notes: [
             "Served by Railway indexer (token/market authority), not the frontend API.",
-            "DEX LP fees accrue on the Topaz pool as claimable0/1 for the locker.",
-            "harvest(pool) on PermanentLpLocker splits 80% creator / 20% protocol.",
-            "Unharvested = still on pool. Harvested lifetime = already paid/routed.",
-            "Minimal Topaz testnet: locker checks pool.factory() == topazFactory; no LaunchFactory whitelist required.",
+            "Unharvested fees use eth_call claimFees() as the locker (Minimal Topaz claimable0/1 views often stay 0).",
+            "harvest(pool) on PermanentLpLocker calls claimFees then splits 80% creator / 20% protocol.",
+            "Harvested lifetime = cumulativeCreatorPaid / cumulativeProtocolRouted after successful harvests.",
+            "Tiny testnet volume may show only ~1e-4 WBNB fee (1% of a small swap) until more DEX volume accrues.",
           ],
           items,
           updatedAt: new Date().toISOString(),
