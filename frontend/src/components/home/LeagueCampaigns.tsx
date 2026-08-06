@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { apiFetch } from "@/lib/apiBase";
 
 type Period = "weekly" | "monthly" | "all_time";
 
@@ -101,9 +102,9 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
       try {
         setLoading(true);
         const [a, b, c] = await Promise.all([
-          fetch(`/api/league?${qs}&category=straight_up`).then((r) => r.json()),
-          fetch(`/api/league?${qs}&category=fastest_graduation`).then((r) => r.json()),
-          fetch(`/api/league?${qs}&category=largest_buy`).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=straight_up`, { cache: "no-store" }).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=fastest_graduation`, { cache: "no-store" }).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=largest_buy`, { cache: "no-store" }).then((r) => r.json()),
         ]);
 
         if (cancelled) return;

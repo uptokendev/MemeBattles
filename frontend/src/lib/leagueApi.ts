@@ -9,6 +9,16 @@ import {
 } from "@/lib/leagues";
 import { fetchOnChainLeagueSummary } from "@/lib/onChainLeagueSummary";
 import { type SupportedChainId } from "@/lib/chainConfig";
+import { apiFetch } from "@/lib/apiBase";
+
+/** Map UI league keys → indexer /api/league?category=… */
+const API_CATEGORY_BY_LEAGUE: Partial<Record<LeagueKey, string>> = {
+  perfect_run: "straight_up",
+  fastest_finish: "fastest_graduation",
+  biggest_hit: "largest_buy",
+};
+
+const ONCHAIN_FALLBACK_TIMEOUT_MS = 2500;
 
 export type LeagueStatus = "loading" | "ready" | "empty" | "pending" | "error" | "claimable" | "finalized" | "expired" | "rolled_over";
 
@@ -432,7 +442,7 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
 async function tryLoadFutureSummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions) {
   const params = new URLSearchParams({ chain, chainId: String(chainId), period, epochOffset: String(epochOffset) });
   try {
-    const response = await fetch(`/api/league/summary?${params.toString()}`);
+    const response = await apiFetch(`/api/league/summary?${params.toString()}`, { cache: "no-store" });
     if (!response.ok) return undefined;
     const payload = await response.json();
     return normalizeSummaryPayload(payload, chain, period, epochOffset);
@@ -445,17 +455,37 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
   const results = await Promise.all(
     LEAGUES.map(async (league) => {
       const effectivePeriod = league.supports.includes(period) ? period : league.supports[0];
+      const apiCategory = API_CATEGORY_BY_LEAGUE[league.key];
+
+      // Leagues without an indexer category stay empty until summary API exists —
+      // do not hit /api/league with unknown keys (returns empty and used to force on-chain).
+      if (!apiCategory) {
+        return [
+          league.key,
+          {
+            items: [],
+            warning:
+              league.key === "recruiter_league"
+                ? "Recruiter league feed is not wired to this indexer category yet."
+                : "Standings for this league are not available from the live indexer yet.",
+          } satisfies LegacyLeagueResponse,
+        ] as const;
+      }
+
       const params = new URLSearchParams({
         chainId: String(chainId),
         period: effectivePeriod,
         epochOffset: String(effectivePeriod === period ? epochOffset : 0),
         limit: String(getLimit(league, effectivePeriod)),
-        category: league.key,
+        category: apiCategory,
       });
 
       try {
-        const response = await fetch(`/api/league?${params.toString()}`);
+        const response = await apiFetch(`/api/league?${params.toString()}`, { cache: "no-store" });
         const json = (await response.json()) as LegacyLeagueResponse;
+        if (!response.ok) {
+          return [league.key, { items: [], warning: "League feed unavailable." } satisfies LegacyLeagueResponse] as const;
+        }
         return [league.key, json] as const;
       } catch {
         return [league.key, { items: [], warning: "League feed unavailable." } satisfies LegacyLeagueResponse] as const;
@@ -496,15 +526,41 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
   };
 }
 
+async function fetchOnChainLeagueSummaryBudgeted(chainId: SupportedChainId, period: LeaguePeriod) {
+  try {
+    return await Promise.race([
+      fetchOnChainLeagueSummary(chainId, period),
+      new Promise<null>((resolve) => {
+        window.setTimeout(() => resolve(null), ONCHAIN_FALLBACK_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+function summaryNeedsOnChainFallback(summary: LeagueSummaryResponse) {
+  const indexedLeagues = summary.leagues.filter((card) => API_CATEGORY_BY_LEAGUE[card.key]);
+  const hasIndexedRows = indexedLeagues.some((card) => Array.isArray(card.rows) && card.rows.length > 0);
+  // If any real indexer standings arrived, skip the multi-campaign log scan.
+  if (hasIndexedRows) return false;
+  // Only scan chain when prize is also missing (otherwise UI can show empty cards fast).
+  return !prizeHasValue(summary.prize);
+}
+
 export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
   const futureSummary = await tryLoadFutureSummary(options);
   if (futureSummary) {
-    if (options.chain === "solana") return futureSummary;
-    const onChain = await fetchOnChainLeagueSummary(options.chainId as SupportedChainId, options.period).catch(() => null);
+    // Prefer indexer/summary payload. On-chain log scan is last-resort only (was always on = multi-second page).
+    if (options.chain === "solana" || !summaryNeedsOnChainFallback(futureSummary)) return futureSummary;
+    const onChain = await fetchOnChainLeagueSummaryBudgeted(options.chainId as SupportedChainId, options.period);
     return mergeOnChainLeagueFallback(futureSummary, onChain);
   }
   if (options.chain === "solana") return solanaPendingSummary(options.chain, options.period, options.epochOffset);
+
   const legacySummary = await loadLegacySummary(options);
-  const onChain = await fetchOnChainLeagueSummary(options.chainId as SupportedChainId, options.period).catch(() => null);
+  if (!summaryNeedsOnChainFallback(legacySummary)) return legacySummary;
+
+  const onChain = await fetchOnChainLeagueSummaryBudgeted(options.chainId as SupportedChainId, options.period);
   return mergeOnChainLeagueFallback(legacySummary, onChain);
 }

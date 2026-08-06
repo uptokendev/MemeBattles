@@ -2283,8 +2283,17 @@ app.get("/api/league", wrap(async (req, res) => {
   if (category === "straight_up") extra.push("coalesce(s.sells_count,0) = 0");
   const extraWhere = extra.length ? `and ${extra.join(" and ")}` : "";
 
+  // Scope trade stats to graduated campaigns in-period only (was full-table group by).
   const r = await pool.query(
-    `with stats as (
+    `with graduated as (
+       select c.chain_id, c.campaign_address
+         from public.campaigns c
+        where c.chain_id = $1
+          and c.created_at_chain is not null
+          and c.graduated_at_chain is not null
+          and ${periodFilterCampaign}
+     ),
+     stats as (
        select
          t.chain_id,
          t.campaign_address,
@@ -2292,7 +2301,9 @@ app.get("/api/league", wrap(async (req, res) => {
          sum(case when t.side='sell' then 1 else 0 end) as sells_count,
          sum(case when t.side='buy' then (t.bnb_amount_raw::numeric) else 0 end) as buy_volume_raw
        from public.curve_trades t
-       where t.chain_id=$1
+       inner join graduated g
+         on g.chain_id = t.chain_id and g.campaign_address = t.campaign_address
+       where t.chain_id = $1
        group by t.chain_id, t.campaign_address
      )
      select

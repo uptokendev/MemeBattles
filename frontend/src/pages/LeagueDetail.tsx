@@ -291,11 +291,22 @@ useEffect(() => {
         setLoading(true);
         const effectivePeriod: Period = def.supports.includes(period) ? period : def.supports[0];
         const limit = getLimit(def, effectivePeriod);
-        const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(effectivePeriod)}&epochOffset=${encodeURIComponent(
-          String(epochOffset)
-        )}&limit=${encodeURIComponent(String(limit))}&category=${encodeURIComponent(def.key)}`;
+        const categoryMap: Record<string, string> = {
+          perfect_run: "straight_up",
+          fastest_finish: "fastest_graduation",
+          biggest_hit: "largest_buy",
+        };
+        const category = categoryMap[String(def.key)] || String(def.key);
+        const params = new URLSearchParams({
+          chainId: String(activeChainId),
+          period: effectivePeriod,
+          epochOffset: String(epochOffset),
+          limit: String(limit),
+          category,
+        });
 
-        const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<unknown>;
+        const { apiFetch } = await import("@/lib/apiBase");
+        const r = (await apiFetch(`/api/league?${params.toString()}`, { cache: "no-store" }).then((x) => x.json())) as LeagueResponse<unknown>;
         const apiItems = Array.isArray(r?.items) ? r.items : [];
         let nextItems = apiItems;
         let nextPrize = r?.prize;
@@ -303,7 +314,9 @@ useEffect(() => {
         let nextEpoch = r?.epoch;
         let nextStats = r?.stats;
 
-        if (!apiItems.length || !rawHasValue(r?.prize?.potRaw ?? r?.prize?.totalLeagueFeeRaw)) {
+        // Soft summary fallback only when this league maps to the indexer and returned nothing.
+        // Avoid always calling loadLeagueSummary (it used to trigger a multi-second on-chain scan).
+        if (categoryMap[String(def.key)] && !apiItems.length) {
           const bnbChainId = activeChainId === 56 ? 56 : 97;
           const fallback = await loadLeagueSummary({ chain: "bnb", chainId: bnbChainId, period: effectivePeriod, epochOffset }).catch(() => null);
           const fallbackCard = fallback?.leagues.find((card) => card.key === def.key);
