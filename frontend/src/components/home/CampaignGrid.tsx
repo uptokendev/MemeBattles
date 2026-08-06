@@ -11,6 +11,7 @@ import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { getBnbCampaignFeedChainIds } from "@/lib/feedChainConfig";
 
 export type FeedTabKey = "drafts" | "trending" | "new" | "ending" | "dex";
 
@@ -160,7 +161,7 @@ async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<Ca
   return { items, nextCursor: page.nextCursor, pageSize: limit, updatedAt: new Date().toISOString(), source: items.length ? "onchain-factory-fallback" : "onchain-empty" };
 }
 
-async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+async function fetchCampaignFeedForChain(params: Record<string, any>): Promise<CampaignFeedResponse> {
   const qs = buildQueryString(params);
   try {
     const r = await apiFetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
@@ -186,6 +187,62 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
     console.warn("[CampaignGrid] realtime campaign feed failed; using on-chain factory fallback", error);
     return await fetchOnChainCampaignFeed(params);
   }
+}
+
+/** For BNB UI, merge testnet (97) + mainnet (56) so feed is not empty when default chain drifts. */
+async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+  const selected = Number(params.chainId || 97);
+  const chainIds = getBnbCampaignFeedChainIds(selected);
+  const limit = Number(params.limit || 24);
+
+  if (chainIds.length <= 1) {
+    return fetchCampaignFeedForChain(params);
+  }
+
+  const pages = await Promise.all(
+    chainIds.map((chainId) =>
+      fetchCampaignFeedForChain({
+        ...params,
+        chainId,
+        // Always allow testnet rows when dual-fetching BNB.
+        includeTestnet: chainId === 97 ? "true" : params.includeTestnet,
+        testnet: chainId === 97 ? "true" : params.testnet,
+        includeDrafts: chainId === 97 ? "true" : params.includeDrafts,
+      }).catch((error) => {
+        console.warn(`[CampaignGrid] feed failed for chain ${chainId}`, error);
+        return { items: [], nextCursor: null, pageSize: limit, source: "error" } as CampaignFeedResponse;
+      }),
+    ),
+  );
+
+  let merged: CampaignFeedItemApi[] = [];
+  for (const page of pages) {
+    merged = mergeCampaignItems(merged, page.items || []);
+  }
+
+  // Stable-ish order: newest first when sort is default/new.
+  const sort = String(params.sort || "default");
+  if (sort === "default" || sort === "created_desc" || params.tab === "new") {
+    merged = merged.slice().sort((a, b) => {
+      const ta = Date.parse(String(a.createdAtChain || 0)) || 0;
+      const tb = Date.parse(String(b.createdAtChain || 0)) || 0;
+      return tb - ta;
+    });
+  } else if (sort === "mcap_desc" || sort === "mcap_asc") {
+    merged = merged.slice().sort((a, b) => {
+      const ma = Number(a.marketcapBnb || 0);
+      const mb = Number(b.marketcapBnb || 0);
+      return sort === "mcap_desc" ? mb - ma : ma - mb;
+    });
+  }
+
+  return {
+    items: merged.slice(0, limit),
+    nextCursor: pages.some((p) => p.nextCursor != null) ? limit : null,
+    pageSize: limit,
+    updatedAt: new Date().toISOString(),
+    source: "multi-chain-bnb",
+  };
 }
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {

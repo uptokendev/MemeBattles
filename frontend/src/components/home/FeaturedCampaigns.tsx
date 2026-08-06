@@ -207,6 +207,7 @@ function buildFeedQuery(chainId: number, refetchNonce: number, path: "campaigns"
     params.set("sort", "activity");
   }
 
+  // Always pull testnet inventory for chain 97 (and when flag on).
   if (chainId === 97 || isTestnetCampaignsEnabled()) {
     params.set("includeTestnet", "true");
     params.set("testnet", "true");
@@ -215,6 +216,24 @@ function buildFeedQuery(chainId: number, refetchNonce: number, path: "campaigns"
   }
 
   return params.toString();
+}
+
+async function fetchCampaignItemsMultiChain(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
+  const { getBnbCampaignFeedChainIds } = await import("@/lib/feedChainConfig");
+  const chainIds = getBnbCampaignFeedChainIds(chainId);
+  const pages = await Promise.all(
+    chainIds.map(async (id) => {
+      const res = await apiFetch(`/api/campaigns?${buildFeedQuery(id, refetchNonce, "campaigns")}`, {
+        cache: "no-store" as RequestCache,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) return [] as FeaturedItemApi[];
+      return getResponseItems(json)
+        .map(normalizeFeaturedItem)
+        .filter(Boolean) as FeaturedItemApi[];
+    }),
+  );
+  return mergeFeaturedItems([], pages.flat()).slice(0, 20);
 }
 
 async function fetchOnChainFeaturedItems(chainId: number): Promise<FeaturedItemApi[]> {
@@ -262,17 +281,21 @@ async function fetchOnChainFeaturedItems(chainId: number): Promise<FeaturedItemA
 }
 
 async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
-  const campaigns = await apiFetch(`/api/campaigns?${buildFeedQuery(chainId, refetchNonce, "campaigns")}`, { cache: "no-store" as RequestCache });
-  const campaignJson = await campaigns.json().catch(() => null);
-  const campaignItems = getResponseItems(campaignJson);
-  const normalizedCampaigns = campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
-  const onChain = await fetchOnChainFeaturedItems(chainId);
+  const normalizedCampaigns = await fetchCampaignItemsMultiChain(chainId, refetchNonce);
+  const onChainPrimary = await fetchOnChainFeaturedItems(chainId);
+  // Also try testnet on-chain if dual-feed and primary empty.
+  let onChain = onChainPrimary;
+  if (!onChain.length && chainId !== 97) {
+    onChain = await fetchOnChainFeaturedItems(97);
+  }
 
-  if (campaigns.ok && (normalizedCampaigns.length || onChain.length)) {
+  if (normalizedCampaigns.length || onChain.length) {
     return mergeFeaturedItems(normalizedCampaigns, onChain).slice(0, 20);
   }
 
-  const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, { cache: "no-store" as RequestCache });
+  const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId === 56 ? 97 : chainId, refetchNonce, "featured")}`, {
+    cache: "no-store" as RequestCache,
+  });
   const featuredJson = await featured.json().catch(() => null);
   const featuredItems = getResponseItems(featuredJson);
 
@@ -282,8 +305,8 @@ async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promis
 
   if (onChain.length) return onChain;
 
-  if (!campaigns.ok || !featured.ok) {
-    throw new Error(String(campaignJson?.error || featuredJson?.error || "Failed to load featured"));
+  if (!featured.ok) {
+    throw new Error(String(featuredJson?.error || "Failed to load featured"));
   }
 
   return [];

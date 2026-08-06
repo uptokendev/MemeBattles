@@ -7,8 +7,10 @@ const FEED_CHAIN_KEY = "mwz:selected_feed_chain_id";
 const FEED_CHAIN_EVENT = "memewarzone:feedChainChanged";
 
 function resolveBnbFeedChainId(): SupportedChainId {
+  // Prefer configured/dev-testnet feed chain (usually 97 for postgrad inventory).
   const configured = getCampaignFeedChainId();
-  return configured === BNB_TESTNET_CHAIN_ID ? BNB_TESTNET_CHAIN_ID : BNB_CHAIN_ID;
+  if (configured === BNB_TESTNET_CHAIN_ID || configured === BNB_CHAIN_ID) return configured;
+  return BNB_CHAIN_ID;
 }
 
 function normalizeFeedChainId(value: unknown): SupportedChainId {

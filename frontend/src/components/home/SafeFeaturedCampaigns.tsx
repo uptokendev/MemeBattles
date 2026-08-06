@@ -106,21 +106,25 @@ async function safeString(read: () => Promise<unknown>, fallback = "") {
   }
 }
 
-async function loadApiCandidates(chainId: number): Promise<FeaturedItem[]> {
+async function loadApiCandidatesForChain(chainId: number): Promise<FeaturedItem[]> {
   const query = new URLSearchParams({ chainId: String(chainId), limit: "20", sort: "activity", _r: String(Date.now()) });
   try {
     const response = await apiFetch(`/api/featured?${query.toString()}`, { cache: "no-store" });
     const json = await response.json().catch(() => null);
-    if (response.ok && Array.isArray(json?.items)) {
+    if (response.ok && Array.isArray(json?.items) && json.items.length) {
       return json.items.map((item: any) => normalizeItem(item, chainId)).filter(Boolean) as FeaturedItem[];
     }
   } catch {
     // Continue to the live campaign fallback below.
   }
 
-  query.set("status", "live");
+  query.set("status", "all");
   query.set("tab", "trending");
   query.set("sort", "default");
+  if (chainId === 97) {
+    query.set("includeTestnet", "true");
+    query.set("testnet", "true");
+  }
   try {
     const response = await apiFetch(`/api/campaigns?${query.toString()}`, { cache: "no-store" });
     const json = await response.json().catch(() => null);
@@ -132,6 +136,23 @@ async function loadApiCandidates(chainId: number): Promise<FeaturedItem[]> {
   }
 
   return [];
+}
+
+async function loadApiCandidates(chainId: number): Promise<FeaturedItem[]> {
+  const { getBnbCampaignFeedChainIds } = await import("@/lib/feedChainConfig");
+  const chainIds = getBnbCampaignFeedChainIds(chainId);
+  const pages = await Promise.all(chainIds.map((id) => loadApiCandidatesForChain(id)));
+  const seen = new Set<string>();
+  const out: FeaturedItem[] = [];
+  for (const page of pages) {
+    for (const item of page) {
+      const key = `${item.chainId}:${String(item.campaignAddress || "").toLowerCase()}`;
+      if (!item.campaignAddress || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+  }
+  return out;
 }
 
 async function loadOnChainCandidates(chainId: number): Promise<FeaturedItem[]> {

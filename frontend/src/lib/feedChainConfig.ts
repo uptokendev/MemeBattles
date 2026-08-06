@@ -1,6 +1,7 @@
 import { getActiveChainId, getDefaultChainId, isAllowedChainId, type SupportedChainId } from "@/lib/chainConfig";
 
 const BNB_TESTNET_CHAIN_ID: SupportedChainId = 97;
+const BNB_MAINNET_CHAIN_ID: SupportedChainId = 56;
 const LAST_FEATURED_CHAIN_KEY = "mwz:last_featured_chain_id";
 
 function readEnv(name: string): string {
@@ -49,8 +50,25 @@ function shouldDefaultDevFeedsToTestnet(): boolean {
   if (envFalse("VITE_ENABLE_TESTNET_FEATURED_FEED")) return false;
   if (envTrue("VITE_ENABLE_TESTNET_FEATURED_FEED")) return true;
   if (envTrue("VITE_DEVPOSTGRAD_MODE")) return true;
+  if (envTrue("VITE_POSTGRAD_MODE")) return true;
+  // Live campaign inventory is still primarily on BSC testnet (97) for postgrad.
+  // Prefer 97 unless an explicit feed/default chain env forces mainnet.
+  if (envTrue("VITE_PREFER_TESTNET_CAMPAIGN_FEED")) return true;
   if (isLikelyDevOrStagingHost()) return true;
+  // Production memewar.zone / custom domains without env still have testnet coins.
+  // Only skip this when VITE_CAMPAIGN_FEED_CHAIN_ID or VITE_DEFAULT_CHAIN_ID is set.
+  if (!readConfiguredChainId(["VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_DEFAULT_CHAIN_ID", "VITE_TARGET_CHAIN_ID"])) {
+    return true;
+  }
   return false;
+}
+
+/** EVM home feed: merge mainnet + testnet so coins are not "gone" when UI defaults to 56. */
+export function getBnbCampaignFeedChainIds(selectedChainId?: number | null): SupportedChainId[] {
+  const selected = Number(selectedChainId);
+  if (selected === 101) return [101 as SupportedChainId];
+  // Prefer testnet first (current inventory), then mainnet.
+  return [BNB_TESTNET_CHAIN_ID, BNB_MAINNET_CHAIN_ID];
 }
 
 function rememberFeaturedChain(chainId: SupportedChainId): SupportedChainId {
