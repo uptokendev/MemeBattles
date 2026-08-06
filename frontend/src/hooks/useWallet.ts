@@ -300,17 +300,17 @@ function parseChainId(value: unknown): number | undefined {
 }
 
 async function chooseAccount(provider: Eip1193Provider, accounts: string[]) {
-  const selectedAddress = normalizeHexAddress(provider.selectedAddress);
   const normalized = accounts.map(normalizeHexAddress).filter(Boolean);
-  if (selectedAddress && normalized.includes(selectedAddress)) return selectedAddress;
+  // Prefer the first account from the provided list (caller/event order).
+  if (normalized[0]) return normalized[0];
   try {
     const active = normalizeAccounts(await provider.request({ method: "eth_accounts" }));
-    if (selectedAddress && active.includes(selectedAddress)) return selectedAddress;
     if (active[0]) return active[0];
   } catch {
     // ignore
   }
-  return normalized[0] || "";
+  const selectedAddress = normalizeHexAddress(provider.selectedAddress);
+  return selectedAddress || "";
 }
 
 function clearWarRoomSessionCache() {
@@ -483,11 +483,16 @@ export function useWallet(): WalletHook {
 
     const onAccountsChanged = async (accounts: unknown) => {
       if (eip1193Ref.current !== selectedProvider || !accountRef.current) return;
-      const chosen = await chooseAccount(selectedProvider, normalizeAccounts(accounts));
+      // Trust the event list first (MetaMask puts the newly active account at [0]).
+      // chooseAccount() used to prefer provider.selectedAddress, which can lag and
+      // keep the previous wallet after a switch.
+      const fromEvent = normalizeAccounts(accounts);
+      const chosen = fromEvent[0] || (await chooseAccount(selectedProvider, fromEvent));
       setAccount((previous) => {
         if (previous && chosen && previous.toLowerCase() !== chosen.toLowerCase()) clearWarRoomSessionCache();
         return chosen;
       });
+      accountRef.current = chosen || "";
       if (!chosen) {
         setSigner(null);
         return;

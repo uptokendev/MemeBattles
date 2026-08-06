@@ -56,33 +56,48 @@ function sessionSecret() {
       "",
   ).trim();
   if (secret) return secret;
-  // Soft dual-auth: keep portal usable until ops sets a real secret.
-  // Set RECRUITER_PORTAL_REQUIRE_SECRET=1 to fail closed in production.
-  const requireSecret =
-    String(process.env.RECRUITER_PORTAL_REQUIRE_SECRET || "").trim() === "1" ||
-    String(process.env.RECRUITER_PORTAL_REQUIRE_SECRET || "").toLowerCase() === "true";
-  if (requireSecret && String(process.env.NODE_ENV || "").toLowerCase() === "production") {
-    throw new Error("RECRUITER_PORTAL_SESSION_SECRET (or SESSION_SECRET / JWT_SECRET) is required in production");
+  // No soft fallback in production — sessions must use a real secret.
+  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+    throw new Error(
+      "RECRUITER_PORTAL_SESSION_SECRET is required in production. Set it on the frontend-api Railway service.",
+    );
   }
-  console.warn(
-    "[recruiter-portal] session secret unset; using temporary fallback. Set RECRUITER_PORTAL_SESSION_SECRET on Railway.",
-  );
   return "memewarzone-local-dev-secret";
 }
 
-function signPayload(payload) {
-  return crypto.createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
+function sessionSecretOrError(res) {
+  try {
+    return sessionSecret();
+  } catch (error) {
+    json(res, 503, {
+      error: String(error?.message || error),
+      code: "RECRUITER_SESSION_SECRET_MISSING",
+      hint: "Railway → frontend-api → Variables → set RECRUITER_PORTAL_SESSION_SECRET to a long random string, then redeploy.",
+    });
+    return null;
+  }
 }
 
-function encodeSession(data) {
+function signPayload(payload, secret) {
+  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+function encodeSession(data, secret) {
   const payload = Buffer.from(JSON.stringify(data), "utf8").toString("base64url");
-  return `${payload}.${signPayload(payload)}`;
+  return `${payload}.${signPayload(payload, secret)}`;
 }
 
 function decodeSession(token) {
   const raw = String(token || "").trim();
   const [payload, sig] = raw.split(".");
-  if (!payload || !sig || signPayload(payload) !== sig) return null;
+  if (!payload || !sig) return null;
+  let secret;
+  try {
+    secret = sessionSecret();
+  } catch {
+    return null;
+  }
+  if (signPayload(payload, secret) !== sig) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!data?.recruiterId || !data?.walletAddress || !data?.exp) return null;
@@ -442,12 +457,33 @@ export async function recruiterAuthVerify(req, res) {
     await consumeNonce(walletAddress, nonce);
     const recruiter = await findRecruiterByWallet(walletAddress);
     if (!recruiter) return json(res, 403, { error: "This wallet is not an approved recruiter." });
-    const token = encodeSession({ recruiterId: Number(recruiter.id), walletAddress, exp: Date.now() + SESSION_TTL_MS });
+    const status = String(recruiter.status || "").toLowerCase();
+    if (!["active", "approved"].includes(status)) {
+      return json(res, 403, {
+        error: "Recruiter access is only available for active recruiters.",
+        code: "RECRUITER_NOT_ACTIVE",
+        status: recruiter.status || null,
+        hint: "In Postgres: UPDATE public.recruiters SET status = 'active' WHERE lower(wallet_address) = lower('<wallet>');",
+      });
+    }
+    const secret = sessionSecretOrError(res);
+    if (!secret) return;
+    const token = encodeSession(
+      { recruiterId: Number(recruiter.id), walletAddress, exp: Date.now() + SESSION_TTL_MS },
+      secret,
+    );
     setSessionCookie(req, res, token);
     return json(res, 200, { ok: true, recruiter: recruiterShape(recruiter), sessionToken: token });
   } catch (error) {
     console.error("[api/recruiter auth verify]", error);
     const message = String(error?.message || "");
+    if (/RECRUITER_PORTAL_SESSION_SECRET|session secret/i.test(message)) {
+      return json(res, 503, {
+        error: message,
+        code: "RECRUITER_SESSION_SECRET_MISSING",
+        hint: "Railway → frontend-api → Variables → set RECRUITER_PORTAL_SESSION_SECRET, redeploy.",
+      });
+    }
     if (/nonce|signature/i.test(message)) return json(res, 401, { error: message });
     if (schemaMissing(error)) return json(res, 503, { error: "Recruiter portal schema has not been applied yet." });
     return json(res, 500, { error: "Server error" });
@@ -459,7 +495,15 @@ export async function recruiterPortal(req, res) {
   try {
     const recruiter = await getSessionRecruiter(req);
     if (!recruiter) return json(res, 401, { error: "Connect your approved recruiter wallet to access the portal." });
-    if (!["active", "approved"].includes(String(recruiter.status || "").toLowerCase())) return json(res, 403, { error: "Recruiter access is only available for active recruiters." });
+    const portalStatus = String(recruiter.status || "").toLowerCase();
+    if (!["active", "approved"].includes(portalStatus)) {
+      return json(res, 403, {
+        error: "Recruiter access is only available for active recruiters.",
+        code: "RECRUITER_NOT_ACTIVE",
+        status: recruiter.status || null,
+        hint: "Set recruiters.status = 'active' for this wallet in the database.",
+      });
+    }
 
     if (req.method === "GET") {
       const q = getQuery(req);

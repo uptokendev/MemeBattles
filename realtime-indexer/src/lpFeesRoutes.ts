@@ -417,14 +417,17 @@ export function registerLpFeesRoutes(app: express.Application) {
         return;
       }
 
-      // Read-only testnet open; mainnet later can require ops key.
+      // Auth:
+      // - chain 97: open read (testnet monitoring)
+      // - any chain + ?creator=0x…: creator self-read (filtered below; no secrets)
+      // - otherwise: ops key required on non-testnet
       const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
       const provided = String(req.headers["x-ops-key"] || req.query.opsKey || "").trim();
-      if (chainId !== 97) {
-        if (!opsKey || provided !== opsKey) {
-          res.status(401).json({ ok: false, error: "Ops key required for non-testnet fee reads." });
-          return;
-        }
+      const hasOps = Boolean(opsKey && provided && provided === opsKey);
+      const isCreatorSelfRead = Boolean(creatorFilter);
+      if (chainId !== 97 && !hasOps && !isCreatorSelfRead) {
+        res.status(401).json({ ok: false, error: "Ops key required for non-testnet fee reads." });
+        return;
       }
 
       const lockerAddress = resolveLockerAddress(chainId);
