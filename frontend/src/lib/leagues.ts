@@ -145,7 +145,10 @@ export function getPayoutPolicy(period: Period, paidFieldPct = DEFAULT_PAID_FIEL
 
 export function calculatePaidPlaces(qualifiedEntrants: number, policy: LeaguePayoutPolicy) {
   const entrants = Math.max(0, Math.floor(qualifiedEntrants));
-  return Math.max(policy.minWinners, Math.floor(entrants * policy.paidFieldPct));
+  if (entrants <= 0) return 0;
+  // Never invent more paid places than actual entrants (was forcing Rank #2–#5 with 1 entrant).
+  const target = Math.max(policy.minWinners, Math.floor(entrants * policy.paidFieldPct));
+  return Math.min(entrants, target);
 }
 
 export function calculatePayoutCurve(qualifiedEntrants: number, prizePoolUsd: number, policy: LeaguePayoutPolicy) {

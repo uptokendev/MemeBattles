@@ -87,14 +87,43 @@ function rowLabel(def: LeagueDef, row: any) {
   return row?.name || row?.symbol || shortAddr(row?.campaign_address || row?.campaignAddress) || "Campaign";
 }
 
+function formatDurationSeconds(seconds?: number | null) {
+  const s = Math.max(0, Number(seconds ?? 0));
+  if (!Number.isFinite(s) || s <= 0) return "—";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
 function rowMetric(def: LeagueDef, row: any) {
-  if (def.key === "perfect_run") return row?.duration_seconds ? `${row.duration_seconds}s / ${row?.sells_count ?? 0} sells` : def.metricLabel;
-  if (def.key === "fastest_finish") return row?.duration_seconds ? `${row.duration_seconds}s` : def.metricLabel;
-  if (def.key === "biggest_hit") return row?.bnb_amount_raw ? formatBnb(rawToBnb(row.bnb_amount_raw)) : def.metricLabel;
+  if (def.key === "perfect_run") {
+    return row?.duration_seconds != null
+      ? `${formatDurationSeconds(row.duration_seconds)} · ${Number(row?.sells_count ?? 0)} sells`
+      : def.metricLabel;
+  }
+  if (def.key === "fastest_finish") {
+    return row?.duration_seconds != null ? formatDurationSeconds(row.duration_seconds) : def.metricLabel;
+  }
+  if (def.key === "biggest_hit") {
+    const buy = row?.bnb_amount_raw ? formatBnb(rawToBnb(row.bnb_amount_raw)) : null;
+    const buyer = row?.buyer_address ? shortAddr(row.buyer_address) : null;
+    if (buy && buyer) return `${buy} · ${buyer}`;
+    return buy || def.metricLabel;
+  }
   if (def.key === "top_earner") return row?.profit_raw ? formatBnb(rawToBnb(row.profit_raw)) : def.metricLabel;
-  if (def.key === "crowd_favorite") return row?.votes_count ? `${row.votes_count} votes` : def.metricLabel;
+  if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
   return def.metricLabel;
+}
+
+function tokenHref(row: any) {
+  const token = String(row?.token_address || row?.tokenAddress || "").toLowerCase();
+  const campaign = String(row?.campaign_address || row?.campaignAddress || "").toLowerCase();
+  const target = /^0x[a-f0-9]{40}$/.test(token) ? token : campaign;
+  return /^0x[a-f0-9]{40}$/.test(target) ? `/token/${target}` : null;
 }
 
 function getEpochOptions(period: Period) {
@@ -233,7 +262,12 @@ function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { le
     return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground"><div className="font-retro text-base text-foreground">{league.title} feed warning</div><p className="mt-2 max-w-2xl">{warningCopy || "This league feed returned a warning. Standings will appear when the API response is healthy."}</p>{league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}</div>;
   }
   if (!rows.length) {
-    return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground"><p className="max-w-2xl">{league.emptyStateCopy}</p>{league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}</div>;
+    return (
+      <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
+        <p className="max-w-2xl">{warningCopy || pendingCopy || league.emptyStateCopy}</p>
+        {league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}
+      </div>
+    );
   }
 
   if (league.rowType === "recruiter") {
@@ -265,14 +299,42 @@ function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { le
 
   return (
     <div className="space-y-2">
-      {rows.slice(0, 25).map((row: any, index) => (
-        <div key={`${league.key}-${row?.campaign_address ?? row?.campaignAddress ?? row?.wallet ?? index}`} className="mwz-hud-frame p-4">
+      {rows.slice(0, 25).map((row: any, index) => {
+        const rank = index + 1;
+        const href = league.rowType === "token" ? tokenHref(row) : league.rowType === "wallet" && row?.wallet ? `/profile/${row.wallet}` : null;
+        const body = (
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-retro text-sm text-foreground">#{row?.rank ?? index + 1}</span><span className="truncate font-semibold text-foreground">{rowLabel(league, row)}</span>{row?.symbol ? <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{row.symbol}</span> : null}</div><div className="mt-1 truncate text-xs text-muted-foreground">{row?.campaign_address || row?.campaignAddress || row?.wallet || "Leaderboard row"}</div></div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-retro text-sm text-foreground">#{rank}</span>
+                <span className="truncate font-semibold text-foreground">{rowLabel(league, row)}</span>
+                {row?.symbol && league.rowType === "token" ? (
+                  <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{row.symbol}</span>
+                ) : null}
+              </div>
+              <div className="mt-1 truncate text-xs text-muted-foreground">
+                {league.rowType === "wallet"
+                  ? row?.wallet || "Trader wallet"
+                  : row?.campaign_address || row?.campaignAddress || "Campaign"}
+              </div>
+            </div>
             <div className="text-sm font-semibold text-accent">{rowMetric(league, row)}</div>
           </div>
-        </div>
-      ))}
+        );
+        const key = `${league.key}-${rank}-${row?.campaign_address ?? row?.campaignAddress ?? row?.wallet ?? row?.tx_hash ?? index}`;
+        if (href) {
+          return (
+            <Link key={key} to={href} className="mwz-hud-frame block p-4 transition hover:border-accent/50 hover:bg-accent/5">
+              {body}
+            </Link>
+          );
+        }
+        return (
+          <div key={key} className="mwz-hud-frame p-4">
+            {body}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -401,7 +463,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </section>
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Price Pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "SOL pending" : rawPrizeBnb > 0 ? formatBnb(rawPrizeBnb) : formatUsd(rawGeneratedUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Solana prize feed pending." : formatUsd(rawGeneratedUsd)}</div></div>
+          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Prize pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "SOL pending" : rawPrizeBnb > 0 ? formatBnb(rawPrizeBnb) : rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "Pending"}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Solana prize feed pending." : rawPrizeBnb > 0 || rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "League fee pot is not published by the indexer yet."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div><div className="mt-2 font-retro text-xl">{period === "monthly" ? formatUsd(policy.monthlyPlayerPrizeCapUsd) : "No weekly cap"}</div><div className="mt-1 text-xs text-muted-foreground">{period === "monthly" ? (capReached ? "Monthly cap reached." : "Monthly hard cap before charity overflow.") : "Weekly pools pay without the monthly cap."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(cappedPlayerPoolUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "No BNB-derived pool shown on Solana." : ""}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : ""}</div></div>
@@ -439,7 +501,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 <div><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Standings</div><h2 className="mt-1 font-retro text-2xl text-foreground">{selectedLeague.title}</h2><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{selectedLeague.ruleSummary}</p></div>
                 <TacticalTag label={`${qualifiedEntrants} qualified`} tone="success" />
               </div>
-              <div className="mt-5">{error ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div> : loading ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">Loading league feed...</div> : <StandingsTable league={selectedLeague} rows={rows} status={selectedStatus} pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning} warningCopy={selectedCard?.warning} />}</div>
+              <div className="mt-5">{error ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div> : loading ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">Loading league feed...</div> : <StandingsTable league={selectedLeague} rows={rows} status={selectedStatus} pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning || selectedLeague.emptyStateCopy} warningCopy={selectedCard?.warning} />}</div>
             </section>
 
             <section className="grid gap-5 lg:grid-cols-2">

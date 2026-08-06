@@ -205,14 +205,76 @@ function normalizeRecruiterRow(row: any, index: number) {
   };
 }
 
+function isEvmAddress(value: unknown) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(value || "").trim());
+}
+
+function campaignKey(row: any) {
+  return String(row?.campaign_address || row?.campaignAddress || "").toLowerCase();
+}
+
+/** Enforce row shape per league so wallet/recruiter boards never show memecoins. */
 function normalizeRows(def: LeagueDef, rows: unknown[]) {
-  if (def.key === "recruiter_league") return rows.map((row, index) => normalizeRecruiterRow(row, index));
-  return rows;
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (def.rowType === "recruiter") {
+    return list
+      .map((row, index) => normalizeRecruiterRow(row, index))
+      .filter((row) => Boolean(row.wallet || row.recruiterCode || row.displayName))
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+  }
+
+  if (def.rowType === "wallet") {
+    return list
+      .map((row: any) => ({
+        ...row,
+        wallet: String(row?.wallet || row?.walletAddress || row?.buyer_address || "").trim(),
+        profit_raw: row?.profit_raw ?? row?.profitRaw ?? null,
+      }))
+      .filter((row) => isEvmAddress(row.wallet) || (row.wallet && !campaignKey(row)))
+      // Drop memecoin/campaign shaped rows that leaked into trader boards.
+      .filter((row) => !row.symbol || isEvmAddress(row.wallet))
+      .filter((row) => !campaignKey(row) || isEvmAddress(row.wallet))
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+  }
+
+  // Token leagues: keep campaign rows only; dedupe graduation boards by campaign.
+  const tokenRows = list
+    .map((row: any) => ({
+      ...row,
+      campaign_address: campaignKey(row) || null,
+      campaignAddress: campaignKey(row) || null,
+      token_address: row?.token_address || row?.tokenAddress || null,
+      name: row?.name ?? null,
+      symbol: row?.symbol ?? null,
+      logo_uri: row?.logo_uri || row?.logoUri || null,
+      duration_seconds: row?.duration_seconds != null ? Number(row.duration_seconds) : null,
+      sells_count: row?.sells_count != null ? Number(row.sells_count) : null,
+      unique_buyers: row?.unique_buyers != null ? Number(row.unique_buyers) : null,
+      bnb_amount_raw: row?.bnb_amount_raw ?? row?.bnbAmountRaw ?? null,
+      buyer_address: row?.buyer_address || row?.wallet || null,
+      votes_count: row?.votes_count != null ? Number(row.votes_count) : null,
+    }))
+    .filter((row) => isEvmAddress(row.campaign_address));
+
+  if (def.key === "perfect_run" || def.key === "fastest_finish" || def.key === "crowd_favorite") {
+    const byCampaign = new Map<string, any>();
+    for (const row of tokenRows) {
+      const key = String(row.campaign_address);
+      if (!byCampaign.has(key)) byCampaign.set(key, row);
+    }
+    return Array.from(byCampaign.values()).map((row, index) => ({ ...row, rank: index + 1 }));
+  }
+
+  // biggest_hit can list multiple buys; keep order, renumber ranks.
+  return tokenRows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
 function getStatus(rows: unknown[], warning?: string): LeagueStatus {
-  if (warning) return rows.length ? "ready" : "empty";
-  return rows.length ? "ready" : "empty";
+  if (rows.length) return "ready";
+  // Keep "empty" (not error) so pending leagues show clean empty copy, not broken-feed chrome.
+  if (warning) return "empty";
+  return "empty";
 }
 
 function leaderLabel(row: any) {
@@ -440,6 +502,10 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
 }
 
 async function tryLoadFutureSummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions) {
+  // Endpoint is not deployed on the indexer yet (404). Skip until it exists to avoid console noise.
+  if (String(import.meta.env.VITE_ENABLE_LEAGUE_SUMMARY_API || "").toLowerCase() !== "true") {
+    return undefined;
+  }
   const params = new URLSearchParams({ chain, chainId: String(chainId), period, epochOffset: String(epochOffset) });
   try {
     const response = await apiFetch(`/api/league/summary?${params.toString()}`, { cache: "no-store" });

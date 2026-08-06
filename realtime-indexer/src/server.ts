@@ -2278,8 +2278,10 @@ app.get("/api/league", wrap(async (req, res) => {
   }
 
   const requireUniqueBuyers = category === "fastest_graduation";
+  // Mainnet keeps the anti-sybil bar; testnet (97) uses a low bar so real grads appear in leagues.
+  const minUniqueBuyers = chainId === 97 ? 1 : 25;
   const extra: string[] = [];
-  if (requireUniqueBuyers) extra.push("coalesce(s.unique_buyers,0) >= 25");
+  if (requireUniqueBuyers) extra.push(`coalesce(s.unique_buyers,0) >= ${minUniqueBuyers}`);
   if (category === "straight_up") extra.push("coalesce(s.sells_count,0) = 0");
   const extraWhere = extra.length ? `and ${extra.join(" and ")}` : "";
 
