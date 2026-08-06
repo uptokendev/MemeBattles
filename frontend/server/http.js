@@ -98,3 +98,16 @@ export function normalizeAddress(value, chainId) {
   const lower = raw.toLowerCase();
   return isAddress(lower) ? lower : "";
 }
+
+/**
+ * Accept either EVM (0x…) or Solana base58 regardless of draft/campaign chain.
+ * Used for social actions (follow / arm notifications) where an EVM user may
+ * engage with a Solana draft and vice versa.
+ */
+export function normalizeWalletFlexible(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isAddress(raw)) return raw.toLowerCase();
+  if (isSolanaAddress(raw)) return raw;
+  return "";
+}

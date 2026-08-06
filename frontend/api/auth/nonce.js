@@ -1,9 +1,18 @@
 import crypto from "crypto";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, normalizeAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, normalizeAddress, json } from "../../server/http.js";
 
 function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
+}
+
+function resolveNonceAddress(rawAddress, chainId) {
+  const byChain = normalizeAddress(rawAddress, chainId);
+  if (byChain) return byChain;
+  // Cross-chain social: allow EVM address nonces even when a Solana draft chainId is sent.
+  if (isAddress(rawAddress)) return String(rawAddress).toLowerCase();
+  if (isSolanaAddress(rawAddress)) return String(rawAddress).trim();
+  return "";
 }
 
 export default async function handler(req, res) {
@@ -15,7 +24,7 @@ export default async function handler(req, res) {
     const rawAddress = String(q.address ?? "").trim();
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
-    const address = normalizeAddress(rawAddress, chainId);
+    const address = resolveNonceAddress(rawAddress, chainId);
     if (!address) return json(res, 400, { error: "Invalid address" });
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 

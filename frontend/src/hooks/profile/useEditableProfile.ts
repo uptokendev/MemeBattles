@@ -121,25 +121,42 @@ export function useEditableProfile({
       chainId: String(chainId),
       address: addr,
     });
+    // Put signature auth in form fields (not query string) — long message/sig in URL
+    // can break proxies and message equality checks.
     try {
-      const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
+      const { signWalletAction } = await import("@/lib/walletActionAuth");
+      let auth = null as null | {
+        action: string;
+        walletAddress: string;
+        chainId: number;
+        nonce: string;
+        message: string;
+        signature: string;
+        walletType?: string;
+      };
       if (isSolanaChain(chainId)) {
-        const auth = await signWalletAction({
+        auth = await signWalletAction({
           action: "upload_avatar",
           walletAddress: addr,
           chainId: Number(chainId),
           walletType: "solana",
           signMessage: async (message) => (await signSolanaMessage(message, addr)).signature,
         });
-        appendAuthToSearchParams(qs, auth);
       } else if (wallet?.signer) {
-        const auth = await signWalletAction({
+        auth = await signWalletAction({
           action: "upload_avatar",
           walletAddress: addr,
           chainId: Number(chainId),
           signer: wallet.signer,
         });
-        appendAuthToSearchParams(qs, auth);
+      }
+      if (auth) {
+        fd.append("action", auth.action);
+        fd.append("walletAddress", auth.walletAddress);
+        fd.append("nonce", auth.nonce);
+        fd.append("message", auth.message);
+        fd.append("signature", auth.signature);
+        if (auth.walletType) fd.append("walletType", auth.walletType);
       }
     } catch (signErr) {
       console.warn("[useEditableProfile] upload auth sign skipped", signErr);

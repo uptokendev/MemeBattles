@@ -49,11 +49,24 @@ function schemaMissing(error) {
 }
 
 function sessionSecret() {
-  const secret = String(process.env.RECRUITER_PORTAL_SESSION_SECRET || process.env.SESSION_SECRET || process.env.JWT_SECRET || "").trim();
+  const secret = String(
+    process.env.RECRUITER_PORTAL_SESSION_SECRET ||
+      process.env.SESSION_SECRET ||
+      process.env.JWT_SECRET ||
+      "",
+  ).trim();
   if (secret) return secret;
-  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+  // Soft dual-auth: keep portal usable until ops sets a real secret.
+  // Set RECRUITER_PORTAL_REQUIRE_SECRET=1 to fail closed in production.
+  const requireSecret =
+    String(process.env.RECRUITER_PORTAL_REQUIRE_SECRET || "").trim() === "1" ||
+    String(process.env.RECRUITER_PORTAL_REQUIRE_SECRET || "").toLowerCase() === "true";
+  if (requireSecret && String(process.env.NODE_ENV || "").toLowerCase() === "production") {
     throw new Error("RECRUITER_PORTAL_SESSION_SECRET (or SESSION_SECRET / JWT_SECRET) is required in production");
   }
+  console.warn(
+    "[recruiter-portal] session secret unset; using temporary fallback. Set RECRUITER_PORTAL_SESSION_SECRET on Railway.",
+  );
   return "memewarzone-local-dev-secret";
 }
 

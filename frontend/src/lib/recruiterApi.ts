@@ -486,7 +486,8 @@ export async function fetchRecruiterReplacements(code: string, limit = 4): Promi
 }
 
 export async function fetchSquadSummary(code: string): Promise<SquadSummary | null> {
-  const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/squad`);
+  // Indexer exposes /api/squads/:code/summary (not /api/recruiters/:code/squad).
+  const json = await getJson(`/api/squads/${encodeURIComponent(code)}/summary`);
   return json?.summary ?? json ?? null;
 }
 

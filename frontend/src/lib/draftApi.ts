@@ -429,7 +429,27 @@ async function signPrepareEngagement(input: {
   const walletAddress = normalizeWallet(input.walletAddress);
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
   const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
-  return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId: Number(bundle.draft.chainId) });
+  const draftChainId = Number(bundle.draft.chainId);
+  // EVM wallets must sign/nonce on an EVM chain id. Solana drafts often have chainId 101,
+  // which rejects 0x addresses on /api/auth/nonce — use the connected wallet chain instead.
+  const isEvmWallet = /^0x[a-f0-9]{40}$/i.test(walletAddress);
+  let chainId = draftChainId;
+  if (isEvmWallet && (draftChainId === 101 || draftChainId === 102 || !Number.isFinite(draftChainId))) {
+    try {
+      const eth = (globalThis as any)?.ethereum;
+      if (eth?.request) {
+        const hex = await eth.request({ method: "eth_chainId" });
+        const n = Number.parseInt(String(hex), 16);
+        if (Number.isFinite(n) && n > 0) chainId = n;
+      }
+    } catch {
+      /* ignore */
+    }
+    if (chainId === 101 || chainId === 102 || !Number.isFinite(chainId) || chainId <= 0) {
+      chainId = 56;
+    }
+  }
+  return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId });
 }
 
 async function postPrivateRead(url: string, auth: DraftActionAuth) {

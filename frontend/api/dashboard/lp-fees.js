@@ -47,10 +47,19 @@ async function authorize(req, res) {
   const provided = String(req.headers["x-ops-key"] || getQuery(req).opsKey || "").trim();
   if (opsKey && provided && opsKey === provided) return { mode: "ops-key" };
 
+  const q = getQuery(req);
+  const chainId = Number(q.chainId ?? 97);
+
   // Testnet convenience: chain 97 is open-read for fee monitoring (no secrets returned).
-  const chainId = Number(getQuery(req).chainId ?? 97);
   if (chainId === 97) {
     return { mode: "testnet-open" };
+  }
+
+  // Creator self-read on mainnet: Profile / Command Center pass ?creator=0x…
+  // Only return that creator's rows (no full inventory). No secrets in response.
+  const creator = toAddr(q.creator);
+  if (creator) {
+    return { mode: "creator-self", creator };
   }
 
   const admin = await requireDashboardAdmin(req, res);
@@ -260,6 +269,9 @@ export default async function handler(req, res) {
     ]);
 
     let rows = await loadGraduatedRows(chainId, limit);
+    if (auth?.mode === "creator-self" && auth.creator) {
+      rows = rows.filter((r) => String(r.creator_address || "").toLowerCase() === auth.creator);
+    }
     if (campaignFilter) {
       rows = rows.filter((r) => String(r.campaign_address || "").toLowerCase() === campaignFilter);
     }

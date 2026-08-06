@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import { ethers } from "ethers";
-import { isSolanaChain, normalizeAddress, json } from "../../server/http.js";
+import { isSolanaChain, normalizeAddress, normalizeWalletFlexible, json } from "../../server/http.js";
+
+const ENGAGEMENT_ACTIONS = new Set(["follow_draft", "comment_draft", "arm_draft_notifications"]);
+
+function resolveAuthWallet(value, chainId, action) {
+  if (ENGAGEMENT_ACTIONS.has(action)) {
+    return normalizeWalletFlexible(value) || normalizeAddress(value, chainId);
+  }
+  return normalizeAddress(value, chainId);
+}
 
 const ACTIONS = new Set([
   "create_draft",
@@ -31,10 +40,14 @@ const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvw
 const BASE58_INDEX = new Map(Array.from(BASE58_ALPHABET).map((char, index) => [char, index]));
 
 function buildDraftAuthMessage({ action, walletAddress, chainId, nonce, draftId }) {
+  const walletLine =
+    resolveAuthWallet(walletAddress, chainId, action) ||
+    normalizeAddress(walletAddress, chainId) ||
+    String(walletAddress || "").trim();
   const lines = [
     "MemeWarzone Prepare Mode",
     `Action: ${action}`,
-    `Wallet: ${normalizeAddress(walletAddress, chainId)}`,
+    `Wallet: ${walletLine}`,
     `Chain ID: ${Number(chainId)}`,
   ];
 
@@ -156,10 +169,14 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  const wallet = normalizeAddress(auth?.walletAddress || auth?.address || auth?.viewer, expectedChainId);
-  const expected = normalizeAddress(expectedWallet, expectedChainId);
+  const wallet = resolveAuthWallet(auth?.walletAddress || auth?.address || auth?.viewer, expectedChainId, action);
+  const expected = resolveAuthWallet(expectedWallet, expectedChainId, action);
   if (!wallet || !expected || wallet !== expected) {
-    json(res, 401, { error: "Connected wallet does not match the draft owner." });
+    json(res, 401, {
+      error: ENGAGEMENT_ACTIONS.has(action)
+        ? "Connected wallet does not match this request."
+        : "Connected wallet does not match the draft owner.",
+    });
     return null;
   }
 
@@ -227,11 +244,13 @@ export async function requireDraftActionAuth({
   }
 
   let signatureValid = false;
-  if (isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana") {
+  const looksEvm = /^0x[a-fA-F0-9]{40}$/.test(wallet);
+  if (!looksEvm && (isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana")) {
     signatureValid = verifySolanaSignature(expectedMessage, signature, wallet);
   } else {
     try {
-      signatureValid = normalizeAddress(ethers.verifyMessage(expectedMessage, signature), expectedChainId) === wallet;
+      const recovered = String(ethers.verifyMessage(expectedMessage, signature) || "").toLowerCase();
+      signatureValid = recovered === wallet.toLowerCase();
     } catch {
       signatureValid = false;
     }

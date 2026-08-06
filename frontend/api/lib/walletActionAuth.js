@@ -131,62 +131,77 @@ export async function requireWalletActionAuth({
     return null;
   }
 
-  if (!pool) {
-    json(res, 503, { error: "Wallet auth requires DATABASE_URL-backed nonce storage." });
-    return null;
-  }
-
-  const credentialAction = String(auth?.action || action || "").trim();
-  if (credentialAction !== action) {
-    json(res, 401, { error: "Wallet signature action does not match this request.", code: "ACTION_MISMATCH" });
-    return null;
-  }
-
-  if (auth?.chainId != null && Number(auth.chainId) !== expectedChainId) {
-    json(res, 401, { error: "Wallet chain does not match this request.", code: "CHAIN_MISMATCH" });
-    return null;
-  }
-
-  const nonce = String(auth.nonce || "").trim();
-  const signature = String(auth.signature || "").trim();
-  const message = String(auth.message || "");
-  const expectedMessage = buildWalletActionMessage({
-    action,
-    walletAddress: wallet,
-    chainId: expectedChainId,
-    nonce,
-    extraLines,
-  });
-
-  if (message !== expectedMessage) {
-    json(res, 401, { error: "Wallet signature message mismatch.", code: "MESSAGE_MISMATCH" });
-    return null;
-  }
-
-  let signatureValid = false;
-  if (isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana") {
-    signatureValid = verifySolanaSignature(expectedMessage, signature, wallet);
-  } else {
-    try {
-      signatureValid = normalizeAddress(ethers.verifyMessage(expectedMessage, signature), expectedChainId) === wallet;
-    } catch {
-      signatureValid = false;
+  // Dual-auth: signed request preferred, but never 500 the client while enforce is off.
+  const rejectOrLegacy = (code, error) => {
+    if (!enforce) {
+      console.warn(`[walletActionAuth] ${routeLabel}: ${code}; legacy open for ${wallet}`);
+      return { walletAddress: wallet, chainId: expectedChainId, legacy: true };
     }
-  }
-
-  if (!signatureValid) {
-    json(res, 401, { error: "Invalid wallet signature.", code: "INVALID_SIGNATURE" });
+    json(res, 401, { error, code });
     return null;
-  }
+  };
 
-  const consumed = await consumeNonce({ pool, chainId: expectedChainId, wallet, nonce });
-  if (!consumed) {
-    json(res, 401, {
-      error: "Wallet auth nonce invalid, expired, or already used. Please sign again.",
-      code: "NONCE_INVALID",
+  try {
+    if (!pool) {
+      if (!enforce) {
+        console.warn(`[walletActionAuth] ${routeLabel}: no pool; legacy open for ${wallet}`);
+        return { walletAddress: wallet, chainId: expectedChainId, legacy: true };
+      }
+      json(res, 503, { error: "Wallet auth requires DATABASE_URL-backed nonce storage." });
+      return null;
+    }
+
+    const credentialAction = String(auth?.action || action || "").trim();
+    if (credentialAction !== action) {
+      return rejectOrLegacy("ACTION_MISMATCH", "Wallet signature action does not match this request.");
+    }
+
+    if (auth?.chainId != null && Number(auth.chainId) !== expectedChainId) {
+      return rejectOrLegacy("CHAIN_MISMATCH", "Wallet chain does not match this request.");
+    }
+
+    const nonce = String(auth.nonce || "").trim();
+    const signature = String(auth.signature || "").trim();
+    const message = String(auth.message || "");
+    const expectedMessage = buildWalletActionMessage({
+      action,
+      walletAddress: wallet,
+      chainId: expectedChainId,
+      nonce,
+      extraLines,
     });
+
+    if (message !== expectedMessage) {
+      return rejectOrLegacy("MESSAGE_MISMATCH", "Wallet signature message mismatch.");
+    }
+
+    let signatureValid = false;
+    if (isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana") {
+      signatureValid = verifySolanaSignature(expectedMessage, signature, wallet);
+    } else {
+      try {
+        signatureValid = normalizeAddress(ethers.verifyMessage(expectedMessage, signature), expectedChainId) === wallet;
+      } catch {
+        signatureValid = false;
+      }
+    }
+
+    if (!signatureValid) {
+      return rejectOrLegacy("INVALID_SIGNATURE", "Invalid wallet signature.");
+    }
+
+    const consumed = await consumeNonce({ pool, chainId: expectedChainId, wallet, nonce });
+    if (!consumed) {
+      return rejectOrLegacy("NONCE_INVALID", "Wallet auth nonce invalid, expired, or already used. Please sign again.");
+    }
+
+    return { walletAddress: wallet, chainId: expectedChainId, legacy: false };
+  } catch (error) {
+    console.error(`[walletActionAuth] ${routeLabel} verify error`, error?.message || error);
+    if (!enforce) {
+      return { walletAddress: wallet, chainId: expectedChainId, legacy: true };
+    }
+    json(res, 500, { error: "Wallet auth verification failed.", code: "AUTH_VERIFY_ERROR" });
     return null;
   }
-
-  return { walletAddress: wallet, chainId: expectedChainId, legacy: false };
 }

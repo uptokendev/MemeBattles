@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, normalizeWalletFlexible, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { insertPrepareNotification, notifyDraftOwner } from "./prepare-notify.js";
 
@@ -154,23 +154,24 @@ export async function signedDraftFollow(req, res) {
   const draft = await getDraftAuthContext(pool, draftId);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  const wallet = normalizeAddress(
+  // Social follow: accept EVM or Solana wallet even if draft is on the other chain.
+  const wallet = normalizeWalletFlexible(
     body.walletAddress ||
       body.address ||
       body.userAddress ||
       body.followerAddress ||
       body.auth?.walletAddress,
-    draft.chainId
   );
   if (!wallet) return json(res, 400, { error: "Connect wallet to follow this draft." });
 
   if (body.auth?.signature) {
+    const authChainId = Number(body.auth?.chainId || draft.chainId);
     const authOk = await requireDraftActionAuth({
       res,
       pool,
       auth: body.auth,
       expectedWallet: wallet,
-      chainId: draft.chainId,
+      chainId: Number.isFinite(authChainId) && authChainId > 0 ? authChainId : draft.chainId,
       action: "follow_draft",
       draftId,
     });
@@ -222,15 +223,17 @@ export async function signedDraftNotificationSubscription(req, res) {
   const draft = await getDraftAuthContext(pool, draftId);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  const wallet = normalizeAddress(body.auth?.walletAddress, draft.chainId);
+  // Arm notifications: use the signer's chain + flexible wallet (EVM can arm Solana drafts).
+  const wallet = normalizeWalletFlexible(body.auth?.walletAddress || body.walletAddress || body.address);
   if (!wallet) return json(res, 400, { error: "Connect wallet to arm notifications." });
 
+  const authChainId = Number(body.auth?.chainId || draft.chainId);
   const authOk = await requireDraftActionAuth({
     res,
     pool,
     auth: body.auth,
     expectedWallet: wallet,
-    chainId: draft.chainId,
+    chainId: Number.isFinite(authChainId) && authChainId > 0 ? authChainId : draft.chainId,
     action: "arm_draft_notifications",
     draftId,
   });
