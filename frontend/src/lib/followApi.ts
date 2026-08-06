@@ -203,7 +203,7 @@ export async function followCampaign(
     userAddress: user,
     campaignAddress: campaign,
   };
-  const auth = await maybeFollowAuth("follow_campaign", user, payload.chainId || chainId || 56, signOpts, [
+  const auth = await maybeFollowAuth("follow_campaign", user, payload.chainId, signOpts, [
     `Campaign: ${campaign}`,
   ]);
   await api<{ ok: true }>(`/api/follows/campaign`, {
@@ -226,7 +226,7 @@ export async function unfollowCampaign(
     userAddress: user,
     campaignAddress: campaign,
   };
-  const auth = await maybeFollowAuth("unfollow_campaign", user, payload.chainId || chainId || 56, signOpts, [
+  const auth = await maybeFollowAuth("unfollow_campaign", user, payload.chainId, signOpts, [
     `Campaign: ${campaign}`,
   ]);
   await api<{ ok: true }>(`/api/follows/campaign`, {
