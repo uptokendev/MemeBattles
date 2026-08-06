@@ -99,7 +99,11 @@ function decodePortalToken(token: string): { walletAddress?: string; exp?: numbe
   try {
     const payload = String(token || "").split(".")[0];
     if (!payload) return null;
-    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    // Server signs with base64url (no padding). atob needs standard base64 + padding.
+    let b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4;
+    if (pad) b64 += "=".repeat(4 - pad);
+    return JSON.parse(atob(b64));
   } catch {
     return null;
   }
@@ -120,16 +124,21 @@ function getPortalSessionToken(walletAddress?: string | null): string {
   if (!expected) return "";
   try {
     const scoped = String(window.localStorage.getItem(portalTokenKey(expected)) || "").trim();
-    if (scoped && tokenMatchesWallet(scoped, expected)) return scoped;
+    if (scoped) {
+      // Prefer wallet match when decode works; still return token if decode is flaky.
+      if (tokenMatchesWallet(scoped, expected) || !decodePortalToken(scoped)) return scoped;
+    }
 
     const legacy = String(window.localStorage.getItem(PORTAL_TOKEN_KEY) || "").trim();
-    if (legacy && tokenMatchesWallet(legacy, expected)) {
+    if (legacy && (tokenMatchesWallet(legacy, expected) || !decodePortalToken(legacy))) {
       window.localStorage.setItem(portalTokenKey(expected), legacy);
       window.localStorage.removeItem(PORTAL_TOKEN_KEY);
       return legacy;
     }
 
-    window.localStorage.removeItem(portalTokenKey(expected));
+    if (scoped && !tokenMatchesWallet(scoped, expected)) {
+      window.localStorage.removeItem(portalTokenKey(expected));
+    }
     window.localStorage.removeItem(PORTAL_TOKEN_KEY);
   } catch {
     return "";
@@ -144,9 +153,11 @@ export function hasRecruiterPortalSession(walletAddress?: string | null): boolea
 function setPortalSessionToken(walletAddress: string, token: string) {
   try {
     const key = normalizeWalletKey(walletAddress);
-    if (key && token && tokenMatchesWallet(token, key)) {
-      window.localStorage.setItem(portalTokenKey(key), token);
-    }
+    const clean = String(token || "").trim();
+    if (!key || !clean) return;
+    // Always store the server token for this wallet. tokenMatchesWallet is best-effort;
+    // a base64url decode glitch must not drop a valid session (Chrome was failing open here).
+    window.localStorage.setItem(portalTokenKey(key), clean);
     window.localStorage.removeItem(PORTAL_TOKEN_KEY);
   } catch {
     // ignore storage failures

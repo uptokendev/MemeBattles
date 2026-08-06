@@ -257,14 +257,33 @@ async function findRecruiterById(recruiterId) {
   return rows[0] || null;
 }
 
+function recruiterBoundWallets(recruiter) {
+  const wallets = new Set();
+  const primary = walletForStorage(recruiter?.wallet_address);
+  const solanaMeta = walletForStorage(recruiter?.metadata?.signup?.solanaWalletAddress);
+  const bnbMeta = walletForStorage(recruiter?.metadata?.signup?.bnbWalletAddress || recruiter?.metadata?.signup?.evmWalletAddress);
+  if (primary) wallets.add(primary);
+  if (solanaMeta) wallets.add(solanaMeta);
+  if (bnbMeta) wallets.add(bnbMeta);
+  return wallets;
+}
+
+function isPortalBlockedStatus(status) {
+  const s = String(status || "").trim().toLowerCase();
+  // Only hard-block closed/suspended. Empty/active/approved/inactive can use tools after wallet proof.
+  return s === "closed" || s === "suspended";
+}
+
 async function getSessionRecruiter(req) {
   const session = decodeSession(readCookie(req, COOKIE_NAME) || readBearerToken(req));
   if (!session) return null;
   const recruiter = await findRecruiterById(Number(session.recruiterId));
   if (!recruiter) return null;
   const sessionWallet = walletForStorage(session.walletAddress);
-  const recruiterWallet = walletForStorage(recruiter.metadata?.signup?.solanaWalletAddress || recruiter.wallet_address);
-  if (recruiterWallet !== sessionWallet) return null;
+  if (!sessionWallet) return null;
+  // Match EVM login against wallet_address even when metadata has a Solana address.
+  if (!recruiterBoundWallets(recruiter).has(sessionWallet)) return null;
+  if (isPortalBlockedStatus(recruiter.status)) return null;
   return recruiter;
 }
 
@@ -457,14 +476,26 @@ export async function recruiterAuthVerify(req, res) {
     await consumeNonce(walletAddress, nonce);
     const recruiter = await findRecruiterByWallet(walletAddress);
     if (!recruiter) return json(res, 403, { error: "This wallet is not an approved recruiter." });
-    const status = String(recruiter.status || "").toLowerCase();
-    if (!["active", "approved"].includes(status)) {
+    if (isPortalBlockedStatus(recruiter.status)) {
       return json(res, 403, {
-        error: "Recruiter access is only available for active recruiters.",
-        code: "RECRUITER_NOT_ACTIVE",
+        error: "Recruiter access is blocked for this account.",
+        code: "RECRUITER_BLOCKED",
         status: recruiter.status || null,
-        hint: "In Postgres: UPDATE public.recruiters SET status = 'active' WHERE lower(wallet_address) = lower('<wallet>');",
+        hint: "This recruiter is closed or suspended. An admin must reopen the account.",
       });
+    }
+    // Wallet signature proves control — heal inactive/empty status so tools unlock.
+    const status = String(recruiter.status || "").trim().toLowerCase();
+    if (status !== "active" && status !== "approved") {
+      try {
+        await pool.query(
+          `update public.recruiters set status = 'active', updated_at = now() where id = $1 and lower(coalesce(status, '')) not in ('closed', 'suspended')`,
+          [recruiter.id],
+        );
+        recruiter.status = "active";
+      } catch (healErr) {
+        console.warn("[api/recruiter auth verify] status heal failed", healErr?.message || healErr);
+      }
     }
     const secret = sessionSecretOrError(res);
     if (!secret) return;
@@ -495,13 +526,11 @@ export async function recruiterPortal(req, res) {
   try {
     const recruiter = await getSessionRecruiter(req);
     if (!recruiter) return json(res, 401, { error: "Connect your approved recruiter wallet to access the portal." });
-    const portalStatus = String(recruiter.status || "").toLowerCase();
-    if (!["active", "approved"].includes(portalStatus)) {
+    if (isPortalBlockedStatus(recruiter.status)) {
       return json(res, 403, {
-        error: "Recruiter access is only available for active recruiters.",
-        code: "RECRUITER_NOT_ACTIVE",
+        error: "Recruiter access is blocked for this account.",
+        code: "RECRUITER_BLOCKED",
         status: recruiter.status || null,
-        hint: "Set recruiters.status = 'active' for this wallet in the database.",
       });
     }
 
