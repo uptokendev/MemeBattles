@@ -414,7 +414,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       }
       if (!wallet.signer || !wallet.account) {
         toast({ title: "Connect wallet", description: "Please connect your wallet to trade." });
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
       try {
@@ -567,7 +567,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
           title: "Connect wallet",
           description: "Please connect your wallet to trade.",
         });
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
 

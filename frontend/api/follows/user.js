@@ -46,6 +46,16 @@ export default async function handler(req, res) {
       if (!isSol && (!isAddress(follower) || !isAddress(following))) return json(res, 400, { error: "Invalid address" });
       if (follower === following) return json(res, 400, { error: "Cannot follow self" });
       if (action !== "follow" && action !== "unfollow") return json(res, 400, { error: "Invalid action" });
+      const verified = await requireWalletActionAuth({
+        res,
+        pool,
+        auth: body.auth || body,
+        expectedWallet: follower,
+        chainId,
+        action: action === "follow" ? "follow_user" : "unfollow_user",
+        routeLabel: "follows/user",
+      });
+      if (!verified) return;
 
       if (action === "follow") {
         await pool.query(

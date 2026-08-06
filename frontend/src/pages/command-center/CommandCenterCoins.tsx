@@ -134,7 +134,7 @@ export default function CommandCenterCoins() {
       if (!wallet.signer || !wallet.account) {
         toast.error("Connect wallet to claim LP fees.");
         try {
-          window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+          window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         } catch {
           // ignore
         }

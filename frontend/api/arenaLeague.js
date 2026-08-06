@@ -1,5 +1,6 @@
 import { pool } from "../server/db.js";
 import { badMethod, json } from "../server/http.js";
+import { requireAdminOrOps, isAuthEnforceArenaMutations } from "./lib/apiAuth.js";
 
 const DIVISIONS = ["bronze", "silver", "gold", "apex"];
 const STATES = ["preseason", "live", "playoffs", "completed"];

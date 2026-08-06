@@ -334,11 +334,11 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       if (detail?.chainId != null && Number(detail.chainId) !== chainId) return;
       setRefresh((value) => value + 1);
     };
-    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
-    window.addEventListener("memebattles:txConfirmed", onRefresh as EventListener);
+    window.addEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
     return () => {
-      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
-      window.removeEventListener("memebattles:txConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
     };
   }, [chainId]);
 

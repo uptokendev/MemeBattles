@@ -159,7 +159,7 @@ export function CampaignCard({
     if (!wallet.account) {
       toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
       try {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       } catch {
         // non-fatal
@@ -180,8 +180,9 @@ export function CampaignCard({
     const next = !followed;
     setFollowed(next);
     try {
-      if (next) await followCampaign(wallet.account, addr, chainIdForStorage);
-      else await unfollowCampaign(wallet.account, addr, chainIdForStorage);
+      const signOpts = { signer: wallet.signer };
+      if (next) await followCampaign(wallet.account, addr, chainIdForStorage, signOpts);
+      else await unfollowCampaign(wallet.account, addr, chainIdForStorage, signOpts);
     } catch (err: unknown) {
       setFollowed(!next);
       toast({

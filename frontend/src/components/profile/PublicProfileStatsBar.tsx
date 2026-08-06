@@ -63,6 +63,7 @@ export function PublicProfileStatsBar({ profileWallet, isOwnProfile }: PublicPro
     isOwnProfile,
     chainId,
     account,
+    signer: anyWallet?.signer,
     fetchCampaigns,
     fetchCampaignSummary,
   });

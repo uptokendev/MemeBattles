@@ -381,6 +381,13 @@ function authorizeOpsWrite(req: Request): { ok: true } | { ok: false; error: str
     return { ok: true };
   }
   const chainId = Number(req.body?.chainId ?? req.query.chainId ?? 97);
+  // Never allow server-key harvest without ops key. Open only on testnet when no harvest signer is configured.
+  const harvestKey = String(
+    process.env.HARVEST_OPS_PRIVATE_KEY || process.env.LP_FEE_HARVEST_PRIVATE_KEY || process.env.DEPLOYER_PK || "",
+  ).trim();
+  if (harvestKey) {
+    return { ok: false, status: 401, error: "Ops key required when harvest signer key is configured." };
+  }
   if (chainId === 97) return { ok: true };
   return { ok: false, status: 401, error: "Ops key required for harvest on this chain." };
 }

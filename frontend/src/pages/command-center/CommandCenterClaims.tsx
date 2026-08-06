@@ -221,7 +221,7 @@ export default function CommandCenterClaims() {
     if (!signer) {
       setMessage("Connect your BNB wallet before claiming rewards.");
       try {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       } catch {}
       return;
     }
@@ -239,7 +239,7 @@ export default function CommandCenterClaims() {
     const completed: string[] = [];
 
     try {
-      const intent = await createRewardClaimIntent({ walletAddress, chainId, rewardLedgerIds });
+      const intent = await createRewardClaimIntent({ walletAddress, chainId, rewardLedgerIds, signer });
       claimIntentId = intent.id;
 
       for (const call of intent.calls) {
@@ -256,12 +256,26 @@ export default function CommandCenterClaims() {
           }
 
           const txHash = String(tx.hash || "");
-          await recordRewardClaimTx({ walletAddress, chainId, rewardLedgerIds: [call.rewardLedgerId], claimIntentId, txHash });
+          await recordRewardClaimTx({
+            walletAddress,
+            chainId,
+            rewardLedgerIds: [call.rewardLedgerId],
+            claimIntentId,
+            txHash,
+            signer,
+          });
           completed.push(call.rewardLedgerId);
         } catch (err: any) {
           toast.dismiss(toastId);
           const reason = String(err?.shortMessage || err?.message || "Wallet claim transaction failed");
-          await recordRewardClaimFailure({ rewardLedgerIds: [call.rewardLedgerId], claimIntentId, error: reason }).catch(() => {});
+          await recordRewardClaimFailure({
+            walletAddress,
+            chainId,
+            rewardLedgerIds: [call.rewardLedgerId],
+            claimIntentId,
+            error: reason,
+            signer,
+          }).catch(() => {});
           throw err;
         }
       }

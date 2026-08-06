@@ -220,7 +220,7 @@ export function useProfileRewards({
             destinationLabel: "View Cabinet",
             destinationPath: `/profile/${account}`,
             destinationHash: "league-cabinet",
-            destinationFocusEvent: "memebattles:focus-league-cabinet",
+            destinationFocusEvent: "memewarzone:focus-league-cabinet",
           },
         };
 

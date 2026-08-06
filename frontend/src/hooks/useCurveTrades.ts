@@ -458,8 +458,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       void pullSnapshot();
     };
 
-    window.addEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
-    return () => window.removeEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
+    return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
   }, [canLoadTrades, campaignAddress, applySnapshot, pullSnapshot]);
 
   const ably = useAblyTokenChannel({ enabled: canLoadTrades, chainId, campaignAddress });

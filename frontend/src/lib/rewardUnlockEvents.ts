@@ -1,9 +1,9 @@
 import type { RewardItem } from "@/lib/rewardsApi";
 
-export const REWARD_UNLOCKING_EVENT = "memebattles:reward-unlocking";
-export const REWARD_RECORDED_EVENT = "memebattles:reward-recorded";
-export const LEAGUE_CLAIM_UNLOCKING_EVENT = "memebattles:league-claim-unlocking";
-export const LEAGUE_CLAIM_RECORDED_EVENT = "memebattles:league-claim-recorded";
+export const REWARD_UNLOCKING_EVENT = "memewarzone:reward-unlocking";
+export const REWARD_RECORDED_EVENT = "memewarzone:reward-recorded";
+export const LEAGUE_CLAIM_UNLOCKING_EVENT = "memewarzone:league-claim-unlocking";
+export const LEAGUE_CLAIM_RECORDED_EVENT = "memewarzone:league-claim-recorded";
 
 export type RewardUnlockSource =
   | "league"

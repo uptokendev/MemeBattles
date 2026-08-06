@@ -248,6 +248,32 @@ export default function DraftPromotionSetup() {
       address: draft.creatorWallet,
       draftId: draft.id,
     });
+    try {
+      const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
+      if (isSolanaDraft) {
+        const { signSolanaMessage } = await import("@/lib/solanaWallet");
+        const auth = await signWalletAction({
+          action: "upload_logo",
+          walletAddress: draft.creatorWallet,
+          chainId: Number(draft.chainId),
+          walletType: "solana",
+          extraLines: [`Draft ID: ${draft.id}`],
+          signMessage: async (message) => (await signSolanaMessage(message, draft.creatorWallet)).signature,
+        });
+        appendAuthToSearchParams(qs, auth);
+      } else if (wallet?.signer) {
+        const auth = await signWalletAction({
+          action: "upload_logo",
+          walletAddress: draft.creatorWallet,
+          chainId: Number(draft.chainId),
+          extraLines: [`Draft ID: ${draft.id}`],
+          signer: wallet.signer,
+        });
+        appendAuthToSearchParams(qs, auth);
+      }
+    } catch (signErr) {
+      console.warn("[DraftPromotionSetup] upload auth sign skipped", signErr);
+    }
 
     const res = await apiFetch(`/api/upload?${qs.toString()}`, { method: "POST", body: fd });
     const json = await res.json().catch(() => ({}));

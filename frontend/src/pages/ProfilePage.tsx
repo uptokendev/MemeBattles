@@ -9,7 +9,7 @@ import { effectiveWalletAddress, normalizeRouteWallet, routeWalletsMatch } from 
 function openWalletModal(wallet: any) {
   try {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+      window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       return;
     }
   } catch {}

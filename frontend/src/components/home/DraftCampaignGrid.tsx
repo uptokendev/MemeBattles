@@ -144,8 +144,8 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
       if (Number.isFinite(eventChainId) && eventChainId !== Number(chainId)) return;
       setRefreshNonce((value) => value + 1);
     };
-    window.addEventListener("memebattles:scheduledLaunchReached", refresh as EventListener);
-    return () => window.removeEventListener("memebattles:scheduledLaunchReached", refresh as EventListener);
+    window.addEventListener("memewarzone:scheduledLaunchReached", refresh as EventListener);
+    return () => window.removeEventListener("memewarzone:scheduledLaunchReached", refresh as EventListener);
   }, [chainId]);
 
   useEffect(() => {

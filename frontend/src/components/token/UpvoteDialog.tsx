@@ -389,7 +389,7 @@ useEffect(() => {
         );
       }
       if (!wallet.signer) {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
       if (!wallet.signer) {
@@ -457,12 +457,12 @@ if (balanceWei != null) {
       // Nudge any UI surfaces that render vote-sorted leaderboards to refresh immediately.
       try {
         window.dispatchEvent(
-          new CustomEvent("memebattles:upvoteConfirmed", {
+          new CustomEvent("memewarzone:upvoteConfirmed", {
             detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
           })
         );
         window.dispatchEvent(
-          new CustomEvent("memebattles:txConfirmed", {
+          new CustomEvent("memewarzone:txConfirmed", {
             detail: { kind: "upvote", chainId, campaignAddress: safeLowerHex(campaignAddress), txHash: tx?.hash },
           })
         );

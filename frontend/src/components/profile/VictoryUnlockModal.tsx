@@ -110,7 +110,7 @@ export function VictoryUnlockModal() {
     setOpen(false);
     const profilePath = detail.presentation?.destinationPath ?? `/profile/${detail.recipient}`;
     const destinationHash = detail.presentation?.destinationHash ?? "league-cabinet";
-    const focusEvent = detail.presentation?.destinationFocusEvent ?? "memebattles:focus-league-cabinet";
+    const focusEvent = detail.presentation?.destinationFocusEvent ?? "memewarzone:focus-league-cabinet";
 
     if (location.pathname.toLowerCase() === profilePath.toLowerCase()) {
       navigate(`${profilePath}#${destinationHash}`, { replace: true });

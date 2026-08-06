@@ -78,7 +78,7 @@ export function ScheduledLaunchCountdown({
     if (!launched || announced.current) return;
     announced.current = true;
     window.dispatchEvent(
-      new CustomEvent("memebattles:scheduledLaunchReached", {
+      new CustomEvent("memewarzone:scheduledLaunchReached", {
         detail: { chainId, campaignAddress, launchAt: launchSeconds },
       }),
     );

@@ -158,9 +158,37 @@ async function recordRewardAction(actionType: string, body: any) {
   return result.rows?.[0] ? normalizeAction(result.rows[0]) : null;
 }
 
+function truthyEnv(name: string) {
+  return ["1", "true", "yes", "on"].includes(String(process.env[name] || "").trim().toLowerCase());
+}
+
+function requireRewardOpsAuth(req: express.Request, res: express.Response): boolean {
+  const expected = String(process.env.RANK_EVENTS_TOKEN || process.env.INTERNAL_API_TOKEN || process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
+  const enforce = truthyEnv("API_AUTH_ENFORCE_SECURITY_MUTATIONS") || truthyEnv("API_AUTH_ENFORCE_INTERNAL");
+  const header = String(req.headers.authorization || "").trim();
+  const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const provided = bearer || String(req.headers["x-rank-events-token"] || req.headers["x-ops-key"] || "").trim();
+  if (!expected) {
+    if (enforce) {
+      res.status(503).json({ ok: false, error: "Reward ops auth not configured" });
+      return false;
+    }
+    console.warn("[rewardOpsRoutes] auth unset; legacy open");
+    return true;
+  }
+  if (provided && provided === expected) return true;
+  if (!enforce) {
+    console.warn("[rewardOpsRoutes] missing auth; legacy open");
+    return true;
+  }
+  res.status(401).json({ ok: false, error: "Unauthorized" });
+  return false;
+}
+
 export function registerRewardOpsRoutes(app: express.Express) {
-  app.get("/api/security/rewards/ops", async (_req, res, next) => {
+  app.get("/api/security/rewards/ops", async (req, res, next) => {
     try {
+      if (!requireRewardOpsAuth(req, res)) return;
       const [publications, draws, alerts, actions, routing, claimVault] = await Promise.all([
         listPublications(),
         listDraws(),
@@ -177,6 +205,7 @@ export function registerRewardOpsRoutes(app: express.Express) {
 
   app.post("/api/security/rewards/publications", async (req, res, next) => {
     try {
+      if (!requireRewardOpsAuth(req, res)) return;
       const table = await firstExistingTable([
         "public.reward_publications",
         "public.reward_publication_states",
@@ -212,6 +241,7 @@ export function registerRewardOpsRoutes(app: express.Express) {
 
   app.post("/api/security/rewards/airdrops/run-draw", async (req, res, next) => {
     try {
+      if (!requireRewardOpsAuth(req, res)) return;
       const body = req.body || {};
       const epochId = toInt(body.epochId, 0);
       const program = String(body.program || "").trim();

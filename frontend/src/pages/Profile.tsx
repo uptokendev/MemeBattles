@@ -129,6 +129,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
     isOwnProfile,
     chainId,
     account,
+    signer: wallet?.signer,
     fetchCampaigns,
     fetchCampaignSummary,
   });
@@ -246,7 +247,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
   const handleConnect = async () => {
     try {
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
     } catch {}

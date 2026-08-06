@@ -344,11 +344,36 @@ const Create = () => {
     if (!formData.image || !creatorWallet) throw new Error("Missing logo or wallet");
     const chainIdForUpload = String(chainId);
     const address = isSolanaCreator ? creatorWallet : creatorWallet.toLowerCase();
-    const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
+    const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address });
+    try {
+      if (!isSolanaCreator && wallet.signer) {
+        const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
+        const auth = await signWalletAction({
+          action: "upload_logo",
+          walletAddress: address,
+          chainId: Number(chainId),
+          signer: wallet.signer,
+        });
+        appendAuthToSearchParams(qs, auth);
+      } else if (isSolanaCreator) {
+        const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
+        const { signSolanaMessage } = await import("@/lib/solanaWallet");
+        const auth = await signWalletAction({
+          action: "upload_logo",
+          walletAddress: address,
+          chainId: Number(chainId),
+          walletType: "solana",
+          signMessage: async (message) => (await signSolanaMessage(message, address)).signature,
+        });
+        appendAuthToSearchParams(qs, auth);
+      }
+    } catch (signErr) {
+      console.warn("[Create] upload auth sign skipped", signErr);
+    }
     const fd = new FormData();
     fd.append("file", formData.image);
 
-    const res = await apiFetch(`/api/upload?${qs}`, {
+    const res = await apiFetch(`/api/upload?${qs.toString()}`, {
       method: "POST",
       body: fd,
     });

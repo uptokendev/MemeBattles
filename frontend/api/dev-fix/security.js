@@ -692,7 +692,7 @@ export async function securityAuditLog(req, res) {
 }
 
 async function recordSecurityAction({ req, action, target, oldValue = "", newValue = "", reason, txHash = null }) {
-  const adminEmail = String(req.headers["x-admin-email"] || req.headers["x-user-email"] || "unknown").trim() || "unknown";
+  const adminEmail = String(req.apiAuth?.admin?.email || req.headers["x-admin-email"] || req.headers["x-user-email"] || "unknown").trim() || "unknown";
   await pool.query(
     `insert into public.security_actions (admin_email, action, target, old_value, new_value, reason, tx_hash)
      values ($1, $2, $3, $4, $5, $6, $7)`,

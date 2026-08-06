@@ -1,5 +1,7 @@
 import { pool } from "../server/db.js";
 import { badMethod, json, readJson } from "../server/http.js";
+import { requireWalletActionAuth } from "./lib/walletActionAuth.js";
+import { requireAdminOrOps, isAuthEnforceArenaMutations } from "./lib/apiAuth.js";
 
 const STATES = new Set(["open", "locked", "settling", "paid"]);
 const TRANSITIONS = { open: ["locked"], locked: ["settling"], settling: ["paid"], paid: ["open"] };
@@ -126,7 +128,7 @@ async function handleDetail(_req, res, battleId) {
 }
 
 async function handleSupport(req, res, battleId) {
-  const body = await readJson(req);
+  const body = req._arenaSupportBody || (await readJson(req));
   const sideTokenId = String(body?.sideTokenId || "").trim();
   const amountUsd = Number(body?.amountUsd || 0);
   const supporterAddress = String(body?.supporterAddress || body?.walletAddress || "").trim().toLowerCase();

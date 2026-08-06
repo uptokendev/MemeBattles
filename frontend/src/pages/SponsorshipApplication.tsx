@@ -150,7 +150,7 @@ const SponsorshipApplication = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Sponsored placements</div>
-            <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Apply for a MemeBattles sponsorship slot.</h1>
+            <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Apply for a MemeWarzone sponsorship slot.</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Submit the project details we need for review, payment verification, scheduling, and rail publishing. This public intake route feeds the sponsorship workflow described in the revision build.</p>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -145,7 +145,7 @@ export function TokenWarRoom({ chainId, campaignAddress, creatorAddress }: { cha
               <p className="text-xs text-foreground">Connect your wallet to join the War Room.</p>
               <p className="text-[11px] text-muted-foreground">Reading works without a wallet. Posting requires a one-time signature per room session.</p>
             </div>
-            <Button size="sm" variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"))}>Connect wallet</Button>
+            <Button size="sm" variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"))}>Connect wallet</Button>
           </div>
         ) : !hasSession ? (
           <div className="flex items-center justify-between gap-3">

@@ -181,8 +181,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
 
   useEffect(() => {
     const onOpenWalletModal = () => setWalletModalOpen(true);
-    window.addEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
-    return () => window.removeEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
+    window.addEventListener("memewarzone:openWalletModal", onOpenWalletModal as EventListener);
+    return () => window.removeEventListener("memewarzone:openWalletModal", onOpenWalletModal as EventListener);
   }, []);
 
   const openNotificationTarget = async (notification: { id: string; target: string }) => {

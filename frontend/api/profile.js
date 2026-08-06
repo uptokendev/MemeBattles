@@ -11,7 +11,7 @@ function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }
   const avatar = String(avatarUrl ?? "").trim().slice(0, 200);
   // address here is already normalized (raw base58 for Solana, lower 0x for EVM)
   return [
-    "MemeBattles Profile",
+    "MemeWarzone Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${chainId}`,
     `Address: ${address}`,

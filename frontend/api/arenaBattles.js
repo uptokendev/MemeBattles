@@ -2,6 +2,8 @@ import { randomBytes } from "crypto";
 
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
+import { requireWalletActionAuth } from "./lib/walletActionAuth.js";
+import { requireAdminOrOps, isAuthEnforceArenaMutations } from "./lib/apiAuth.js";
 
 const PUBLIC_LIVE = new Set(["live"]);
 const PUBLIC_QUEUE = new Set(["open_for_battle", "pending", "accepted"]);
@@ -204,6 +206,19 @@ async function handleOpen(req, res) {
   const creatorStatus = await statusFor(campaign);
   if (!creatorStatus.eligibility) return json(res, 409, { ok: false, reason: creatorStatus.unavailableReason || "unavailable", status: creatorStatus });
 
+  const creatorWallet = normalizeAddress(campaign.creator_address);
+  const verified = await requireWalletActionAuth({
+    res,
+    pool,
+    auth: body.auth || body,
+    expectedWallet: creatorWallet,
+    chainId,
+    action: "arena_open_battle",
+    routeLabel: "arena/battles/open",
+    extraLines: ["Campaign: " + normalizeAddress(campaign.campaign_address)],
+  });
+  if (!verified) return;
+
   const battle = { id: `arena-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`, chainId, state: "open_for_battle", format: "duel", startedAt: nowIso(), endsAt: plusHours(12), settlementAt: plusHours(14), featured: false, arenaLane: "open_for_battle", participants: [participant(campaign), placeholder()] };
   await pool.query(
     `insert into public.arena_battles (id, chain_id, state, format, primary_campaign_address, primary_token_address, creator_address, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis)
@@ -217,6 +232,11 @@ async function handleTransition(req, res, battleId) {
   const battle = await findBattle(battleId);
   if (!battle) return json(res, 404, { ok: false, error: "Battle not found" });
   const body = await readJson(req);
+  const admin = await requireAdminOrOps(req, res, { routeLabel: "arena/battles/transition", allowOps: true });
+  if (!admin) return;
+  if (admin.mode === "legacy-open" && isAuthEnforceArenaMutations()) {
+    return json(res, 401, { ok: false, error: "Admin or ops auth required for battle transitions.", code: "ARENA_OPS_REQUIRED" });
+  }
   const nextState = String(body?.state || "");
   if (!(TRANSITIONS[battle.state] || []).includes(nextState)) return json(res, 409, { ok: false, error: "Invalid battle transition", currentState: battle.state });
   const nextLane = nextState === "live" ? "live_battles" : PUBLIC_QUEUE.has(nextState) ? "open_for_battle" : "live_battles";

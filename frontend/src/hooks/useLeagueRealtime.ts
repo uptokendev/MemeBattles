@@ -95,7 +95,7 @@ export function useLeagueRealtime(opts: Opts) {
         announcedRef.current.add(address);
         crossed = true;
         window.dispatchEvent(
-          new CustomEvent("memebattles:scheduledLaunchReached", {
+          new CustomEvent("memewarzone:scheduledLaunchReached", {
             detail: { chainId: opts.chainId, campaignAddress: address, launchAt },
           }),
         );

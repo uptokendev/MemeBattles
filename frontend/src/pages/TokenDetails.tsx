@@ -557,7 +557,7 @@ const TokenDetails = () => {
     if (!campaignAddr) return;
     if (!wallet.account) {
       toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
-      try { window.dispatchEvent(new CustomEvent("memebattles:openWalletModal")); } catch {}
+      try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
       return;
     }
     if (followBusy) return;
@@ -565,8 +565,9 @@ const TokenDetails = () => {
     const next = !isFollowing;
     setIsFollowing(next);
     try {
-      if (next) await followCampaign(wallet.account, campaignAddr, chainIdForStorage);
-      else await unfollowCampaign(wallet.account, campaignAddr, chainIdForStorage);
+      const signOpts = { signer: wallet.signer };
+      if (next) await followCampaign(wallet.account, campaignAddr, chainIdForStorage, signOpts);
+      else await unfollowCampaign(wallet.account, campaignAddr, chainIdForStorage, signOpts);
     } catch (e: any) {
       setIsFollowing(!next);
       toast({ title: "Follow failed", description: String(e?.message ?? e ?? "Unknown error") });
@@ -1113,8 +1114,8 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
       });
     };
 
-    window.addEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
-    return () => window.removeEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
+    return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
   }, [hasValidCampaignAddress, resolvedCampaignAddress]);
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
@@ -2268,7 +2269,7 @@ const bnbUsd = useMemo(() => {
       }
       if (!wallet.signer || !wallet.account) {
         toast({ title: "Connect wallet", description: "Please connect your wallet to trade." });
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
       try {
@@ -2465,7 +2466,7 @@ const bnbUsd = useMemo(() => {
           title: "Connect wallet",
           description: "Please connect your wallet to trade.",
         });
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
 

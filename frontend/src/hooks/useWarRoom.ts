@@ -194,7 +194,7 @@ useEffect(() => {
     const trimmed = String(text ?? "").trim();
     if (!trimmed) return;
     if (!wallet.isConnected) {
-      window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+      window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       return;
     }
 

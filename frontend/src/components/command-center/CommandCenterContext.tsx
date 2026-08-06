@@ -141,6 +141,7 @@ export function CommandCenterDataProvider({
     isOwnProfile: true,
     chainId,
     account,
+    signer: wallet?.signer,
     fetchCampaigns,
     fetchCampaignSummary,
   });

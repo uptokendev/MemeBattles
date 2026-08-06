@@ -154,7 +154,7 @@ async function getEpochStats(chainId, periodNorm, epochStartIso, rangeEndIso) {
 
 function buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce }) {
   return [
-    "MemeBattles League",
+    "MemeWarzone League",
     "Action: LEAGUE_CLAIM",
     `ChainId: ${chainId}`,
     `Recipient: ${String(recipient).toLowerCase()}`,

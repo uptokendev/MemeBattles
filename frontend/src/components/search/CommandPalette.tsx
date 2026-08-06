@@ -48,7 +48,7 @@ export function CommandPalette({ open, onOpenChange, allCampaigns }: Props) {
   useEffect(() => {
     if (!open) return;
     try {
-      window.dispatchEvent(new CustomEvent("memebattles:homeSearch", { detail: String(query ?? "") }));
+      window.dispatchEvent(new CustomEvent("memewarzone:homeSearch", { detail: String(query ?? "") }));
     } catch {
       // ignore
     }

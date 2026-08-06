@@ -58,9 +58,9 @@ export function useLeagueCabinet(chainId?: number, viewedAddress?: string | null
       void loadCabinet();
     };
 
-    window.addEventListener("memebattles:league-claim-recorded", handleClaimRecorded);
+    window.addEventListener("memewarzone:league-claim-recorded", handleClaimRecorded);
     return () => {
-      window.removeEventListener("memebattles:league-claim-recorded", handleClaimRecorded);
+      window.removeEventListener("memewarzone:league-claim-recorded", handleClaimRecorded);
     };
   }, [loadCabinet]);
 

@@ -164,6 +164,24 @@ export default async function handler(req, res) {
     if (!tokenAddress) return json(res, 400, { error: "Invalid tokenAddress" });
     if (!creatorAddress) return json(res, 400, { error: "Invalid creatorAddress" });
 
+    // Dual-auth: valid internal token (service) OR creator wallet signature (legacy open until enforce).
+    const expectedInternal = getExpectedInternalToken();
+    const providedInternal = readInternalToken(req);
+    const internalAuthed = Boolean(expectedInternal && providedInternal && providedInternal === expectedInternal);
+    if (!internalAuthed) {
+      const verified = await requireWalletActionAuth({
+        res,
+        pool,
+        auth: b.auth || b,
+        expectedWallet: creatorAddress,
+        chainId,
+        action: "campaign_upsert",
+        routeLabel: "campaigns/upsert",
+        extraLines: ["Campaign: " + campaignAddress],
+      });
+      if (!verified) return;
+    }
+
     const logoUri = cleanText(b.logoURI ?? b.logoUri ?? b.logo_url, 1000) || null;
 
     await pool.query(

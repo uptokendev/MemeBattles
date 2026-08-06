@@ -157,12 +157,12 @@ export const demoDraft: CampaignDraft = {
     "Barrack Bunny is gathering recruits in Prepare Mode. Watch the draft and get ready for launch.",
   communityLinks: {
     website: "https://memewar.zone",
-    x: "https://x.com/_MemeBattles",
+    x: "https://x.com/memewarzone",
     telegram: "https://t.me/launchpad",
     discord: "https://discord.gg/launchpad",
   },
   docsLinks: {
-    litepaper: "https://docs.memebattles.gg",
+    litepaper: "https://docs.memewar.zone",
     audit: "",
     deck: "",
   },

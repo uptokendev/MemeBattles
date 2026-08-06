@@ -160,8 +160,8 @@ export function GraduatedCampaignGrid({ query }: { query: HomeQuery }) {
       if (detail?.chainId != null && Number(detail.chainId) !== chainId) return;
       setRefresh((value) => value + 1);
     };
-    window.addEventListener("memebattles:txConfirmed", onRefresh as EventListener);
-    return () => window.removeEventListener("memebattles:txConfirmed", onRefresh as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
+    return () => window.removeEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
   }, [chainId]);
 
   useEffect(() => {

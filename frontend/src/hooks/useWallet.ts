@@ -96,7 +96,7 @@ declare global {
   interface WindowEventMap {
     "eip6963:announceProvider": CustomEvent<Eip6963ProviderDetail>;
     "eip6963:requestProvider": Event;
-    "memebattles:openWalletModal": CustomEvent<void>;
+    "memewarzone:openWalletModal": CustomEvent<void>;
   }
 
   interface Window {
@@ -339,7 +339,7 @@ function clearPersistedWalletSelection() {
 }
 
 function dispatchOpenWalletModal() {
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
 }
 
 function getErrorMessage(error: unknown) {

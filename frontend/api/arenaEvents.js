@@ -1,5 +1,6 @@
 import { pool } from "../server/db.js";
 import { badMethod, json, readJson } from "../server/http.js";
+import { requireAdminOrOps, isAuthEnforceArenaMutations } from "./lib/apiAuth.js";
 
 const TRANSITIONS = { scheduled: ["deploying", "live"], deploying: ["live"], live: ["completed"], completed: [] };
 const STAGES = ["registration", "quarterfinals", "semifinals", "finals", "completed"];
@@ -92,6 +93,11 @@ async function handleList(_req, res) {
 }
 
 async function handleTransition(req, res, eventId) {
+  const admin = await requireAdminOrOps(req, res, { routeLabel: "arena/events/transition", allowOps: true });
+  if (!admin) return;
+  if (admin.mode === "legacy-open" && isAuthEnforceArenaMutations()) {
+    return json(res, 401, { ok: false, error: "Admin or ops auth required." });
+  }
   const event = await findEvent(eventId);
   if (!event) return json(res, 404, { ok: false, error: "Event not found" });
   const body = await readJson(req);

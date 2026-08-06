@@ -54,6 +54,33 @@ function resolveAblyApiKey() {
 
   return raw;
 }
+
+// --- Soft hardening: live-token mint rate limit (per IP) ---
+const LIVE_TOKEN_HITS = new Map();
+const LIVE_TOKEN_WINDOW_MS = 60 * 1000;
+const LIVE_TOKEN_MAX = Math.max(5, Number(process.env.ABLY_LIVE_TOKEN_MAX_PER_MIN || 30));
+
+function rateLimitLiveToken(req) {
+  const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown")
+    .split(",")[0]
+    .trim();
+  const now = Date.now();
+  const bucket = LIVE_TOKEN_HITS.get(ip) || [];
+  const fresh = bucket.filter((t) => now - t < LIVE_TOKEN_WINDOW_MS);
+  fresh.push(now);
+  LIVE_TOKEN_HITS.set(ip, fresh);
+  if (fresh.length > LIVE_TOKEN_MAX) return false;
+  return true;
+}
+
+function livePublishCapability() {
+  // Default remains publish for launch-party UX. Set ABLY_LIVE_SUBSCRIBE_ONLY=1 to mint subscribe-only tokens.
+  if (["1", "true", "yes", "on"].includes(String(process.env.ABLY_LIVE_SUBSCRIBE_ONLY || "").trim().toLowerCase())) {
+    return ["subscribe", "presence", "history"];
+  }
+  return ["subscribe", "publish", "presence", "history"];
+}
+
 export default async function handler(req, res) {
   applyCors(req, res);
   if (req.method === "OPTIONS") {

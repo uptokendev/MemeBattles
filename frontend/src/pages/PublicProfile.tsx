@@ -221,7 +221,7 @@ export default function PublicProfile({
     if (!viewerAccount) {
       toast.error("Connect wallet to follow");
       try {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       } catch {
         // ignore
       }
@@ -232,8 +232,9 @@ export default function PublicProfile({
     const next = !isFollowing;
     setIsFollowing(next);
     try {
-      if (next) await followUser(viewerAccount, profileWallet, 0);
-      else await unfollowUser(viewerAccount, profileWallet, 0);
+      const signOpts = { signer: wallet.signer };
+      if (next) await followUser(viewerAccount, profileWallet, 0, signOpts);
+      else await unfollowUser(viewerAccount, profileWallet, 0, signOpts);
       toast.success(next ? "Following" : "Unfollowed");
     } catch (err: any) {
       setIsFollowing(!next);

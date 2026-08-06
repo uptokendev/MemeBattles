@@ -82,7 +82,7 @@ export function useEditableProfile({
   const handleConnect = async () => {
     try {
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
     } catch {}
@@ -116,11 +116,36 @@ export function useEditableProfile({
     fd.append("file", file);
 
     const addr = normalizeAddress(account);
-    const url = `/api/upload?kind=avatar&chainId=${encodeURIComponent(
-      String(chainId)
-    )}&address=${encodeURIComponent(addr)}`;
+    const qs = new URLSearchParams({
+      kind: "avatar",
+      chainId: String(chainId),
+      address: addr,
+    });
+    try {
+      const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
+      if (isSolanaChain(chainId)) {
+        const auth = await signWalletAction({
+          action: "upload_avatar",
+          walletAddress: addr,
+          chainId: Number(chainId),
+          walletType: "solana",
+          signMessage: async (message) => (await signSolanaMessage(message, addr)).signature,
+        });
+        appendAuthToSearchParams(qs, auth);
+      } else if (wallet?.signer) {
+        const auth = await signWalletAction({
+          action: "upload_avatar",
+          walletAddress: addr,
+          chainId: Number(chainId),
+          signer: wallet.signer,
+        });
+        appendAuthToSearchParams(qs, auth);
+      }
+    } catch (signErr) {
+      console.warn("[useEditableProfile] upload auth sign skipped", signErr);
+    }
 
-    const res = await apiFetch(url, { method: "POST", body: fd });
+    const res = await apiFetch(`/api/upload?${qs.toString()}`, { method: "POST", body: fd });
     const j = await res.json().catch(() => null);
 
     if (!res.ok) throw new Error(j?.error || `Upload failed (${res.status})`);

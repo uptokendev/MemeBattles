@@ -206,7 +206,7 @@ export function LeagueCabinetCard({
       trophyTimerRef.current = window.setTimeout(() => setNewTrophyId(null), 4200);
     };
 
-    window.addEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
+    window.addEventListener("memewarzone:focus-league-cabinet", onFocusCabinet);
     window.addEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
 
     const hashTimer = window.setTimeout(() => {
@@ -214,7 +214,7 @@ export function LeagueCabinetCard({
     }, 180);
 
     return () => {
-      window.removeEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
+      window.removeEventListener("memewarzone:focus-league-cabinet", onFocusCabinet);
       window.removeEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
       window.clearTimeout(hashTimer);
       if (glowTimerRef.current) window.clearTimeout(glowTimerRef.current);

@@ -27,6 +27,8 @@ interface UseProfileFollowsArgs {
   isOwnProfile: boolean;
   chainId?: number;
   account: string | null;
+  /** Optional ethers signer for signed follow mutations */
+  signer?: any;
   fetchCampaigns: FetchCampaigns;
   fetchCampaignSummary: FetchCampaignSummary;
 }
@@ -37,6 +39,7 @@ export function useProfileFollows({
   isOwnProfile,
   chainId,
   account,
+  signer,
   fetchCampaigns,
   fetchCampaignSummary,
 }: UseProfileFollowsArgs) {
@@ -219,19 +222,20 @@ useEffect(() => {
     try {
       if (!account) throw new Error("Connect wallet");
 
+      const signOpts = signer ? { signer } : undefined;
       if (isFollowing) {
-        await unfollowUser(account, viewedAddress, chainId ?? 0);
+        await unfollowUser(account, viewedAddress, chainId ?? 0, signOpts);
         setIsFollowing(false);
         setFollowersCount((c) => Math.max(0, c - 1));
       } else {
-        await followUser(account, viewedAddress, chainId ?? 0);
+        await followUser(account, viewedAddress, chainId ?? 0, signOpts);
         setIsFollowing(true);
         setFollowersCount((c) => c + 1);
       }
     } catch (err) {
       toast.error("Failed to update follow");
     }
-  }, [account, chainId, isFollowing, isOwnProfile, viewedAddress]);
+  }, [account, chainId, isFollowing, isOwnProfile, viewedAddress, signer]);
 
   return {
     followersCount,

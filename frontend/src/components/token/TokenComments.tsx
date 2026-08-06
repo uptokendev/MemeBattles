@@ -89,7 +89,7 @@ function buildCommentMessage(args: {
 }) {
   const bodyPreview = args.body.replace(/\s+/g, " ").trim().slice(0, 180);
   return [
-    "MemeBattles Comment",
+    "MemeWarzone Comment",
     `Action: COMMENT_CREATE`,
     `ChainId: ${args.chainId}`,
     `Address: ${args.address.toLowerCase()}`,
@@ -188,7 +188,7 @@ export function TokenComments({
       if (!canPost) return;
 
       if (!wallet.account) {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
       if (!wallet.signer || !wallet.account) {
@@ -278,7 +278,7 @@ export function TokenComments({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"))}
+                      onClick={() => window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"))}
                       disabled={posting}
                     >
                       Connect wallet

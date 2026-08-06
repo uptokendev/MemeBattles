@@ -49,7 +49,12 @@ function schemaMissing(error) {
 }
 
 function sessionSecret() {
-  return String(process.env.RECRUITER_PORTAL_SESSION_SECRET || process.env.SESSION_SECRET || process.env.JWT_SECRET || "memewarzone-local-dev-secret");
+  const secret = String(process.env.RECRUITER_PORTAL_SESSION_SECRET || process.env.SESSION_SECRET || process.env.JWT_SECRET || "").trim();
+  if (secret) return secret;
+  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+    throw new Error("RECRUITER_PORTAL_SESSION_SECRET (or SESSION_SECRET / JWT_SECRET) is required in production");
+  }
+  return "memewarzone-local-dev-secret";
 }
 
 function signPayload(payload) {

@@ -17,8 +17,8 @@ const Showcase = () => {
       const q = String((e as CustomEvent<string>).detail ?? "");
       setQuery((prev) => ({ ...prev, search: q }));
     };
-    window.addEventListener("memebattles:homeSearch", onSearch);
-    return () => window.removeEventListener("memebattles:homeSearch", onSearch);
+    window.addEventListener("memewarzone:homeSearch", onSearch);
+    return () => window.removeEventListener("memewarzone:homeSearch", onSearch);
   }, []);
 
   const effectiveQuery = useMemo(() => {

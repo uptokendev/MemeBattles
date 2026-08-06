@@ -89,6 +89,32 @@ export default async function handler(req, res) {
   const address = normalizeUploadAddress(q.address, chainId);
   const draftId = String(q.draftId || "").trim();
 
+  // Dual-auth wallet proof (query fields). Enforce via API_AUTH_ENFORCE_USER_WRITES.
+  if (address) {
+    const action = kind === "logo" ? "upload_logo" : "upload_avatar";
+    const auth = {
+      action: String(q.action || action),
+      walletAddress: address,
+      chainId,
+      nonce: String(q.nonce || "").trim(),
+      message: String(q.message || ""),
+      signature: String(q.signature || "").trim(),
+      walletType: String(q.walletType || ""),
+    };
+    const verified = await requireWalletActionAuth({
+      res,
+      pool,
+      auth,
+      expectedWallet: address,
+      chainId,
+      action,
+      routeLabel: "upload",
+      extraLines: draftId ? ["Draft ID: " + draftId] : [],
+    });
+    if (!verified) return;
+  }
+
+
   const maxBytes = 5 * 1024 * 1024;
   const form = formidable({ multiples: false, maxFileSize: maxBytes, maxTotalFileSize: maxBytes });
 

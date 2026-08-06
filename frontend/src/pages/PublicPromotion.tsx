@@ -528,7 +528,7 @@ const PublicPromotion = () => {
 
   const requireWallet = () => {
     if (wallet.isConnected && wallet.account) return wallet.account;
-    window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+    window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
     toast.message("Connect your wallet to join this draft.");
     return "";
   };

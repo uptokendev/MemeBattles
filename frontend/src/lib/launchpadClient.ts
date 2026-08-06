@@ -426,7 +426,7 @@ async function legacyGasOverrides(signer: any, readProvider: ethers.AbstractProv
 function emitTxConfirmed(detail: any) {
   try {
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("memebattles:txConfirmed", { detail }));
+      window.dispatchEvent(new CustomEvent("memewarzone:txConfirmed", { detail }));
     }
   } catch {
     // non-fatal

@@ -23,7 +23,7 @@ function statusColor(kind: "green" | "yellow" | "red") {
 }
 
 export default function Status() {
-  const [token, setToken] = useState(() => localStorage.getItem("memebattles_status_token") || "");
+  const [token, setToken] = useState(() => localStorage.getItem("memewarzone_status_token") || localStorage.getItem("memebattles_status_token") || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TelemetryResponse | null>(null);
@@ -88,7 +88,7 @@ export default function Status() {
   }, [auto, token]);
 
   function saveToken() {
-    localStorage.setItem("memebattles_status_token", token);
+    localStorage.setItem("memewarzone_status_token", token);
     fetchStatus(token);
   }
 

@@ -30,7 +30,6 @@ const NETLIFY_OWNED_API_PREFIXES = [
   "/api/attribution",
   "/api/drafts",
   "/api/auth",
-  "/api/internal/rewards",
   "/api/prepare",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
@@ -38,7 +37,6 @@ const NETLIFY_OWNED_API_PREFIXES = [
   "/api/rewards/me",
   "/api/routing",
   "/api/squads",
-  "/internal/rewards",
 ];
 
 function isLoopbackHost(hostname: string): boolean {

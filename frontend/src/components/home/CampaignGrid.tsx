@@ -263,11 +263,11 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as any);
-    window.addEventListener("memebattles:txConfirmed", onRefresh as any);
+    window.addEventListener("memewarzone:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("memewarzone:txConfirmed", onRefresh as any);
     return () => {
-      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as any);
-      window.removeEventListener("memebattles:txConfirmed", onRefresh as any);
+      window.removeEventListener("memewarzone:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("memewarzone:txConfirmed", onRefresh as any);
     };
   }, [activeChainId]);
 

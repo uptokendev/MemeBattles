@@ -264,6 +264,17 @@ export async function rewardClaimIntent(req, res) {
 
   if (!ids.length || !wallet) return json(res, 400, { error: "Missing rewardLedgerIds or walletAddress" });
 
+  const verified = await requireWalletActionAuth({
+    res,
+    pool,
+    auth: body.auth || body,
+    expectedWallet: wallet,
+    chainId: chainId || Number(body.chainId) || 56,
+    action: "claim_intent",
+    routeLabel: "rewards/claim_intent",
+  });
+  if (!verified) return;
+
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -371,6 +382,17 @@ export async function rewardClaimRecord(req, res) {
   const claimError = String(body.claimError || body.error || "").trim();
 
   if (!ids.length || !wallet) return json(res, 400, { error: "Missing rewardLedgerIds or walletAddress" });
+
+  const verified = await requireWalletActionAuth({
+    res,
+    pool,
+    auth: body.auth || body,
+    expectedWallet: wallet,
+    chainId: chainId || Number(body.chainId) || 56,
+    action: "claim_record",
+    routeLabel: "rewards/claim_record",
+  });
+  if (!verified) return;
   if (!failed && !TX_RE.test(txHash)) return json(res, 400, { error: "Missing or invalid txHash" });
   if (failed && !claimError) return json(res, 400, { error: "Missing claimError for failed claim" });
 

@@ -58,6 +58,7 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
     isOwnProfile: true,
     chainId,
     account: wallet.account ?? walletAddress,
+    signer: wallet?.signer,
     fetchCampaigns,
     fetchCampaignSummary,
   });

@@ -39,19 +39,7 @@ import tokenMetadata from "./token-metadata.js";
 import topazTrades from "./topaz-trades.js";
 import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
-import { contentAiGenerateVariants } from "./content-ai.js";
-import {
-  contentPlannerCalendar,
-  contentPlannerCampaignById,
-  contentPlannerCampaigns,
-  contentPlannerPostById,
-  contentPlannerPostVariants,
-  contentPlannerPosts,
-  contentPlannerSchedulesById,
-  contentPlannerTags,
-  contentPlannerVariantById,
-  contentPlannerVariantSchedule,
-} from "./content-planner.js";
+import { withAdminOrOps, withInternalAuth } from "./lib/apiAuth.js";
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
 import {
   followedDrafts,
@@ -388,17 +376,6 @@ router.all("/token/:campaign/topaz-trades", wrap(topazTrades));
 router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
-router.all("/content-ai/generate-variants", wrap(contentAiGenerateVariants));
-router.all("/posts", wrap(contentPlannerPosts));
-router.all("/posts/:id/variants", wrap(contentPlannerPostVariants));
-router.all("/posts/:id", wrap(contentPlannerPostById));
-router.all("/variants/:variantId/schedule", wrap(contentPlannerVariantSchedule));
-router.all("/variants/:id", wrap(contentPlannerVariantById));
-router.all("/calendar", wrap(contentPlannerCalendar));
-router.all("/schedules/:id", wrap(contentPlannerSchedulesById));
-router.all("/content-campaigns/:id", wrap(contentPlannerCampaignById));
-router.all("/content-campaigns", wrap(contentPlannerCampaigns));
-router.all("/content-tags", wrap(contentPlannerTags));
 router.all(/^\/(?:arena\/ops\/health|arena\/battles(?:\/.*)?|arena\/events(?:\/.*)?|arena\/league(?:\/.*)?|arena\/war-pools(?:\/.*)?|sponsored|sponsorship-applications|war-room(?:\/.*)?)$/, wrap(postgrad));
 router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
@@ -426,12 +403,12 @@ router.all("/rewards", wrap(rewards));
 router.all("/airdrops/current", wrap(airdropCurrent));
 router.all("/airdrops/previous-winners", wrap(airdropPreviousWinners));
 router.all("/airdrops/winners", wrap(airdropWinners));
-router.all("/admin/rewards/overview", wrap(adminRewardOverview));
-router.all("/admin/rewards/batches", wrap(adminRewardBatches));
-router.all("/admin/rewards/batches/:id", wrap(adminRewardBatchById));
-router.all("/admin/rewards/ledger", wrap(adminRewardLedger));
-router.all("/admin/rewards/alerts", wrap(adminRewardAlerts));
-router.all("/admin/rewards/audit-log", wrap(adminRewardAuditLog));
+router.all("/admin/rewards/overview", wrap(withAdminOrOps(adminRewardOverview, "admin/rewards/overview")));
+router.all("/admin/rewards/batches", wrap(withAdminOrOps(adminRewardBatches, "admin/rewards/batches")));
+router.all("/admin/rewards/batches/:id", wrap(withAdminOrOps(adminRewardBatchById, "admin/rewards/batches/:id")));
+router.all("/admin/rewards/ledger", wrap(withAdminOrOps(adminRewardLedger, "admin/rewards/ledger")));
+router.all("/admin/rewards/alerts", wrap(withAdminOrOps(adminRewardAlerts, "admin/rewards/alerts")));
+router.all("/admin/rewards/audit-log", wrap(withAdminOrOps(adminRewardAuditLog, "admin/rewards/audit-log")));
 router.all("/squads", wrap(squadsLeaderboard));
 router.all("/squads/members", wrap(squadMembers));
 router.all("/squads/:code/summary", wrap(squadSummary));
@@ -456,21 +433,21 @@ router.all("/launchpad/preflight-create", wrap(launchpadPreflightCreate));
 router.all("/launchpad/preflight-buy", wrap(launchpadPreflightBuy));
 router.all("/launchpad/preflight-sell", wrap(launchpadPreflightSell));
 router.all("/security/status", wrap(securityStatus));
-router.all("/security/creators", wrap(securityCreators));
-router.all("/security/clusters", wrap(securityClusters));
-router.all("/security/manual-review", wrap(securityManualReview));
-router.all("/security/mass-deployers", wrap(securityMassDeployers));
-router.all("/security/audit-log", wrap(securityAuditLog));
-router.all("/security/recruiter-payouts", wrap(securityRecruiterPayouts));
+router.all("/security/creators", wrap(withAdminOrOps(securityCreators, "security/creators")));
+router.all("/security/clusters", wrap(withAdminOrOps(securityClusters, "security/clusters")));
+router.all("/security/manual-review", wrap(withAdminOrOps(securityManualReview, "security/manual-review")));
+router.all("/security/mass-deployers", wrap(withAdminOrOps(securityMassDeployers, "security/mass-deployers")));
+router.all("/security/audit-log", wrap(withAdminOrOps(securityAuditLog, "security/audit-log")));
+router.all("/security/recruiter-payouts", wrap(withAdminOrOps(securityRecruiterPayouts, "security/recruiter-payouts")));
 router.all("/security/creator/:wallet/profile", wrap(securityCreatorProfile));
 router.all("/security/creator/:wallet/launch-eligibility", wrap(securityCreatorLaunchEligibility));
-router.all("/security/creator/:wallet/tier", wrap(securityCreatorTier));
-router.all("/security/creator/:wallet/restrict", wrap(securityCreatorRestrict));
-router.all("/security/creator/:wallet/manual-review", wrap(securityCreatorManualReview));
-router.all("/security/cluster/:clusterId/restrict", wrap(securityClusterRestrict));
-router.all("/security/wallet/:wallet/restrict", wrap(securityWalletRestrict));
-router.all("/security/contracts/:action", wrap(securityContractAction));
-router.all("/security/solana/:action", wrap(securityContractAction));
+router.all("/security/creator/:wallet/tier", wrap(withAdminOrOps(securityCreatorTier, "security/creator/tier")));
+router.all("/security/creator/:wallet/restrict", wrap(withAdminOrOps(securityCreatorRestrict, "security/creator/restrict")));
+router.all("/security/creator/:wallet/manual-review", wrap(withAdminOrOps(securityCreatorManualReview, "security/creator/manual-review")));
+router.all("/security/cluster/:clusterId/restrict", wrap(withAdminOrOps(securityClusterRestrict, "security/cluster/restrict")));
+router.all("/security/wallet/:wallet/restrict", wrap(withAdminOrOps(securityWalletRestrict, "security/wallet/restrict")));
+router.all("/security/contracts/:action", wrap(withAdminOrOps(securityContractAction, "security/contracts")));
+router.all("/security/solana/:action", wrap(withAdminOrOps(securityContractAction, "security/contracts")));
 router.all("/recruiter-auth-nonce", wrap(recruiterAuthNonce));
 router.all("/recruiter-auth-verify", wrap(recruiterAuthVerify));
 router.all("/recruiter-portal", wrap(recruiterPortal));
@@ -479,21 +456,21 @@ router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
 router.all("/recruiter-signup", wrap(recruiterSignupSubmit));
-router.all("/internal/airdrops/calculate", wrap(internalAirdropsCalculate));
-router.all("/internal/airdrops/publish", wrap(internalAirdropsPublish));
-router.all("/internal/rewards/batches", wrap(internalRewardBatches));
-router.all("/internal/rewards/batches/:id/publish", wrap(internalRewardBatchPublish));
-router.all("/internal/rewards/batches/:id/pause", wrap(internalRewardBatchPause));
-router.all("/internal/rewards/batches/:id/close", wrap(internalRewardBatchClose));
-router.all("/internal/rewards/ops", wrap(internalRewardOps));
-router.all("/internal/rewards/publications", wrap(internalRewardPublications));
-router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
-router.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
-router.all("/internal/rewards/ops/epoch-status", wrap(internalRewardEpochStatus));
-router.all("/internal/rewards/ops/alerts", wrap(internalRewardAlerts));
-router.all("/internal/rewards/ops/admin-actions", wrap(internalRewardAdminActions));
-router.all("/internal/rewards/airdrops/draws", wrap(internalAirdropDraws));
-router.all("/internal/rewards/airdrops/epochs/:epochId/draws/run", wrap(internalAirdropDrawRun));
+router.all("/internal/airdrops/calculate", wrap(withInternalAuth(internalAirdropsCalculate, "internal/airdrops/calculate")));
+router.all("/internal/airdrops/publish", wrap(withInternalAuth(internalAirdropsPublish, "internal/airdrops/publish")));
+router.all("/internal/rewards/batches", wrap(withInternalAuth(internalRewardBatches, "internal/rewards/batches")));
+router.all("/internal/rewards/batches/:id/publish", wrap(withInternalAuth(internalRewardBatchPublish, "internal/rewards/batches/:id/publish")));
+router.all("/internal/rewards/batches/:id/pause", wrap(withInternalAuth(internalRewardBatchPause, "internal/rewards/batches/:id/pause")));
+router.all("/internal/rewards/batches/:id/close", wrap(withInternalAuth(internalRewardBatchClose, "internal/rewards/batches/:id/close")));
+router.all("/internal/rewards/ops", wrap(withInternalAuth(internalRewardOps, "internal/rewards/ops")));
+router.all("/internal/rewards/publications", wrap(withInternalAuth(internalRewardPublications, "internal/rewards/publications")));
+router.all("/internal/rewards/ops/routing", wrap(withInternalAuth(internalRewardRouting, "internal/rewards/ops/routing")));
+router.all("/internal/rewards/ops/claim-vault", wrap(withInternalAuth(internalRewardClaimVault, "internal/rewards/ops/claim-vault")));
+router.all("/internal/rewards/ops/epoch-status", wrap(withInternalAuth(internalRewardEpochStatus, "internal/rewards/ops/epoch-status")));
+router.all("/internal/rewards/ops/alerts", wrap(withInternalAuth(internalRewardAlerts, "internal/rewards/ops/alerts")));
+router.all("/internal/rewards/ops/admin-actions", wrap(withInternalAuth(internalRewardAdminActions, "internal/rewards/ops/admin-actions")));
+router.all("/internal/rewards/airdrops/draws", wrap(withInternalAuth(internalAirdropDraws, "internal/rewards/airdrops/draws")));
+router.all("/internal/rewards/airdrops/epochs/:epochId/draws/run", wrap(withInternalAuth(internalAirdropDrawRun, "internal/rewards/airdrops/epochs/:epochId/draws/run")));
 
 app.use("/api", router);
 app.use((req, res) => res.status(404).json({ error: `Unknown route: ${req.path}` }));

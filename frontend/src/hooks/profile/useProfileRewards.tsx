@@ -71,7 +71,7 @@ export function useProfileRewards({
   const handleConnect = async () => {
     try {
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
     } catch {}

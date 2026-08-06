@@ -616,7 +616,7 @@ export default async function handler(req, res) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MemeBattles Diagnostics</title>
+  <title>MemeWarzone Diagnostics</title>
   <style>
     :root{
       --bg:#0b1020;
@@ -735,7 +735,7 @@ th:nth-child(3), td:nth-child(3){ width:56%; }
   <div class="wrap">
     <header>
       <div>
-        <h1>MemeBattles Diagnostics</h1>
+        <h1>MemeWarzone Diagnostics</h1>
         <div class="sub">Readable health view for Supabase Postgres (single DB) and integrations. Token is required via <span class="mono">?token=</span>.</div>
         <div class="row">
           <span id="overall" class="pill"><span class="dot info"></span><span>Loading…</span></span>

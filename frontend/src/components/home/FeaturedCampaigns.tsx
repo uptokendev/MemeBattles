@@ -354,11 +354,11 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       if (Number.isFinite(cid) && cid !== featuredChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
-    window.addEventListener("memebattles:txConfirmed", onRefresh as EventListener);
+    window.addEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
     return () => {
-      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
-      window.removeEventListener("memebattles:txConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
     };
   }, [featuredChainId]);
 
@@ -460,13 +460,17 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   const toggleFollow = async (e: React.MouseEvent, c: FeaturedCardVM) => {
     e.stopPropagation();
     if (!c?.addr) return;
-    if (!wallet.account) { toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." }); window.dispatchEvent(new CustomEvent("memebattles:openWalletModal")); return; }
+    if (!wallet.account) { toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." }); window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); return; }
     const key = c.addr.toLowerCase();
     if (followBusyMap[key]) return;
     const nextVal = !(followedMap[key] ?? false);
     setFollowBusyMap((m) => ({ ...m, [key]: true }));
     setFollowedMap((m) => ({ ...m, [key]: nextVal }));
-    try { if (nextVal) await followCampaign(wallet.account, key, c.chainId); else await unfollowCampaign(wallet.account, key, c.chainId); }
+    try {
+      const signOpts = { signer: wallet.signer };
+      if (nextVal) await followCampaign(wallet.account, key, c.chainId, signOpts);
+      else await unfollowCampaign(wallet.account, key, c.chainId, signOpts);
+    }
     catch (error: unknown) { setFollowedMap((m) => ({ ...m, [key]: !nextVal })); toast({ title: "Follow failed", description: String((error as { message?: string })?.message ?? error ?? "Unknown error") }); }
     finally { setFollowBusyMap((m) => ({ ...m, [key]: false })); }
   };
