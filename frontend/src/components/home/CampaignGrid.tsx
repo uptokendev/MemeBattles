@@ -169,20 +169,21 @@ async function fetchCampaignFeedForChain(params: Record<string, any>): Promise<C
     if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
     const items = Array.isArray(j?.items) ? j.items : [];
 
-    if (items.length < Number(params.limit || 24)) {
+    // Only hit the slow on-chain factory fallback when the API is empty.
+    // Partial pages used to always dual-scan factories and made dual-chain feeds feel stuck.
+    if (!items.length) {
       const fallback = await fetchOnChainCampaignFeed(params);
-      const merged = mergeCampaignItems(items, fallback.items).slice(0, Number(params.limit || 24));
       return {
         ...j,
-        items: merged,
-        nextCursor: fallback.nextCursor ?? j?.nextCursor ?? null,
+        items: fallback.items.slice(0, Number(params.limit || 24)),
+        nextCursor: fallback.nextCursor ?? null,
         pageSize: Number(params.limit || 24),
-        updatedAt: j?.updatedAt ?? fallback.updatedAt,
-        source: items.length ? "realtime-plus-onchain" : fallback.source,
+        updatedAt: fallback.updatedAt ?? j?.updatedAt,
+        source: fallback.source,
       } as CampaignFeedResponse;
     }
 
-    return j as CampaignFeedResponse;
+    return { ...j, items, source: j?.source || "api" } as CampaignFeedResponse;
   } catch (error) {
     console.warn("[CampaignGrid] realtime campaign feed failed; using on-chain factory fallback", error);
     return await fetchOnChainCampaignFeed(params);
@@ -199,12 +200,13 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
     return fetchCampaignFeedForChain(params);
   }
 
+  // Prefer testnet first; if it already has rows, still merge mainnet but skip
+  // empty-chain on-chain factory scans by fetching API-only when possible.
   const pages = await Promise.all(
     chainIds.map((chainId) =>
       fetchCampaignFeedForChain({
         ...params,
         chainId,
-        // Always allow testnet rows when dual-fetching BNB.
         includeTestnet: chainId === 97 ? "true" : params.includeTestnet,
         testnet: chainId === 97 ? "true" : params.testnet,
         includeDrafts: chainId === 97 ? "true" : params.includeDrafts,
@@ -217,7 +219,15 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
 
   let merged: CampaignFeedItemApi[] = [];
   for (const page of pages) {
-    merged = mergeCampaignItems(merged, page.items || []);
+    // Merge key must include chainId so 56/97 addresses never collide.
+    for (const item of page.items || []) {
+      const key = `${Number(item.chainId || 0)}:${String(item.campaignAddress || "").toLowerCase()}`;
+      if (!String(item.campaignAddress || "").trim()) continue;
+      const existing = merged.find(
+        (row) => `${Number(row.chainId || 0)}:${String(row.campaignAddress || "").toLowerCase()}` === key,
+      );
+      if (!existing) merged.push(item);
+    }
   }
 
   // Stable-ish order: newest first when sort is default/new.
@@ -415,7 +425,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         const missingRaised = !Number.isFinite(raised) || raised <= 0;
         return missingMcap || missingRaised;
       })
-      .slice(0, 12);
+      .slice(0, 6);
 
     if (!need.length) return;
     for (const it of need) {
@@ -425,8 +435,12 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
     void (async () => {
       const patches: Record<string, OnChainCardPatch> = {};
-      await Promise.all(
-        need.map(async (it) => {
+      // Small concurrency: full parallel RPC storms make the homepage feel stuck.
+      const queue = need.slice();
+      const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
+        while (queue.length) {
+          const it = queue.shift();
+          if (!it) return;
           const addr = String(it.campaignAddress ?? "").toLowerCase();
           try {
             const stats = await fetchOnChainCampaignStats({
@@ -434,7 +448,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
               campaignAddress: addr,
               tokenAddress: it.tokenAddress,
             });
-            if (!stats) return;
+            if (!stats) continue;
             const target = Number(it.gradTargetBnb ?? 50) || 50;
             const raised = Number(stats.raisedTotalBnb ?? NaN);
             const mcap = Number(stats.marketCapBnb ?? NaN);
@@ -452,8 +466,9 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           } catch {
             // leave API values
           }
-        }),
-      );
+        }
+      });
+      await Promise.all(workers);
       if (cancelled || !Object.keys(patches).length) return;
       setOnChainByCampaign((prev) => ({ ...prev, ...patches }));
     })();

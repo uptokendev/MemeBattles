@@ -4,7 +4,6 @@ import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import {
-  fetchCampaignDraft,
   fetchPublicCampaignDrafts,
   type DraftPopularity,
 } from "@/lib/draftApi";
@@ -162,10 +161,18 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
     void (async () => {
       try {
         const chainIds = draftFeedChainIds(chainId);
+        // One list request per chain (enriched with mission + popularity). No per-card /api/drafts/:id.
         const pages = await Promise.all(
           chainIds.map((id) => fetchPublicCampaignDrafts({ chainId: id, limit: 50 })),
         );
-        const drafts = pages.flat() as CampaignDraftLifecycle[];
+        const drafts = pages.flat() as Array<
+          CampaignDraftLifecycle & {
+            mission?: string | null;
+            missionStatement?: string | null;
+            creatorNote?: string | null;
+            popularity?: DraftPopularity | null;
+          }
+        >;
         const seen = new Set<string>();
         const candidates = drafts
           .filter((draft) => {
@@ -179,31 +186,15 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
           .filter((draft) => isDiscoverableDraft(draft, Date.now()))
           .slice(0, 40);
 
-        const hydrated = await Promise.all(
-          candidates.map(async (draft): Promise<DraftCampaignVM> => {
-            try {
-              const bundle = await fetchCampaignDraft(draft.id);
-              const hydratedDraft = bundle.draft as CampaignDraftLifecycle;
-              return {
-                draft: hydratedDraft,
-                mission:
-                  bundle.promotion?.missionStatement ||
-                  bundle.promotion?.creatorNote ||
-                  hydratedDraft.description ||
-                  "Creator is preparing the campaign before the battlefield opens.",
-                popularity: bundle.popularity || null,
-              };
-            } catch {
-              return {
-                draft,
-                mission: draft.description || "Creator is preparing the campaign before the battlefield opens.",
-                popularity: null,
-              };
-            }
-          }),
-        );
+        const mapped: DraftCampaignVM[] = candidates.map((draft) => ({
+          draft,
+          mission:
+            String(draft.mission || draft.missionStatement || draft.creatorNote || draft.description || "").trim() ||
+            "Creator is preparing the campaign before the battlefield opens.",
+          popularity: draft.popularity || null,
+        }));
 
-        if (!cancelled) setItems(hydrated);
+        if (!cancelled) setItems(mapped);
       } catch (reason: any) {
         if (!cancelled) setError(reason?.message || "Failed to load draft campaigns.");
       } finally {

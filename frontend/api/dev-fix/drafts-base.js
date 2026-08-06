@@ -363,17 +363,67 @@ export async function drafts(req, res) {
         return json(res, 200, { items: result.rows.map(mapDraftRow) });
       }
       const chainId = q.chainId ? Number(q.chainId) : null;
-      const where = ["visibility = 'public'", "status = any($1::text[])"];
+      const where = ["d.visibility = 'public'", "d.status = any($1::text[])"];
       const params = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
       if (chainId) {
-        where.push(`chain_id = $${params.length + 1}`);
+        where.push(`d.chain_id = $${params.length + 1}`);
         params.push(chainId);
       }
-      const result = await pool.query(
-        `select * from campaign_drafts where ${where.join(" and ")} order by created_at desc limit 50`,
-        params,
-      );
-      return json(res, 200, { items: result.rows.map(mapDraftRow) });
+      // Single query with promotion + metrics so home grid can render without N+1 /api/drafts/:id.
+      let rows = [];
+      try {
+        const result = await pool.query(
+          `select d.*,
+                  p.mission_statement,
+                  p.creator_note,
+                  p.banner_url,
+                  m.views,
+                  m.follows,
+                  m.comments,
+                  m.reactions,
+                  m.shares,
+                  m.signed_actions
+             from public.campaign_drafts d
+             left join public.campaign_draft_promotion p on p.draft_id = d.id
+             left join public.campaign_draft_metrics m on m.draft_id = d.id
+            where ${where.join(" and ")}
+            order by d.created_at desc
+            limit 50`,
+          params,
+        );
+        rows = result.rows;
+      } catch (joinError) {
+        console.warn("[api/drafts] enriched list failed; falling back to plain drafts", joinError?.message || joinError);
+        const plainWhere = where.map((clause) => clause.replace(/^d\./, ""));
+        const result = await pool.query(
+          `select * from public.campaign_drafts where ${plainWhere.join(" and ")} order by created_at desc limit 50`,
+          params,
+        );
+        rows = result.rows;
+      }
+      const items = rows.map((row) => {
+        const draft = mapDraftRow(row);
+        const popularity = popularityFromMetrics({
+          views: row.views,
+          follows: row.follows,
+          comments: row.comments,
+          reactions: row.reactions,
+          shares: row.shares,
+          signed_actions: row.signed_actions,
+        });
+        const mission =
+          String(row.mission_statement || row.creator_note || draft.description || "").trim() ||
+          "Creator is preparing the campaign before the battlefield opens.";
+        return {
+          ...draft,
+          mission,
+          missionStatement: row.mission_statement || "",
+          creatorNote: row.creator_note || "",
+          bannerUrl: row.banner_url || null,
+          popularity,
+        };
+      });
+      return json(res, 200, { items });
     }
 
     const store = memoryStore();
