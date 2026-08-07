@@ -507,14 +507,22 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
   const vms: CampaignCardVM[] = useMemo(() => {
     const DEFAULT_GRAD_TARGET_BNB = 50;
-    const isTrendingDefault = baseParams.tab === "trending" && baseParams.sort === "default";
-    const mapped = (items || []).map((it) => {
+    const sort = String(baseParams.sort || "default");
+    const tab = String(baseParams.tab || "trending");
+    const mcapMinUsd = baseParams.mcapMinUsd != null ? Number(baseParams.mcapMinUsd) : NaN;
+    const mcapMaxUsd = baseParams.mcapMaxUsd != null ? Number(baseParams.mcapMaxUsd) : NaN;
+    const progressMinPct = baseParams.progressMinPct != null ? Number(baseParams.progressMinPct) : NaN;
+    const progressMaxPct = baseParams.progressMaxPct != null ? Number(baseParams.progressMaxPct) : NaN;
+
+    type InternalVm = CampaignCardVM & { _mcapUsd: number; _mcapBnb: number; _createdAt: number; _activity: number; _votes: number; _progress: number };
+    const mapped: InternalVm[] = (items || []).map((it) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const patch = patchByCampaign[addr];
       const onChain = onChainByCampaign[addr];
       const gradTarget = Number(it.gradTargetBnb ?? DEFAULT_GRAD_TARGET_BNB) || DEFAULT_GRAD_TARGET_BNB;
       const isDex = Boolean(it.isDexTrading || it.graduatedAtChain || onChain?.isDexTrading);
 
+      // Prefer live/on-chain hydrate over sparse API marketcap (often null on testnet).
       const mcapBnb = Number(
         (patch?.marketcapBnb ?? onChain?.marketcapBnb ?? it.marketcapBnb) ?? NaN,
       );
@@ -544,6 +552,8 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       }
 
       const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
+      const createdAt = safeUnixSeconds(it.createdAtChain ?? null) ?? 0;
+      const votes24h = Number(patch?.votes24h ?? it.votes24h ?? 0);
       return {
         campaignAddress: addr,
         tokenAddress: it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null,
@@ -551,25 +561,71 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         symbol: String(it.symbol ?? ""),
         logoURI: resolveImageUri(rawLogo) ?? undefined,
         creator: it.creatorAddress ?? undefined,
-        createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
+        createdAt: createdAt || undefined,
         lastActivityAtSec: activitySec,
         marketCapUsdLabel,
         athLabel,
         progressPct,
         isDexTrading: isDex,
-        votes24h: Number(patch?.votes24h ?? it.votes24h ?? 0),
-      } as CampaignCardVM;
+        votes24h,
+        _mcapUsd: Number.isFinite(mcapUsd) ? mcapUsd : 0,
+        _mcapBnb: Number.isFinite(mcapBnb) ? mcapBnb : 0,
+        _createdAt: createdAt,
+        _activity: activitySec,
+        _votes: votes24h,
+        _progress: progressPct != null && Number.isFinite(progressPct) ? progressPct : -1,
+      } as InternalVm;
     });
-    if (!isTrendingDefault) return mapped;
-    return mapped.slice().sort((a: any, b: any) => {
-      const aa = Number(a.lastActivityAtSec ?? 0);
-      const bb = Number(b.lastActivityAtSec ?? 0);
-      if (bb !== aa) return bb - aa;
-      const ac = Number(a.createdAt ?? 0);
-      const bc = Number(b.createdAt ?? 0);
-      if (bc !== ac) return bc - ac;
-      return String(a.campaignAddress).localeCompare(String(b.campaignAddress));
+
+    // Client filters use hydrated mcap/progress so dropdowns work even when API mcap is null.
+    let filtered = mapped.filter((vm) => {
+      if (Number.isFinite(mcapMinUsd) && vm._mcapUsd < mcapMinUsd) return false;
+      if (Number.isFinite(mcapMaxUsd) && vm._mcapUsd > mcapMaxUsd) return false;
+      if (Number.isFinite(progressMinPct) && vm._progress < progressMinPct) return false;
+      if (Number.isFinite(progressMaxPct) && vm._progress > progressMaxPct) return false;
+      return true;
     });
+
+    const byAddr = (a: InternalVm, b: InternalVm) => String(a.campaignAddress).localeCompare(String(b.campaignAddress));
+    filtered = filtered.slice().sort((a, b) => {
+      if (sort === "mcap_desc") {
+        if (b._mcapUsd !== a._mcapUsd) return b._mcapUsd - a._mcapUsd;
+        if (b._mcapBnb !== a._mcapBnb) return b._mcapBnb - a._mcapBnb;
+        return byAddr(a, b);
+      }
+      if (sort === "mcap_asc") {
+        // Push unknown (0) mcaps to the end for low→high.
+        const aUnknown = a._mcapUsd <= 0 && a._mcapBnb <= 0 ? 1 : 0;
+        const bUnknown = b._mcapUsd <= 0 && b._mcapBnb <= 0 ? 1 : 0;
+        if (aUnknown !== bUnknown) return aUnknown - bUnknown;
+        if (a._mcapUsd !== b._mcapUsd) return a._mcapUsd - b._mcapUsd;
+        if (a._mcapBnb !== b._mcapBnb) return a._mcapBnb - b._mcapBnb;
+        return byAddr(a, b);
+      }
+      if (sort === "votes_desc") {
+        if (b._votes !== a._votes) return b._votes - a._votes;
+        return byAddr(a, b);
+      }
+      if (sort === "progress_desc") {
+        if (b._progress !== a._progress) return b._progress - a._progress;
+        return byAddr(a, b);
+      }
+      if (sort === "created_asc") {
+        if (a._createdAt !== b._createdAt) return a._createdAt - b._createdAt;
+        return byAddr(a, b);
+      }
+      if (sort === "created_desc" || tab === "new") {
+        if (b._createdAt !== a._createdAt) return b._createdAt - a._createdAt;
+        return byAddr(a, b);
+      }
+      // default / trending: activity then created
+      if (b._activity !== a._activity) return b._activity - a._activity;
+      if (b._createdAt !== a._createdAt) return b._createdAt - a._createdAt;
+      return byAddr(a, b);
+    });
+
+    // Strip internal sort keys before render.
+    return filtered.map(({ _mcapUsd, _mcapBnb, _createdAt, _activity, _votes, _progress, ...vm }) => vm);
   }, [items, bnbUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);
 
   const gridClass = "grid grid-cols-2 gap-3 justify-items-stretch sm:[grid-template-columns:repeat(auto-fill,minmax(180px,220px))] sm:justify-start sm:gap-4";
