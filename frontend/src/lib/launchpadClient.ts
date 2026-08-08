@@ -818,20 +818,48 @@ export function useLaunchpad(): LaunchpadAdapter {
     const created = extractCreatedCampaign(receipt);
     try {
       if (created.campaignAddress && created.tokenAddress) {
+        const chainIdNum = Number(activeChainId);
+        const campaignAddress = String(created.campaignAddress || "").toLowerCase();
+        const tokenAddress = String(created.tokenAddress || "").toLowerCase();
+        const creatorAddress = String(wallet.account || "").toLowerCase();
+        let authFields: Record<string, string | number> = {};
+        try {
+          if (signer) {
+            const { signWalletAction } = await import("@/lib/walletActionAuth");
+            const auth = await signWalletAction({
+              action: "campaign_upsert",
+              walletAddress: creatorAddress,
+              chainId: chainIdNum,
+              signer,
+              extraLines: [`Campaign: ${campaignAddress}`],
+            });
+            authFields = {
+              action: auth.action,
+              walletAddress: auth.walletAddress,
+              nonce: auth.nonce,
+              message: auth.message,
+              signature: auth.signature,
+              ...(auth.walletType ? { walletType: auth.walletType } : {}),
+            };
+          }
+        } catch (signErr) {
+          console.warn("[launchpadClient] campaign upsert auth sign skipped", signErr);
+        }
         await apiFetch("/api/campaigns/upsert", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            chainId: Number(activeChainId),
-            campaignAddress: created.campaignAddress,
-            tokenAddress: created.tokenAddress,
-            creatorAddress: wallet.account,
+            chainId: chainIdNum,
+            campaignAddress,
+            tokenAddress,
+            creatorAddress,
             name: params.name,
             symbol: params.symbol,
             logoURI: params.logoURI,
             xAccount: params.xAccount,
             website: params.website,
             extraLink: params.extraLink,
+            ...authFields,
           }),
         });
       }

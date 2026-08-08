@@ -253,19 +253,50 @@ export default function CommandCenterRecruiter() {
       return;
     }
 
+    if (!activeRecruiterWallet?.canSign) {
+      toast.error("Connect the approved recruiter wallet and sign in before uploading a squad image.");
+      return;
+    }
+
     setUploadingSquadImage(true);
     setSavingSquadImage(true);
     setPortalError(null);
     const toastId = toast.loading("Uploading squad image...");
 
     try {
+      const chainId = Number(activeRecruiterWallet.chainId || uploadChainIdForWallet(walletAddress));
+      const address = String(walletAddress || "").trim();
       const fd = new FormData();
       fd.append("file", file);
       const qs = new URLSearchParams({
         kind: "squad",
-        chainId: String(uploadChainIdForWallet(walletAddress)),
-        address: walletAddress,
+        chainId: String(chainId),
+        address,
       });
+      // Dual-auth: sign upload so API_AUTH_ENFORCE_USER_WRITES can be flipped safely.
+      // API maps non-logo kinds (including squad) to action upload_avatar.
+      try {
+        const { signWalletAction } = await import("@/lib/walletActionAuth");
+        const auth = await signWalletAction({
+          action: "upload_avatar",
+          walletAddress: address,
+          chainId,
+          walletType: activeRecruiterWallet.chain === "solana" ? "solana" : "evm",
+          signMessage: (message) =>
+            recruiterWallet.signMessage(activeRecruiterWallet.chain, address, message),
+        });
+        fd.append("action", auth.action);
+        fd.append("walletAddress", auth.walletAddress);
+        fd.append("nonce", auth.nonce);
+        fd.append("message", auth.message);
+        fd.append("signature", auth.signature);
+        if (auth.walletType) fd.append("walletType", auth.walletType);
+      } catch (signErr) {
+        console.warn("[CommandCenterRecruiter] upload auth sign failed", signErr);
+        throw new Error(
+          String((signErr as Error)?.message || signErr || "Wallet signature required for upload."),
+        );
+      }
       const res = await apiFetch(`/api/upload?${qs.toString()}`, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error || json?.message || `Upload failed (${res.status})`));
