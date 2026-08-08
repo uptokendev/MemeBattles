@@ -177,12 +177,12 @@ function applyVotePatch(
 
   if (idx < 0) {
     if (!delta && patch.votes24h == null && patch.votesAllTime == null) return items;
-    const seedVotes = Math.max(1, Number(patch.votes24h ?? delta || 1));
+    const seedVotes = Math.max(1, Number(patch.votes24h ?? delta ?? 1));
     const seed: FeaturedItem = {
       chainId: Number(patch.chainId || 0) || BNB_TESTNET_CHAIN_ID,
       campaignAddress: addr,
       votes24h: seedVotes,
-      votesAllTime: Math.max(seedVotes, Number(patch.votesAllTime ?? delta || 1)),
+      votesAllTime: Math.max(seedVotes, Number(patch.votesAllTime ?? delta ?? 1)),
       name: null,
       symbol: null,
       logoUri: null,
