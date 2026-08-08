@@ -105,9 +105,9 @@ export async function fetchLpFeePools(input: {
 
   let items = Array.isArray(json?.items) ? (json.items as LpFeePoolRow[]) : [];
   // Server already filters by creator when provided; keep a client guard for mixed responses.
-  const creator = String(input.creatorAddress || "").trim().toLowerCase();
-  if (creator) {
-    items = items.filter((it) => String(it.creatorAddress || "").toLowerCase() === creator);
+  const creatorKey = creator.toLowerCase();
+  if (creatorKey) {
+    items = items.filter((it) => String(it.creatorAddress || "").toLowerCase() === creatorKey);
   }
   return {
     lockerAddress: json?.lockerAddress ? String(json.lockerAddress).toLowerCase() : null,
