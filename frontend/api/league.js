@@ -1057,7 +1057,9 @@ export default async function handler(req, res) {
       const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       // IMPORTANT: Our indexer writes paid upvotes (VoteCast events) to public.votes.
-      // Rank by vote count first, then unique voters.
+      // Strict places (1,2,3…) with fair tie-breaks — never shared rank:
+      // 1) vote count  2) unique voters  3) total BNB voted
+      // 4) earliest vote in epoch (first to that score)  5) campaign address
       const { rows } = await pool.query(
         `
         WITH agg AS (
@@ -1066,7 +1068,9 @@ export default async function handler(req, res) {
             v.campaign_address,
             COUNT(*)::bigint AS votes_count,
             COUNT(DISTINCT v.voter_address)::bigint AS unique_voters,
-            COALESCE(SUM(v.amount_raw), 0)::numeric AS amount_raw_sum
+            COALESCE(SUM(v.amount_raw), 0)::numeric AS amount_raw_sum,
+            MIN(v.block_timestamp) AS first_vote_at,
+            MIN(v.block_number) AS first_vote_block
           FROM public.votes v
           WHERE v.chain_id = $1
             AND ($2::timestamptz IS NULL OR v.block_timestamp >= $2::timestamptz)
@@ -1082,12 +1086,20 @@ export default async function handler(req, res) {
           c.creator_address,
           a.votes_count,
           a.unique_voters,
-          a.amount_raw_sum
+          a.amount_raw_sum,
+          a.first_vote_at,
+          a.first_vote_block
         FROM agg a
         JOIN public.campaigns c
           ON c.chain_id = a.chain_id
          AND c.campaign_address = a.campaign_address
-        ORDER BY a.votes_count DESC, a.unique_voters DESC
+        ORDER BY
+          a.votes_count DESC,
+          a.unique_voters DESC,
+          a.amount_raw_sum DESC,
+          a.first_vote_at ASC NULLS LAST,
+          a.first_vote_block ASC NULLS LAST,
+          a.campaign_address ASC
         LIMIT $4
         `,
         params

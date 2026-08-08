@@ -283,11 +283,19 @@ async function leaderboard(
   }
 
   if (category === "crowd_favorite") {
-    // Most votes (count) per campaign during epoch; winner is the creator.
+    // Most votes per campaign; winner is the creator.
+    // Strict places with fair ties: votes → unique voters → BNB sum → earliest vote → address.
     const { rows } = await pool.query(
       `
       WITH v AS (
-        SELECT chain_id, campaign_address, count(*)::bigint as votes_count
+        SELECT
+          chain_id,
+          campaign_address,
+          count(*)::bigint as votes_count,
+          count(DISTINCT voter_address)::bigint as unique_voters,
+          coalesce(sum(amount_raw), 0)::numeric as amount_raw_sum,
+          min(block_timestamp) as first_vote_at,
+          min(block_number) as first_vote_block
         FROM public.votes
         WHERE chain_id=$1
           AND block_timestamp >= extract(epoch from $2::timestamptz)::bigint
@@ -296,12 +304,21 @@ async function leaderboard(
         GROUP BY chain_id, campaign_address
       )
       SELECT lower(c.creator_address) as recipient,
-             v.votes_count as score
+             v.votes_count as score,
+             v.unique_voters,
+             v.amount_raw_sum,
+             v.campaign_address
       FROM v
       JOIN public.campaigns c
         ON c.chain_id=v.chain_id AND c.campaign_address=v.campaign_address
       WHERE c.creator_address IS NOT NULL
-      ORDER BY v.votes_count DESC
+      ORDER BY
+        v.votes_count DESC,
+        v.unique_voters DESC,
+        v.amount_raw_sum DESC,
+        v.first_vote_at ASC NULLS LAST,
+        v.first_vote_block ASC NULLS LAST,
+        v.campaign_address ASC
       LIMIT $4
       `,
       [chainId, epochStartIso, epochEndIso, limit]
@@ -312,7 +329,12 @@ async function leaderboard(
       .map((r: any) => ({
         recipient: String(r.recipient),
         score: BigInt(String(r.score ?? "0")),
-        meta: { votes_count: Number(r.score) }
+        meta: {
+          votes_count: Number(r.score),
+          unique_voters: Number(r.unique_voters ?? 0),
+          amount_raw_sum: String(r.amount_raw_sum ?? "0"),
+          campaign_address: r.campaign_address ? String(r.campaign_address) : undefined,
+        }
       }));
   }
 
