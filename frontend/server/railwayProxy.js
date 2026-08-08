@@ -240,8 +240,10 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (await dispatchDashboardLpFees(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
-    const isDevIP = isDevAllowedIP(req);
-    if (!isDevIP && !shouldProxyToRailway(path)) return next();
+    // Always honor local-only paths (featured, campaigns, vote-ingest, drafts, …).
+    // Do not force-proxy everything for DEV_ALLOWED_IPS — that sent /api/vote-ingest
+    // to the indexer (404) and broke Featured vote writes.
+    if (!shouldProxyToRailway(path)) return next();
 
     const base = railwayBaseUrl();
     if (!base) {
