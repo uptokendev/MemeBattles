@@ -69,7 +69,7 @@ export function useTopazMarket(input: {
 
   useEffect(() => {
     if (!enabled) return;
-    const pollMs = Math.max(8_000, Number(input.pollMs || 20_000));
+    const pollMs = Math.max(5_000, Number(input.pollMs || 8_000));
     const timer = window.setInterval(() => {
       void refresh();
     }, pollMs);

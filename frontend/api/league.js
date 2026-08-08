@@ -848,6 +848,9 @@ export default async function handler(req, res) {
     // -------------------------------------------------
     if (category === "fastest_finish") {
       const params = [chainId, epochStartIso, rangeEndIso, limit];
+      // Mainnet keeps the 25 unique non-creator buyer bar. Testnet (97) uses 0 so a real
+      // graduation still ranks even when only creator/few wallets participated.
+      const minUniqueBuyers = chainId === 97 ? 0 : 25;
 
       const { rows } = await pool.query(
         `
@@ -855,6 +858,7 @@ export default async function handler(req, res) {
           SELECT
             c.chain_id,
             c.campaign_address,
+            c.token_address,
             c.name,
             c.symbol,
             c.logo_uri,
@@ -865,32 +869,33 @@ export default async function handler(req, res) {
             c.graduated_block,
             EXTRACT(EPOCH FROM (c.graduated_at_chain - c.created_at_chain))::bigint AS duration_seconds,
             (
-              SELECT COUNT(DISTINCT t.wallet)
+              SELECT COUNT(DISTINCT lower(t.wallet))
               FROM curve_trades t
               WHERE t.chain_id = c.chain_id
                 AND t.campaign_address = c.campaign_address
                 AND t.side = 'buy'
-                AND t.block_number >= c.created_block
+                AND (c.created_block IS NULL OR t.block_number >= c.created_block)
                 AND (c.graduated_block IS NULL OR c.graduated_block = 0 OR t.block_number <= c.graduated_block)
-                -- Locked rule: creator buys do not count towards "fastest"
-                AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
+                AND (
+                  c.creator_address IS NULL
+                  OR lower(t.wallet) <> lower(c.creator_address)
+                )
             ) AS unique_buyers
           FROM campaigns c
           WHERE c.chain_id = $1
             AND c.created_at_chain IS NOT NULL
             AND c.graduated_at_chain IS NOT NULL
-            AND (c.graduated_block IS NOT NULL AND c.graduated_block > 0)
+            -- Prefer graduated_block when present, but do not drop grads that only have graduated_at_chain.
             AND ($2::timestamptz IS NULL OR c.graduated_at_chain >= $2::timestamptz)
             AND ($3::timestamptz IS NULL OR c.graduated_at_chain < $3::timestamptz)
         )
         SELECT *
         FROM grads
-        -- Mainnet anti-sybil: 25 unique non-creator buyers. Testnet: 1 so real grads appear.
-        WHERE unique_buyers >= CASE WHEN $1::int = 97 THEN 1 ELSE 25 END
-        ORDER BY duration_seconds ASC NULLS LAST
+        WHERE unique_buyers >= $5::int
+        ORDER BY duration_seconds ASC NULLS LAST, graduated_at_chain ASC
         LIMIT $4
         `,
-        params
+        [...params, minUniqueBuyers]
       );
 
       return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
@@ -1100,16 +1105,25 @@ export default async function handler(req, res) {
     //   profit = sum(sell payouts) - sum(buy costs)
     if (category === "top_earner") {
       if (periodNorm === "all_time") {
-        return json(res, 200, { items: [], warning: "top_earner is paid weekly/monthly only", prize: prizeForCategory });
+        return json(res, 200, {
+          items: [],
+          warning: "top_earner is paid weekly/monthly only",
+          prize: prizeForCategory,
+          epoch: epochMeta,
+          stats,
+        });
       }
 
       const params = [chainId, epochStartIso, rangeEndIso, limit];
 
+      // Realized curve PnL in the epoch. Own-campaign creator trades excluded; same wallet
+      // trading other campaigns counts. Prefer positive profit; if none, show best nets
+      // among wallets that completed at least one sell (still ranked by profit).
       const { rows } = await pool.query(
         `
         WITH filtered AS (
           SELECT
-            t.wallet,
+            lower(t.wallet) AS wallet,
             t.side,
             t.bnb_amount_raw::numeric AS bnb_raw
           FROM public.curve_trades t
@@ -1117,19 +1131,20 @@ export default async function handler(req, res) {
             ON c.chain_id = t.chain_id
            AND c.campaign_address = t.campaign_address
           WHERE t.chain_id = $1
+            AND t.wallet IS NOT NULL
             AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
             AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
-            -- exclude campaign/creator/feeRecipient wallets for that campaign
-            AND t.wallet <> c.campaign_address
-            AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
-            AND (c.fee_recipient_address IS NULL OR t.wallet <> c.fee_recipient_address)
+            AND lower(t.wallet) <> lower(c.campaign_address)
+            AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
+            AND (c.fee_recipient_address IS NULL OR lower(t.wallet) <> lower(c.fee_recipient_address))
         ),
         agg AS (
           SELECT
             wallet,
             SUM(CASE WHEN side = 'sell' THEN bnb_raw ELSE 0 END)::numeric(78,0) AS sells_raw,
             SUM(CASE WHEN side = 'buy' THEN bnb_raw ELSE 0 END)::numeric(78,0) AS buys_raw,
-            COUNT(*)::bigint AS trades_count
+            COUNT(*)::bigint AS trades_count,
+            COUNT(*) FILTER (WHERE side = 'sell')::bigint AS sell_trades
           FROM filtered
           GROUP BY wallet
         ),
@@ -1139,19 +1154,28 @@ export default async function handler(req, res) {
             (sells_raw - buys_raw)::numeric(78,0) AS profit_raw,
             sells_raw,
             buys_raw,
-            trades_count
+            trades_count,
+            sell_trades
           FROM agg
         )
         SELECT wallet, profit_raw, sells_raw, buys_raw, trades_count
         FROM calc
-        WHERE profit_raw > 0
-        ORDER BY profit_raw DESC
+        WHERE sell_trades > 0 OR profit_raw > 0
+        ORDER BY profit_raw DESC, sells_raw DESC, trades_count DESC, wallet ASC
         LIMIT $4
         `,
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
+      return json(res, 200, {
+        items: rows,
+        prize: prizeForCategory,
+        epoch: epochMeta,
+        stats,
+        warning: rows.length
+          ? undefined
+          : "No realized trader profits in this epoch yet (needs non-creator sells on the curve).",
+      });
     }
 
     return json(res, 200, { items: [], prize: prizeForCategory, epoch: epochMeta, stats });

@@ -279,8 +279,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   const inFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  // 12s is enough for tip-scan inserts without hammering the indexer.
-  const reconcileMs = opts?.reconcileMs ?? 12_000;
+  // Keep multi-browser views close after a trade without hammering the indexer.
+  const reconcileMs = opts?.reconcileMs ?? 5_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
@@ -453,9 +453,12 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       if (Array.isArray(detail?.trades) && detail.trades.length) {
         applySnapshot(detail.trades);
       }
-      // Reconcile through the persisted API. Browser log scans are a deliberate
-      // dev-only escape hatch and should not run after every confirmed trade.
+      // Indexer insert can lag a few seconds after wallet confirmation — retry briefly
+      // so the other browser (and this one) converge without waiting for the long poll.
       void pullSnapshot();
+      window.setTimeout(() => void pullSnapshot(), 1_500);
+      window.setTimeout(() => void pullSnapshot(), 4_000);
+      window.setTimeout(() => void pullSnapshot(), 8_000);
     };
 
     window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);

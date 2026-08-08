@@ -155,7 +155,7 @@ export function useContinuousMarketTrades(input: {
     tokenAddress: tokenAddress || undefined,
     chainId,
     enabled: topazScanEnabledResolved,
-    pollMs: 45_000,
+    pollMs: 8_000,
   });
 
   // War Room / Token Details post-fill: merge optimistic trade without full page reload.

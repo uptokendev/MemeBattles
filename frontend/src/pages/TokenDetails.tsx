@@ -1228,7 +1228,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     tokenAddress: campaign?.token,
     chainId: chainIdForStorage,
     enabled: hasValidCampaignAddress && contractGraduatedEarly,
-    pollMs: 45_000,
+    pollMs: 8_000,
   });
 
   // Maker profiles after topazMarket exists so we can skip protocol/router senders.
