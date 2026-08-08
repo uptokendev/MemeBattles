@@ -11,12 +11,17 @@ import { fetchOnChainLeagueSummary } from "@/lib/onChainLeagueSummary";
 import { type SupportedChainId } from "@/lib/chainConfig";
 import { apiFetch } from "@/lib/apiBase";
 
-/** Map UI league keys → indexer /api/league?category=… */
+/**
+ * Map UI league keys → frontend-api /api/league?category=…
+ * (frontend/api/league.js — locked category names, not indexer aliases)
+ */
 const API_CATEGORY_BY_LEAGUE: Partial<Record<LeagueKey, string>> = {
-  perfect_run: "straight_up",
-  fastest_finish: "fastest_graduation",
-  biggest_hit: "largest_buy",
+  perfect_run: "perfect_run",
+  fastest_finish: "fastest_finish",
+  biggest_hit: "biggest_hit",
   top_earner: "top_earner",
+  crowd_favorite: "crowd_favorite",
+  // recruiter_league has no objective /api/league category yet
 };
 
 const ONCHAIN_FALLBACK_TIMEOUT_MS = 2500;
@@ -541,10 +546,7 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
 }
 
 async function tryLoadFutureSummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions) {
-  // Endpoint is not deployed on the indexer yet (404). Skip until it exists to avoid console noise.
-  if (String(import.meta.env.VITE_ENABLE_LEAGUE_SUMMARY_API || "").toLowerCase() !== "true") {
-    return undefined;
-  }
+  // Mounted on frontend-api as /api/league/summary (leagueSummary.js).
   const params = new URLSearchParams({ chain, chainId: String(chainId), period, epochOffset: String(epochOffset) });
   try {
     const response = await apiFetch(`/api/league/summary?${params.toString()}`, { cache: "no-store" });

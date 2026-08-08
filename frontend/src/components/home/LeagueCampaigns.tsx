@@ -101,16 +101,19 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
     const load = async () => {
       try {
         setLoading(true);
+        // Weekly home strip: categories that are valid for period=weekly on frontend/api/league.js.
+        // (perfect_run is monthly-only — never use it here.)
         const [a, b, c] = await Promise.all([
-          apiFetch(`/api/league?${qs}&category=straight_up`, { cache: "no-store" }).then((r) => r.json()),
-          apiFetch(`/api/league?${qs}&category=fastest_graduation`, { cache: "no-store" }).then((r) => r.json()),
-          apiFetch(`/api/league?${qs}&category=largest_buy`, { cache: "no-store" }).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=fastest_finish`, { cache: "no-store" }).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=biggest_hit`, { cache: "no-store" }).then((r) => r.json()),
+          apiFetch(`/api/league?${qs}&category=crowd_favorite`, { cache: "no-store" }).then((r) => r.json()),
         ]);
 
         if (cancelled) return;
-        setStraightUp((a as LeagueResponse<GraduationRow>)?.items ?? []);
-        setFastest((b as LeagueResponse<GraduationRow>)?.items ?? []);
-        setLargestBuys((c as LeagueResponse<LargestBuyRow>)?.items ?? []);
+        setFastest((a as LeagueResponse<GraduationRow>)?.items ?? []);
+        setLargestBuys((b as LeagueResponse<LargestBuyRow>)?.items ?? []);
+        // Reuse straightUp panel slot for crowd favorite token rows when present.
+        setStraightUp((c as LeagueResponse<GraduationRow>)?.items ?? []);
       } catch (e) {
         console.error("[LeagueCampaigns] failed to load /api/league", e);
         if (!cancelled) {
@@ -165,12 +168,12 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-        {/* Straight UP */}
+        {/* Crowd Favorite (weekly) */}
         <div className={panelClass}>
           <GlowingEffect blur={18} spread={36} glow={true} disabled={false} movementDuration={1.6} className="pointer-events-none" />
           <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold">Straight UP</div>
-            <div className="text-[11px] text-muted-foreground">No sells</div>
+            <div className="text-sm font-semibold">Crowd Favorite</div>
+            <div className="text-[11px] text-muted-foreground">UpVotes</div>
           </div>
 
           <div className="mt-3 space-y-3">
@@ -178,7 +181,7 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
               <button
                 key={r.campaign_address}
                 type="button"
-                onClick={() => navigate(`/token/${r.token_address || r.campaign_address}`)}
+                onClick={() => navigate(`/token/${(r as any).token_address || r.campaign_address}`)}
                 className="w-full text-left flex items-start justify-between gap-3"
               >
                 <div className="min-w-0 flex-1">
@@ -188,11 +191,13 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
                   <div className="text-sm font-semibold" style={{ color: "#affe00" }}>
                     {idx + 1}
                   </div>
-                  <div className="text-[11px] text-muted-foreground">{formatDuration(r.duration_seconds)}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {(r as any).votes_count != null ? `${(r as any).votes_count} votes` : formatDuration(r.duration_seconds)}
+                  </div>
                 </div>
               </button>
             ))}
-            {!straightUp.length ? <div className="text-xs text-muted-foreground">No qualifiers yet.</div> : null}
+            {!straightUp.length ? <div className="text-xs text-muted-foreground">No votes yet this week.</div> : null}
           </div>
         </div>
 
@@ -201,7 +206,7 @@ export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number;
           <GlowingEffect blur={18} spread={36} glow={true} disabled={false} movementDuration={1.6} className="pointer-events-none" />
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">Fastest Graduation</div>
-            <div className="text-[11px] text-muted-foreground">≥ 25 buyers</div>
+            <div className="text-[11px] text-muted-foreground">This week</div>
           </div>
 
           <div className="mt-3 space-y-3">

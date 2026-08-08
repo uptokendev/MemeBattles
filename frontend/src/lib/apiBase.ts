@@ -37,9 +37,7 @@ const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(
 // TokenDetails is protected below by a preemptive /token/0x... contract fallback
 // when legacy code asks for /api/campaigns.
 const REALTIME_INDEXER_API_PREFIXES = [
-  "/api/league",
-  "/api/leaguePayouts",
-  "/api/leagueRoot",
+  // League standings/prize/claim live on frontend-api (frontend/api/league.js), not indexer.
   "/api/recruiters",
   "/api/rewards",
   "/api/token/",
@@ -57,6 +55,10 @@ const FRONTEND_API_PREFIXES = [
   "/api/recruiter-auth-verify",
   "/api/recruiter-portal",
   "/api/recruiter-logout",
+  // Full UP Only League stack (epoch windows, prize meta, all categories).
+  "/api/league",
+  "/api/leaguePayouts",
+  "/api/leagueRoot",
 ];
 
 function isHttpUrl(value: string): boolean {

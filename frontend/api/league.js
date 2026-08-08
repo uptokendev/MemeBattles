@@ -872,7 +872,8 @@ export default async function handler(req, res) {
         )
         SELECT *
         FROM grads
-        WHERE unique_buyers >= 25
+        -- Mainnet anti-sybil: 25 unique non-creator buyers. Testnet: 1 so real grads appear.
+        WHERE unique_buyers >= CASE WHEN $1::int = 97 THEN 1 ELSE 25 END
         ORDER BY duration_seconds ASC NULLS LAST
         LIMIT $4
         `,
@@ -908,6 +909,7 @@ export default async function handler(req, res) {
             c.created_block,
             c.graduated_block,
             EXTRACT(EPOCH FROM (c.graduated_at_chain - c.created_at_chain))::bigint AS duration_seconds,
+            0::int AS sells_count,
             (
               SELECT COUNT(DISTINCT t.wallet)
               FROM curve_trades t
@@ -915,24 +917,23 @@ export default async function handler(req, res) {
                 AND t.campaign_address = c.campaign_address
                 AND t.side = 'buy'
                 AND t.block_number >= c.created_block
-                AND t.block_number <= c.graduated_block
-                AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
+                AND (c.graduated_block IS NULL OR t.block_number <= c.graduated_block)
+                AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
             ) AS unique_buyers,
             (
-              SELECT COALESCE(SUM(t.bnb_amount_raw), 0)::numeric(78,0)
+              SELECT COALESCE(SUM(t.bnb_amount_raw::numeric), 0)::numeric(78,0)
               FROM curve_trades t
               WHERE t.chain_id = c.chain_id
                 AND t.campaign_address = c.campaign_address
                 AND t.side = 'buy'
                 AND t.block_number >= c.created_block
-                AND t.block_number <= c.graduated_block
-                AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
+                AND (c.graduated_block IS NULL OR t.block_number <= c.graduated_block)
+                AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
             ) AS buy_total_raw
           FROM campaigns c
           WHERE c.chain_id = $1
             AND c.created_at_chain IS NOT NULL
             AND c.graduated_at_chain IS NOT NULL
-            AND (c.graduated_block IS NOT NULL AND c.graduated_block > 0)
             AND ($2::timestamptz IS NULL OR c.graduated_at_chain >= $2::timestamptz)
             AND ($3::timestamptz IS NULL OR c.graduated_at_chain < $3::timestamptz)
             AND NOT EXISTS (
@@ -942,15 +943,11 @@ export default async function handler(req, res) {
                 AND t.campaign_address = c.campaign_address
                 AND t.side = 'sell'
                 AND t.block_number >= c.created_block
-                AND t.block_number <= c.graduated_block
+                AND (c.graduated_block IS NULL OR t.block_number <= c.graduated_block)
             )
         )
         SELECT *
         FROM qualified
-        -- Top 5 determination (deterministic):
-        -- 1) strongest demand (buy volume)
-        -- 2) most unique buyers
-        -- 3) fastest graduation
         ORDER BY buy_total_raw DESC, unique_buyers DESC, duration_seconds ASC
         LIMIT $4
         `,
@@ -959,7 +956,7 @@ export default async function handler(req, res) {
 
       return json(res, 200, {
         items: rows,
-        warning: rows.length ? undefined : "No Perfect Run qualifiers found. Jackpot rolls over.",
+        warning: rows.length ? undefined : "No Perfect Run qualifiers found for this monthly epoch.",
         prize: prizeForCategory,
         epoch: epochMeta,
         stats
@@ -968,41 +965,65 @@ export default async function handler(req, res) {
 
     // -------------------------------------------------
     // Biggest Hit (largest single buy in bonding)
+    // One rank per campaign in the selected epoch (weekly OR monthly window).
+    // Weekly and monthly are independent live boards over different [epochStart, rangeEnd).
     // -------------------------------------------------
     if (category === "biggest_hit") {
       const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       const { rows } = await pool.query(
         `
+        WITH buys AS (
+          SELECT
+            t.chain_id,
+            t.campaign_address,
+            c.name,
+            c.symbol,
+            c.logo_uri,
+            c.creator_address,
+            c.fee_recipient_address,
+            c.token_address,
+            t.wallet AS buyer_address,
+            t.bnb_amount_raw,
+            t.tx_hash,
+            t.log_index,
+            t.block_number,
+            t.block_time,
+            ROW_NUMBER() OVER (
+              PARTITION BY t.campaign_address
+              ORDER BY t.bnb_amount_raw::numeric DESC NULLS LAST, t.block_number DESC, t.log_index DESC
+            ) AS rn
+          FROM curve_trades t
+          JOIN campaigns c
+            ON c.chain_id = t.chain_id
+           AND c.campaign_address = t.campaign_address
+          WHERE t.chain_id = $1
+            AND t.side = 'buy'
+            AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
+            AND t.wallet <> c.campaign_address
+            AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
+            AND (c.fee_recipient_address IS NULL OR t.wallet <> c.fee_recipient_address)
+            AND (c.graduated_block IS NULL OR c.graduated_block = 0 OR t.block_number <= c.graduated_block)
+        )
         SELECT
-          t.chain_id,
-          t.campaign_address,
-          c.name,
-          c.symbol,
-          c.logo_uri,
-          c.creator_address,
-          c.fee_recipient_address,
-          t.wallet AS buyer_address,
-          t.bnb_amount_raw,
-          t.tx_hash,
-          t.log_index,
-          t.block_number,
-          t.block_time
-        FROM curve_trades t
-        JOIN campaigns c
-          ON c.chain_id = t.chain_id
-         AND c.campaign_address = t.campaign_address
-        WHERE t.chain_id = $1
-          AND t.side = 'buy'
-          AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
-          AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
-          -- anti-abuse exclusions
-          AND t.wallet <> c.campaign_address
-          AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
-          AND (c.fee_recipient_address IS NULL OR t.wallet <> c.fee_recipient_address)
-          -- ensure "during bonding" when we have a graduation block
-          AND (c.graduated_block IS NULL OR c.graduated_block = 0 OR t.block_number <= c.graduated_block)
-        ORDER BY t.bnb_amount_raw::numeric DESC NULLS LAST
+          chain_id,
+          campaign_address,
+          name,
+          symbol,
+          logo_uri,
+          creator_address,
+          fee_recipient_address,
+          token_address,
+          buyer_address,
+          bnb_amount_raw,
+          tx_hash,
+          log_index,
+          block_number,
+          block_time
+        FROM buys
+        WHERE rn = 1
+        ORDER BY bnb_amount_raw::numeric DESC NULLS LAST, block_number DESC, log_index DESC
         LIMIT $4
         `,
         params

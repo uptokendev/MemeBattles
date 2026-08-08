@@ -291,11 +291,13 @@ useEffect(() => {
         setLoading(true);
         const effectivePeriod: Period = def.supports.includes(period) ? period : def.supports[0];
         const limit = getLimit(def, effectivePeriod);
+        // Native categories on frontend/api/league.js
         const categoryMap: Record<string, string> = {
-          perfect_run: "straight_up",
-          fastest_finish: "fastest_graduation",
-          biggest_hit: "largest_buy",
+          perfect_run: "perfect_run",
+          fastest_finish: "fastest_finish",
+          biggest_hit: "biggest_hit",
           top_earner: "top_earner",
+          crowd_favorite: "crowd_favorite",
         };
         const category = categoryMap[String(def.key)] || String(def.key);
         const params = new URLSearchParams({
