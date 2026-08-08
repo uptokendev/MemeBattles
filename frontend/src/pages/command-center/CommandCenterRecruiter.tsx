@@ -264,8 +264,13 @@ export default function CommandCenterRecruiter() {
     const toastId = toast.loading("Uploading squad image...");
 
     try {
+      // Keep chain aligned with the connected wallet (same as Create logo upload).
+      // Do not hardcode 56 — testnet squad uploads must use 97 so nonce + message match.
       const chainId = Number(activeRecruiterWallet.chainId || uploadChainIdForWallet(walletAddress));
-      const address = String(walletAddress || "").trim();
+      const address =
+        activeRecruiterWallet.chain === "solana"
+          ? String(activeRecruiterWallet.address || walletAddress || "").trim()
+          : String(activeRecruiterWallet.address || walletAddress || "").trim().toLowerCase();
       const fd = new FormData();
       fd.append("file", file);
       const qs = new URLSearchParams({
@@ -273,10 +278,11 @@ export default function CommandCenterRecruiter() {
         chainId: String(chainId),
         address,
       });
-      // Dual-auth: sign upload so API_AUTH_ENFORCE_USER_WRITES can be flipped safely.
+      // Dual-auth: put signature on the query string (same proven path as Create logo).
+      // Multipart form fields with multiline "message" get mangled by some proxies → MESSAGE_MISMATCH.
       // API maps non-logo kinds (including squad) to action upload_avatar.
       try {
-        const { signWalletAction } = await import("@/lib/walletActionAuth");
+        const { signWalletAction, appendAuthToSearchParams } = await import("@/lib/walletActionAuth");
         const auth = await signWalletAction({
           action: "upload_avatar",
           walletAddress: address,
@@ -285,12 +291,7 @@ export default function CommandCenterRecruiter() {
           signMessage: (message) =>
             recruiterWallet.signMessage(activeRecruiterWallet.chain, address, message),
         });
-        fd.append("action", auth.action);
-        fd.append("walletAddress", auth.walletAddress);
-        fd.append("nonce", auth.nonce);
-        fd.append("message", auth.message);
-        fd.append("signature", auth.signature);
-        if (auth.walletType) fd.append("walletType", auth.walletType);
+        appendAuthToSearchParams(qs, auth);
       } catch (signErr) {
         console.warn("[CommandCenterRecruiter] upload auth sign failed", signErr);
         throw new Error(

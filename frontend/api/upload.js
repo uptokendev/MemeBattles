@@ -103,22 +103,27 @@ export default async function handler(req, res) {
   try {
     const [fields, files] = await form.parse(req);
 
-    // Prefer form fields for auth (message/signature can break in long query strings).
-    // Fall back to query params for older clients.
+    // Prefer form fields for auth when present; query params are the proven Create/logo path
+    // (multiline message in multipart is frequently mangled by proxies → MESSAGE_MISMATCH).
     const authAction = firstField(fields, "action") || String(q.action || (kind === "logo" ? "upload_logo" : "upload_avatar"));
     const authNonce = firstField(fields, "nonce") || String(q.nonce || "").trim();
-    const authMessage = firstField(fields, "message") || String(q.message || "");
+    const authMessageRaw = firstField(fields, "message") || String(q.message || "");
+    const authMessage = String(authMessageRaw || "").replace(/\r\n/g, "\n");
     const authSignature = firstField(fields, "signature") || String(q.signature || "").trim();
     const authWalletType = firstField(fields, "walletType") || String(q.walletType || "");
+    const authWallet =
+      normalizeUploadAddress(firstField(fields, "walletAddress") || firstField(fields, "address") || q.walletAddress || address, chainId) ||
+      address;
 
     if (address) {
+      // logo → upload_logo; everything else (avatar, squad, …) → upload_avatar
       const action = kind === "logo" ? "upload_logo" : "upload_avatar";
       const verified = await requireWalletActionAuth({
         res,
         pool,
         auth: {
           action: authAction || action,
-          walletAddress: address,
+          walletAddress: authWallet,
           chainId,
           nonce: authNonce,
           message: authMessage,

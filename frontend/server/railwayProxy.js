@@ -30,9 +30,9 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/epochPools",
   "/api/featured",
   "/api/follows",
-  "/api/league",
-  "/api/leaguePayouts",
-  "/api/leagueRoot",
+  // League hub/summary/standings live on frontend-api (league.js / leagueSummary.js).
+  // Do NOT proxy /api/league* to the indexer — indexer has a different /api/league shape
+  // and no /api/league/summary (breaks League page boards).
   "/api/prepare",
   "/api/prepare-notifications",
   "/api/profile",
@@ -201,6 +201,10 @@ function shouldProxyToRailway(path) {
   // Vote receipt ingest must hit frontend-api (DB write + RPC), not the indexer proxy.
   if (pathname === "/api/votes/ingest" || pathname.startsWith("/api/votes/ingest/")) return false;
   if (pathname === "/api/vote-ingest" || pathname.startsWith("/api/vote-ingest/")) return false;
+  // Full UP Only League stack stays on frontend-api.
+  if (pathname === "/api/league" || pathname.startsWith("/api/league/")) return false;
+  if (pathname === "/api/leaguePayouts" || pathname.startsWith("/api/leaguePayouts")) return false;
+  if (pathname === "/api/leagueRoot" || pathname.startsWith("/api/leagueRoot")) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);

@@ -162,7 +162,8 @@ export async function requireWalletActionAuth({
 
     const nonce = String(auth.nonce || "").trim();
     const signature = String(auth.signature || "").trim();
-    const message = String(auth.message || "");
+    // Multipart proxies sometimes rewrite \n → \r\n; normalize before compare.
+    const clientMessage = String(auth.message || "").replace(/\r\n/g, "\n").trim();
     const expectedMessage = buildWalletActionMessage({
       action,
       walletAddress: wallet,
@@ -171,22 +172,35 @@ export async function requireWalletActionAuth({
       extraLines,
     });
 
-    if (message !== expectedMessage) {
-      return rejectOrLegacy("MESSAGE_MISMATCH", "Wallet signature message mismatch.");
+    // Canonical message is authoritative. Client message is only a diagnostic hint —
+    // never reject solely on string inequality if the signature recovers the wallet
+    // for the canonical server message (proxies often mangle multiline form fields).
+    if (clientMessage && clientMessage !== expectedMessage) {
+      console.warn(`[walletActionAuth] ${routeLabel}: client message differs from canonical (will verify signature on canonical)`, {
+        expectedPreview: expectedMessage.slice(0, 160),
+        clientPreview: clientMessage.slice(0, 160),
+      });
     }
 
     let signatureValid = false;
-    if (isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana") {
-      signatureValid = verifySolanaSignature(expectedMessage, signature, wallet);
-    } else {
-      try {
-        signatureValid = normalizeAddress(ethers.verifyMessage(expectedMessage, signature), expectedChainId) === wallet;
-      } catch {
-        signatureValid = false;
+    const isSolana =
+      isSolanaChain(expectedChainId) || String(auth?.walletType || "").toLowerCase() === "solana";
+    try {
+      if (isSolana) {
+        signatureValid = verifySolanaSignature(expectedMessage, signature, wallet);
+      } else {
+        signatureValid =
+          normalizeAddress(ethers.verifyMessage(expectedMessage, signature), expectedChainId) === wallet;
       }
+    } catch {
+      signatureValid = false;
     }
 
     if (!signatureValid) {
+      // Prefer a clear mismatch code when the client clearly signed a different body.
+      if (clientMessage && clientMessage !== expectedMessage) {
+        return rejectOrLegacy("MESSAGE_MISMATCH", "Wallet signature message mismatch.");
+      }
       return rejectOrLegacy("INVALID_SIGNATURE", "Invalid wallet signature.");
     }
 
