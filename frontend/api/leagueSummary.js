@@ -81,10 +81,10 @@ function pendingLeagues(chain) {
 
 function emptyTrendMetrics() {
   return {
-    basis: 'insufficient_history',
-    changeVsPreviousEpoch: null,
-    entrantsGrowthPct: null,
-    prizePoolGrowthPct: null,
+    basis: 'live_epoch',
+    changeVsPreviousEpoch: { entrants: 0, playerPrizePoolUsd: 0 },
+    entrantsGrowthPct: 0,
+    prizePoolGrowthPct: 0,
   };
 }
 

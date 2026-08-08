@@ -8,7 +8,14 @@ import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.j
 // - biggest_hit
 // - top_earner (bonding curve trader PnL)
 // - crowd_favorite
-const CATEGORY_SET = new Set(["perfect_run", "fastest_finish", "biggest_hit", "top_earner", "crowd_favorite"]);
+const CATEGORY_SET = new Set([
+  "perfect_run",
+  "fastest_finish",
+  "biggest_hit",
+  "top_earner",
+  "crowd_favorite",
+  "recruiter_league",
+]);
 
 // Accept old period spellings for backward compatibility.
 const PERIOD_SET = new Set(["weekly", "monthly", "all", "all_time", "alltime"]);
@@ -773,6 +780,12 @@ export default async function handler(req, res) {
 
     const category = String(q.category ?? "").toLowerCase().trim();
     if (!CATEGORY_SET.has(category)) return json(res, 400, { error: "Invalid category" });
+
+    // Recruiter standings live in a dedicated handler (squad-size weighted score).
+    if (category === "recruiter_league") {
+      const { default: leagueRecruiter } = await import("./leagueRecruiter.js");
+      return leagueRecruiter(req, res);
+    }
 
     const periodRaw = String(q.period ?? "weekly").toLowerCase().trim();
     if (!PERIOD_SET.has(periodRaw)) return json(res, 400, { error: "Invalid period" });

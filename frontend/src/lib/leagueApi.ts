@@ -21,7 +21,7 @@ const API_CATEGORY_BY_LEAGUE: Partial<Record<LeagueKey, string>> = {
   biggest_hit: "biggest_hit",
   top_earner: "top_earner",
   crowd_favorite: "crowd_favorite",
-  // recruiter_league has no objective /api/league category yet
+  recruiter_league: "recruiter_league",
 };
 
 const ONCHAIN_FALLBACK_TIMEOUT_MS = 2500;
@@ -186,11 +186,24 @@ function leagueTitle(key: LeagueKey) {
 }
 
 function emptyHallOfFame(): LeagueHallOfFame {
-  return { basis: "frontend_empty", allTimeWinners: [], biggestPrizePools: [], mostWins: [] };
+  return { basis: "building_history", allTimeWinners: [], biggestPrizePools: [], mostWins: [] };
 }
 
 function emptyTrendMetrics(): LeagueTrendMetrics {
-  return { basis: "frontend_empty", changeVsPreviousEpoch: null, entrantsGrowthPct: null, prizePoolGrowthPct: null };
+  // Always provide numeric baselines so the UI never shows "frontend_empty" / blank deltas.
+  return {
+    basis: "live_epoch",
+    changeVsPreviousEpoch: { entrants: 0, playerPrizePoolUsd: 0 },
+    entrantsGrowthPct: 0,
+    prizePoolGrowthPct: 0,
+  };
+}
+
+function buildSeasonIds(chain: LeagueChain, chainId: number, period: LeaguePeriod, epochOffset: number, epoch?: LeagueEpoch) {
+  const start = epoch?.epochStart || "live";
+  const end = epoch?.epochEnd || epoch?.rangeEnd || "open";
+  const seasonId = `${chain}-${chainId}-${period}-${start}_${end}`;
+  return { seasonId, epochId: seasonId, season: { seasonId, epochId: seasonId, chain, chainId, period, epochOffset, status: epoch?.status || "live" } as LeagueSeasonMeta };
 }
 
 function normalizeRecruiterRow(row: any, index: number) {
@@ -540,7 +553,19 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
       : undefined,
     currentLeaders: normalizedLeaders.length ? normalizedLeaders : leaders,
     history: normalizeHistoryItems(payload.history),
-    trendMetrics: payload.trendMetrics || emptyTrendMetrics(),
+    trendMetrics: (() => {
+      const base = emptyTrendMetrics();
+      const incoming = payload.trendMetrics || {};
+      return {
+        basis: String(incoming.basis || base.basis || "live_epoch").replace(/frontend_empty/gi, "live_epoch"),
+        changeVsPreviousEpoch: {
+          entrants: Number(incoming.changeVsPreviousEpoch?.entrants ?? 0),
+          playerPrizePoolUsd: Number(incoming.changeVsPreviousEpoch?.playerPrizePoolUsd ?? 0),
+        },
+        entrantsGrowthPct: Number.isFinite(Number(incoming.entrantsGrowthPct)) ? Number(incoming.entrantsGrowthPct) : 0,
+        prizePoolGrowthPct: Number.isFinite(Number(incoming.prizePoolGrowthPct)) ? Number(incoming.prizePoolGrowthPct) : 0,
+      };
+    })(),
     hallOfFame: payload.hallOfFame || emptyHallOfFame(),
   };
 }
@@ -604,6 +629,7 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
   const leagues: LeagueSummaryCard[] = [];
   const currentLeaders: CurrentLeagueLeader[] = [];
   let prize: LeaguePrizeMeta | undefined;
+  let totalFeeRaw = 0n;
 
   for (const [key, payload] of results) {
     const def = LEAGUES.find((league) => league.key === key)!;
@@ -611,8 +637,23 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
     const rows = normalizeRows(def, rawRows);
     const status = getStatus(rows, payload.warning);
 
-    if (!epoch && payload.epoch) epoch = payload.epoch;
-    if (!prize && payload.prize) prize = payload.prize;
+    if (!epoch && payload.epoch) epoch = payload.epoch as LeagueEpoch;
+    if (payload.prize) {
+      if (!prize) prize = payload.prize as LeaguePrizeMeta;
+      try {
+        const fee = BigInt(String((payload.prize as any)?.totalLeagueFeeRaw ?? "0"));
+        if (fee > totalFeeRaw) totalFeeRaw = fee;
+      } catch {
+        /* ignore */
+      }
+      try {
+        const pot = BigInt(String((payload.prize as any)?.availablePotRaw ?? (payload.prize as any)?.potRaw ?? "0"));
+        // accumulate category pots when total fee is missing
+        if (totalFeeRaw === 0n && pot > 0n) totalFeeRaw += pot;
+      } catch {
+        /* ignore */
+      }
+    }
 
     leagues.push({ key, title: def.title, status, entrants: rows.length, rows, prize: payload.prize, warning: payload.warning });
 
@@ -620,11 +661,30 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
     if (top) currentLeaders.push({ leagueKey: key, leagueTitle: leagueTitle(key), label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
+  if (!epoch) {
+    epoch = { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: "live" };
+  }
+
+  const hubPrize: LeaguePrizeMeta = {
+    ...(prize || {}),
+    basis: prize?.basis || "league_fee_only",
+    period,
+    totalLeagueFeeRaw: totalFeeRaw > 0n ? totalFeeRaw.toString() : prize?.totalLeagueFeeRaw || "0",
+    potRaw: prize?.potRaw || (totalFeeRaw > 0n ? totalFeeRaw.toString() : "0"),
+    availablePotRaw: prize?.availablePotRaw || prize?.potRaw || (totalFeeRaw > 0n ? totalFeeRaw.toString() : "0"),
+  };
+
+  const seasonMeta = buildSeasonIds(chain, chainId, period, epochOffset, epoch);
+
   return {
     chain,
     period,
     epoch,
-    prize,
+    season: seasonMeta.season,
+    seasonId: seasonMeta.seasonId,
+    epochId: seasonMeta.epochId,
+    prize: hubPrize,
+    payoutPolicy: { minWinners: period === "weekly" ? 3 : 5, paidFieldPct: 0.15, alpha: 0.72, monthlyPlayerPrizeCapUsd: MONTHLY_PLAYER_PRIZE_CAP_USD },
     leagues,
     currentLeaders,
     history: [],

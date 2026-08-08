@@ -63,22 +63,44 @@ function formatUsd(value: number) {
 }
 
 function formatDelta(value?: number | null, unit = "") {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "No baseline";
   const n = Number(value);
+  if (!Number.isFinite(n)) return unit === "%" ? "0%" : "0";
   const sign = n > 0 ? "+" : "";
   return `${sign}${unit === "%" ? n.toFixed(1) : n.toLocaleString()}${unit}`;
 }
 
 function formatEpochEnd(summary?: LeagueSummaryResponse) {
+  // Prefer full epoch end (not "now" rangeEnd) so users see when the season closes.
   const end = summary?.epoch?.epochEnd || summary?.epoch?.rangeEnd;
   if (!end) return "Awaiting epoch";
   const date = new Date(end);
   if (Number.isNaN(date.getTime())) return "Awaiting epoch";
-  return date.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
 }
 
 function getPrizeRaw(prize?: LeaguePrizeMeta) {
-  return prize?.availablePotRaw ?? prize?.potRaw ?? prize?.totalLeagueFeeRaw ?? "0";
+  return (
+    prize?.availablePotRaw ||
+    prize?.potRaw ||
+    prize?.totalLeagueFeeRaw ||
+    "0"
+  );
+}
+
+function resolveGeneratedUsd(prize: LeaguePrizeMeta | undefined, prizeBnb: number, bnbUsd: number | null | undefined) {
+  const fromApi = Number(prize?.generatedUsd);
+  // `??` does not treat 0 as missing — server often returns generatedUsd:0 when BNB_USD_PRICE unset.
+  if (Number.isFinite(fromApi) && fromApi > 0) return fromApi;
+  const price = Number(bnbUsd || prize?.bnbUsdPrice || 0);
+  if (prizeBnb > 0 && price > 0) return prizeBnb * price;
+  return 0;
 }
 
 function rowLabel(def: LeagueDef, row: any) {
@@ -394,24 +416,62 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const rows = useMemo(() => (isSolana ? [] : selectedCard?.rows ?? []), [isSolana, selectedCard]);
   const selectedPrize = isSolana ? undefined : selectedCard?.prize;
   const summaryPrize = isSolana ? undefined : summary?.prize;
-  const rawPrizeBnb = rawToBnb(getPrizeRaw(selectedPrize || summaryPrize));
-  const rawGeneratedUsd = summaryPrize?.generatedUsd ?? (rawPrizeBnb * (bnbUsd || Number(summaryPrize?.bnbUsdPrice || 0)));
+  // Hub prize uses total epoch league-fee pot; selected category pot is secondary.
+  const hubPrizeRaw = getPrizeRaw(summaryPrize) !== "0" ? getPrizeRaw(summaryPrize) : getPrizeRaw(selectedPrize);
+  const categoryPrizeRaw = getPrizeRaw(selectedPrize);
+  const rawPrizeBnb = rawToBnb(hubPrizeRaw);
+  const categoryPrizeBnb = rawToBnb(categoryPrizeRaw);
+  const displayPrizeBnb = rawPrizeBnb > 0 ? rawPrizeBnb : categoryPrizeBnb;
+  const rawGeneratedUsd = resolveGeneratedUsd(summaryPrize || selectedPrize, displayPrizeBnb, bnbUsd);
   const policy = summary?.payoutPolicy || getPayoutPolicy(period);
-  const cappedPlayerPoolUsd = summaryPrize?.playerPrizePoolUsd ?? (isSolana ? 0 : period === "monthly" ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd) : rawGeneratedUsd);
-  const charityReserveUsd = summaryPrize?.charityReserveUsd ?? (isSolana ? 0 : period === "monthly" ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd) : 0);
-  const qualifiedEntrants = isSolana ? 0 : Math.max(selectedCard?.entrants ?? rows.length, rows.length);
-  const computedPaidPlaces = calculatePaidPlaces(qualifiedEntrants, policy);
-  const activePaidPlaces = qualifiedEntrants > 0 ? computedPaidPlaces : 0;
-  const payoutCurve = activePaidPlaces > 0 ? calculatePayoutCurve(qualifiedEntrants, cappedPlayerPoolUsd, policy) : [];
-  const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces);
+  const playerPoolFromApi = Number(summaryPrize?.playerPrizePoolUsd);
+  const cappedPlayerPoolUsd =
+    Number.isFinite(playerPoolFromApi) && playerPoolFromApi > 0
+      ? playerPoolFromApi
+      : isSolana
+        ? 0
+        : period === "monthly"
+          ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd)
+          : rawGeneratedUsd;
+  const charityFromApi = Number(summaryPrize?.charityReserveUsd);
+  const charityReserveUsd =
+    Number.isFinite(charityFromApi) && charityFromApi > 0
+      ? charityFromApi
+      : isSolana
+        ? 0
+        : period === "monthly"
+          ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd)
+          : 0;
+  // Hub "active paid places": use the strongest field size this epoch (any league with entrants).
+  const maxLeagueEntrants = isSolana
+    ? 0
+    : Math.max(
+        0,
+        ...(summary?.leagues || []).map((card) => Math.max(Number(card.entrants || 0), Array.isArray(card.rows) ? card.rows.length : 0)),
+        rows.length,
+      );
+  const selectedEntrants = Math.max(Number(selectedCard?.entrants || 0), rows.length);
+  const paidFieldEntrants = Math.max(selectedEntrants, maxLeagueEntrants);
+  const computedPaidPlaces = calculatePaidPlaces(paidFieldEntrants, policy);
+  const activePaidPlaces = paidFieldEntrants > 0 ? Math.max(1, computedPaidPlaces) : 0;
+  const payoutCurve =
+    activePaidPlaces > 0 ? calculatePayoutCurve(Math.max(selectedEntrants, 1), cappedPlayerPoolUsd, policy) : [];
+  const previewRanks = payoutCurve.filter(
+    (row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces,
+  );
   const selectedStatus = isSolana ? "pending" : selectedCard?.status;
   const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
   const showCapNotification = !isSolana && period === "monthly" && capReached;
-  const solanaPendingCopy = "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
+  const solanaPendingCopy =
+    "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
   const trendMetrics = summary?.trendMetrics;
+  const trendBasis = String(trendMetrics?.basis || "live_epoch").replace(/frontend_empty|insufficient_history/gi, "live_epoch");
   const hallOfFame = summary?.hallOfFame;
   const biggestPrizePool = (hallOfFame?.biggestPrizePools?.[0] as any) || null;
   const topWinner = (hallOfFame?.mostWins?.[0] as any) || null;
+  const epochLabel = formatEpochEnd(summary);
+  const seasonId = summary?.seasonId || summary?.epochId || summary?.season?.seasonId;
+  const epochId = summary?.epochId || summary?.season?.epochId || seasonId;
   
 
   const handleSelectLeague = (key: LeagueKey) => {
@@ -432,11 +492,19 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80"></div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="font-retro text-xl text-foreground">Warzone Leagues</span>
-                
-                
-                <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="default" />
+                <TacticalTag label={`${period === "weekly" ? "Weekly" : "Monthly"} ends ${epochLabel}`} tone="default" />
+                {summary?.epoch?.status ? <TacticalTag label={String(summary.epoch.status).toUpperCase()} tone="success" /> : null}
               </div>
-              {summary?.seasonId ? <div className="mt-2 truncate text-xs text-muted-foreground">Season ID: {summary.seasonId}</div> : null}
+              <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                {summary?.epoch?.epochStart ? (
+                  <div>
+                    Epoch window: {new Date(summary.epoch.epochStart).toLocaleString()} →{" "}
+                    {summary.epoch.epochEnd ? new Date(summary.epoch.epochEnd).toLocaleString() : "open"}
+                  </div>
+                ) : null}
+                {epochId ? <div className="truncate">Epoch ID: {epochId}</div> : null}
+                {seasonId && seasonId !== epochId ? <div className="truncate">Season ID: {seasonId}</div> : null}
+              </div>
             </div>
             <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
               <TacticalSwitch<LeagueChain>
@@ -467,11 +535,51 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </section>
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Prize pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "SOL pending" : rawPrizeBnb > 0 ? formatBnb(rawPrizeBnb) : rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "Pending"}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Solana prize feed pending." : rawPrizeBnb > 0 || rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "League fee pot is not published by the indexer yet."}</div></div>
-          <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div><div className="mt-2 font-retro text-xl">{period === "monthly" ? formatUsd(policy.monthlyPlayerPrizeCapUsd) : "No weekly cap"}</div><div className="mt-1 text-xs text-muted-foreground">{period === "monthly" ? (capReached ? "Monthly cap reached." : "Monthly hard cap before charity overflow.") : "Weekly pools pay without the monthly cap."}</div></div>
-          <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(cappedPlayerPoolUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "No BNB-derived pool shown on Solana." : ""}</div></div>
-          <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : ""}</div></div>
-          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Active paid places</div><div className="mt-2 font-retro text-xl">{activePaidPlaces}</div><div className="mt-1 text-xs text-muted-foreground">Max(min winners, floor(entrants x 15%)).</div></div>
+          <div className="mwz-hud-frame p-4">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              <Zap className="h-3.5 w-3.5" />
+              Prize pool
+            </div>
+            <div className="mt-2 font-retro text-xl">
+              {isSolana ? "SOL pending" : displayPrizeBnb > 0 ? formatBnb(displayPrizeBnb) : rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "Syncing fees…"}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {isSolana
+                ? "Solana prize feed pending."
+                : displayPrizeBnb > 0
+                  ? `${formatUsd(rawGeneratedUsd)} · league fee share this epoch`
+                  : "Waiting for curve volume in this epoch (or set BNB_USD_PRICE for USD)."}
+            </div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div>
+            <div className="mt-2 font-retro text-xl">{period === "monthly" ? formatUsd(policy.monthlyPlayerPrizeCapUsd) : "No weekly cap"}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {period === "monthly" ? (capReached ? "Monthly cap reached." : "Monthly hard cap before charity overflow.") : "Weekly pools pay without the monthly cap."}
+            </div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div>
+            <div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(cappedPlayerPoolUsd)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {categoryPrizeBnb > 0 ? `This board: ${formatBnb(categoryPrizeBnb)}` : isSolana ? "No BNB-derived pool on Solana." : "Shared across live boards this epoch."}
+            </div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div>
+            <div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : "Overflow past monthly player cap."}</div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              Active paid places
+            </div>
+            <div className="mt-2 font-retro text-xl">{activePaidPlaces}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Field size {paidFieldEntrants} · min winners {policy.minWinners} · 15% rule
+            </div>
+          </div>
         </section>
 
         {showCapNotification ? (
@@ -515,7 +623,27 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           </div>
 
           <aside className="space-y-4">
-            <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><TrendingUp className="h-4 w-4" />Season intel</div><div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-muted-foreground">Entrants delta</div><div className="font-retro text-foreground">{formatDelta(trendMetrics?.changeVsPreviousEpoch?.entrants)}</div><div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.entrantsGrowthPct, "%")}</div></div><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-muted-foreground">Prize delta</div><div className="font-retro text-foreground">{formatUsd(Number(trendMetrics?.changeVsPreviousEpoch?.playerPrizePoolUsd || 0))}</div><div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.prizePoolGrowthPct, "%")}</div></div></div><div className="mt-3 text-[11px] text-muted-foreground">Basis: {trendMetrics?.basis || "waiting for previous epoch"}</div></div>
+            <div className="mwz-hud-frame p-5">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80">
+                <TrendingUp className="h-4 w-4" />
+                Season intel
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2">
+                  <div className="text-muted-foreground">Entrants delta</div>
+                  <div className="font-retro text-foreground">{formatDelta(trendMetrics?.changeVsPreviousEpoch?.entrants ?? 0)}</div>
+                  <div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.entrantsGrowthPct ?? 0, "%")}</div>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2">
+                  <div className="text-muted-foreground">Prize delta</div>
+                  <div className="font-retro text-foreground">{formatUsd(Number(trendMetrics?.changeVsPreviousEpoch?.playerPrizePoolUsd || 0))}</div>
+                  <div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.prizePoolGrowthPct ?? 0, "%")}</div>
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-muted-foreground">
+                Compared to previous {period} epoch · {trendBasis.replace(/_/g, " ")}
+              </div>
+            </div>
             <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Current #1s</div><div className="mt-4 space-y-2">{!isSolana && summary?.currentLeaders.length ? summary.currentLeaders.map((leader) => <button key={leader.leagueKey} type="button" onClick={() => handleSelectLeague(leader.leagueKey)} className="w-full rounded-xl border border-border/40 bg-card/55 px-3 py-2 text-left transition hover:border-accent/60"><div className="text-[11px] text-muted-foreground">{leader.leagueTitle}</div><div className="truncate text-sm font-semibold">{leader.label}</div><div className="truncate text-[11px] text-accent">{leader.metric}</div></button>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana leaders pending." : "No leaders yet."}</div>}</div></div>
             <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Hall of Fame</div><div className="mt-4 space-y-3 text-sm"><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Most wins</div><div className="truncate font-semibold text-foreground">{topWinner?.name || topWinner?.symbol || shortAddr(topWinner?.wallet) || "Awaiting history"}</div><div className="text-[11px] text-accent">{topWinner?.wins ? `${topWinner.wins} wins` : hallOfFame?.basis || "summary_history_scaffold"}</div></div><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Biggest pool</div><div className="font-semibold text-foreground">{biggestPrizePool ? formatUsd(Number(biggestPrizePool.playerPrizePoolUsd || biggestPrizePool.generatedUsd || 0)) : "Awaiting history"}</div><div className="text-[11px] text-accent">{biggestPrizePool?.period || "No finalized pool yet"}</div></div></div></div>
             
