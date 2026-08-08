@@ -163,9 +163,16 @@ const WarRoom = () => {
         return draftMetricValue(right, "follows") - draftMetricValue(left, "follows");
       }
 
+      // Trending (default): most trending first, least trending last — bonding + graduated together.
       const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
       const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
-      return rightMetrics.trendScore - leftMetrics.trendScore;
+      if (rightMetrics.trendScore !== leftMetrics.trendScore) {
+        return rightMetrics.trendScore - leftMetrics.trendScore;
+      }
+      // Stable tie-breakers: volume then mcap then recency.
+      if (rightMetrics.volumeUsd !== leftMetrics.volumeUsd) return rightMetrics.volumeUsd - leftMetrics.volumeUsd;
+      if (rightMetrics.marketCapUsd !== leftMetrics.marketCapUsd) return rightMetrics.marketCapUsd - leftMetrics.marketCapUsd;
+      return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
     });
   }, [activeMode, bnbUsd, campaigns, search, sortDirection, sortKey]);
 

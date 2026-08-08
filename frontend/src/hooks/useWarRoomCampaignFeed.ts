@@ -239,24 +239,37 @@ function isGraduatedCampaign(campaign: WarRoomCampaign) {
   );
 }
 
-function matchesMode(campaign: WarRoomCampaign, mode: WarRoomMode) {
+function isDraftOnlyRow(campaign: WarRoomCampaign) {
   const rich = campaign as any;
-  const graduated = isGraduatedCampaign(campaign);
-  // Once graduated, never treat as draft even if a stale scheduled lifecycle row remains.
-  const preLaunch =
-    !graduated &&
-    isPreLaunchCampaign({
-      launchAtSec: rich.launchAt,
-      draftStatus: rich.draftStatus || (rich.status === "draft" ? rich.draftStatus : null),
-    });
-  const isDraftRow =
-    !graduated &&
-    (rich.status === "draft" || preLaunch || Boolean(rich.draftId && rich.isActive === false) || Boolean(rich.isScheduled));
+  if (isGraduatedCampaign(campaign)) return false;
+  // Real market rows with campaign 0x addresses stay market even if a draft lifecycle row exists.
+  const addr = String(campaign.campaign || "");
+  const looksLikeMarket = /^0x[a-f0-9]{40}$/i.test(addr);
+  if (looksLikeMarket && (rich.isActive === true || rich.status === "live" || Number(rich.marketCapBnb || 0) > 0 || Number(rich.raisedTotalBnb || 0) > 0)) {
+    return false;
+  }
+  const preLaunch = isPreLaunchCampaign({
+    launchAtSec: rich.launchAt,
+    draftStatus: rich.draftStatus || (rich.status === "draft" ? rich.draftStatus : null),
+  });
+  return (
+    rich.status === "draft" ||
+    preLaunch ||
+    Boolean(rich.draftId && rich.isActive === false) ||
+    Boolean(rich.isScheduled && !looksLikeMarket) ||
+    addr.startsWith("draft:")
+  );
+}
 
-  if (mode === "draft") return isDraftRow;
-  if (mode === "graduated") return graduated && !preLaunch;
-  // Trending / New: live bonding only — never timed drafts, pre-launch, or graduated.
-  return !isDraftRow && !preLaunch && !graduated;
+function matchesMode(campaign: WarRoomCampaign, mode: WarRoomMode) {
+  const graduated = isGraduatedCampaign(campaign);
+  const draftOnly = isDraftOnlyRow(campaign);
+
+  if (mode === "draft") return draftOnly;
+  if (mode === "graduated") return graduated;
+  // Trending / New: ALL tradeable market campaigns (bonding + graduated), never prepare-only drafts.
+  // Sort by trend/new happens in the page — do not drop graduated from the inventory.
+  return !draftOnly;
 }
 
 /** Fast local search index fields (no network). */
@@ -353,8 +366,8 @@ async function hydrateCampaignMarketStats(campaign: WarRoomCampaign, chainId: nu
   );
 }
 
-/** Full market inventory (bonding + graduated) — mode/search filter client-side. */
-async function fetchCampaignApiInventory(chainId: number, signal: AbortSignal): Promise<WarRoomCampaign[]> {
+/** Full market inventory for one chain (bonding + graduated). */
+async function fetchCampaignApiInventoryForChain(chainId: number, signal: AbortSignal): Promise<WarRoomCampaign[]> {
   const params = new URLSearchParams({
     chainId: String(chainId),
     limit: "250",
@@ -370,6 +383,29 @@ async function fetchCampaignApiInventory(chainId: number, signal: AbortSignal): 
   if (!response.ok) throw new Error(String(json?.error || `Campaign inventory HTTP ${response.status}`));
   const items = Array.isArray(json?.items) ? json.items : [];
   return items.map((item: any, index: number) => normalizeApiCampaign(item, index));
+}
+
+/** EVM: load 97 + 56 so testnet + mainnet coins all appear in War Room. */
+async function fetchCampaignApiInventory(selectedChainId: number, signal: AbortSignal): Promise<WarRoomCampaign[]> {
+  const chainIds =
+    Number(selectedChainId) === SOLANA_CHAIN_ID
+      ? [SOLANA_CHAIN_ID]
+      : isEvmChainId(selectedChainId)
+        ? [BNB_TESTNET_CHAIN_ID, BNB_CHAIN_ID]
+        : [Number(selectedChainId || 97)];
+
+  const pages = await Promise.all(
+    chainIds.map((id) => fetchCampaignApiInventoryForChain(id, signal).catch(() => [] as WarRoomCampaign[])),
+  );
+  const byKey = new Map<string, WarRoomCampaign>();
+  for (const page of pages) {
+    for (const row of page) {
+      const key = `${Number((row as any).chainId || 0)}:${String(row.campaign || "").toLowerCase()}`;
+      if (!row.campaign || byKey.has(key)) continue;
+      byKey.set(key, row);
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 async function fetchDraftCampaignsForWarRoom(selectedChainId: number): Promise<WarRoomCampaign[]> {
@@ -567,25 +603,24 @@ export function useWarRoomCampaignFeed({
         if (cancelled) return;
 
         const lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
+        // Never demote a live/graduated market row to draft — that was wiping coins after first paint.
         const apiWithLifecycle = apiItems.map((campaign) => {
           if (isGraduatedCampaign(campaign)) return campaign;
+          if (campaign.isActive === true || (campaign as any).status === "live") return campaign;
           const address = String(campaign.campaign || "").toLowerCase();
+          if (!/^0x[a-f0-9]{40}$/i.test(address)) return campaign;
           const lifecycle = lifecycleByAddress.get(address);
-          if (!lifecycle) return campaign;
+          if (!lifecycle || String(lifecycle.status) !== "scheduled") return campaign;
           const launchAt = timestampSeconds(lifecycle.scheduledLaunchAt || lifecycle.tradingLaunchAt);
-          const preLaunch = isPreLaunchCampaign({
-            launchAtSec: launchAt,
-            draftStatus: lifecycle.status,
-            nowSec,
-          });
-          if (!preLaunch) return campaign;
+          // Only demote pure pre-launch scheduled rows (future launch, not yet trading).
+          if (!launchAt || launchAt <= nowSec) return campaign;
           return {
             ...campaign,
             status: "draft",
             isActive: false,
             isDexTrading: false,
             isScheduled: true,
-            launchAt: launchAt ?? undefined,
+            launchAt,
             draftId: lifecycle.id,
             draftSlug: lifecycle.slug,
             draftStatus: "scheduled",
