@@ -13,11 +13,24 @@ import type {
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getSolanaProvider, type SolanaProvider } from "@/lib/solanaWallet";
 
+/**
+ * LEGACY SCAFFOLD ADAPTER — quarantined for product mutations.
+ *
+ * Product Solana create uses V4:
+ *   - `requestSolanaCreateAuthorizationV4`
+ *   - `buildSolanaCreateCampaignV4Plan` / `submitSolanaV4CreateFromAuthorization`
+ *   - program: `programs/memewarzone_solana`
+ *
+ * Do not enable buy/sell/create here even if VITE_SOLANA_LAUNCHPAD_PROGRAM_ID is set.
+ * See `docs/solana/bnb-parity-build-plan.md` and `solana/README.QUARANTINE.md`.
+ */
 export const SOLANA_LAUNCHPAD_ADAPTER_ID = "solana" as const;
 
 const PLACEHOLDER_PROGRAM_ID = "11111111111111111111111111111111";
 const PROGRAM_PENDING_MESSAGE =
-  "Solana launchpad actions need VITE_SOLANA_LAUNCHPAD_PROGRAM_ID set to the deployed Anchor program before create, buy, sell, graduate, and claim can run.";
+  "Solana protocol actions use the V4 program path (authorized create). Legacy adapter create/buy/sell/graduate are disabled.";
+const V4_ONLY_MUTATION_MESSAGE =
+  "Solana create must use V4 authorized create (Push Live → authorize_solana_v4). Buy/sell/graduate land in parity P1–P2 — not this legacy scaffold.";
 const WALLET_PENDING_MESSAGE = "Connect a Solana wallet that supports transaction signing.";
 const WEB3_URL = "https://esm.sh/@solana/web3.js@1.95.3?bundle";
 const SPL_TOKEN_URL = "https://esm.sh/@solana/spl-token@0.4.9?bundle";
@@ -529,18 +542,17 @@ export function getSolanaLaunchpadSafetyStatus(params: {
 } = {}): LaunchpadSafetyStatus {
   const signerReady = Boolean(params.hasSolanaWallet);
   const programId = getSolanaProgramId();
-  const programReady = isProgramConfigured(programId);
-  const protocolReady = signerReady && programReady;
+  const programConfigured = isProgramConfigured(programId);
+  // Never claim full protocol "ready" for trade — V4 buy/sell is P1.
   return {
     adapterId: SOLANA_LAUNCHPAD_ADAPTER_ID,
     chainId: SOLANA_CHAIN_ID,
-    chainLabel: "Solana Mainnet",
-    protocolStatus: programReady ? "ready" : "protocol_pending",
-    title: protocolReady ? "Solana launch route ready" : "Solana launch route pending",
-    primaryActionLabel: protocolReady ? "Solana Live Route" : "Solana Program Required",
-    description: protocolReady
-      ? "Solana launch actions use the deployed Anchor launchpad program, derived PDAs, SPL mint/vault accounts, and the connected Solana wallet."
-      : PROGRAM_PENDING_MESSAGE,
+    chainLabel: "Solana",
+    protocolStatus: "protocol_pending",
+    title: "Solana V4 create path (trade pending)",
+    primaryActionLabel: "V4 Create Only",
+    description:
+      "Prepare Mode and V4 authorized create are the product path. Bonding buy/sell/graduate match BNB in later parity phases — not via this legacy adapter.",
     checks: [
       {
         id: "routeAuth",
@@ -552,21 +564,21 @@ export function getSolanaLaunchpadSafetyStatus(params: {
         id: "signer",
         label: "Wallet signer",
         state: signerReady ? "ready" : "pending",
-        detail: signerReady ? `${params.solanaWalletName || "Solana wallet"} connected for Solana launch transactions.` : WALLET_PENDING_MESSAGE,
+        detail: signerReady ? `${params.solanaWalletName || "Solana wallet"} connected.` : WALLET_PENDING_MESSAGE,
       },
       {
         id: "program",
-        label: "Launch program",
-        state: programReady ? "ready" : "blocked",
-        detail: programReady ? programId : PROGRAM_PENDING_MESSAGE,
+        label: "V4 program id (env)",
+        state: programConfigured ? "ready" : "pending",
+        detail: programConfigured
+          ? programId
+          : "Set VITE_SOLANA_LAUNCHPAD_PROGRAM_ID after V4 devnet deploy (programs/memewarzone_solana).",
       },
       {
         id: "protocol",
-        label: "Protocol adapter",
-        state: programReady ? "ready" : "blocked",
-        detail: programReady
-          ? "Adapter derives Anchor PDAs and sends create, buy, sell, graduate, and reward claim instructions."
-          : PROGRAM_PENDING_MESSAGE,
+        label: "Legacy scaffold mutations",
+        state: "blocked",
+        detail: V4_ONLY_MUTATION_MESSAGE,
       },
     ],
     milestones: [
@@ -574,19 +586,19 @@ export function getSolanaLaunchpadSafetyStatus(params: {
         id: "wallets",
         label: "Wallet connect",
         state: "ready",
-        detail: "Solana wallet detection and manual connection are available in the launch flow.",
+        detail: "Solana wallet detection and connection are available.",
       },
       {
-        id: "program",
-        label: "Anchor program",
-        state: programReady ? "ready" : "blocked",
-        detail: programReady ? "Program ID configured for frontend transaction building." : "Set VITE_SOLANA_LAUNCHPAD_PROGRAM_ID after deploy.",
+        id: "create",
+        label: "V4 authorized create",
+        state: "pending",
+        detail: "Push Live → authorize_solana_v4 → createCampaign (P0).",
       },
       {
         id: "trading",
         label: "Buy/sell/finalize",
-        state: protocolReady ? "ready" : "pending",
-        detail: protocolReady ? "Transactions are routed to the Anchor launchpad program." : "Waiting for wallet and deployed program configuration.",
+        state: "pending",
+        detail: "Parity P1–P2 — not enabled on legacy adapter.",
       },
     ],
   };
@@ -605,7 +617,8 @@ export function createSolanaLaunchpadAdapter(params: {
   solanaWalletName?: string;
   solanaAccount?: string;
 }): LaunchpadAdapter {
-  const protocolStatus = isProgramConfigured() ? "ready" : "protocol_pending";
+  // Always pending for product mutations — V4 create is a separate module.
+  const protocolStatus = "protocol_pending" as const;
 
   return {
     adapterId: SOLANA_LAUNCHPAD_ADAPTER_ID,
@@ -668,45 +681,29 @@ export function createSolanaLaunchpadAdapter(params: {
       const vault = await fetchFeeVaultAccount(runtime, account);
       return { campaign: { ...campaign, ...mapCampaign(account) }, metrics: mapMetrics(account, vault), stats: mapStats(account) };
     },
-    createCampaign: async (createParams: CreateCampaignParams) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const { tx, mint } = await buildCreateTransaction(runtime, createParams);
-      return sendTransaction(runtime, tx, [mint], "create");
+    createCampaign: async (_createParams: CreateCampaignParams) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    buyTokens: async (campaignAddress: string, amountLamports: bigint, _maxCostLamports: bigint) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildTradeTransaction(runtime, campaignAddress, toSafeU64(amountLamports), "buy");
-      return sendTransaction(runtime, tx, [], "buy");
+    buyTokens: async (_campaignAddress: string, _amountLamports: bigint, _maxCostLamports: bigint) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    sellTokens: async (campaignAddress: string, tokenAmount: bigint, _minLamports: bigint) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildTradeTransaction(runtime, campaignAddress, toSafeU64(tokenAmount), "sell");
-      return sendTransaction(runtime, tx, [], "sell");
+    sellTokens: async (_campaignAddress: string, _tokenAmount: bigint, _minLamports: bigint) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    finalizeCampaign: async (campaignAddress: string, _minTokens: bigint, _minBnb: bigint) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildGraduateTransaction(runtime, campaignAddress);
-      return sendTransaction(runtime, tx, [], "graduate");
+    finalizeCampaign: async (_campaignAddress: string, _minTokens: bigint, _minBnb: bigint) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    claimCreatorRewards: async (campaignAddress: string) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildClaimTransaction(runtime, campaignAddress, "claim_creator_rewards");
-      return sendTransaction(runtime, tx, [], "claim_creator_rewards");
+    claimCreatorRewards: async (_campaignAddress: string) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    claimRecruiterRewards: async (campaignAddress: string) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildClaimTransaction(runtime, campaignAddress, "claim_recruiter_rewards");
-      return sendTransaction(runtime, tx, [], "claim_recruiter_rewards");
+    claimRecruiterRewards: async (_campaignAddress: string) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    claimSquadRewards: async (campaignAddress: string) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildClaimTransaction(runtime, campaignAddress, "claim_squad_rewards");
-      return sendTransaction(runtime, tx, [], "claim_squad_rewards");
+    claimSquadRewards: async (_campaignAddress: string) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
-    claimProtocolRewards: async (campaignAddress: string) => {
-      const runtime = await loadRuntime(params.hasSolanaWallet);
-      const tx = await buildClaimTransaction(runtime, campaignAddress, "claim_protocol_rewards");
-      return sendTransaction(runtime, tx, [], "claim_protocol_rewards");
+    claimProtocolRewards: async (_campaignAddress: string) => {
+      throw new Error(V4_ONLY_MUTATION_MESSAGE);
     },
     getSafetyStatus: () => getSolanaLaunchpadSafetyStatus({
       hasSolanaWallet: params.hasSolanaWallet,

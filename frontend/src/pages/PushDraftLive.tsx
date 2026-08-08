@@ -146,7 +146,13 @@ export default function PushDraftLive() {
 
   const draft = bundle?.draft;
   const draftIsSolana = isSolanaChainId(Number(draft?.chainId));
-  const ownerConnected = sameWallet(draft?.creatorWallet, wallet.account);
+  const ownerConnected = draftIsSolana
+    ? Boolean(
+        draft?.creatorWallet &&
+          solanaWallet.solanaAccount &&
+          String(draft.creatorWallet).trim() === String(solanaWallet.solanaAccount).trim(),
+      )
+    : sameWallet(draft?.creatorWallet, wallet.account);
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
   const chainLabel = draft ? getChainLabel(Number(draft.chainId)) : "Unknown";
   const selectedTier = graduationTierLabel(graduationTargetWei);
@@ -193,10 +199,89 @@ export default function PushDraftLive() {
     };
   }, [draft, draftIsSolana, wallet.signer, wallet.account, eligibilityFactoryAddress]);
 
+  const deploySolanaV4 = async () => {
+    if (!draft) return;
+    if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Push Live is locked until the platform launch switch is enabled.");
+    if (!solanaWallet.solanaAccount) return toast.error("Connect the draft owner Solana wallet first.");
+    if (!ownerConnected) return toast.error("Only the draft owner Solana wallet can deploy this draft.");
+    if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
+    if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
+
+    setSubmitting(true);
+    try {
+      const { signSolanaDraftAction } = await import("@/lib/solanaWallet");
+      const { requestSolanaCreateAuthorizationV4 } = await import("@/lib/solanaCreateAuthorizationV4");
+      const { submitSolanaV4CreateFromAuthorization } = await import("@/lib/solanaV4CreateSubmit");
+
+      // USD micros: graduation tiers on Solana use micros (BNB uses wei). Map $6 → 6_000_000 if needed.
+      // Until tier UI exposes micros, derive from selected BNB-style target when it looks like micros.
+      let graduationTargetUsdMicros = String(graduationTargetWei);
+      try {
+        const asBig = BigInt(graduationTargetWei);
+        // If value looks like wei-scale (> 1e12), treat as unsupported mapping and use 6 USD default micros.
+        if (asBig > 1_000_000_000_000n) graduationTargetUsdMicros = "6000000";
+      } catch {
+        graduationTargetUsdMicros = "6000000";
+      }
+
+      let launchAt: string | number = "0";
+      if (mode === "scheduled") {
+        const at = Math.floor(new Date(launchAtInput).getTime() / 1000);
+        const now = Math.floor(Date.now() / 1000);
+        if (!Number.isInteger(at) || at < now + 5 * 60) {
+          throw new Error("Choose a trading-open time at least five minutes in the future.");
+        }
+        if (at > now + 30 * 24 * 60 * 60) {
+          throw new Error("Scheduled launches cannot be more than 30 days away.");
+        }
+        launchAt = at;
+      }
+
+      const deployAuth = await signSolanaDraftAction({
+        walletAddress: solanaWallet.solanaAccount,
+        chainId: Number(draft.chainId),
+        action: "deploy_draft",
+        draftId: draft.id,
+      });
+
+      const authorization = await requestSolanaCreateAuthorizationV4({
+        draftId: draft.id,
+        auth: deployAuth,
+        graduationTargetUsdMicros,
+        launchAt,
+      });
+
+      const created = await submitSolanaV4CreateFromAuthorization(authorization, {
+        creatorAddress: solanaWallet.solanaAccount,
+      });
+
+      await markDraftDeployment({
+        draftId: draft.id,
+        auth: deployAuth,
+        campaignAddress: created.campaignAddress,
+        tokenAddress: created.mintAddress,
+        deployTxHash: created.signature,
+        scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+      });
+
+      toast.success(
+        mode === "scheduled"
+          ? "Solana campaign deployed (V4). Trading opens at the scheduled time when buy is enabled (P1)."
+          : "Solana campaign deployed (V4). Bonding buy/sell lands in parity P1.",
+      );
+      navigate(`/prepare/${draft.slug}`);
+    } catch (error: any) {
+      const message = String(error?.message || error || "Solana deploy failed.");
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const deploy = async () => {
     if (!draft) return;
     if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Push Live is locked until the platform launch switch is enabled.");
-    if (draftIsSolana) return toast.error("Solana live deployment remains gated until the Solana launch program is connected.");
+    if (draftIsSolana) return deploySolanaV4();
     if (!wallet.account || !wallet.signer) return toast.error("Connect the draft owner wallet first.");
     if (!ownerConnected) return toast.error("Only the draft owner wallet can deploy this draft.");
     if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
@@ -367,11 +452,12 @@ export default function PushDraftLive() {
   }
 
   // Keep deploy clickable when eligibility fails so we can show the explain dialog.
+  // Solana uses V4 authorized create (not BNB factory eligibility).
   const blocked =
     submitting ||
     !DRAFT_PUSH_LIVE_ENABLED ||
-    draftIsSolana ||
-    !canPushLive(draft.status);
+    !canPushLive(draft.status) ||
+    (draftIsSolana ? !ownerConnected : false);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -498,7 +584,18 @@ export default function PushDraftLive() {
           </div>
         ) : null}
 
-        {!ownerConnected && !draftIsSolana ? <p className="mt-4 text-sm text-orange-300">Connect the draft owner wallet before deployment.</p> : null}
+        {!ownerConnected ? (
+          <p className="mt-4 text-sm text-orange-300">
+            {draftIsSolana
+              ? "Connect the draft owner Solana wallet (Phantom/Solflare) before V4 deployment."
+              : "Connect the draft owner wallet before deployment."}
+          </p>
+        ) : null}
+        {draftIsSolana && ownerConnected ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Solana V4 authorized create: Railway signs the digest; your wallet pays gas and sends createCampaign. Buy/sell lands in parity P1.
+          </p>
+        ) : null}
         {!DRAFT_PUSH_LIVE_ENABLED ? <p className="mt-4 text-sm text-orange-300">Draft deployment is currently disabled by the launch switch.</p> : null}
 
         <Button onClick={deploy} disabled={blocked} className="mwz-button mwz-button-orange mt-5 h-12 w-full justify-center font-retro">
