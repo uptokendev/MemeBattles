@@ -1870,18 +1870,19 @@ async function runIndexerCore(opts: {
         );
         const startHint = chain.voteTreasuryStartBlock || 0;
 
-        // Tip-first: pick up brand-new VoteCast quickly (publicnode-friendly range).
+        // Always re-scan a tip window every normal pass (idempotent inserts).
+        // Flaky public RPCs can return empty eth_getLogs while the votes cursor
+        // still advances — without overlap rescan, upvotes never enter Featured
+        // (WIC VoteCast at tip missed while only DDT stayed in vote_aggregates).
         if (opts.mode === "normal") {
           const tipFrom = Math.max(0, target - tipBlocks);
-          if (state < tipFrom) {
-            try {
-              await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, tipFrom, target));
-            } catch (tipVoteErr) {
-              console.warn("[indexer] vote tip scan failed", {
-                chainId: chain.chainId,
-                err: String((tipVoteErr as any)?.message || tipVoteErr),
-              });
-            }
+          try {
+            await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, tipFrom, target));
+          } catch (tipVoteErr) {
+            console.warn("[indexer] vote tip scan failed", {
+              chainId: chain.chainId,
+              err: String((tipVoteErr as any)?.message || tipVoteErr),
+            });
           }
         }
 

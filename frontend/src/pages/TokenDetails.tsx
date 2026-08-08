@@ -2836,6 +2836,7 @@ const bnbUsd = useMemo(() => {
 
                     <UpvoteDialog
                       campaignAddress={campaignAddr}
+                      chainId={chainIdForStorage}
                       buttonVariant="secondary"
                       buttonSize="sm"
                       className="h-8 px-3 text-xs flex-shrink-0"

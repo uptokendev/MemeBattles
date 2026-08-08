@@ -16,6 +16,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
 import { getBnbContractAddresses } from "@/lib/bnbContracts";
+import { apiFetch } from "@/lib/apiBase";
 
 /** Fixed UP Vote price in USD. On-chain amount = oracle nativeTargetForUsd($3). */
 const UPVOTE_USD_TARGET = 3;
@@ -358,16 +359,49 @@ export function UpvoteDialog({
       }
 
       const tx = await c.voteWithBNB(campaignAddress, meta, overrides);
+      const txHash = String(tx?.hash || "");
 
       toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
       await tx.wait();
+
+      // Write votes + vote_aggregates from the receipt so Featured does not wait on indexer getLogs.
+      let ingest: {
+        votes24h?: number;
+        votesAllTime?: number;
+        campaignAddress?: string;
+      } | null = null;
+      if (txHash) {
+        try {
+          const res = await apiFetch("/api/votes/ingest", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ chainId, txHash }),
+          });
+          const body = await res.json().catch(() => null);
+          if (res.ok && Array.isArray(body?.items) && body.items[0]) {
+            ingest = body.items[0];
+          } else {
+            console.warn("[UpvoteDialog] vote ingest failed", res.status, body);
+          }
+        } catch (ingestErr) {
+          console.warn("[UpvoteDialog] vote ingest error", ingestErr);
+        }
+      }
+
       toast({ title: "Upvoted", description: "Your vote has been recorded." });
       setOpen(false);
 
       try {
+        const addr = safeLowerHex(ingest?.campaignAddress || campaignAddress);
         window.dispatchEvent(
           new CustomEvent("memewarzone:upvoteConfirmed", {
-            detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
+            detail: {
+              chainId,
+              campaignAddress: addr,
+              txHash,
+              votes24h: ingest?.votes24h != null ? Number(ingest.votes24h) : undefined,
+              votesAllTime: ingest?.votesAllTime != null ? Number(ingest.votesAllTime) : undefined,
+            },
           }),
         );
         window.dispatchEvent(
@@ -375,8 +409,8 @@ export function UpvoteDialog({
             detail: {
               kind: "upvote",
               chainId,
-              campaignAddress: safeLowerHex(campaignAddress),
-              txHash: tx?.hash,
+              campaignAddress: addr,
+              txHash,
             },
           }),
         );

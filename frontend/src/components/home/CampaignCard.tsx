@@ -333,7 +333,13 @@ export function CampaignCard({
             <Star className={cn("h-4 w-4 transition-all", followed ? "fill-current text-accent" : "text-success/75")} />
           </Button>
 
-          <UpvoteDialog campaignAddress={addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
+          <UpvoteDialog
+            campaignAddress={addr}
+            chainId={chainIdForStorage}
+            className="mwz-button mwz-button-active h-8 px-3 text-[10px]"
+            buttonVariant="ghost"
+            buttonSize="sm"
+          />
         </div>
       </div>
     </div>

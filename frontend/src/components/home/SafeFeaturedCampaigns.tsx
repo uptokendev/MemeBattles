@@ -527,10 +527,16 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
     });
   }, [patchByCampaign]);
 
-  // Local upvote: optimistic +1 + admit card immediately, then soft-poll server ranks.
+  // Local upvote: admit + re-rank immediately (absolute counts from vote ingest when present).
   useEffect(() => {
     const onUpvote = (event: Event) => {
-      const detail = (event as CustomEvent<{ chainId?: number; campaignAddress?: string }>).detail ?? {};
+      const detail =
+        (event as CustomEvent<{
+          chainId?: number;
+          campaignAddress?: string;
+          votes24h?: number;
+          votesAllTime?: number;
+        }>).detail ?? {};
       if (!featuredEventMatchesChain(chainId, detail.chainId)) return;
       const addr = String(detail.campaignAddress || "").toLowerCase();
       if (!isAddress(addr)) {
@@ -538,14 +544,24 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
         return;
       }
       const eventChain = Number(detail.chainId ?? chainId);
-      setItems((prev) => applyVotePatch(prev, { chainId: eventChain, campaignAddress: addr, delta: 1 }));
+      const hasAbsolute =
+        detail.votes24h != null && Number.isFinite(Number(detail.votes24h)) && Number(detail.votes24h) > 0;
+      setItems((prev) =>
+        applyVotePatch(prev, {
+          chainId: eventChain,
+          campaignAddress: addr,
+          ...(hasAbsolute
+            ? { votes24h: Number(detail.votes24h), votesAllTime: Number(detail.votesAllTime ?? detail.votes24h) }
+            : { delta: 1 }),
+        }),
+      );
       // Hydrate identity for first-time featured admission (token page / explore upvote).
       void (async () => {
         const seed: FeaturedItem = {
           chainId: eventChain,
           campaignAddress: addr,
-          votes24h: 1,
-          votesAllTime: 1,
+          votes24h: hasAbsolute ? Number(detail.votes24h) : 1,
+          votesAllTime: hasAbsolute ? Number(detail.votesAllTime ?? detail.votes24h) : 1,
         };
         try {
           const hydrated = await hydrateMissingSummary(seed, { includeOnChainMcap: true });
@@ -553,9 +569,9 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
         } catch {
           // ignore
         }
-        // Indexer may lag a few seconds — poll twice.
-        window.setTimeout(() => softPollRef.current(), 1500);
-        window.setTimeout(() => softPollRef.current(), 6000);
+        // Ingest + soft poll — board should already show the card; this settles ranks.
+        window.setTimeout(() => softPollRef.current(), 400);
+        window.setTimeout(() => softPollRef.current(), 2500);
       })();
     };
 
