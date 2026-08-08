@@ -98,10 +98,23 @@
 
 ## Implementation order now
 
-1. **This doc** + cleanup quarantine (code)  
-2. **P0.1–P0.4** engineering against placeholder until ops deploy  
-3. Ops **P0.2–P0.3** when keys ready  
-4. Only then enable create auth and public Solana create  
+1. ~~This doc + cleanup quarantine~~ (done on `devpostgrad`)  
+2. ~~P0.1 FE V4 Push Live wire + legacy quarantine~~ (done)  
+3. **Ops P0.2–P0.3** when keys ready (devnet deploy + Railway env)  
+4. Enable `SOLANA_CREATE_AUTH_ENABLED=true` after one success + one reject  
+5. Minimal V4 create indexer row (P0.5)  
+6. P1 buy/sell program + FE  
+
+### Engineering already on `devpostgrad`
+
+| Piece | Path |
+| --- | --- |
+| Parity plan | `docs/solana/bnb-parity-build-plan.md` |
+| Legacy quarantine | `solana/README.QUARANTINE.md`, adapter mutations throw |
+| V4 authorize client | `frontend/src/lib/solanaCreateAuthorizationV4.ts` |
+| V4 plan + submit | `solanaCreateCampaignV4Plan.ts`, `solanaV4CreateSubmit.ts` |
+| Push Live Solana | `frontend/src/pages/PushDraftLive.tsx` → authorize + submit |
+| Railway authorize | `frontend/api/dev-force/solana-create-authorization-v4.js` |
 
 ## Explicit non-goals until the matching phase
 

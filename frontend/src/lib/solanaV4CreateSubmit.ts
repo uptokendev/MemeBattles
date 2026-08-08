@@ -79,17 +79,23 @@ function encodeCreateCampaignData(args: SolanaV4GeneratedIdlInvocationPlan["crea
 }
 
 function buildEd25519VerifyIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPlan) {
-  const { PublicKey, TransactionInstruction } = web3;
-  const publicKey = plan.ed25519Verification.publicKey;
+  const { PublicKey, Ed25519Program } = web3;
+  const publicKey = new PublicKey(plan.ed25519Verification.publicKey).toBytes();
   const message = plan.ed25519Verification.message;
   const signature = plan.ed25519Verification.signature;
 
-  // Layout for Ed25519Program.createInstructionWithPublicKey (single signature)
-  // See solana web3.js Ed25519Program encoding.
-  const publicKeyBytes = new PublicKey(publicKey).toBytes();
+  if (typeof Ed25519Program?.createInstructionWithPublicKey === "function") {
+    return Ed25519Program.createInstructionWithPublicKey({
+      publicKey,
+      message,
+      signature,
+    });
+  }
+
+  // Fallback encoding if the dynamic web3 bundle omits Ed25519Program helpers.
   const numSignatures = 1;
   const padding = 0;
-  const signatureOffset = 16; // after header (2+2+2+2+2+2+2+2 = 16)
+  const signatureOffset = 16;
   const signatureInstructionIndex = 0xffff;
   const publicKeyOffset = signatureOffset + 64;
   const publicKeyInstructionIndex = 0xffff;
@@ -115,6 +121,7 @@ function buildEd25519VerifyIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPla
   data.set(publicKeyBytes, publicKeyOffset);
   data.set(message, messageDataOffset);
 
+  const { TransactionInstruction } = web3;
   return new TransactionInstruction({
     keys: [],
     programId: new PublicKey(ED25519_PROGRAM_ID),
@@ -127,6 +134,7 @@ function buildCreateCampaignIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPl
   const a = plan.createCampaign.accounts;
   const data = encodeCreateCampaignData(plan.createCampaign.args);
 
+  // Matches programs/memewarzone_solana CreateCampaign account metas (init PDAs are writable, not signers).
   const meta = (pubkey: string, isSigner: boolean, isWritable: boolean) => ({
     pubkey: new PublicKey(pubkey),
     isSigner,
@@ -137,13 +145,13 @@ function buildCreateCampaignIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPl
     programId: new PublicKey(plan.programId),
     keys: [
       meta(a.creator, true, true),
-      meta(a.globalConfig, false, false),
+      meta(a.globalConfig, false, true),
       meta(a.generationConfig, false, false),
-      meta(a.creatorProfile, false, false),
+      meta(a.creatorProfile, false, true),
       meta(a.riskProfile, false, false),
       meta(a.clusterProfile, false, false),
       meta(a.campaign, false, true),
-      meta(a.mint, true, true), // mint is often a signer keypair generated client-side — Railway may pre-derive
+      meta(a.mint, false, true), // program-owned mint PDA (not external keypair signer)
       meta(a.tokenVault, false, true),
       meta(a.solVault, false, true),
       meta(a.createAuthorization, false, true),
@@ -196,27 +204,14 @@ export async function submitSolanaV4CreatePlan(
 
   const web3 = await loadWeb3();
   const { Connection, Transaction, PublicKey, ComputeBudgetProgram } = web3;
-  const rpc = getPublicRpcUrl(SOLANA_CHAIN_ID) || "https://api.devnet.solana.com";
+  const rpc =
+    String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
+    getPublicRpcUrl(SOLANA_CHAIN_ID) ||
+    "https://api.devnet.solana.com";
   const connection = new Connection(rpc, "confirmed");
-
-  // Mint is a new keypair when the program expects the client to create the mint.
-  // If Railway already set mint PDA/address that is not a signer, isSigner=false is wrong
-  // for some layouts. Prefer program-owned mint when accounts.mint is a PDA (not signed).
-  // Current V4 plan lists mint as an account; acceptance tests use Keypair.generate for mint.
-  // For PDA mints, do not add as signer. We only mark mint signer if wallet must create it —
-  // Railway V4 typically derives mint PDA → isSigner false. Adjust keys above accordingly.
-  // Re-build create ix without mint signer if mint equals a PDA-like non-wallet key.
 
   const ed25519Ix = buildEd25519VerifyIx(web3, plan);
   const createIx = buildCreateCampaignIx(web3, plan);
-
-  // Fix mint signer flag: only creator is required external signer for V4 (program-owned mint).
-  createIx.keys = createIx.keys.map((k: any) => {
-    if (k.pubkey.equals?.(new PublicKey(plan.createCampaign.accounts.mint))) {
-      return { ...k, isSigner: false, isWritable: true };
-    }
-    return k;
-  });
 
   const tx = new Transaction();
   try {
@@ -224,6 +219,7 @@ export async function submitSolanaV4CreatePlan(
   } catch {
     // optional
   }
+  // Ed25519 must immediately precede createCampaign (program invariant).
   tx.add(ed25519Ix);
   tx.add(createIx);
 

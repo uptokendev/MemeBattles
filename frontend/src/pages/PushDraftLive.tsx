@@ -16,7 +16,12 @@ import { fetchCampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getChainLabel, isSolanaChainId } from "@/lib/chainConfig";
-import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel, isSupportedGraduationTarget } from "@/lib/graduationTiers";
+import {
+  DEFAULT_GRADUATION_TARGET_WEI,
+  graduationTargetToUsdMicros,
+  graduationTierLabel,
+  isSupportedGraduationTarget,
+} from "@/lib/graduationTiers";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import {
@@ -213,16 +218,7 @@ export default function PushDraftLive() {
       const { requestSolanaCreateAuthorizationV4 } = await import("@/lib/solanaCreateAuthorizationV4");
       const { submitSolanaV4CreateFromAuthorization } = await import("@/lib/solanaV4CreateSubmit");
 
-      // USD micros: graduation tiers on Solana use micros (BNB uses wei). Map $6 → 6_000_000 if needed.
-      // Until tier UI exposes micros, derive from selected BNB-style target when it looks like micros.
-      let graduationTargetUsdMicros = String(graduationTargetWei);
-      try {
-        const asBig = BigInt(graduationTargetWei);
-        // If value looks like wei-scale (> 1e12), treat as unsupported mapping and use 6 USD default micros.
-        if (asBig > 1_000_000_000_000n) graduationTargetUsdMicros = "6000000";
-      } catch {
-        graduationTargetUsdMicros = "6000000";
-      }
+      const graduationTargetUsdMicros = graduationTargetToUsdMicros(graduationTargetWei);
 
       let launchAt: string | number = "0";
       if (mode === "scheduled") {

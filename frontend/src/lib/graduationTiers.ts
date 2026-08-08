@@ -48,7 +48,25 @@ export const TEST_GRADUATION_TIER: GraduationTier = {
 
 export function isTestGraduationTierEnabled(chainId: number): boolean {
   const raw = String(import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || "").trim().toLowerCase();
-  return Number(chainId) === 97 && TRUE_VALUES.has(raw);
+  // BSC testnet (97) and Solana product id (101) when test threshold flag is on.
+  const id = Number(chainId);
+  return (id === 97 || id === 101 || id === 102) && TRUE_VALUES.has(raw);
+}
+
+/** Solana V4 create uses USD micros (1 USD = 1_000_000). BNB UI stores wei-scale USD wad. */
+export function graduationTargetToUsdMicros(targetWei: bigint | string | number): string {
+  try {
+    const raw = typeof targetWei === "bigint" ? targetWei : BigInt(String(targetWei || "0"));
+    if (raw <= 0n) return "6000000";
+    // Already micros (e.g. 6_000_000 for $6).
+    if (raw < 1_000_000_000_000n) return raw.toString();
+    // Wei-scale USD wad: dollars * 10^18 → micros = dollars * 10^6.
+    const dollars = raw / GRADUATION_WAD;
+    if (dollars <= 0n) return "6000000";
+    return (dollars * 1_000_000n).toString();
+  } catch {
+    return "6000000";
+  }
 }
 
 export function getGraduationTiers(chainId: number): GraduationTier[] {

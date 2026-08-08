@@ -567,7 +567,7 @@ const Create = () => {
     !directDeployRouteReady ||
     !wallet.signer;
   const deployModeDescription = isSolanaProtocolPending
-    ? "Solana drafts are signed and saved through your Solana wallet. Direct Solana deploy, buy, sell, and finalize stay locked until the on-chain launch program is deployed."
+    ? "Solana drafts are signed and saved through your Solana wallet. After promotion, deploy via Push Live (V4 authorized create). Buy/sell land in a later parity phase."
     : bnbDirectDeployEnabled
       ? directDeployRouteReady
         ? "Deploy directly to the configured BNB launchpad. This will upload the logo, request server route authorization, and send the LaunchFactory transaction from your wallet."
