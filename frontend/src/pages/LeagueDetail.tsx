@@ -295,6 +295,7 @@ useEffect(() => {
           perfect_run: "straight_up",
           fastest_finish: "fastest_graduation",
           biggest_hit: "largest_buy",
+          top_earner: "top_earner",
         };
         const category = categoryMap[String(def.key)] || String(def.key);
         const params = new URLSearchParams({

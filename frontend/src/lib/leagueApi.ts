@@ -16,6 +16,7 @@ const API_CATEGORY_BY_LEAGUE: Partial<Record<LeagueKey, string>> = {
   perfect_run: "straight_up",
   fastest_finish: "fastest_graduation",
   biggest_hit: "largest_buy",
+  top_earner: "top_earner",
 };
 
 const ONCHAIN_FALLBACK_TIMEOUT_MS = 2500;
@@ -226,15 +227,22 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
 
   if (def.rowType === "wallet") {
     return list
-      .map((row: any) => ({
-        ...row,
-        wallet: String(row?.wallet || row?.walletAddress || row?.buyer_address || "").trim(),
-        profit_raw: row?.profit_raw ?? row?.profitRaw ?? null,
-      }))
-      .filter((row) => isEvmAddress(row.wallet) || (row.wallet && !campaignKey(row)))
-      // Drop memecoin/campaign shaped rows that leaked into trader boards.
-      .filter((row) => !row.symbol || isEvmAddress(row.wallet))
-      .filter((row) => !campaignKey(row) || isEvmAddress(row.wallet))
+      .map((row: any) => {
+        const wallet = String(row?.wallet || row?.walletAddress || row?.buyer_address || "").trim().toLowerCase();
+        return {
+          ...row,
+          wallet,
+          profit_raw: row?.profit_raw ?? row?.profitRaw ?? null,
+          trades_count: row?.trades_count != null ? Number(row.trades_count) : row?.tradesCount != null ? Number(row.tradesCount) : null,
+          campaigns_traded: row?.campaigns_traded != null ? Number(row.campaigns_traded) : null,
+          // Strip token fields so UI never renders this as a memecoin card.
+          name: undefined,
+          symbol: undefined,
+          campaign_address: undefined,
+          campaignAddress: undefined,
+        };
+      })
+      .filter((row) => isEvmAddress(row.wallet))
       .map((row, index) => ({ ...row, rank: index + 1 }));
   }
 
@@ -266,7 +274,38 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
     return Array.from(byCampaign.values()).map((row, index) => ({ ...row, rank: index + 1 }));
   }
 
-  // biggest_hit can list multiple buys; keep order, renumber ranks.
+  // biggest_hit: one campaign once (largest buy already chosen by API; FE hard-dedupes).
+  if (def.key === "biggest_hit") {
+    const byCampaign = new Map<string, any>();
+    for (const row of tokenRows) {
+      const key = String(row.campaign_address);
+      const prev = byCampaign.get(key);
+      if (!prev) {
+        byCampaign.set(key, row);
+        continue;
+      }
+      try {
+        const nextAmt = BigInt(String(row.bnb_amount_raw ?? "0"));
+        const prevAmt = BigInt(String(prev.bnb_amount_raw ?? "0"));
+        if (nextAmt > prevAmt) byCampaign.set(key, row);
+      } catch {
+        // keep first
+      }
+    }
+    return Array.from(byCampaign.values())
+      .sort((a, b) => {
+        try {
+          const av = BigInt(String(a.bnb_amount_raw ?? "0"));
+          const bv = BigInt(String(b.bnb_amount_raw ?? "0"));
+          if (av === bv) return 0;
+          return bv > av ? 1 : -1;
+        } catch {
+          return 0;
+        }
+      })
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+  }
+
   return tokenRows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 

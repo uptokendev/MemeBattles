@@ -113,7 +113,11 @@ function rowMetric(def: LeagueDef, row: any) {
     if (buy && buyer) return `${buy} · ${buyer}`;
     return buy || def.metricLabel;
   }
-  if (def.key === "top_earner") return row?.profit_raw ? formatBnb(rawToBnb(row.profit_raw)) : def.metricLabel;
+  if (def.key === "top_earner") {
+    if (!row?.profit_raw) return def.metricLabel;
+    const trades = row?.trades_count != null ? ` · ${Number(row.trades_count)} trades` : "";
+    return `${formatBnb(rawToBnb(row.profit_raw))}${trades}`;
+  }
   if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
   return def.metricLabel;

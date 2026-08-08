@@ -2245,31 +2245,105 @@ app.get("/api/league", wrap(async (req, res) => {
       : "true";
 
   if (category === "largest_buy") {
-    // Largest single buy tx during bonding (measured in BNB, excludes creator/feeRecipient/campaign)
+    // One row per campaign: the single largest buy in the epoch (weekly or monthly).
+    // Weekly and monthly use separate period windows; monthly is not a list of weekly rows.
     const r = await pool.query(
-      `select
-         t.campaign_address,
-         c.name,
-         c.symbol,
-         c.logo_uri,
-         c.creator_address,
-         c.fee_recipient_address,
-         t.wallet as buyer_address,
-         t.bnb_amount_raw as bnb_amount_raw,
-         t.tx_hash,
-         t.log_index,
-         t.block_number,
-         t.block_time
-       from public.curve_trades t
-       join public.campaigns c
-         on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
-       where t.chain_id=$1
-         and t.side='buy'
-         and ${periodFilterTrades}
-         and lower(t.wallet) <> lower(c.creator_address)
-         and (c.fee_recipient_address is null or lower(t.wallet) <> lower(c.fee_recipient_address))
-         and lower(t.wallet) <> lower(c.campaign_address)
-       order by (t.bnb_amount_raw::numeric) desc, t.block_number desc, t.log_index desc
+      `with buys as (
+         select
+           t.campaign_address,
+           c.name,
+           c.symbol,
+           c.logo_uri,
+           c.creator_address,
+           c.fee_recipient_address,
+           c.token_address,
+           t.wallet as buyer_address,
+           t.bnb_amount_raw as bnb_amount_raw,
+           t.tx_hash,
+           t.log_index,
+           t.block_number,
+           t.block_time,
+           row_number() over (
+             partition by t.campaign_address
+             order by (t.bnb_amount_raw::numeric) desc, t.block_number desc, t.log_index desc
+           ) as rn
+         from public.curve_trades t
+         join public.campaigns c
+           on c.chain_id = t.chain_id and c.campaign_address = t.campaign_address
+         where t.chain_id = $1
+           and t.side = 'buy'
+           and ${periodFilterTrades}
+           and lower(t.wallet) <> lower(c.creator_address)
+           and (c.fee_recipient_address is null or lower(t.wallet) <> lower(c.fee_recipient_address))
+           and lower(t.wallet) <> lower(c.campaign_address)
+       )
+       select
+         campaign_address,
+         name,
+         symbol,
+         logo_uri,
+         creator_address,
+         fee_recipient_address,
+         token_address,
+         buyer_address,
+         bnb_amount_raw,
+         tx_hash,
+         log_index,
+         block_number,
+         block_time
+       from buys
+       where rn = 1
+       order by (bnb_amount_raw::numeric) desc, block_number desc, log_index desc
+       limit $2`,
+      [chainId, limit]
+    );
+
+    return res.json({ chainId, category, period, items: r.rows });
+  }
+
+  if (category === "top_earner") {
+    // Trader PnL inside bonding curve for the selected epoch.
+    // Creator buys/sells on *their own* campaign are excluded.
+    // The same wallet trading *other* campaigns counts (creator can be a trader elsewhere).
+    const r = await pool.query(
+      `with wallet_pnl as (
+         select
+           lower(t.wallet) as wallet,
+           sum(
+             case
+               when t.side = 'sell' then (t.bnb_amount_raw::numeric)
+               when t.side = 'buy' then -(t.bnb_amount_raw::numeric)
+               else 0
+             end
+           ) as profit_raw_num,
+           count(*)::int as trades_count,
+           count(distinct t.campaign_address)::int as campaigns_traded
+         from public.curve_trades t
+         join public.campaigns c
+           on c.chain_id = t.chain_id and c.campaign_address = t.campaign_address
+         where t.chain_id = $1
+           and ${periodFilterTrades}
+           and t.wallet is not null
+           and lower(t.wallet) <> lower(c.campaign_address)
+           and (c.fee_recipient_address is null or lower(t.wallet) <> lower(c.fee_recipient_address))
+           -- own-campaign exclusion only (not a global creator ban)
+           and lower(t.wallet) <> lower(c.creator_address)
+         group by lower(t.wallet)
+         having sum(
+           case
+             when t.side = 'sell' then (t.bnb_amount_raw::numeric)
+             when t.side = 'buy' then -(t.bnb_amount_raw::numeric)
+             else 0
+           end
+         ) > 0
+       )
+       select
+         wallet,
+         trunc(profit_raw_num)::text as profit_raw,
+         trades_count,
+         campaigns_traded
+       from wallet_pnl
+       order by profit_raw_num desc, trades_count desc, wallet asc
        limit $2`,
       [chainId, limit]
     );
