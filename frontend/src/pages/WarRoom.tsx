@@ -5,7 +5,12 @@ import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "@/hooks/useWarRoomCampaignFeed";
+import {
+  useWarRoomCampaignFeed,
+  warRoomCampaignMatchesSearch,
+  type WarRoomCampaign,
+  type WarRoomMode,
+} from "@/hooks/useWarRoomCampaignFeed";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -77,11 +82,11 @@ const WarRoom = () => {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
+  // Search is local-only — never re-fetch inventory on keystroke.
   const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(selectedChainId || 97),
     bnbUsd,
-    search,
   });
 
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
@@ -139,35 +144,29 @@ const WarRoom = () => {
   }, [rawCampaigns, logoCache, selectedChainId]);
 
   const filteredCampaigns = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    // Instant in-list filter: ticker, name, username, token address, creator address.
+    const filtered = campaigns.filter((campaign) => warRoomCampaignMatchesSearch(campaign, search));
 
-    return campaigns
-      .filter((campaign) => {
-        const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd ?? 0);
-        const matchesSearch = !query || `${campaign.name} ${campaign.symbol} ${campaign.creator} ${campaign.campaign}`.toLowerCase().includes(query);
-        const matchesMode = activeMode === "graduated" ? metrics.status === "graduated" : activeMode === "draft" ? metrics.status === "draft" : true;
-        return matchesSearch && matchesMode;
-      })
-      .sort((left, right) => {
-        if (sortKey) {
-          const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
-          const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
-          const delta = rightValue - leftValue;
-          if (delta !== 0) return sortDirection === "desc" ? delta : -delta;
-        }
+    return filtered.slice().sort((left, right) => {
+      if (sortKey) {
+        const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
+        const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
+        const delta = rightValue - leftValue;
+        if (delta !== 0) return sortDirection === "desc" ? delta : -delta;
+      }
 
-        if (activeMode === "new") {
-          return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
-        }
+      if (activeMode === "new") {
+        return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
+      }
 
-        if (activeMode === "draft") {
-          return draftMetricValue(right, "follows") - draftMetricValue(left, "follows");
-        }
+      if (activeMode === "draft") {
+        return draftMetricValue(right, "follows") - draftMetricValue(left, "follows");
+      }
 
-        const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
-        const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
-        return rightMetrics.trendScore - leftMetrics.trendScore;
-      });
+      const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
+      const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
+      return rightMetrics.trendScore - leftMetrics.trendScore;
+    });
   }, [activeMode, bnbUsd, campaigns, search, sortDirection, sortKey]);
 
   const handleSortClick = (nextKey: SortKey) => {
@@ -204,8 +203,10 @@ const WarRoom = () => {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search"
+              placeholder="Filter by ticker, name, creator, token or campaign address"
               className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              autoComplete="off"
+              spellCheck={false}
             />
           </label>
 

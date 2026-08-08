@@ -239,7 +239,7 @@ function isGraduatedCampaign(campaign: WarRoomCampaign) {
   );
 }
 
-function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, search: string) {
+function matchesMode(campaign: WarRoomCampaign, mode: WarRoomMode) {
   const rich = campaign as any;
   const graduated = isGraduatedCampaign(campaign);
   // Once graduated, never treat as draft even if a stale scheduled lifecycle row remains.
@@ -253,19 +253,38 @@ function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, sear
     !graduated &&
     (rich.status === "draft" || preLaunch || Boolean(rich.draftId && rich.isActive === false) || Boolean(rich.isScheduled));
 
-  if (mode === "draft") {
-    if (!isDraftRow) return false;
-  } else if (mode === "graduated") {
-    if (!graduated || preLaunch) return false;
-  } else {
-    // Trending / New: live bonding only — never timed drafts, pre-launch, or graduated.
-    if (isDraftRow || preLaunch || graduated) return false;
-  }
+  if (mode === "draft") return isDraftRow;
+  if (mode === "graduated") return graduated && !preLaunch;
+  // Trending / New: live bonding only — never timed drafts, pre-launch, or graduated.
+  return !isDraftRow && !preLaunch && !graduated;
+}
 
+/** Fast local search index fields (no network). */
+export function warRoomCampaignMatchesSearch(campaign: WarRoomCampaign, search: string) {
   const query = search.trim().toLowerCase();
   if (!query) return true;
-  return [campaign.name, campaign.symbol, campaign.campaign, campaign.token, campaign.creator, rich.draftSlug]
-    .some((value) => String(value ?? "").toLowerCase().includes(query));
+  const rich = campaign as any;
+  const haystack = [
+    campaign.name,
+    campaign.symbol,
+    campaign.campaign,
+    campaign.token,
+    campaign.creator,
+    rich.creatorName,
+    rich.creatorUsername,
+    rich.username,
+    rich.displayName,
+    rich.draftSlug,
+    rich.scheduledCampaignAddress,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+  // Support multi-token queries: "ddy 0x12"
+  return query.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token));
+}
+
+function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, search: string) {
+  return matchesMode(campaign, mode) && warRoomCampaignMatchesSearch(campaign, search);
 }
 
 function hasValue(value: unknown) {
@@ -334,22 +353,21 @@ async function hydrateCampaignMarketStats(campaign: WarRoomCampaign, chainId: nu
   );
 }
 
-async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, search: string, signal: AbortSignal): Promise<WarRoomCampaign[]> {
+/** Full market inventory (bonding + graduated) — mode/search filter client-side. */
+async function fetchCampaignApiInventory(chainId: number, signal: AbortSignal): Promise<WarRoomCampaign[]> {
   const params = new URLSearchParams({
     chainId: String(chainId),
     limit: "250",
     cursor: "0",
-    tab: modeToCampaignTab(mode),
+    tab: "trending",
     sort: "default",
-    status: modeToCampaignStatus(mode),
+    status: "all",
     includeTestnet: "true",
     testnet: "true",
-    includeDrafts: "true",
   });
-  if (search.trim()) params.set("search", search.trim());
   const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache, signal });
   const json = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(String(json?.error || `Campaign fallback HTTP ${response.status}`));
+  if (!response.ok) throw new Error(String(json?.error || `Campaign inventory HTTP ${response.status}`));
   const items = Array.isArray(json?.items) ? json.items : [];
   return items.map((item: any, index: number) => normalizeApiCampaign(item, index));
 }
@@ -415,14 +433,15 @@ export function useWarRoomCampaignFeed({
   activeMode,
   activeChainId,
   bnbUsd: _bnbUsd,
-  search,
 }: {
   activeMode: WarRoomMode;
   activeChainId: number | undefined;
   bnbUsd: number | null;
-  search: string;
+  /** @deprecated Search is local-only in WarRoom — ignored here. */
+  search?: string;
 }) {
-  const [campaigns, setCampaigns] = useState<WarRoomCampaign[]>([]);
+  /** Full inventory for the chain (market rows + drafts). Mode is filtered in the UI. */
+  const [inventory, setInventory] = useState<WarRoomCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<WarRoomCampaignFeedSource>("empty");
@@ -433,13 +452,13 @@ export function useWarRoomCampaignFeed({
 
     const mergeLists = (
       onChainItems: WarRoomCampaign[],
-      apiItemsForMode: WarRoomCampaign[],
-      draftItemsForMode: WarRoomCampaign[],
+      apiItems: WarRoomCampaign[],
+      draftItems: WarRoomCampaign[],
       nowSec: number,
     ) => {
       const mergedMap = new Map<string, WarRoomCampaign>();
       // Prefer market rows (on-chain / API) over draft rows so graduated campaigns are not demoted.
-      for (const campaign of [...onChainItems, ...apiItemsForMode, ...draftItemsForMode]) {
+      for (const campaign of [...onChainItems, ...apiItems, ...draftItems]) {
         if (!campaign.campaign) continue;
         const key = String(campaign.campaign).toLowerCase();
         const current = mergedMap.get(key);
@@ -481,7 +500,6 @@ export function useWarRoomCampaignFeed({
             nowSec,
           });
 
-        // Prefer pre-launch draft metadata only when neither side is graduated.
         if (currentPreLaunch || nextPreLaunch) {
           const base = currentPreLaunch ? current : campaign;
           const extra = currentPreLaunch ? campaign : current;
@@ -496,9 +514,7 @@ export function useWarRoomCampaignFeed({
 
         mergedMap.set(key, mergeWarRoomCampaign(current, campaign));
       }
-      return Array.from(mergedMap.values())
-        .filter((campaign: WarRoomCampaign) => campaign.campaign)
-        .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+      return Array.from(mergedMap.values()).filter((campaign: WarRoomCampaign) => campaign.campaign);
     };
 
     const load = async () => {
@@ -508,130 +524,96 @@ export function useWarRoomCampaignFeed({
         const chainId = Number(activeChainId || 97);
         const nowSec = Math.floor(Date.now() / 1000);
 
-        // ── Phase 0: paint market rows ASAP (do NOT wait on drafts / lifecycle / RPC) ──
-        let feedSource: WarRoomCampaignFeedSource = "api";
+        // ── Phase 0: full market inventory once (bonding + graduated) — no search param ──
+        let feedSource: WarRoomCampaignFeedSource = "campaign-api";
         let apiItems: WarRoomCampaign[] = [];
         try {
-          const json = await fetchPostGradWarRoomCampaignFeed({
-            chainId,
-            mode: activeMode,
-            search,
-            includeTestnet: chainId === 97,
-            signal: controller.signal,
-          });
-          apiItems = Array.isArray(json?.items)
-            ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index))
-            : [];
+          // Prefer direct campaigns inventory (status=all) so both live + graduated paint together.
+          apiItems = await fetchCampaignApiInventory(chainId, controller.signal);
+          if (!apiItems.length) {
+            const json = await fetchPostGradWarRoomCampaignFeed({
+              chainId,
+              mode: "trending",
+              search: "",
+              includeTestnet: chainId === 97,
+              signal: controller.signal,
+            });
+            apiItems = Array.isArray(json?.items)
+              ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index))
+              : [];
+            if (apiItems.length) feedSource = "api";
+          }
         } catch {
-          apiItems = [];
+          apiItems = await fetchCampaignApiInventory(chainId, controller.signal).catch(() => []);
         }
 
-        if (!apiItems.length) {
-          apiItems = await fetchCampaignApiFallback(chainId, activeMode, search, controller.signal).catch(() => []);
-          if (apiItems.length) feedSource = "campaign-api";
-        }
-
-        let apiItemsForMode = apiItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
-        let painted = mergeLists([], apiItemsForMode, [], nowSec);
-        if (!cancelled && painted.length) {
-          setCampaigns(painted);
+        if (!cancelled && apiItems.length) {
+          setInventory(apiItems);
           setSource(feedSource);
           setLoading(false);
         }
 
-        // ── Phase 1: drafts only when needed (draft tab, or soft demote pre-launch) ──
-        let draftItems: WarRoomCampaign[] = [];
-        let lifecycleByAddress = new Map<string, CampaignDraftLifecycle>();
-        const needDrafts = activeMode === "draft" || painted.length < 5;
-        if (needDrafts || activeMode !== "draft") {
-          // Lifecycle is cheap relative to full draft bundle — only fetch when demoting live rows.
-          const [draftBundle, lifecyclePages] = await Promise.all([
-            activeMode === "draft" || needDrafts
-              ? fetchDraftCampaignsForWarRoom(chainId)
-              : Promise.resolve([] as WarRoomCampaign[]),
-            Promise.all(
-              draftFeedChainIds(chainId).map((id) =>
-                fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 80 }).catch(
-                  () => [] as CampaignDraftLifecycle[],
-                ),
+        // ── Phase 1: drafts + lifecycle in parallel (does not block first paint) ──
+        const [draftItems, lifecyclePages] = await Promise.all([
+          fetchDraftCampaignsForWarRoom(chainId),
+          Promise.all(
+            draftFeedChainIds(chainId).map((id) =>
+              fetchPublicCampaignLifecycleDrafts({ chainId: id, limit: 80 }).catch(
+                () => [] as CampaignDraftLifecycle[],
               ),
             ),
-          ]);
-          if (cancelled) return;
-          draftItems = draftBundle;
-          lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
-        }
+          ),
+        ]);
+        if (cancelled) return;
 
-        const lifecycleMap = lifecycleByCampaign(
-          draftItems
-            .map((item) => ({
-              id: String((item as any).draftId || ""),
-              chainId: Number((item as any).chainId || chainId),
-              campaignAddress: String((item as any).scheduledCampaignAddress || item.campaign || ""),
-              status: String((item as any).draftStatus || "draft") as any,
-              scheduledLaunchAt: (item as any).launchAt
-                ? new Date(Number((item as any).launchAt) * 1000).toISOString()
-                : null,
-            }))
-            .filter((item) => item.campaignAddress && !item.campaignAddress.startsWith("draft:")) as any,
-        );
+        const lifecycleByAddress = lifecycleByCampaign(lifecyclePages.flat());
+        const apiWithLifecycle = apiItems.map((campaign) => {
+          if (isGraduatedCampaign(campaign)) return campaign;
+          const address = String(campaign.campaign || "").toLowerCase();
+          const lifecycle = lifecycleByAddress.get(address);
+          if (!lifecycle) return campaign;
+          const launchAt = timestampSeconds(lifecycle.scheduledLaunchAt || lifecycle.tradingLaunchAt);
+          const preLaunch = isPreLaunchCampaign({
+            launchAtSec: launchAt,
+            draftStatus: lifecycle.status,
+            nowSec,
+          });
+          if (!preLaunch) return campaign;
+          return {
+            ...campaign,
+            status: "draft",
+            isActive: false,
+            isDexTrading: false,
+            isScheduled: true,
+            launchAt: launchAt ?? undefined,
+            draftId: lifecycle.id,
+            draftSlug: lifecycle.slug,
+            draftStatus: "scheduled",
+            promotionHref: lifecycle.slug ? `/prepare/${lifecycle.slug}` : `/drafts/${lifecycle.id}`,
+          } as WarRoomCampaign;
+        });
 
-        const draftItemsForMode = draftItems.filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
-        apiItemsForMode = apiItems
-          .map((campaign) => {
-            if (isGraduatedCampaign(campaign)) return campaign;
-            const address = String(campaign.campaign || "").toLowerCase();
-            const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
-            if (!lifecycle) return campaign;
-            const launchAt = timestampSeconds(lifecycle.scheduledLaunchAt || lifecycle.tradingLaunchAt);
-            const preLaunch = isPreLaunchCampaign({
-              launchAtSec: launchAt,
-              draftStatus: lifecycle.status,
-              nowSec,
-            });
-            if (!preLaunch) return campaign;
-            return {
-              ...campaign,
-              status: "draft",
-              isActive: false,
-              isDexTrading: false,
-              isScheduled: true,
-              launchAt: launchAt ?? undefined,
-              draftId: lifecycle.id,
-              draftSlug: lifecycle.slug,
-              draftStatus: "scheduled",
-              promotionHref: lifecycle.slug ? `/prepare/${lifecycle.slug}` : `/drafts/${lifecycle.id}`,
-            } as WarRoomCampaign;
-          })
-          .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
-
-        painted = mergeLists([], apiItemsForMode, draftItemsForMode, nowSec);
+        let painted = mergeLists([], apiWithLifecycle, draftItems, nowSec);
         if (!cancelled) {
-          setCampaigns(painted);
+          setInventory(painted);
           setSource(painted.length ? feedSource : "empty");
           setLoading(false);
         }
 
-        // ── Phase 2: on-chain inventory only when API is thin (testnet recovery) ──
-        const skipInventory = apiItemsForMode.length >= MIN_API_ROWS_TO_SKIP_INVENTORY && activeMode !== "draft";
-        let modeCandidates: WarRoomCampaign[] = [];
-        if (!skipInventory) {
+        // ── Phase 2: on-chain factory page only if inventory is thin ──
+        let onChainItems: WarRoomCampaign[] = [];
+        if (apiWithLifecycle.length < MIN_API_ROWS_TO_SKIP_INVENTORY) {
           const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
-            limit: activeMode === "graduated" ? 20 : 16,
+            limit: 24,
             skipLifecycleFilter: true,
-          }).catch(() => ({
-            campaigns: [],
-            nextCursor: null,
-            total: 0,
-          }));
+          }).catch(() => ({ campaigns: [], nextCursor: null, total: 0 }));
           if (cancelled) return;
 
-          // Trust factory registry rows — no per-campaign launched() RPC storm.
-          modeCandidates = onChainPage.campaigns.slice(0, MAX_ONCHAIN_STATS).map((campaign, index) => {
+          onChainItems = onChainPage.campaigns.slice(0, MAX_ONCHAIN_STATS).map((campaign, index) => {
             const address = String(campaign.campaign || "").toLowerCase();
-            const lifecycle = lifecycleByAddress.get(address) || lifecycleMap.get(address);
+            const lifecycle = lifecycleByAddress.get(address);
             const launchAtOnChain = timestampSeconds(lifecycle?.scheduledLaunchAt || lifecycle?.tradingLaunchAt);
-            const apiKnown = apiItemsForMode.find((item) => String(item.campaign || "").toLowerCase() === address);
+            const apiKnown = apiWithLifecycle.find((item) => String(item.campaign || "").toLowerCase() === address);
             const launched = Boolean(apiKnown && isGraduatedCampaign(apiKnown));
             const preLaunch =
               !launched &&
@@ -654,30 +636,20 @@ export function useWarRoomCampaignFeed({
                 isDexTrading: launched,
                 isScheduled: preLaunch || (!launched && String(lifecycle?.status) === "scheduled"),
                 launchAt: launchAtOnChain ?? undefined,
-                draftId: preLaunch ? lifecycle?.id : undefined,
-                draftSlug: preLaunch ? lifecycle?.slug : undefined,
-                draftStatus: preLaunch ? "scheduled" : undefined,
-                promotionHref: preLaunch
-                  ? lifecycle?.slug
-                    ? `/prepare/${lifecycle.slug}`
-                    : lifecycle?.id
-                      ? `/drafts/${lifecycle.id}`
-                      : undefined
-                  : undefined,
               },
               500000 + index,
             );
-          }).filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+          });
 
-          painted = mergeLists(modeCandidates, apiItemsForMode, draftItemsForMode, nowSec);
+          painted = mergeLists(onChainItems, apiWithLifecycle, draftItems, nowSec);
           if (!cancelled) {
-            setCampaigns(painted);
-            setSource(painted.length ? (modeCandidates.length ? "onchain" : feedSource) : "empty");
+            setInventory(painted);
+            setSource(painted.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
             setLoading(false);
           }
         }
 
-        // ── Phase 3: fill missing mcap/ATH for a small visible batch only ──
+        // ── Phase 3: light mcap hydrate for missing stats (non-blocking after paint) ──
         const needStats = painted.filter(needsMarketStats).slice(0, MAX_ONCHAIN_STATS);
         if (needStats.length) {
           const hydrated = await mapPool(
@@ -686,17 +658,16 @@ export function useWarRoomCampaignFeed({
             (campaign) => hydrateCampaignMarketStats(campaign, chainId),
           );
           if (cancelled) return;
-
           const byKey = new Map(hydrated.map((c) => [String(c.campaign).toLowerCase(), c]));
           const enriched = painted.map((c) => byKey.get(String(c.campaign).toLowerCase()) || c);
-          setCampaigns(enriched);
-          setSource(enriched.length ? (modeCandidates.length ? "onchain" : feedSource) : "empty");
+          setInventory(enriched);
+          setSource(enriched.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
         }
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error("[useWarRoomCampaignFeed] failed to load campaigns", loadError);
         if (!cancelled) {
-          setCampaigns([]);
+          setInventory([]);
           setSource("empty");
           setError(loadError instanceof Error ? loadError.message : "Failed to load market campaigns");
         }
@@ -710,7 +681,10 @@ export function useWarRoomCampaignFeed({
       cancelled = true;
       controller.abort();
     };
-  }, [activeChainId, activeMode, search]);
+  }, [activeChainId]);
+
+  // Mode filter is pure client — switching Trending ↔ Graduated is instant.
+  const campaigns = inventory.filter((campaign) => matchesMode(campaign, activeMode));
 
   return { campaigns, loading, error, source };
 }
