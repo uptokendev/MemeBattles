@@ -86,12 +86,17 @@ function formatEpochEnd(summary?: LeagueSummaryResponse) {
 }
 
 function getPrizeRaw(prize?: LeaguePrizeMeta) {
-  return (
-    prize?.availablePotRaw ||
-    prize?.potRaw ||
-    prize?.totalLeagueFeeRaw ||
-    "0"
-  );
+  const candidates = [prize?.availablePotRaw, prize?.potRaw, prize?.totalLeagueFeeRaw];
+  for (const raw of candidates) {
+    const s = String(raw ?? "").trim();
+    if (!s || s === "0") continue;
+    try {
+      if (BigInt(s) > 0n) return s;
+    } catch {
+      /* skip */
+    }
+  }
+  return "0";
 }
 
 function resolveGeneratedUsd(prize: LeaguePrizeMeta | undefined, prizeBnb: number, bnbUsd: number | null | undefined) {
