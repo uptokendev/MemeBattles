@@ -19,6 +19,8 @@ type Opts = {
   chainId: number;
   onFallbackRefresh?: () => void;
   fallbackMs?: number;
+  /** Soft full-list re-rank while Ably connected (default 45s). 0 disables. */
+  softRefreshMs?: number;
 };
 
 export function useLeagueRealtime(opts: Opts) {

@@ -262,10 +262,12 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const includeTestnet = activeChainId === 97 || isTestnetCampaignsEnabled();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
+  // Soft refresh while Ably is up so trending/mcap order can change with new activity + feed membership.
   const { patchByCampaign, created } = useLeagueRealtime({
     enabled: query.tab !== "drafts",
     chainId: activeChainId,
     fallbackMs: 25000,
+    softRefreshMs: 45000,
     onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
   });
   const { price: bnbUsd } = useBnbUsdPrice(true);
@@ -291,6 +293,12 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     setOnChainByCampaign({});
     onChainHydrateRef.current = new Set();
   }, [activeChainId]);
+
+  // After each soft list refresh, allow on-chain mcap re-hydrate so mcap sorts stay live on sparse indexers.
+  useEffect(() => {
+    if (refetchNonce === 0) return;
+    onChainHydrateRef.current = new Set();
+  }, [refetchNonce]);
 
   useEffect(() => {
     if (query.tab !== "new") return;

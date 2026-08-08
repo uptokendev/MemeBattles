@@ -362,7 +362,14 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const initialLoadedRef = useRef(false);
 
-  const { patchByCampaign } = useLeagueRealtime({ enabled: true, chainId: featuredChainId, fallbackMs: 25000, onFallbackRefresh: () => setRefetchNonce((n) => n + 1) });
+  // Soft refresh while Ably is up so Top 20 membership reorders (patches alone never admit new cards).
+  const { patchByCampaign } = useLeagueRealtime({
+    enabled: true,
+    chainId: featuredChainId,
+    fallbackMs: 25000,
+    softRefreshMs: 40000,
+    onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
+  });
 
   useEffect(() => {
     initialLoadedRef.current = false;

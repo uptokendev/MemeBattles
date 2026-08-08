@@ -43,19 +43,26 @@ type Opts = {
   chainId: number;
 
   /**
-   * Called only when realtime is NOT connected.
-   * Use it to trigger a single lightweight REST refresh of Home data.
+   * Lightweight REST re-rank of Home data.
+   * Used as a dense self-heal when Ably is down, and as a soft refresh while connected
+   * so list membership / server ranks can change (patches only update existing rows).
    */
   onFallbackRefresh?: () => void;
 
   /**
-   * Default 25s. Keep it >= 20s to avoid hammering.
+   * Poll interval when Ably is disconnected. Default 25s. Keep it >= 20s to avoid hammering.
    */
   fallbackMs?: number;
+  /**
+   * Soft full-list re-rank while Ably is connected. Patches update existing rows only;
+   * this pulls server rankings so Top-N membership / activity order can change.
+   * Default 45s. Set 0 to disable connected soft refresh.
+   */
+  softRefreshMs?: number;
 };
 
 export function useLeagueRealtime(opts: Opts) {
-  const { enabled, chainId, onFallbackRefresh, fallbackMs } = opts;
+  const { enabled, chainId, onFallbackRefresh, fallbackMs, softRefreshMs } = opts;
 
   const { channel, ready, isConnected } = useAblyLeagueChannel({ enabled, chainId });
 
@@ -133,46 +140,50 @@ export function useLeagueRealtime(opts: Opts) {
     };
   }, [ready, channel]);
 
-  // --- self-heal: fallback refresh when disconnected ---
+  // --- list re-rank: soft poll while connected + faster self-heal when disconnected ---
   const timerRef = useRef<any>(null);
   const lastRefreshRef = useRef<number>(0);
 
   useEffect(() => {
-    const intervalMs = Math.max(20000, Number(fallbackMs ?? 25000));
-
-    // stop timer if realtime connected or no callback
-    if (!enabled || isConnected || !onFallbackRefresh) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      return;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
 
-    // start (or keep) timer while disconnected
-    if (!timerRef.current) {
-      timerRef.current = setInterval(() => {
-        const now = Date.now();
-        // safety: ensure no accidental tight loop
-        if (now - lastRefreshRef.current < intervalMs - 250) return;
-        lastRefreshRef.current = now;
+    if (!enabled || !onFallbackRefresh) return;
 
-        try {
-          onFallbackRefresh();
-        } catch {
-          // ignore
-        }
-      }, intervalMs);
-    }
+    // Connected: soft refresh so showcase/featured ranks can reorder with new entrants.
+    // Disconnected: denser fallback so the UI does not freeze without Ably.
+    const connectedSoftMs = Number(softRefreshMs ?? 45000);
+    const intervalMs = isConnected
+      ? connectedSoftMs > 0
+        ? Math.max(30000, connectedSoftMs)
+        : 0
+      : Math.max(20000, Number(fallbackMs ?? 25000));
 
-    // trigger an immediate refresh once when we first notice disconnect
-    const now = Date.now();
-    if (now - lastRefreshRef.current > 1000) {
+    if (!intervalMs) return;
+
+    timerRef.current = setInterval(() => {
+      const now = Date.now();
+      if (now - lastRefreshRef.current < intervalMs - 250) return;
       lastRefreshRef.current = now;
       try {
         onFallbackRefresh();
       } catch {
         // ignore
+      }
+    }, intervalMs);
+
+    // Immediate re-pull when we drop offline so ranks are not stuck on stale patches.
+    if (!isConnected) {
+      const now = Date.now();
+      if (now - lastRefreshRef.current > 1000) {
+        lastRefreshRef.current = now;
+        try {
+          onFallbackRefresh();
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -182,7 +193,7 @@ export function useLeagueRealtime(opts: Opts) {
         timerRef.current = null;
       }
     };
-  }, [enabled, isConnected, onFallbackRefresh, fallbackMs]);
+  }, [enabled, isConnected, onFallbackRefresh, fallbackMs, softRefreshMs]);
 
 
   // --- optimistic local activity/vote nudge on confirmed tx ---
