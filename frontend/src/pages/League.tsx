@@ -616,7 +616,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             <section className="mwz-hud-frame p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Standings</div><h2 className="mt-1 font-retro text-2xl text-foreground">{selectedLeague.title}</h2><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{selectedLeague.ruleSummary}</p></div>
-                <TacticalTag label={`${qualifiedEntrants} qualified`} tone="success" />
+                <TacticalTag label={`${selectedEntrants} qualified`} tone="success" />
               </div>
               <div className="mt-5">{error ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div> : loading ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">Loading league feed...</div> : <StandingsTable league={selectedLeague} rows={rows} status={selectedStatus} pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning || selectedLeague.emptyStateCopy} warningCopy={selectedCard?.warning} />}</div>
             </section>
