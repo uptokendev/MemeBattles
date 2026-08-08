@@ -16,6 +16,9 @@
   VITE_ENABLE_POSTGRAD_TOURNAMENT = "false"
   VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
   VITE_LAUNCHPAD_WRITES_ENABLED = "true"
+  # Product REST + Ably auth on frontend-api (not the indexer). UI env can override.
+  VITE_FRONTEND_API_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
+  VITE_ABLY_AUTH_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
 
 [[headers]]
   for = "/*"

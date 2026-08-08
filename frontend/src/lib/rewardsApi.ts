@@ -92,7 +92,8 @@ export async function fetchMonthlyClaim(
     monthId,
     wallet: address.toLowerCase(),
   });
-  const r = await fetch(`/api/league?${qs.toString()}`);
+  const { apiFetch } = await import("@/lib/apiBase");
+  const r = await apiFetch(`/api/league?${qs.toString()}`);
   const j = await r.json();
   if (!r.ok) throw new Error(j?.error || "Failed to load monthly claim");
   return j as MonthlyClaimResponse;
@@ -123,7 +124,8 @@ export async function submitLeagueClaim(params: {
       proof: string[];
     }
 > {
-  const r = await fetch(`/api/league`, {
+  const { apiFetch } = await import("@/lib/apiBase");
+  const r = await apiFetch(`/api/league`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "claim", ...params }),
@@ -144,7 +146,8 @@ export async function recordLeagueClaimTx(params: {
   signature: string;
   txHash: string;
 }): Promise<{ ok: boolean; txHash?: string | null }> {
-  const r = await fetch(`/api/league`, {
+  const { apiFetch } = await import("@/lib/apiBase");
+  const r = await apiFetch(`/api/league`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "record", ...params }),

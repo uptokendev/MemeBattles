@@ -6,23 +6,44 @@ function normalizeApiBase(value: unknown): string {
   return `https://${raw}`;
 }
 
-const EXPLICIT_APP_API_BASE = normalizeApiBase(
-  import.meta.env.VITE_FRONTEND_API_BASE ||
-    import.meta.env.VITE_RAILWAY_FRONTEND_API_BASE ||
-    import.meta.env.RAILWAY_FRONTEND_API_BASE_URL ||
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_BASE ||
-    import.meta.env.VITE_RAILWAY_API_BASE ||
-    ""
-);
+function looksLikeIndexerBase(url: string): boolean {
+  const host = String(url || "").toLowerCase();
+  return (
+    host.includes("memebattles-production") ||
+    host.includes("memewarzone-production") ||
+    host.includes("-dca0") ||
+    host.includes("indexer") ||
+    host.includes("realtime-indexer")
+  );
+}
 
-const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(
-  import.meta.env.VITE_TOKEN_API_BASE ||
-    import.meta.env.VITE_RAILWAY_TOKEN_API_BASE ||
-    import.meta.env.RAILWAY_TOKEN_API_BASE_URL ||
-    import.meta.env.VITE_REALTIME_API_BASE ||
-    ""
-);
+// Never use VITE_API_BASE here — that is the indexer in production.
+const EXPLICIT_APP_API_BASE = (() => {
+  for (const candidate of [
+    import.meta.env.VITE_FRONTEND_API_BASE,
+    import.meta.env.VITE_RAILWAY_FRONTEND_API_BASE,
+    import.meta.env.RAILWAY_FRONTEND_API_BASE_URL,
+  ]) {
+    const normalized = normalizeApiBase(candidate);
+    if (normalized && !looksLikeIndexerBase(normalized)) return normalized;
+  }
+  return "";
+})();
+
+const EXPLICIT_REALTIME_API_BASE = (() => {
+  for (const candidate of [
+    import.meta.env.VITE_TOKEN_API_BASE,
+    import.meta.env.VITE_RAILWAY_TOKEN_API_BASE,
+    import.meta.env.RAILWAY_TOKEN_API_BASE_URL,
+    import.meta.env.VITE_REALTIME_API_BASE,
+    import.meta.env.VITE_API_BASE,
+    import.meta.env.VITE_API_BASE_URL,
+  ]) {
+    const normalized = normalizeApiBase(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+})();
 
 const NETLIFY_OWNED_API_PREFIXES = [
   "/api/activity",

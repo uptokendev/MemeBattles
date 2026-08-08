@@ -571,14 +571,19 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
 }
 
 async function tryLoadFutureSummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions) {
-  // Mounted on frontend-api as /api/league/summary (leagueSummary.js).
+  // Mounted on frontend-api as /api/league/summary (leagueSummary.js) — never the indexer.
   const params = new URLSearchParams({ chain, chainId: String(chainId), period, epochOffset: String(epochOffset) });
   try {
     const response = await apiFetch(`/api/league/summary?${params.toString()}`, { cache: "no-store" });
-    if (!response.ok) return undefined;
-    const payload = await response.json();
+    if (!response.ok) {
+      console.warn("[leagueApi] /api/league/summary failed", response.status, response.url);
+      return undefined;
+    }
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return undefined;
     return normalizeSummaryPayload(payload, chain, period, epochOffset);
-  } catch {
+  } catch (error) {
+    console.warn("[leagueApi] /api/league/summary error", error);
     return undefined;
   }
 }

@@ -21,6 +21,11 @@
   VITE_ENABLE_POSTGRAD_TOURNAMENT = "false"
   VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
   VITE_LAUNCHPAD_WRITES_ENABLED = "true"
+  # League/summary, featured, upload, ably auth live on frontend-api — NOT the indexer.
+  # VITE_API_BASE in the Netlify UI historically points at memebattles-production (indexer);
+  # never use that for product REST. Prefer explicit frontend-api base (UI env overrides this).
+  VITE_FRONTEND_API_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
+  VITE_ABLY_AUTH_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
 
 [[headers]]
   for = "/*"

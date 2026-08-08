@@ -14,23 +14,52 @@ function normalizeApiBase(value: unknown): string {
   return `https://${raw}`;
 }
 
-const EXPLICIT_API_BASE = normalizeApiBase(
-  import.meta.env.VITE_FRONTEND_API_BASE ||
-    import.meta.env.VITE_RAILWAY_FRONTEND_API_BASE ||
-    import.meta.env.RAILWAY_FRONTEND_API_BASE_URL ||
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_BASE ||
-    import.meta.env.VITE_RAILWAY_API_BASE ||
-    ""
-);
+/** Indexer hosts must never receive frontend-api routes (league/summary, featured, upload, …). */
+function looksLikeIndexerBase(url: string): boolean {
+  const host = String(url || "").toLowerCase();
+  return (
+    host.includes("memebattles-production") ||
+    host.includes("memewarzone-production") ||
+    host.includes("-dca0") ||
+    host.includes("indexer") ||
+    host.includes("realtime-indexer")
+  );
+}
 
-const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(
-  import.meta.env.VITE_TOKEN_API_BASE ||
-    import.meta.env.VITE_RAILWAY_TOKEN_API_BASE ||
-    import.meta.env.RAILWAY_TOKEN_API_BASE_URL ||
-    import.meta.env.VITE_REALTIME_API_BASE ||
-    ""
-);
+function firstNonIndexerBase(candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    const normalized = normalizeApiBase(candidate);
+    if (normalized && !looksLikeIndexerBase(normalized)) return normalized;
+  }
+  return "";
+}
+
+function firstAnyBase(candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    const normalized = normalizeApiBase(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+// Frontend-api only. Never fall back to VITE_API_BASE — in prod that is the indexer
+// (memebattles-production), which has no /api/league/summary and broke the League page.
+const EXPLICIT_API_BASE = firstNonIndexerBase([
+  import.meta.env.VITE_FRONTEND_API_BASE,
+  import.meta.env.VITE_RAILWAY_FRONTEND_API_BASE,
+  import.meta.env.RAILWAY_FRONTEND_API_BASE_URL,
+]);
+
+// Realtime indexer (votes, token markets, some rewards). VITE_API_BASE is a legacy alias.
+const EXPLICIT_REALTIME_API_BASE = firstAnyBase([
+  import.meta.env.VITE_TOKEN_API_BASE,
+  import.meta.env.VITE_RAILWAY_TOKEN_API_BASE,
+  import.meta.env.RAILWAY_TOKEN_API_BASE_URL,
+  import.meta.env.VITE_REALTIME_API_BASE,
+  import.meta.env.VITE_API_BASE,
+  import.meta.env.VITE_API_BASE_URL,
+  import.meta.env.VITE_RAILWAY_API_BASE,
+]);
 
 // Do not route global list endpoints (/api/campaigns, /api/featured) to the
 // realtime-indexer project: memebattles-production does not expose those routes.
@@ -62,6 +91,13 @@ const FRONTEND_API_PREFIXES = [
   // Vote receipt → vote_aggregates (must not hit indexer /api/votes proxy).
   "/api/vote-ingest",
   "/api/votes/ingest",
+  // Same-origin Netlify proxy → frontend-api for these product surfaces.
+  "/api/featured",
+  "/api/campaigns",
+  "/api/upload",
+  "/api/auth",
+  "/api/ably",
+  "/api/follows",
 ];
 
 function isHttpUrl(value: string): boolean {
@@ -349,11 +385,21 @@ export function apiUrl(path: string): string {
   if (isHttpUrl(path)) return path;
   const normalized = normalizePath(path);
 
+  // Indexer-only surfaces (votes, token market, …).
   if (EXPLICIT_REALTIME_API_BASE && shouldUseRealtimeIndexer(normalized)) {
     return `${EXPLICIT_REALTIME_API_BASE}${normalized}`;
   }
 
-  return EXPLICIT_API_BASE ? `${EXPLICIT_API_BASE}${normalized}` : normalized;
+  // Frontend-api surfaces (league/summary, featured, upload, …).
+  // Prefer explicit frontend base; otherwise same-origin so Netlify can proxy.
+  // Never send these to the indexer — even if VITE_API_BASE is the only absolute URL set.
+  if (shouldUseFrontendApi(normalized)) {
+    return EXPLICIT_API_BASE ? `${EXPLICIT_API_BASE}${normalized}` : normalized;
+  }
+
+  if (EXPLICIT_API_BASE) return `${EXPLICIT_API_BASE}${normalized}`;
+  // Last resort for unclassified paths: same-origin (not the indexer).
+  return normalized;
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
