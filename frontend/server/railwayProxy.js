@@ -198,6 +198,9 @@ function shouldProxyToRailway(path) {
   if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
   if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
   if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
+  // Vote receipt ingest must hit frontend-api (DB write + RPC), not the indexer proxy.
+  if (pathname === "/api/votes/ingest" || pathname.startsWith("/api/votes/ingest/")) return false;
+  if (pathname === "/api/vote-ingest" || pathname.startsWith("/api/vote-ingest/")) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);

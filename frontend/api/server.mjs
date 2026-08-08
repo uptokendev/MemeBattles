@@ -375,6 +375,8 @@ router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
 router.all("/topaz-trades", wrap(topazTrades));
 router.all("/token/:campaign/topaz-trades", wrap(topazTrades));
 router.all("/token-metadata", wrap(tokenMetadata));
+// Alias outside /votes/* so Railway proxy prefixes cannot steal this path.
+router.all("/vote-ingest", wrap(votesIngest));
 router.all("/votes/ingest", wrap(votesIngest));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));

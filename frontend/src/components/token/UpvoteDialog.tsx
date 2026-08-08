@@ -372,7 +372,8 @@ export function UpvoteDialog({
       } | null = null;
       if (txHash) {
         try {
-          const res = await apiFetch("/api/votes/ingest", {
+          // Prefer /api/vote-ingest — /api/votes/* may be proxied to the indexer.
+          const res = await apiFetch("/api/vote-ingest", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ chainId, txHash }),

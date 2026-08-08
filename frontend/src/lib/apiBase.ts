@@ -59,6 +59,9 @@ const FRONTEND_API_PREFIXES = [
   "/api/league",
   "/api/leaguePayouts",
   "/api/leagueRoot",
+  // Vote receipt → vote_aggregates (must not hit indexer /api/votes proxy).
+  "/api/vote-ingest",
+  "/api/votes/ingest",
 ];
 
 function isHttpUrl(value: string): boolean {
