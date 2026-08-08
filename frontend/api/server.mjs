@@ -40,7 +40,7 @@ import topazTrades from "./topaz-trades.js";
 import votes from "./votes.js";
 import votesIngest from "./votes-ingest.js";
 import voteCounts from "./vote_counts.js";
-import { withAdminOrOps, withInternalAuth } from "./lib/apiAuth.js";
+import { withAdminOrOps, withInternalAuth, getAuthEnforceSnapshot } from "./lib/apiAuth.js";
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
 import {
   followedDrafts,
@@ -485,4 +485,12 @@ app.use((err, _req, res, _next) => {
 });
 
 const port = Number(process.env.PORT || process.env.API_PORT || 3001);
-app.listen(port, "0.0.0.0", () => console.log(`[api/server] listening on ${port}`));
+app.listen(port, "0.0.0.0", () => {
+  console.log(`[api/server] listening on ${port}`);
+  try {
+    const snap = getAuthEnforceSnapshot();
+    console.log("[api/auth] enforce snapshot", JSON.stringify(snap));
+  } catch (error) {
+    console.warn("[api/auth] enforce snapshot failed", error?.message || error);
+  }
+});

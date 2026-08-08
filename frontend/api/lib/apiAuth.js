@@ -2,28 +2,74 @@
  * Shared API auth helpers for MemeWarzone frontend-api gateway.
  * Dual-auth: when enforce flags are off, privileged routes still accept legacy
  * unauthenticated callers (log via console.warn). When enforce is on, fail closed.
+ *
+ * Go-live defaults (production / Railway):
+ *   Unset flags default to ON so open legacy paths are not accidental.
+ *   Explicit 0/false/off still disables a single class for rollback.
  */
 
 import { requireDashboardAdmin } from "../dashboard/_auth.js";
 
+function isProductionLike() {
+  const nodeEnv = String(process.env.NODE_ENV || "").trim().toLowerCase();
+  if (nodeEnv === "production") return true;
+  // Railway always injects these; treat as production-like for enforce defaults.
+  if (String(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID || "").trim()) return true;
+  return ["1", "true", "yes", "on"].includes(String(process.env.API_AUTH_ENFORCE_DEFAULT || "").trim().toLowerCase());
+}
+
+function parseBoolEnv(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+  const v = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return null;
+}
+
+/** @returns {boolean} explicit value, else production-like default ON */
+function enforceFlag(name) {
+  const parsed = parseBoolEnv(name);
+  if (parsed !== null) return parsed;
+  return isProductionLike();
+}
+
 function truthyEnv(name) {
-  return ["1", "true", "yes", "on"].includes(String(process.env[name] || "").trim().toLowerCase());
+  return parseBoolEnv(name) === true;
 }
 
 export function isAuthEnforceInternal() {
-  return truthyEnv("API_AUTH_ENFORCE_INTERNAL");
+  return enforceFlag("API_AUTH_ENFORCE_INTERNAL");
 }
 
 export function isAuthEnforceSecurityMutations() {
-  return truthyEnv("API_AUTH_ENFORCE_SECURITY_MUTATIONS");
+  return enforceFlag("API_AUTH_ENFORCE_SECURITY_MUTATIONS");
 }
 
 export function isAuthEnforceUserWrites() {
-  return truthyEnv("API_AUTH_ENFORCE_USER_WRITES");
+  return enforceFlag("API_AUTH_ENFORCE_USER_WRITES");
 }
 
 export function isAuthEnforceArenaMutations() {
-  return truthyEnv("API_AUTH_ENFORCE_ARENA_MUTATIONS");
+  return enforceFlag("API_AUTH_ENFORCE_ARENA_MUTATIONS");
+}
+
+/** Snapshot for boot logs / diagnostics. */
+export function getAuthEnforceSnapshot() {
+  return {
+    productionLike: isProductionLike(),
+    defaultWhenUnset: isProductionLike() ? "on" : "off",
+    INTERNAL: isAuthEnforceInternal(),
+    SECURITY_MUTATIONS: isAuthEnforceSecurityMutations(),
+    USER_WRITES: isAuthEnforceUserWrites(),
+    ARENA_MUTATIONS: isAuthEnforceArenaMutations(),
+    raw: {
+      API_AUTH_ENFORCE_INTERNAL: process.env.API_AUTH_ENFORCE_INTERNAL ?? "(unset)",
+      API_AUTH_ENFORCE_SECURITY_MUTATIONS: process.env.API_AUTH_ENFORCE_SECURITY_MUTATIONS ?? "(unset)",
+      API_AUTH_ENFORCE_USER_WRITES: process.env.API_AUTH_ENFORCE_USER_WRITES ?? "(unset)",
+      API_AUTH_ENFORCE_ARENA_MUTATIONS: process.env.API_AUTH_ENFORCE_ARENA_MUTATIONS ?? "(unset)",
+    },
+  };
 }
 
 export function readBearerToken(req) {

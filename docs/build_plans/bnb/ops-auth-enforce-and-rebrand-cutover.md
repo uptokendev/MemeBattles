@@ -2,7 +2,7 @@
 
 **Branch:** `devpostgrad`  
 **Date:** 2026-08-08  
-**Code status:** dual-auth already in product; enforce flags default **off**. Product rebrand of events/strings largely done; Railway/GitHub/Supabase names still legacy.
+**Code status:** dual-auth in product; enforce flags default **ON** on Railway/production when unset (explicit `0` still disables). Product rebrand of events/strings largely done; Railway/GitHub/Supabase names still legacy.
 
 Do these in order. Do **not** flip enforce flags until the smoke checklist below is green on the live branch.
 
