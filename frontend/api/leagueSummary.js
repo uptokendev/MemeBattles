@@ -447,8 +447,9 @@ function buildHallOfFame(history) {
   };
 }
 
-async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = true }) {
+async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = false }) {
   const policy = getPayoutPolicy(period);
+  // Live categories first (parallel). History is expensive — only when asked.
   const results = await Promise.all(
     LEAGUES.map(async (leagueMeta) => {
       try {
@@ -465,6 +466,7 @@ async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, l
   const season = buildSeasonMeta({ chain, chainId, period, epochOffset, epoch });
   const prize = summarizePrize(results, period, policy);
   const currentLeaders = pickCurrentLeaders(results);
+  // History multiplies category fan-out (3 epochs × 6 boards). Keep first paint lean.
   const history = includeHistory ? await buildHistory(req, { chainId, limit }) : { weekly: [], monthly: [] };
   const baseSummary = { leagues: results, prize };
 
@@ -503,11 +505,15 @@ export default async function handler(req, res) {
   const epochOffset = normEpochOffset(q.epochOffset, period);
   const chainId = clampInt(q.chainId ?? 97, 1, 999999, 97);
   const limit = clampInt(q.limit ?? 10, 1, 50, 10);
+  // Default OFF for first paint. Pass includeHistory=1 for hall-of-fame / trends.
+  const includeHistory =
+    String(q.includeHistory ?? q.history ?? '0').trim() === '1' ||
+    String(q.includeHistory ?? '').toLowerCase() === 'true';
 
   if (chain === 'solana') return json(res, 200, buildPendingSummary({ chain, period, epochOffset }));
 
   try {
-    return json(res, 200, await aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory: true }));
+    return json(res, 200, await aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory }));
   } catch (error) {
     console.error('[api/league/summary]', error);
     return json(res, 500, { error: 'Server error' });

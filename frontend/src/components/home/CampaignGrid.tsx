@@ -579,6 +579,10 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
     // Client filters use hydrated mcap/progress so dropdowns work even when API mcap is null.
     let filtered = mapped.filter((vm) => {
+      // Ending Soon = live bonding only (never graduated / 100% progress).
+      if (tab === "ending" && (vm.isDexTrading || vm._progress >= 100)) return false;
+      // DEX tab = graduated only.
+      if (tab === "dex" && !vm.isDexTrading) return false;
       if (Number.isFinite(mcapMinUsd) && vm._mcapUsd < mcapMinUsd) return false;
       if (Number.isFinite(mcapMaxUsd) && vm._mcapUsd > mcapMaxUsd) return false;
       if (Number.isFinite(progressMinPct) && vm._progress < progressMinPct) return false;

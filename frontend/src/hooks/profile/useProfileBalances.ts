@@ -85,11 +85,14 @@ export function useProfileBalances({
 
     const loadBalances = async () => {
       try {
-        if (!viewedAddress || !account) {
+        // BSC testnet/mainnet have no ENS — never pass non-0x values into ethers name resolvers.
+        const targetRaw = String(viewedAddress || account || "").trim();
+        if (!targetRaw || !ethers.isAddress(targetRaw)) {
           setNativeBalance("");
           setTokenBalances([]);
           return;
         }
+        const target = ethers.getAddress(targetRaw);
 
         const readProvider = resolveReadProvider();
         if (!readProvider) {
@@ -103,7 +106,7 @@ export function useProfileBalances({
         setLoadingPortfolioMetrics(true);
 
         // Native BNB balance.
-        const bal = await readProvider.getBalance(account as any);
+        const bal = await readProvider.getBalance(target);
         const bnb = Number(ethers.formatUnits(bal, 18)).toFixed(4);
         const nativeBnbForMetrics = Number.parseFloat(bnb) || 0;
         if (!cancelled) setNativeBalance(`${bnb} BNB`);
@@ -121,10 +124,10 @@ export function useProfileBalances({
           const batch = campaigns.slice(start, start + BALANCE_BATCH_SIZE);
           const settled = await Promise.allSettled(batch.map(async (campaign) => {
             const tokenAddr = String(campaign?.token ?? "").trim().toLowerCase();
-            if (!tokenAddr) return null;
+            if (!tokenAddr || !ethers.isAddress(tokenAddr)) return null;
 
             const erc20 = new Contract(tokenAddr as any, ERC20_ABI_MIN as any, readProvider);
-            const rawBal = await erc20.balanceOf(account) as bigint;
+            const rawBal = await erc20.balanceOf(target) as bigint;
             if (typeof rawBal !== "bigint" || rawBal <= 0n) return null;
 
             const [decimalsAny, symbolMaybe] = await Promise.all([

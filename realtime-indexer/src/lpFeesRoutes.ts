@@ -417,6 +417,19 @@ export function registerLpFeesRoutes(app: express.Application) {
         return;
       }
 
+      // Solana / non-EVM: no PermanentLpLocker dashboard — empty success, not 401.
+      if (chainId === 101 || chainId === 102) {
+        res.status(200).json({
+          ok: true,
+          chainId,
+          lockerAddress: null,
+          items: [],
+          note: "LP fee dashboard is BNB-only.",
+          updatedAt: new Date().toISOString(),
+        });
+        return;
+      }
+
       // Auth:
       // - chain 97: open read (testnet monitoring)
       // - any chain + ?creator=0x…: creator self-read (filtered below; no secrets)

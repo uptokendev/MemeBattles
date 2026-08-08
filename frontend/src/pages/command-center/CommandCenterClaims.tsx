@@ -16,6 +16,7 @@ import {
   recordRewardClaimFailure,
   recordRewardClaimTx,
 } from "@/lib/rewardDistributor";
+import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
 
 type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
 
@@ -142,26 +143,51 @@ function getRewardStateCopy(state: RewardCardState, solanaDisabled: boolean) {
   }
 }
 
-function hasRecruiterAccess(recruiterLinkState?: string | null) {
+function hasRecruiterAccess(recruiterLinkState?: string | null, isRecruiterFlag?: boolean) {
+  if (isRecruiterFlag) return true;
   const state = String(recruiterLinkState || "").trim().toLowerCase();
-  return state.includes("self_recruiter") || state.includes("recruiter_wallet") || state.includes("recruiter_owner");
+  if (!state || state === "unlinked") return false;
+  // Accept self_recruiter_wallet, self_recruiter_inactive, recruiter_owner, etc.
+  return (
+    state.includes("self_recruiter") ||
+    state.includes("recruiter_wallet") ||
+    state.includes("recruiter_owner") ||
+    state.includes("recruiter")
+  );
 }
 
-function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null, recruiterLinkState?: string | null): RewardCardConfig[] {
+function buildRewardCards(
+  items: RewardLedgerItem[],
+  squadState?: string | null,
+  recruiterLinkState?: string | null,
+  isRecruiterFlag?: boolean,
+): RewardCardConfig[] {
+  const recruiterOk = hasRecruiterAccess(recruiterLinkState, isRecruiterFlag);
+  const squadOk = hasActiveSquad(squadState, recruiterLinkState);
+
   const grouped = new Map<string, RewardLedgerItem[]>();
   for (const item of items) {
     const type = String(item.rewardType || "future").toLowerCase();
-    if (type === "squad" && !hasActiveSquad(squadState, recruiterLinkState)) continue;
-    if (type === "recruiter" && !hasRecruiterAccess(recruiterLinkState)) continue;
+    // Keep ledger rows even if attribution is slow/missing; filter empty baselines below.
     if (!grouped.has(type)) grouped.set(type, []);
     grouped.get(type)!.push(item);
   }
 
+  // Visibility rules:
+  // - everyone: league + airdrop
+  // - recruiter only: + recruiter claim
+  // - squad only: + squad claim
+  // - both: both
   const baseline = ["league", "airdrop"];
-  if (hasRecruiterAccess(recruiterLinkState)) baseline.push("recruiter");
-  if (hasActiveSquad(squadState, recruiterLinkState)) baseline.push("squad");
+  if (recruiterOk || grouped.has("recruiter")) baseline.push("recruiter");
+  if (squadOk || grouped.has("squad")) baseline.push("squad");
 
-  const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()]));
+  const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()])).filter((type) => {
+    if (type === "recruiter") return recruiterOk || (grouped.get("recruiter")?.length ?? 0) > 0;
+    if (type === "squad") return squadOk || (grouped.get("squad")?.length ?? 0) > 0;
+    return true;
+  });
+
   return orderedTypes.map((rewardType) => {
     const copy = REWARD_COPY[rewardType] || REWARD_COPY.future;
     const groupItems = grouped.get(rewardType) || [];
@@ -187,6 +213,7 @@ export default function CommandCenterClaims() {
   const [loading, setLoading] = useState(false);
   const [claimingType, setClaimingType] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isRecruiterFlag, setIsRecruiterFlag] = useState(false);
 
   const loadClaims = () => {
     setLoading(true);
@@ -202,11 +229,29 @@ export default function CommandCenterClaims() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletAddress, chainId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!walletAddress) {
+      setIsRecruiterFlag(false);
+      return;
+    }
+    void fetchRecruiterSignupStatus(walletAddress)
+      .then((status) => {
+        if (!cancelled) setIsRecruiterFlag(Boolean(status?.isRecruiter));
+      })
+      .catch(() => {
+        if (!cancelled) setIsRecruiterFlag(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+
   const rewardCards = useMemo(
-    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState),
-    [items, attribution?.recruiterLinkState, attribution?.squadState],
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag),
+    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag],
   );
-  const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState);
+  const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState, isRecruiterFlag);
 
   async function claimRewards(card: RewardCardConfig) {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");

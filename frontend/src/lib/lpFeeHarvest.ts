@@ -76,15 +76,25 @@ export async function fetchLpFeePools(input: {
   campaignAddress?: string | null;
   limit?: number;
 }): Promise<{ lockerAddress: string | null; items: LpFeePoolRow[] }> {
+  const chainId = Number(input.chainId || 97);
+  // LP locker is BNB-only. Solana (101/102) and other chains have no EVM fee dashboard.
+  if (chainId === 101 || chainId === 102 || !Number.isFinite(chainId) || chainId <= 0) {
+    return { lockerAddress: null, items: [] };
+  }
+  const creator = String(input.creatorAddress || "").trim();
+  if (creator && !/^0x[a-fA-F0-9]{40}$/.test(creator)) {
+    return { lockerAddress: null, items: [] };
+  }
+
   const base = getTokenIndexerBase();
   if (!base) throw new Error("Token indexer URL is not configured (VITE_TOKEN_API_BASE / VITE_REALTIME_API_BASE).");
 
   const qs = new URLSearchParams({
-    chainId: String(input.chainId || 97),
+    chainId: String(chainId),
     limit: String(input.limit ?? 50),
   });
   if (input.campaignAddress) qs.set("campaign", String(input.campaignAddress).toLowerCase());
-  if (input.creatorAddress) qs.set("creator", String(input.creatorAddress).toLowerCase());
+  if (creator) qs.set("creator", creator.toLowerCase());
 
   const res = await fetch(`${base}/api/dashboard/lp-fees?${qs.toString()}`, {
     cache: "no-store",
