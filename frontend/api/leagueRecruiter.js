@@ -1,6 +1,18 @@
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, json } from "../server/http.js";
 
+/**
+ * Recruiter League for weekly/monthly epochs.
+ *
+ * STRICT epoch windows only (no all-time recruiter_summaries).
+ * Otherwise permanent big recruiters win every board.
+ *
+ * Score weights align with indexer recruiterLeaderboard defaults:
+ *   linked wallets 1, creators 3, traders 2,
+ *   referred volume BNB * 0.05, epoch earned BNB * 1
+ * (override via RECRUITER_LEADERBOARD_WEIGHT_* env on frontend-api).
+ */
+
 function clampInt(v, lo, hi, def) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -41,18 +53,11 @@ function normPeriod(periodRaw) {
   const p = String(periodRaw || "weekly").toLowerCase().trim();
   if (p === "weekly") return "weekly";
   if (p === "monthly") return "monthly";
-  return "all_time";
-}
-
-function getEpoch(periodNorm, epochOffset) {
-  if (periodNorm === "weekly") return getWeeklyEpochUtc(epochOffset);
-  if (periodNorm === "monthly") return getMonthlyEpochUtc(epochOffset);
-  return { period: "all_time", epochOffset: 0, epochStart: null, epochEnd: null, rangeEnd: null, isLive: false };
+  return "weekly";
 }
 
 function epochMeta(periodNorm, epochOffset) {
-  const epoch = getEpoch(periodNorm, epochOffset);
-  if (!(periodNorm === "weekly" || periodNorm === "monthly")) return undefined;
+  const epoch = periodNorm === "monthly" ? getMonthlyEpochUtc(epochOffset) : getWeeklyEpochUtc(epochOffset);
   return {
     period: periodNorm,
     epochOffset,
@@ -63,11 +68,37 @@ function epochMeta(periodNorm, epochOffset) {
   };
 }
 
-function firstValue(row, keys, fallback = undefined) {
-  for (const key of keys) {
-    if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== "") return row[key];
+function weightNum(envKey, fallback) {
+  const n = Number(process.env[envKey] || fallback);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getWeights() {
+  return {
+    linkedWallets: weightNum("RECRUITER_LEADERBOARD_WEIGHT_LINKED_WALLETS", 1),
+    linkedCreators: weightNum("RECRUITER_LEADERBOARD_WEIGHT_LINKED_CREATORS", 3),
+    linkedTraders: weightNum("RECRUITER_LEADERBOARD_WEIGHT_LINKED_TRADERS", 2),
+    routedVolumeBnb: weightNum("RECRUITER_LEADERBOARD_WEIGHT_ROUTED_VOLUME_BNB", 0.05),
+    totalEarnedBnb: weightNum("RECRUITER_LEADERBOARD_WEIGHT_TOTAL_EARNED_BNB", 1),
+  };
+}
+
+function weiToBnb(raw) {
+  try {
+    const s = String(raw ?? "0");
+    if (!s || s === "0") return 0;
+    // avoid floating huge ints: use Number on ether string via split
+    const neg = s.startsWith("-");
+    const digits = neg ? s.slice(1) : s;
+    if (!/^\d+$/.test(digits)) return 0;
+    const pad = digits.padStart(19, "0");
+    const whole = pad.slice(0, -18) || "0";
+    const frac = pad.slice(-18);
+    const n = Number(`${whole}.${frac}`);
+    return Number.isFinite(n) ? (neg ? -n : n) : 0;
+  } catch {
+    return 0;
   }
-  return fallback;
 }
 
 function toNumber(value, fallback = 0) {
@@ -75,143 +106,316 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function normalizeRecruiterRow(raw, index) {
-  const row = raw?.data && typeof raw.data === "object" ? raw.data : raw || {};
-  const linkedWalletCount = toNumber(firstValue(row, ["linked_wallet_count", "linkedWalletCount", "linked_wallets", "linkedWallets", "wallet_count", "wallets"]));
-  const activeSquadMemberCount = toNumber(firstValue(row, ["active_squad_member_count", "activeSquadMemberCount", "squad_member_count", "squadMembers", "members"]));
-  const linkedCreatorsCount = toNumber(firstValue(row, ["linked_creators_count", "linkedCreatorsCount", "creator_count", "creators"]));
-  const linkedTradersCount = toNumber(firstValue(row, ["linked_traders_count", "linkedTradersCount", "trader_count", "traders"]));
-  const referredVolumeUsd = toNumber(firstValue(row, ["referred_volume_usd", "referredVolumeUsd", "volume_usd", "total_volume_usd"]));
-  const weightedScore = toNumber(
-    firstValue(row, ["weighted_score", "weightedScore", "score", "league_score"]),
-    linkedWalletCount * 10 + activeSquadMemberCount * 20 + linkedCreatorsCount * 15 + linkedTradersCount * 10 + referredVolumeUsd / 1000,
+/**
+ * Epoch-scoped recruiter board.
+ * Links / squad joins counted only when linked_at / joined_at fall in [start, end).
+ * Referred volume + recruiter earnings from reward_events in the same window
+ * where the wallet was actively linked at event time.
+ */
+async function loadEpochRecruiterRows(startIso, endIso, limit) {
+  const weights = getWeights();
+  const { rows } = await pool.query(
+    `
+    WITH epoch_links AS (
+      SELECT
+        l.recruiter_id,
+        l.wallet_address,
+        l.linked_at,
+        l.detached_at
+      FROM public.wallet_recruiter_links l
+      WHERE l.is_active = true
+        AND l.linked_at >= $1::timestamptz
+        AND l.linked_at < $2::timestamptz
+    ),
+    epoch_squad AS (
+      SELECT
+        s.recruiter_id,
+        s.wallet_address,
+        s.member_role,
+        s.joined_at
+      FROM public.wallet_squad_memberships s
+      WHERE s.is_active = true
+        AND s.joined_at >= $1::timestamptz
+        AND s.joined_at < $2::timestamptz
+    ),
+    link_stats AS (
+      SELECT
+        el.recruiter_id,
+        count(DISTINCT el.wallet_address)::int AS linked_wallet_count,
+        count(DISTINCT el.wallet_address) FILTER (
+          WHERE EXISTS (
+            SELECT 1 FROM public.campaigns c
+             WHERE lower(c.creator_address) = lower(el.wallet_address)
+          )
+        )::int AS linked_creators_count,
+        count(DISTINCT el.wallet_address) FILTER (
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.campaigns c
+             WHERE lower(c.creator_address) = lower(el.wallet_address)
+          )
+        )::int AS linked_traders_count,
+        max(el.linked_at) AS latest_linked_activity_at
+      FROM epoch_links el
+      GROUP BY el.recruiter_id
+    ),
+    squad_stats AS (
+      SELECT
+        es.recruiter_id,
+        count(DISTINCT es.wallet_address)::int AS active_squad_member_count
+      FROM epoch_squad es
+      GROUP BY es.recruiter_id
+    ),
+    event_matches AS (
+      -- Trades by wallets that were linked at event time (epoch window on event)
+      SELECT
+        l.recruiter_id,
+        re.raw_amount,
+        re.recruiter_amount,
+        re.occurred_at
+      FROM public.reward_events re
+      JOIN public.wallet_recruiter_links l
+        ON re.route_kind = 'trade'
+       AND re.wallet_address IS NOT NULL
+       AND l.wallet_address = re.wallet_address
+       AND l.linked_at <= re.occurred_at
+       AND (l.detached_at IS NULL OR l.detached_at > re.occurred_at)
+      WHERE re.occurred_at >= $1::timestamptz
+        AND re.occurred_at < $2::timestamptz
+      UNION ALL
+      -- Finalize volume attributed to campaign creator's recruiter link
+      SELECT
+        l.recruiter_id,
+        re.raw_amount,
+        re.recruiter_amount,
+        re.occurred_at
+      FROM public.reward_events re
+      JOIN public.campaigns c
+        ON re.route_kind = 'finalize'
+       AND c.chain_id = re.chain_id
+       AND c.campaign_address = re.campaign_address
+      JOIN public.wallet_recruiter_links l
+        ON l.wallet_address = lower(c.creator_address)
+       AND l.linked_at <= re.occurred_at
+       AND (l.detached_at IS NULL OR l.detached_at > re.occurred_at)
+      WHERE re.occurred_at >= $1::timestamptz
+        AND re.occurred_at < $2::timestamptz
+    ),
+    event_totals AS (
+      SELECT
+        recruiter_id,
+        coalesce(sum(raw_amount), 0)::numeric AS referred_volume_raw,
+        coalesce(sum(recruiter_amount), 0)::numeric AS epoch_earned_raw,
+        max(occurred_at) AS last_referred_event_at
+      FROM event_matches
+      GROUP BY recruiter_id
+    ),
+    recruiter_ids AS (
+      SELECT recruiter_id FROM link_stats
+      UNION
+      SELECT recruiter_id FROM squad_stats
+      UNION
+      SELECT recruiter_id FROM event_totals
+    )
+    SELECT
+      r.id AS recruiter_id,
+      r.wallet_address,
+      r.code,
+      r.display_name,
+      r.is_og,
+      r.status,
+      coalesce(ls.linked_wallet_count, 0) AS linked_wallet_count,
+      coalesce(ss.active_squad_member_count, 0) AS active_squad_member_count,
+      coalesce(ls.linked_creators_count, 0) AS linked_creators_count,
+      coalesce(ls.linked_traders_count, 0) AS linked_traders_count,
+      coalesce(et.referred_volume_raw, 0)::text AS referred_volume_raw,
+      coalesce(et.epoch_earned_raw, 0)::text AS epoch_earned_raw,
+      coalesce(ls.latest_linked_activity_at, et.last_referred_event_at) AS latest_linked_activity_at
+    FROM recruiter_ids ids
+    JOIN public.recruiters r ON r.id = ids.recruiter_id
+    LEFT JOIN link_stats ls ON ls.recruiter_id = r.id
+    LEFT JOIN squad_stats ss ON ss.recruiter_id = r.id
+    LEFT JOIN event_totals et ON et.recruiter_id = r.id
+    WHERE r.status = 'active'
+    `,
+    [startIso, endIso],
   );
 
-  return {
-    rank: toNumber(firstValue(row, ["rank", "position"]), index + 1),
-    recruiterId: toNumber(firstValue(row, ["recruiter_id", "recruiterId", "id"]), undefined),
-    wallet: firstValue(row, ["wallet", "wallet_address", "walletAddress", "recruiter_wallet", "address"], null),
-    walletAddress: firstValue(row, ["wallet_address", "walletAddress", "wallet", "recruiter_wallet", "address"], null),
-    code: firstValue(row, ["code", "recruiter_code", "recruiterCode", "ref_code"], null),
-    displayName: firstValue(row, ["display_name", "displayName", "name", "handle"], null),
-    isOg: Boolean(firstValue(row, ["is_og", "isOg", "og"], false)),
-    status: firstValue(row, ["status", "recruiter_status"], "active"),
-    linkedWalletCount,
-    activeSquadMemberCount,
-    linkedCreatorsCount,
-    linkedTradersCount,
-    referredVolumeUsd,
-    latestLinkedActivityAt: firstValue(row, ["latest_linked_activity_at", "latestLinkedActivityAt", "last_linked_at", "updated_at"], null),
-    weightedScore,
-    estimatedPayoutUsd: toNumber(firstValue(row, ["estimated_payout_usd", "estimatedPayoutUsd", "claimable_usd", "payout_usd"])),
-    claimStatus: firstValue(row, ["claim_status", "claimStatus", "settlement_status"], "Pending"),
-  };
-}
+  const scored = rows.map((row) => {
+    const linkedWalletCount = toNumber(row.linked_wallet_count);
+    const linkedCreatorsCount = toNumber(row.linked_creators_count);
+    const linkedTradersCount = toNumber(row.linked_traders_count);
+    const activeSquadMemberCount = toNumber(row.active_squad_member_count);
+    const volumeBnb = weiToBnb(row.referred_volume_raw);
+    const earnedBnb = weiToBnb(row.epoch_earned_raw);
+    const weightedScore =
+      linkedWalletCount * weights.linkedWallets +
+      linkedCreatorsCount * weights.linkedCreators +
+      linkedTradersCount * weights.linkedTraders +
+      volumeBnb * weights.routedVolumeBnb +
+      earnedBnb * weights.totalEarnedBnb;
 
-function sortRows(rows) {
-  return rows.sort((a, b) => {
-    const scoreDiff = toNumber(b.weightedScore) - toNumber(a.weightedScore);
-    if (scoreDiff) return scoreDiff;
-    const walletDiff = toNumber(b.linkedWalletCount) - toNumber(a.linkedWalletCount);
-    if (walletDiff) return walletDiff;
-    return toNumber(b.activeSquadMemberCount) - toNumber(a.activeSquadMemberCount);
+    return {
+      recruiterId: toNumber(row.recruiter_id),
+      wallet: row.wallet_address ? String(row.wallet_address).toLowerCase() : null,
+      walletAddress: row.wallet_address ? String(row.wallet_address).toLowerCase() : null,
+      code: row.code || null,
+      displayName: row.display_name || null,
+      isOg: Boolean(row.is_og),
+      status: row.status || "active",
+      linkedWalletCount,
+      activeSquadMemberCount,
+      linkedCreatorsCount,
+      linkedTradersCount,
+      referredVolumeRaw: String(row.referred_volume_raw || "0"),
+      referredVolumeBnb: volumeBnb,
+      referredVolumeUsd: 0, // filled by summary when BNB/USD known
+      epochEarnedRaw: String(row.epoch_earned_raw || "0"),
+      epochEarnedBnb: earnedBnb,
+      latestLinkedActivityAt: row.latest_linked_activity_at || null,
+      weightedScore,
+      claimStatus: "Pending",
+      estimatedPayoutUsd: 0,
+      scoreBasis: "epoch_window",
+    };
   });
+
+  scored.sort((a, b) => {
+    if (b.weightedScore !== a.weightedScore) return b.weightedScore - a.weightedScore;
+    if (b.referredVolumeBnb !== a.referredVolumeBnb) return b.referredVolumeBnb - a.referredVolumeBnb;
+    if (b.linkedWalletCount !== a.linkedWalletCount) return b.linkedWalletCount - a.linkedWalletCount;
+    return (a.recruiterId || 0) - (b.recruiterId || 0);
+  });
+
+  return scored.slice(0, limit).map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-async function loadSummaryRows(limit) {
-  const { rows } = await pool.query("select to_jsonb(s) as data from public.recruiter_summaries s limit $1", [Math.max(limit, 100)]);
-  return sortRows(rows.map((row, index) => normalizeRecruiterRow(row, index))).slice(0, limit).map((row, index) => ({ ...row, rank: index + 1 }));
-}
-
-async function loadJoinedRows(startIso, endIso, limit) {
+/** Links-only fallback when reward_events table is missing. */
+async function loadEpochLinksOnly(startIso, endIso, limit) {
+  const weights = getWeights();
   const { rows } = await pool.query(
-    `select r.id,
-            r.wallet_address,
-            r.code,
-            r.display_name,
-            r.is_og,
-            r.status,
-            r.created_at,
-            count(distinct l.wallet_address)::int as linked_wallet_count,
-            count(distinct s.wallet_address)::int as active_squad_member_count,
-            count(distinct coalesce(nullif(s.wallet_address, ''), l.wallet_address)) filter (
-              where lower(coalesce(s.member_role, '')) = 'creator'
-                 or (
-                   lower(coalesce(s.member_role, 'member')) not in ('creator', 'trader')
-                   and exists (
-                     select 1 from public.campaigns c
-                      where lower(c.creator_address) = lower(coalesce(s.wallet_address, l.wallet_address))
-                   )
-                 )
-            )::int as linked_creators_count,
-            count(distinct coalesce(nullif(s.wallet_address, ''), l.wallet_address)) filter (
-              where lower(coalesce(s.member_role, '')) = 'trader'
-                 or (
-                   lower(coalesce(s.member_role, 'member')) not in ('creator', 'trader')
-                   and not exists (
-                     select 1 from public.campaigns c
-                      where lower(c.creator_address) = lower(coalesce(s.wallet_address, l.wallet_address))
-                   )
-                 )
-            )::int as linked_traders_count,
-            max(l.linked_at) as latest_linked_activity_at,
-            (
-              count(distinct l.wallet_address) * 10
-              + count(distinct s.wallet_address) * 20
-              + count(distinct s.wallet_address) filter (where s.member_role = 'creator') * 15
-              + count(distinct s.wallet_address) filter (where s.member_role = 'trader') * 10
-              + case when r.is_og then 25 else 0 end
-            )::int as weighted_score
-       from public.recruiters r
-       left join public.wallet_recruiter_links l
-         on l.recruiter_id = r.id
-        and l.is_active = true
-        and ($1::timestamptz is null or l.linked_at >= $1::timestamptz)
-        and ($2::timestamptz is null or l.linked_at < $2::timestamptz)
-       left join public.wallet_squad_memberships s
-         on s.recruiter_id = r.id
-        and s.is_active = true
-        and ($1::timestamptz is null or s.joined_at >= $1::timestamptz)
-        and ($2::timestamptz is null or s.joined_at < $2::timestamptz)
-      where r.status = 'active'
-      group by r.id
-      order by weighted_score desc, linked_wallet_count desc, active_squad_member_count desc, r.created_at asc
-      limit $3`,
+    `
+    SELECT
+      r.id AS recruiter_id,
+      r.wallet_address,
+      r.code,
+      r.display_name,
+      r.is_og,
+      r.status,
+      count(DISTINCT l.wallet_address)::int AS linked_wallet_count,
+      count(DISTINCT s.wallet_address)::int AS active_squad_member_count,
+      count(DISTINCT l.wallet_address) FILTER (
+        WHERE EXISTS (
+          SELECT 1 FROM public.campaigns c
+           WHERE lower(c.creator_address) = lower(l.wallet_address)
+        )
+      )::int AS linked_creators_count,
+      count(DISTINCT l.wallet_address) FILTER (
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.campaigns c
+           WHERE lower(c.creator_address) = lower(l.wallet_address)
+        )
+      )::int AS linked_traders_count,
+      max(l.linked_at) AS latest_linked_activity_at
+    FROM public.recruiters r
+    LEFT JOIN public.wallet_recruiter_links l
+      ON l.recruiter_id = r.id
+     AND l.is_active = true
+     AND l.linked_at >= $1::timestamptz
+     AND l.linked_at < $2::timestamptz
+    LEFT JOIN public.wallet_squad_memberships s
+      ON s.recruiter_id = r.id
+     AND s.is_active = true
+     AND s.joined_at >= $1::timestamptz
+     AND s.joined_at < $2::timestamptz
+    WHERE r.status = 'active'
+    GROUP BY r.id
+    HAVING count(DISTINCT l.wallet_address) > 0
+        OR count(DISTINCT s.wallet_address) > 0
+    ORDER BY linked_wallet_count DESC, active_squad_member_count DESC, r.id ASC
+    LIMIT $3
+    `,
     [startIso, endIso, limit],
   );
-  return rows.map((row, index) => normalizeRecruiterRow(row, index));
+
+  return rows.map((row, index) => {
+    const linkedWalletCount = toNumber(row.linked_wallet_count);
+    const linkedCreatorsCount = toNumber(row.linked_creators_count);
+    const linkedTradersCount = toNumber(row.linked_traders_count);
+    const activeSquadMemberCount = toNumber(row.active_squad_member_count);
+    const weightedScore =
+      linkedWalletCount * weights.linkedWallets +
+      linkedCreatorsCount * weights.linkedCreators +
+      linkedTradersCount * weights.linkedTraders;
+
+    return {
+      rank: index + 1,
+      recruiterId: toNumber(row.recruiter_id),
+      wallet: row.wallet_address ? String(row.wallet_address).toLowerCase() : null,
+      walletAddress: row.wallet_address ? String(row.wallet_address).toLowerCase() : null,
+      code: row.code || null,
+      displayName: row.display_name || null,
+      isOg: Boolean(row.is_og),
+      status: row.status || "active",
+      linkedWalletCount,
+      activeSquadMemberCount,
+      linkedCreatorsCount,
+      linkedTradersCount,
+      referredVolumeRaw: "0",
+      referredVolumeBnb: 0,
+      referredVolumeUsd: 0,
+      epochEarnedRaw: "0",
+      epochEarnedBnb: 0,
+      latestLinkedActivityAt: row.latest_linked_activity_at || null,
+      weightedScore,
+      claimStatus: "Pending",
+      estimatedPayoutUsd: 0,
+      scoreBasis: "epoch_links_only",
+    };
+  });
 }
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
   const q = getQuery(req);
-  const periodRaw = String(q.period ?? "weekly").toLowerCase().trim();
-  const periodNorm = normPeriod(periodRaw);
+  const periodNorm = normPeriod(q.period);
   const epochOffset =
-    periodNorm === "weekly"
-      ? clampInt(q.epochOffset ?? 0, 0, 2, 0)
-      : periodNorm === "monthly"
-        ? clampInt(q.epochOffset ?? 0, 0, 1, 0)
-        : 0;
+    periodNorm === "monthly" ? clampInt(q.epochOffset ?? 0, 0, 12, 0) : clampInt(q.epochOffset ?? 0, 0, 12, 0);
   const limit = clampInt(q.limit ?? 10, 1, 50, 10);
   const meta = epochMeta(periodNorm, epochOffset);
-  const startIso = meta?.epochStart || null;
-  const endIso = meta?.rangeEnd || null;
+  const startIso = meta.epochStart;
+  const endIso = meta.rangeEnd;
+  const weights = getWeights();
 
   try {
     let rows;
+    let warning;
     try {
-      rows = await loadSummaryRows(limit);
-    } catch (summaryError) {
-      if (!schemaMissing(summaryError)) console.warn("[api/league recruiter summaries]", summaryError);
-      rows = await loadJoinedRows(startIso, endIso, limit);
+      rows = await loadEpochRecruiterRows(startIso, endIso, limit);
+    } catch (error) {
+      if (!schemaMissing(error)) throw error;
+      console.warn("[api/league recruiter] reward_events path unavailable; links-only epoch board", error?.message || error);
+      rows = await loadEpochLinksOnly(startIso, endIso, limit);
+      warning =
+        "Epoch recruiter volume table unavailable; board ranks links/squad joins in this epoch only (not all-time).";
+    }
+
+    if (!rows.length) {
+      warning =
+        warning ||
+        "No recruiter activity in this epoch yet (new links, squad joins, or referred volume). All-time history does not count.";
     }
 
     return json(res, 200, {
       items: rows,
       epoch: meta,
-      stats: { recruitersRanked: rows.length },
+      stats: {
+        recruitersRanked: rows.length,
+        scoreBasis: rows[0]?.scoreBasis || "epoch_window",
+        period: periodNorm,
+        weights,
+      },
+      warning,
     });
   } catch (error) {
     console.error("[api/league recruiter]", error);

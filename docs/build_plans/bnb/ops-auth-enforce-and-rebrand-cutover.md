@@ -104,13 +104,15 @@ Rollback any flag to `0` if a product path breaks.
 | Weekly ≠ monthly | Separate `period` windows on indexer |
 | Biggest Hit ranks | **One row per campaign** (max buy in that epoch) |
 | Top Earner | Wallet PnL; **own-campaign trades excluded**; other campaigns count |
-| Prize pot | Still “Pending” until fee publication API exists |
+| Prize pot | Derived live from `curve_trades` league fee share. USD via `BNB_USD_PRICE` env **or** public BNBUSDT spot (see `frontend/api/lib/bnbUsdPrice.js`). |
+| Recruiter League | **Strict weekly/monthly epoch only** (`leagueRecruiter.js`) — no all-time carryover. |
 
 ---
 
 ## 4) Next after this cutover
 
-- Crowd Favorite votes category  
-- Recruiter league real scoring endpoint  
-- League prize pot publication  
+- ~~Crowd Favorite votes category~~ (done)  
+- ~~Recruiter league epoch scoring~~ (done — weekly/monthly window only)  
+- ~~League prize pot / USD path~~ (BNB always; USD env or spot)  
 - Remove dual-auth legacy open paths (S6) after enforce is stable  
+- Optional: pin `BNB_USD_PRICE` on mainnet for ops-controlled settlement estimates  

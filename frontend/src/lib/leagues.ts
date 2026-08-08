@@ -116,9 +116,11 @@ export const LEAGUES: LeagueDef[] = [
     rowType: "recruiter",
     supports: ["weekly", "monthly"],
     supportedPeriods: ["weekly", "monthly"],
-    metricLabel: "Referral score",
-    ruleSummary: "Referral performance across creators, traders, and referred volume.",
-    emptyStateCopy: "Recruiter League feed pending. Recruiter rewards will appear here once referral scoring is finalized.",
+    metricLabel: "Epoch referral score",
+    ruleSummary:
+      "Strict weekly/monthly window only: new links, squad joins, and referred volume in this epoch. All-time recruiter size does not carry over.",
+    emptyStateCopy:
+      "No recruiter activity in this epoch yet. Only links, joins, and volume inside the selected week/month count.",
     weeklyLimit: 50,
     monthlyLimit: 100,
   },

@@ -546,14 +546,20 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               Prize pool
             </div>
             <div className="mt-2 font-retro text-xl">
-              {isSolana ? "SOL pending" : displayPrizeBnb > 0 ? formatBnb(displayPrizeBnb) : rawGeneratedUsd > 0 ? formatUsd(rawGeneratedUsd) : "Syncing fees…"}
+              {isSolana
+                ? "SOL pending"
+                : displayPrizeBnb > 0
+                  ? formatBnb(displayPrizeBnb)
+                  : "No fees yet"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               {isSolana
                 ? "Solana prize feed pending."
                 : displayPrizeBnb > 0
-                  ? `${formatUsd(rawGeneratedUsd)} · league fee share this epoch`
-                  : "Waiting for curve volume in this epoch (or set BNB_USD_PRICE for USD)."}
+                  ? rawGeneratedUsd > 0
+                    ? `≈ ${formatUsd(rawGeneratedUsd)} · league fee share this epoch`
+                    : "BNB pot live · USD estimate unavailable"
+                  : "Waiting for bonding-curve volume in this epoch."}
             </div>
           </div>
           <div className="mwz-hud-frame p-4">
@@ -565,15 +571,33 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           </div>
           <div className="mwz-hud-frame p-4">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div>
-            <div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(cappedPlayerPoolUsd)}</div>
+            <div className="mt-2 font-retro text-xl">
+              {isSolana
+                ? "Pending"
+                : rawGeneratedUsd > 0
+                  ? formatUsd(cappedPlayerPoolUsd)
+                  : displayPrizeBnb > 0
+                    ? formatBnb(displayPrizeBnb)
+                    : "—"}
+            </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {categoryPrizeBnb > 0 ? `This board: ${formatBnb(categoryPrizeBnb)}` : isSolana ? "No BNB-derived pool on Solana." : "Shared across live boards this epoch."}
+              {isSolana
+                ? "No BNB-derived pool on Solana."
+                : categoryPrizeBnb > 0
+                  ? `This board: ${formatBnb(categoryPrizeBnb)}`
+                  : displayPrizeBnb > 0 && rawGeneratedUsd <= 0
+                    ? "Shown in BNB until USD price is available."
+                    : "Shared across live boards this epoch."}
             </div>
           </div>
           <div className="mwz-hud-frame p-4">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div>
-            <div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : "Overflow past monthly player cap."}</div>
+            <div className="mt-2 font-retro text-xl">
+              {isSolana ? "Pending" : period === "monthly" ? formatUsd(charityReserveUsd) : formatUsd(0)}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {isSolana ? "Available after Solana prize publication." : "Overflow past monthly player cap (monthly only)."}
+            </div>
           </div>
           <div className="mwz-hud-frame p-4">
             <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">

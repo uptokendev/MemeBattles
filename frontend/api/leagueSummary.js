@@ -2,6 +2,7 @@ import { badMethod, getQuery, json } from '../server/http.js';
 import league from './league.js';
 import leagueRecruiter from './leagueRecruiter.js';
 import { calculatePayoutCurve, getPayoutPolicy, getCapMeta } from './leaguePayoutPolicy.js';
+import { resolveBnbUsdPrice } from './lib/bnbUsdPrice.js';
 
 const LEAGUES = [
   { key: 'perfect_run', title: 'Perfect Run' },
@@ -160,9 +161,17 @@ function sumEntrants(leagues) {
   return (Array.isArray(leagues) ? leagues : []).reduce((sum, leagueResult) => sum + (Number(leagueResult?.entrants) || 0), 0);
 }
 
+/** @type {{ price: number, source: string }} */
+let lastBnbUsd = { price: 0, source: 'none' };
+
+async function ensureBnbUsd() {
+  const resolved = await resolveBnbUsdPrice();
+  lastBnbUsd = { price: resolved.price || 0, source: resolved.source || 'none' };
+  return lastBnbUsd;
+}
+
 function readBnbUsd() {
-  const n = Number(process.env.BNB_USD_PRICE || process.env.LEAGUE_BNB_USD_PRICE || 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return lastBnbUsd.price > 0 ? lastBnbUsd.price : 0;
 }
 
 function captureJson() {
@@ -241,6 +250,7 @@ function normalizeLeagueResult(meta, result, policy) {
 
 function summarizePrize(leagues, period, policy) {
   const bnbUsd = readBnbUsd();
+  const priceSource = lastBnbUsd.source || 'none';
   let generatedUsd = 0;
   let totalLeagueFeeRaw = '0';
   const byLeague = {};
@@ -273,9 +283,13 @@ function summarizePrize(leagues, period, policy) {
     capApplies: cap.capApplies,
     capReached: cap.capReached,
     bnbUsdPrice: bnbUsd || null,
+    bnbUsdPriceSource: priceSource,
     totalLeagueFeeRaw,
     byLeague,
-    warning: bnbUsd ? undefined : 'BNB_USD_PRICE is not configured; USD prize estimates are returned as 0 while raw BNB prize pools remain available.',
+    warning:
+      bnbUsd > 0
+        ? undefined
+        : 'BNB/USD price unavailable (set BNB_USD_PRICE or allow spot fetch). BNB prize pools still show from curve fees.',
   };
 }
 
@@ -448,6 +462,8 @@ function buildHallOfFame(history) {
 }
 
 async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = false }) {
+  // Resolve BNB/USD once per request (env override or live spot) so prize USD is go-live ready.
+  await ensureBnbUsd();
   const policy = getPayoutPolicy(period);
   // Live categories first (parallel). History is expensive — only when asked.
   const results = await Promise.all(
