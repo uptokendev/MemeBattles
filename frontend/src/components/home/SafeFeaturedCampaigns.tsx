@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Contract } from "ethers";
 import { useNavigate } from "react-router-dom";
 import { ThumbsUp } from "lucide-react";
@@ -12,9 +12,13 @@ import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { getPublicTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import type { SupportedChainId } from "@/lib/chainConfig";
+import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
+
+/** Soft rank poll while page is open — pump.fun-style board movement without full remount. */
+const FEATURED_SOFT_POLL_MS = 10000;
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi;
 const TOKEN_ABI = LaunchTokenArtifact.abi;
@@ -106,8 +110,127 @@ async function safeString(read: () => Promise<unknown>, fallback = "") {
   }
 }
 
+function itemKey(item: Pick<FeaturedItem, "chainId" | "campaignAddress">) {
+  return `${Number(item.chainId)}:${String(item.campaignAddress || "").toLowerCase()}`;
+}
+
+function isBnbDualFeedChain(chainId: number) {
+  return chainId === BNB_CHAIN_ID || chainId === BNB_TESTNET_CHAIN_ID;
+}
+
+/** Selected BNB main/test both share the dual featured board. */
+function featuredEventMatchesChain(selectedChainId: number, eventChainId?: number | null) {
+  if (eventChainId == null || !Number.isFinite(Number(eventChainId))) return true;
+  const cid = Number(eventChainId);
+  if (cid === selectedChainId) return true;
+  return isBnbDualFeedChain(selectedChainId) && isBnbDualFeedChain(cid);
+}
+
+function mergeFeaturedItems(prev: FeaturedItem[], incoming: FeaturedItem[], opts?: { preferIncomingVotes?: boolean }): FeaturedItem[] {
+  const map = new Map<string, FeaturedItem>();
+  for (const item of prev) map.set(itemKey(item), item);
+  for (const item of incoming) {
+    const key = itemKey(item);
+    const old = map.get(key);
+    if (!old) {
+      map.set(key, item);
+      continue;
+    }
+    const oldV24 = Number(old.votes24h || 0);
+    const oldVAll = Number(old.votesAllTime || 0);
+    const inV24 = Number(item.votes24h || 0);
+    const inVAll = Number(item.votesAllTime || 0);
+    map.set(key, {
+      ...old,
+      ...item,
+      name: item.name || old.name,
+      symbol: item.symbol || old.symbol,
+      logoUri: usefulImage(item.logoUri) ? item.logoUri : old.logoUri,
+      tokenAddress: isAddress(item.tokenAddress) ? item.tokenAddress : old.tokenAddress,
+      creatorAddress: isAddress(item.creatorAddress) ? item.creatorAddress : old.creatorAddress,
+      marketcapBnb:
+        item.marketcapBnb != null && item.marketcapBnb !== "" && Number(item.marketcapBnb) > 0
+          ? item.marketcapBnb
+          : old.marketcapBnb,
+      // Keep optimistic local bumps from going backwards when indexer lags a few seconds.
+      votes24h: opts?.preferIncomingVotes ? inV24 : Math.max(oldV24, inV24),
+      votesAllTime: opts?.preferIncomingVotes ? inVAll : Math.max(oldVAll, inVAll),
+    });
+  }
+  return Array.from(map.values());
+}
+
+function applyVotePatch(
+  items: FeaturedItem[],
+  patch: { chainId?: number; campaignAddress: string; votes24h?: number; votesAllTime?: number; delta?: number },
+): FeaturedItem[] {
+  const addr = String(patch.campaignAddress || "").toLowerCase();
+  if (!isAddress(addr)) return items;
+  const delta = Number(patch.delta || 0);
+  const idx = items.findIndex((item) => {
+    if (String(item.campaignAddress).toLowerCase() !== addr) return false;
+    if (patch.chainId == null) return true;
+    // BNB dual board: address match is enough when either side is 56/97.
+    if (isBnbDualFeedChain(Number(item.chainId)) && isBnbDualFeedChain(Number(patch.chainId))) return true;
+    return Number(item.chainId) === Number(patch.chainId);
+  });
+
+  if (idx < 0) {
+    if (!delta && patch.votes24h == null && patch.votesAllTime == null) return items;
+    const seedVotes = Math.max(1, Number(patch.votes24h ?? delta || 1));
+    const seed: FeaturedItem = {
+      chainId: Number(patch.chainId || 0) || BNB_TESTNET_CHAIN_ID,
+      campaignAddress: addr,
+      votes24h: seedVotes,
+      votesAllTime: Math.max(seedVotes, Number(patch.votesAllTime ?? delta || 1)),
+      name: null,
+      symbol: null,
+      logoUri: null,
+    };
+    return mergeFeaturedItems(items, [seed]);
+  }
+
+  const cur = items[idx];
+  const nextVotes24 = Math.max(Number(cur.votes24h || 0) + delta, Number(patch.votes24h ?? 0), Number(cur.votes24h || 0));
+  const nextVotesAll = Math.max(
+    Number(cur.votesAllTime || 0) + delta,
+    Number(patch.votesAllTime ?? 0),
+    Number(cur.votesAllTime || 0),
+  );
+  if (nextVotes24 === Number(cur.votes24h || 0) && nextVotesAll === Number(cur.votesAllTime || 0)) return items;
+  const next = items.slice();
+  next[idx] = { ...cur, votes24h: nextVotes24, votesAllTime: nextVotesAll };
+  return next;
+}
+
+/** Lightweight featured ranks (vote board only) for live soft-poll. */
+async function loadFeaturedVoteRanks(chainId: number): Promise<FeaturedItem[]> {
+  const { getBnbCampaignFeedChainIds } = await import("@/lib/feedChainConfig");
+  const chainIds = getBnbCampaignFeedChainIds(chainId);
+  const pages = await Promise.all(
+    chainIds.map(async (id) => {
+      const query = new URLSearchParams({
+        chainId: String(id),
+        limit: "20",
+        sort: "24h",
+        _r: String(Date.now()),
+      });
+      try {
+        const response = await apiFetch(`/api/featured?${query.toString()}`, { cache: "no-store" });
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(json?.items)) return [] as FeaturedItem[];
+        return json.items.map((item: any) => normalizeItem(item, id)).filter(Boolean) as FeaturedItem[];
+      } catch {
+        return [] as FeaturedItem[];
+      }
+    }),
+  );
+  return mergeFeaturedItems([], pages.flat(), { preferIncomingVotes: true });
+}
+
 async function loadApiCandidatesForChain(chainId: number): Promise<FeaturedItem[]> {
-  const query = new URLSearchParams({ chainId: String(chainId), limit: "20", sort: "activity", _r: String(Date.now()) });
+  // Rank by 24h UpVotes (matches Featured UI label). activity sort is last_activity_at.
+  const query = new URLSearchParams({ chainId: String(chainId), limit: "20", sort: "24h", _r: String(Date.now()) });
   try {
     const response = await apiFetch(`/api/featured?${query.toString()}`, { cache: "no-store" });
     const json = await response.json().catch(() => null);
@@ -347,29 +470,123 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<FeaturedItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refresh, setRefresh] = useState(0);
+  const softPollInFlight = useRef(false);
+  const softPollRef = useRef<() => void>(() => {});
 
+  softPollRef.current = () => {
+    if (softPollInFlight.current) return;
+    softPollInFlight.current = true;
+    void (async () => {
+      try {
+        const ranks = await loadFeaturedVoteRanks(chainId);
+        if (!ranks.length) return;
+        setItems((prev) => mergeFeaturedItems(prev, ranks));
+        const needHydrate = ranks
+          .filter((item) => Number(item.votes24h || 0) > 0 || Number(item.votesAllTime || 0) > 0)
+          .filter((item) => !item.name || item.name === "Unknown" || !usefulImage(item.logoUri))
+          .slice(0, 6);
+        if (needHydrate.length) {
+          const hydrated = await Promise.all(
+            needHydrate.map((item) => hydrateMissingSummary(item, { includeOnChainMcap: false })),
+          );
+          setItems((prev) => mergeFeaturedItems(prev, hydrated));
+        }
+      } catch {
+        // keep current board
+      } finally {
+        softPollInFlight.current = false;
+      }
+    })();
+  };
+
+  // Ably vote patches re-rank in place; REST soft-poll is owned by this component.
+  const { patchByCampaign } = useLeagueRealtime({
+    enabled: true,
+    chainId,
+    fallbackMs: 15000,
+    softRefreshMs: 0,
+    onFallbackRefresh: () => softPollRef.current(),
+  });
+
+  // Merge Ably vote patches into local board (live rank movement).
   useEffect(() => {
-    const onRefresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ chainId?: number }>).detail;
-      if (detail?.chainId != null && Number(detail.chainId) !== chainId) return;
-      setRefresh((value) => value + 1);
+    const keys = Object.keys(patchByCampaign || {});
+    if (!keys.length) return;
+    setItems((prev) => {
+      let next = prev;
+      for (const addr of keys) {
+        const p = patchByCampaign[addr];
+        if (!p) continue;
+        next = applyVotePatch(next, {
+          campaignAddress: addr,
+          votes24h: p.votes24h != null ? Number(p.votes24h) : undefined,
+          votesAllTime: p.votesAllTime != null ? Number(p.votesAllTime) : undefined,
+        });
+      }
+      return next === prev ? prev : next;
+    });
+  }, [patchByCampaign]);
+
+  // Local upvote: optimistic +1 + admit card immediately, then soft-poll server ranks.
+  useEffect(() => {
+    const onUpvote = (event: Event) => {
+      const detail = (event as CustomEvent<{ chainId?: number; campaignAddress?: string }>).detail ?? {};
+      if (!featuredEventMatchesChain(chainId, detail.chainId)) return;
+      const addr = String(detail.campaignAddress || "").toLowerCase();
+      if (!isAddress(addr)) {
+        softPollRef.current();
+        return;
+      }
+      const eventChain = Number(detail.chainId ?? chainId);
+      setItems((prev) => applyVotePatch(prev, { chainId: eventChain, campaignAddress: addr, delta: 1 }));
+      // Hydrate identity for first-time featured admission (token page / explore upvote).
+      void (async () => {
+        const seed: FeaturedItem = {
+          chainId: eventChain,
+          campaignAddress: addr,
+          votes24h: 1,
+          votesAllTime: 1,
+        };
+        try {
+          const hydrated = await hydrateMissingSummary(seed, { includeOnChainMcap: true });
+          setItems((prev) => mergeFeaturedItems(prev, [hydrated]));
+        } catch {
+          // ignore
+        }
+        // Indexer may lag a few seconds — poll twice.
+        window.setTimeout(() => softPollRef.current(), 1500);
+        window.setTimeout(() => softPollRef.current(), 6000);
+      })();
     };
-    window.addEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
-    window.addEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
+
+    const onTx = (event: Event) => {
+      const detail = (event as CustomEvent<{ chainId?: number; kind?: string; campaignAddress?: string }>).detail ?? {};
+      if (detail.kind && detail.kind !== "upvote" && detail.kind !== "buy" && detail.kind !== "sell") return;
+      if (!featuredEventMatchesChain(chainId, detail.chainId)) return;
+      window.setTimeout(() => softPollRef.current(), 800);
+    };
+
+    window.addEventListener("memewarzone:upvoteConfirmed", onUpvote as EventListener);
+    window.addEventListener("memewarzone:txConfirmed", onTx as EventListener);
     return () => {
-      window.removeEventListener("memewarzone:upvoteConfirmed", onRefresh as EventListener);
-      window.removeEventListener("memewarzone:txConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memewarzone:upvoteConfirmed", onUpvote as EventListener);
+      window.removeEventListener("memewarzone:txConfirmed", onTx as EventListener);
     };
   }, [chainId]);
 
+  // Continuous soft rank poll (even while Ably is connected).
+  useEffect(() => {
+    const id = window.setInterval(() => softPollRef.current(), FEATURED_SOFT_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [chainId]);
+
+  // Initial / chain-switch hard load (full hydrate once). Soft updates never remount the board.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setItems([]);
     void (async () => {
       try {
-        // Bake draft-logo hydration into source so Netlify static builds pick it up.
-        // Runtime closeout patches only run on Railway API / local dev, not vite build.
         const [apiCandidates, publicDrafts] = await Promise.all([
           loadApiCandidates(chainId),
           fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
@@ -401,15 +618,23 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [chainId, refresh]);
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId]);
 
   const cards = useMemo<FeaturedCard[]>(() => {
     return items
       .slice()
       // Featured = ranked by upvotes — zero-vote campaigns do not belong here.
       .filter((item) => Number(item.votes24h || 0) > 0 || Number(item.votesAllTime || 0) > 0)
-      .sort((a, b) => Number(b.votes24h || 0) - Number(a.votes24h || 0))
+      .sort((a, b) => {
+        const dv = Number(b.votes24h || 0) - Number(a.votes24h || 0);
+        if (dv !== 0) return dv;
+        const da = Number(b.votesAllTime || 0) - Number(a.votesAllTime || 0);
+        if (da !== 0) return da;
+        return String(a.campaignAddress).localeCompare(String(b.campaignAddress));
+      })
       .slice(0, 20)
       .map((item) => {
         const mcapBnb = Number(item.marketcapBnb ?? NaN);

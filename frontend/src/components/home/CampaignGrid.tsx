@@ -267,7 +267,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     enabled: query.tab !== "drafts",
     chainId: activeChainId,
     fallbackMs: 25000,
-    softRefreshMs: 45000,
+    softRefreshMs: 12000,
     onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
   });
   const { price: bnbUsd } = useBnbUsdPrice(true);
