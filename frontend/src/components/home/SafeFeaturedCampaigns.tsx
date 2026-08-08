@@ -3,6 +3,10 @@ import { Contract } from "ethers";
 import { useNavigate } from "react-router-dom";
 import { ThumbsUp } from "lucide-react";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
+import {
+  SponsoredFeaturedSlotCard,
+  type FeaturedSponsorPlacement,
+} from "@/components/home/SponsoredFeaturedSlotCard";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchPublicCampaignDrafts } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
@@ -19,6 +23,8 @@ import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
 /** Soft rank poll while page is open — pump.fun-style board movement without full remount. */
 const FEATURED_SOFT_POLL_MS = 10000;
+/** Inventory slot for homepage Featured top-left (not Arena rail). */
+export const FEATURED_SPONSOR_SLOT = "featured-top-left";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi;
 const TOKEN_ABI = LaunchTokenArtifact.abi;
@@ -464,11 +470,45 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
   });
 }
 
+async function loadFeaturedSponsorSlot(chainId: number): Promise<FeaturedSponsorPlacement | null> {
+  try {
+    const qs = new URLSearchParams({
+      chainId: String(chainId),
+      slot: FEATURED_SPONSOR_SLOT,
+      select: "one",
+      strategy: "weighted",
+      limit: "1",
+    });
+    const res = await apiFetch(`/api/sponsored?${qs.toString()}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null);
+    const item = Array.isArray(json?.items) ? json.items[0] : null;
+    if (!item) return null;
+    const imageUrl = item.imageUrl || item.logoUri || item.logoURI || item.image_url || null;
+    const name = String(item.name || item.projectName || "").trim();
+    if (!name && !imageUrl) return null;
+    return {
+      id: item.id != null ? String(item.id) : null,
+      name: name || "Sponsored",
+      imageUrl,
+      logoUri: item.logoUri || imageUrl,
+      targetUrl: item.targetUrl || item.websiteUrl || item.url || null,
+      websiteUrl: item.websiteUrl || item.targetUrl || null,
+      bio: item.bio || null,
+      placementLabel: item.placementLabel || "Sponsored",
+      slotCode: item.slotCode || FEATURED_SPONSOR_SLOT,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function SafeFeaturedCampaigns({ className = "" }: { className?: string }) {
   const navigate = useNavigate();
   const [chainId] = useSelectedFeedChainId();
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<FeaturedItem[]>([]);
+  const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(null);
   const [loading, setLoading] = useState(true);
   const softPollInFlight = useRef(false);
   const softPollRef = useRef<() => void>(() => {});
@@ -597,16 +637,20 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   }, [chainId]);
 
   // Initial / chain-switch hard load (full hydrate once). Soft updates never remount the board.
+  // Sponsor is loaded separately so organic soft-polls never drop the fixed top-left cell.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setItems([]);
+    setSponsor(null);
     void (async () => {
       try {
-        const [apiCandidates, publicDrafts] = await Promise.all([
+        const [apiCandidates, publicDrafts, sponsorSlot] = await Promise.all([
           loadApiCandidates(chainId),
           fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
+          loadFeaturedSponsorSlot(chainId),
         ]);
+        if (!cancelled) setSponsor(sponsorSlot);
         const draftLogoByIdentity = new Map<string, string>();
         for (const draft of publicDrafts) {
           if (!usefulImage(draft.logoUrl)) continue;
@@ -677,73 +721,79 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       </div>
 
       <div className="grid grid-flow-col grid-rows-2 auto-cols-[340px] gap-3 overflow-x-auto pb-1 pr-2 sm:auto-cols-[370px] lg:auto-cols-[392px]" style={{ scrollbarWidth: "none" }}>
-        {loading && !cards.length ? Array.from({ length: 8 }).map((_, index) => (
+        {loading && !cards.length && !sponsor ? Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="mwz-card h-[150px] animate-pulse" />
-        )) : cards.length === 0 ? (
+        )) : !cards.length && !sponsor ? (
           <div className="mwz-muted py-8 text-sm">No live featured campaigns yet.</div>
-        ) : cards.map((item, index) => {
-          const image = usefulImage(item.logoUri) ? resolveImageUri(item.logoUri) : null;
-          const targetRoute = getPublicTokenDetailRoute({
-            tokenAddress: item.tokenAddress,
-            campaignAddress: item.campaignAddress,
-            chainId: item.chainId,
-          }) || `/token/${item.tokenAddress || item.campaignAddress}?chainId=${item.chainId}`;
-          return (
-            <div
-              key={item.campaignAddress}
-              className="mwz-hud-frame group flex h-[150px] w-full cursor-pointer overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate(targetRoute)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") navigate(targetRoute);
-              }}
-            >
-              <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
-                <img
-                  src={image || "/placeholder.svg"}
-                  alt={item.name || "Campaign"}
-                  className="h-full w-full object-cover"
-                  draggable={false}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  onError={(event) => {
-                    const el = event.currentTarget;
-                    if (el.dataset.fallbackApplied === "1") return;
-                    el.dataset.fallbackApplied = "1";
-                    el.src = "/placeholder.svg";
+        ) : (
+          <>
+            {/* Fixed top-left: paid rotation pool (outside organic vote ranking). */}
+            {sponsor ? <SponsoredFeaturedSlotCard key={`sponsor-${sponsor.id || sponsor.name}`} placement={sponsor} /> : null}
+            {cards.map((item, index) => {
+              const image = usefulImage(item.logoUri) ? resolveImageUri(item.logoUri) : null;
+              const targetRoute = getPublicTokenDetailRoute({
+                tokenAddress: item.tokenAddress,
+                campaignAddress: item.campaignAddress,
+                chainId: item.chainId,
+              }) || `/token/${item.tokenAddress || item.campaignAddress}?chainId=${item.chainId}`;
+              return (
+                <div
+                  key={item.campaignAddress}
+                  className="mwz-hud-frame group flex h-[150px] w-full cursor-pointer overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(targetRoute)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") navigate(targetRoute);
                   }}
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_40%,rgba(0,0,0,0.78))]" />
-                <div className="absolute left-2 top-2 border border-orange-400/70 bg-black/75 px-2 py-1 text-xs font-bold text-orange-300">#{index + 1}</div>
-                <div className="absolute inset-x-2 bottom-2" onClick={(event) => event.stopPropagation()}>
-                  <UpvoteDialog campaignAddress={item.campaignAddress} chainId={item.chainId} className="mwz-button mwz-button-active h-9 w-full text-[11px]" buttonVariant="ghost" buttonSize="sm" />
-                </div>
-              </div>
+                >
+                  <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
+                    <img
+                      src={image || "/placeholder.svg"}
+                      alt={item.name || "Campaign"}
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(event) => {
+                        const el = event.currentTarget;
+                        if (el.dataset.fallbackApplied === "1") return;
+                        el.dataset.fallbackApplied = "1";
+                        el.src = "/placeholder.svg";
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_40%,rgba(0,0,0,0.78))]" />
+                    <div className="absolute left-2 top-2 border border-orange-400/70 bg-black/75 px-2 py-1 text-xs font-bold text-orange-300">#{index + 1}</div>
+                    <div className="absolute inset-x-2 bottom-2" onClick={(event) => event.stopPropagation()}>
+                      <UpvoteDialog campaignAddress={item.campaignAddress} chainId={item.chainId} className="mwz-button mwz-button-active h-9 w-full text-[11px]" buttonVariant="ghost" buttonSize="sm" />
+                    </div>
+                  </div>
 
-              <div className="flex h-[150px] min-w-0 flex-1 flex-col justify-between px-4 py-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[19px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{item.name || "Unknown"}</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-orange-300">{item.symbol ? `$${item.symbol}` : "—"}</span>
-                    <span className="shrink-0 text-[12px] font-semibold text-orange-300">{Number(item.votes24h || 0)} votes / 24h</span>
-                  </div>
-                </div>
+                  <div className="flex h-[150px] min-w-0 flex-1 flex-col justify-between px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-[19px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{item.name || "Unknown"}</div>
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-orange-300">{item.symbol ? `$${item.symbol}` : "—"}</span>
+                        <span className="shrink-0 text-[12px] font-semibold text-orange-300">{Number(item.votes24h || 0)} votes / 24h</span>
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3 text-[11px] leading-tight">
-                  <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
-                    <div className="uppercase tracking-[0.14em] text-orange-300/65">MCap</div>
-                    <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.mcapUsdLabel ?? "—"}</div>
-                  </div>
-                  <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
-                    <div className="uppercase tracking-[0.14em] text-orange-300/65">ATH</div>
-                    <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.athUsdLabel}</div>
+                    <div className="grid grid-cols-2 gap-3 text-[11px] leading-tight">
+                      <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                        <div className="uppercase tracking-[0.14em] text-orange-300/65">MCap</div>
+                        <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.mcapUsdLabel ?? "—"}</div>
+                      </div>
+                      <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                        <div className="uppercase tracking-[0.14em] text-orange-300/65">ATH</div>
+                        <div className="mt-1 truncate text-[16px] font-bold text-foreground">{item.athUsdLabel}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );

@@ -42,14 +42,19 @@ const defaultForm: SponsorshipApplicationForm = {
 
 const slotOptions = [
   {
+    value: "featured-top-left",
+    label: "Featured top-left (Homepage)",
+    detail: "Fixed Featured board slot — large image + Sponsored pill. Rotates when multiple actives share the slot.",
+  },
+  {
     value: "homepage-sponsored-rail",
     label: "Homepage Sponsored Rail",
-    detail: "Primary Arena sponsored placement",
+    detail: "Primary Arena / postgrad sponsored rail placement",
   },
   {
     value: "homepage-sponsored-rail-priority",
     label: "Homepage Priority Slot",
-    detail: "Top-priority sponsored placement",
+    detail: "Top-priority rail placement (battle/rail inventory)",
   },
   {
     value: "homepage-sponsored-rail-category-boost",

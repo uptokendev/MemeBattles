@@ -32,6 +32,11 @@ export type PostGradWarRoomCampaignFeedParams = {
 export type PostGradSponsoredFeedParams = {
   chainId?: number | string | null;
   limit?: number;
+  /** Filter inventory by slot_code (e.g. homepage-sponsored-rail, featured-top-left). */
+  slot?: string | null;
+  /** When "one", server returns a single weighted/random pick (Featured top-left). */
+  select?: "one" | "list" | null;
+  strategy?: "weighted" | "random" | "priority" | null;
   signal?: AbortSignal;
 };
 
@@ -146,11 +151,22 @@ export async function transitionPostGradWarPool(battleId: string, state: PostGra
   return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, { state });
 }
 
-export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, signal }: PostGradSponsoredFeedParams) {
+export async function fetchPostGradSponsoredFeed({
+  chainId = 97,
+  limit = 4,
+  slot = null,
+  select = null,
+  strategy = null,
+  signal,
+}: PostGradSponsoredFeedParams) {
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     limit: String(limit),
   });
+  // Optional filters only — omit for Arena rail default list behavior.
+  if (slot) params.set("slot", String(slot));
+  if (select) params.set("select", String(select));
+  if (strategy) params.set("strategy", String(strategy));
 
   return fetchJson(`/api/sponsored?${params.toString()}`, { cache: "no-store", signal });
 }
