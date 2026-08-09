@@ -33,7 +33,7 @@ const defaultForm: SponsorshipApplicationForm = {
   websiteUrl: "",
   imageUrl: "",
   bio: "",
-  preferredSlot: "homepage-sponsored-rail",
+  preferredSlot: "featured-top-left",
   preferredStart: "",
   preferredEnd: "",
   paymentReference: "",

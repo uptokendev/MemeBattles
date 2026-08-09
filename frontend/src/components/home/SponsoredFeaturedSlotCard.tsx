@@ -15,6 +15,19 @@ export type FeaturedSponsorPlacement = {
   bio?: string | null;
   placementLabel?: string | null;
   slotCode?: string | null;
+  /** House inventory — opens apply dialog instead of external link. */
+  isHouseAd?: boolean;
+};
+
+export const FEATURED_HOUSE_AD: FeaturedSponsorPlacement = {
+  id: "house-advertise-featured",
+  name: "Advertise here",
+  bio: "Put your project in Featured. Apply for a rotating sponsorship slot.",
+  imageUrl: "/assets/memewarzone.png",
+  logoUri: "/assets/memewarzone.png",
+  placementLabel: "Open spot",
+  slotCode: "featured-top-left",
+  isHouseAd: true,
 };
 
 function usefulImage(value: unknown) {
@@ -25,17 +38,25 @@ function usefulImage(value: unknown) {
 export function SponsoredFeaturedSlotCard({
   placement,
   className = "",
+  onHouseAdClick,
 }: {
   placement: FeaturedSponsorPlacement;
   className?: string;
+  onHouseAdClick?: () => void;
 }) {
   const title = String(placement.name || "Sponsored").trim() || "Sponsored";
   const imageRaw = placement.imageUrl || placement.logoUri;
   const image = usefulImage(imageRaw) ? resolveImageUri(String(imageRaw)) : null;
   const href = String(placement.targetUrl || placement.websiteUrl || "").trim();
-  const pill = String(placement.placementLabel || "Sponsored").trim() || "Sponsored";
+  const isHouse = Boolean(placement.isHouseAd);
+  const pill = String(placement.placementLabel || (isHouse ? "Open spot" : "Sponsored")).trim() || "Sponsored";
+  const clickable = isHouse || Boolean(href);
 
   const open = () => {
+    if (isHouse) {
+      onHouseAdClick?.();
+      return;
+    }
     if (!href) return;
     try {
       window.open(href, "_blank", "noopener,noreferrer");
@@ -46,18 +67,20 @@ export function SponsoredFeaturedSlotCard({
 
   return (
     <div
-      className={`mwz-hud-frame group relative flex h-[150px] w-full overflow-hidden rounded-none border border-amber-400/45 bg-black/80 transition hover:border-amber-300/80 hover:shadow-[0_0_18px_rgba(251,191,36,0.18)] ${href ? "cursor-pointer" : ""} ${className}`}
-      role={href ? "link" : "article"}
-      tabIndex={href ? 0 : undefined}
-      onClick={href ? open : undefined}
+      className={`mwz-hud-frame group relative flex h-[150px] w-full overflow-hidden rounded-none border ${
+        isHouse ? "border-dashed border-amber-400/55" : "border-amber-400/45"
+      } bg-black/80 transition hover:border-amber-300/80 hover:shadow-[0_0_18px_rgba(251,191,36,0.18)] ${clickable ? "cursor-pointer" : ""} ${className}`}
+      role={clickable ? "button" : "article"}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? open : undefined}
       onKeyDown={(event) => {
-        if (!href) return;
+        if (!clickable) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           open();
         }
       }}
-      aria-label={`Sponsored: ${title}`}
+      aria-label={isHouse ? "Advertise here — open sponsorship application" : `Sponsored: ${title}`}
     >
       <div className="absolute inset-0">
         <img
@@ -93,7 +116,11 @@ export function SponsoredFeaturedSlotCard({
             <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-amber-200/80">Featured partner</p>
           )}
         </div>
-        {href ? (
+        {isHouse ? (
+          <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200">
+            Apply now <ExternalLink className="h-3 w-3" />
+          </div>
+        ) : href ? (
           <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
             Visit <ExternalLink className="h-3 w-3" />
           </div>

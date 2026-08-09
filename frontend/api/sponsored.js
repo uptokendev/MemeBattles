@@ -58,6 +58,36 @@ function pickWeighted(items) {
   return items[items.length - 1];
 }
 
+/** Always-on house inventory so Featured never has an empty sponsor cell. */
+function featuredHouseAd(chainId) {
+  const weight = Math.max(1, Number(process.env.FEATURED_HOUSE_AD_WEIGHT || 1000) || 1000);
+  return {
+    id: "house-advertise-featured",
+    chainId,
+    campaignAddress: "house-advertise-featured",
+    name: "Advertise here",
+    symbol: "ADS",
+    logoUri: "/assets/memewarzone.png",
+    imageUrl: "/assets/memewarzone.png",
+    isActive: true,
+    placementType: "house",
+    placementLabel: "Open spot",
+    placementPriority: weight,
+    rotationWeight: weight,
+    slotCode: FEATURED_SLOT,
+    targetUrl: null,
+    websiteUrl: null,
+    bio: "Put your project in Featured. Apply for a rotating sponsorship slot.",
+    isHouseAd: true,
+  };
+}
+
+function withFeaturedHouseAd(items, chainId, slotFilter) {
+  if (slotFilter !== FEATURED_SLOT) return items;
+  const withoutDup = items.filter((item) => String(item.id || "") !== "house-advertise-featured");
+  return [...withoutDup, featuredHouseAd(chainId)];
+}
+
 function externalPlacements(chainId, slotFilter) {
   const raw = String(process.env.SPONSORED_PLACEMENTS_JSON || process.env.VITE_SPONSORED_PLACEMENTS_JSON || "").trim();
   if (!raw) return [];
@@ -169,6 +199,8 @@ export default async function handler(req, res) {
     if (!placements.length) {
       placements = externalPlacements(chainId, slotFilter || null);
     }
+    // Featured slot: always include house "Advertise here" in the rotation pool.
+    placements = withFeaturedHouseAd(placements, chainId, slotFilter);
 
     if (selectOne) {
       const poolItems = placements.slice(0, 24);
@@ -180,6 +212,8 @@ export default async function handler(req, res) {
       } else {
         chosen = pickWeighted(poolItems);
       }
+      // Never return empty for featured-top-left — house ad is always in pool.
+      if (!chosen && slotFilter === FEATURED_SLOT) chosen = featuredHouseAd(chainId);
       return json(res, 200, {
         items: chosen ? [chosen] : [],
         candidates: poolItems.slice(0, 8),

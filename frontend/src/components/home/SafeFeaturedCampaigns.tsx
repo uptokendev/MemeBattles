@@ -4,9 +4,11 @@ import { useNavigate } from "react-router-dom";
 import { ThumbsUp } from "lucide-react";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import {
+  FEATURED_HOUSE_AD,
   SponsoredFeaturedSlotCard,
   type FeaturedSponsorPlacement,
 } from "@/components/home/SponsoredFeaturedSlotCard";
+import { SponsorshipApplyDialog } from "@/components/home/SponsorshipApplyDialog";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchPublicCampaignDrafts } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
@@ -483,23 +485,28 @@ async function loadFeaturedSponsorSlot(chainId: number): Promise<FeaturedSponsor
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
     const item = Array.isArray(json?.items) ? json.items[0] : null;
-    if (!item) return null;
+    if (!item) return { ...FEATURED_HOUSE_AD };
     const imageUrl = item.imageUrl || item.logoUri || item.logoURI || item.image_url || null;
     const name = String(item.name || item.projectName || "").trim();
-    if (!name && !imageUrl) return null;
+    const isHouse =
+      Boolean(item.isHouseAd) ||
+      String(item.id || "") === "house-advertise-featured" ||
+      String(item.placementType || "") === "house";
+    if (!name && !imageUrl) return { ...FEATURED_HOUSE_AD };
     return {
       id: item.id != null ? String(item.id) : null,
-      name: name || "Sponsored",
-      imageUrl,
-      logoUri: item.logoUri || imageUrl,
-      targetUrl: item.targetUrl || item.websiteUrl || item.url || null,
-      websiteUrl: item.websiteUrl || item.targetUrl || null,
-      bio: item.bio || null,
-      placementLabel: item.placementLabel || "Sponsored",
+      name: name || (isHouse ? "Advertise here" : "Sponsored"),
+      imageUrl: imageUrl || FEATURED_HOUSE_AD.imageUrl,
+      logoUri: item.logoUri || imageUrl || FEATURED_HOUSE_AD.logoUri,
+      targetUrl: isHouse ? null : item.targetUrl || item.websiteUrl || item.url || null,
+      websiteUrl: isHouse ? null : item.websiteUrl || item.targetUrl || null,
+      bio: item.bio || (isHouse ? FEATURED_HOUSE_AD.bio : null),
+      placementLabel: item.placementLabel || (isHouse ? "Open spot" : "Sponsored"),
       slotCode: item.slotCode || FEATURED_SPONSOR_SLOT,
+      isHouseAd: isHouse,
     };
   } catch {
-    return null;
+    return { ...FEATURED_HOUSE_AD };
   }
 }
 
@@ -508,7 +515,8 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   const [chainId] = useSelectedFeedChainId();
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<FeaturedItem[]>([]);
-  const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(null);
+  const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(() => ({ ...FEATURED_HOUSE_AD }));
+  const [applyOpen, setApplyOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const softPollInFlight = useRef(false);
   const softPollRef = useRef<() => void>(() => {});
@@ -642,7 +650,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
     let cancelled = false;
     setLoading(true);
     setItems([]);
-    setSponsor(null);
+    setSponsor({ ...FEATURED_HOUSE_AD });
     void (async () => {
       try {
         const [apiCandidates, publicDrafts, sponsorSlot] = await Promise.all([
@@ -650,7 +658,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
           loadFeaturedSponsorSlot(chainId),
         ]);
-        if (!cancelled) setSponsor(sponsorSlot);
+        if (!cancelled) setSponsor(sponsorSlot || { ...FEATURED_HOUSE_AD });
         const draftLogoByIdentity = new Map<string, string>();
         for (const draft of publicDrafts) {
           if (!usefulImage(draft.logoUrl)) continue;
@@ -721,14 +729,27 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       </div>
 
       <div className="grid grid-flow-col grid-rows-2 auto-cols-[340px] gap-3 overflow-x-auto pb-1 pr-2 sm:auto-cols-[370px] lg:auto-cols-[392px]" style={{ scrollbarWidth: "none" }}>
-        {loading && !cards.length && !sponsor ? Array.from({ length: 8 }).map((_, index) => (
-          <div key={index} className="mwz-card h-[150px] animate-pulse" />
-        )) : !cards.length && !sponsor ? (
-          <div className="mwz-muted py-8 text-sm">No live featured campaigns yet.</div>
+        {loading && !cards.length ? (
+          <>
+            <SponsoredFeaturedSlotCard
+              placement={sponsor || FEATURED_HOUSE_AD}
+              onHouseAdClick={() => setApplyOpen(true)}
+            />
+            {Array.from({ length: 7 }).map((_, index) => (
+              <div key={index} className="mwz-card h-[150px] animate-pulse" />
+            ))}
+          </>
         ) : (
           <>
-            {/* Fixed top-left: paid rotation pool (outside organic vote ranking). */}
-            {sponsor ? <SponsoredFeaturedSlotCard key={`sponsor-${sponsor.id || sponsor.name}`} placement={sponsor} /> : null}
+            {/* Fixed top-left: paid rotation + always-on house "Advertise here". */}
+            <SponsoredFeaturedSlotCard
+              key={`sponsor-${sponsor?.id || "house"}`}
+              placement={sponsor || FEATURED_HOUSE_AD}
+              onHouseAdClick={() => setApplyOpen(true)}
+            />
+            {!cards.length ? (
+              <div className="mwz-muted flex h-[150px] items-center px-4 text-sm">No live featured campaigns yet — organic ranks appear after UpVotes.</div>
+            ) : null}
             {cards.map((item, index) => {
               const image = usefulImage(item.logoUri) ? resolveImageUri(item.logoUri) : null;
               const targetRoute = getPublicTokenDetailRoute({
@@ -795,6 +816,8 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           </>
         )}
       </div>
+
+      <SponsorshipApplyDialog open={applyOpen} onOpenChange={setApplyOpen} defaultSlot={FEATURED_SPONSOR_SLOT} />
     </div>
   );
 }
