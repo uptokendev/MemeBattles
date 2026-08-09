@@ -24,12 +24,16 @@ function statusClass(status: string) {
 export function LaunchpadSafetyStatus({
   status,
   compact = false,
+  embedded = false,
 }: {
   status: LaunchpadSafetyStatusModel;
   compact?: boolean;
+  /** When true, omit outer card chrome + title (for use inside a collapsible). */
+  embedded?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border border-border/50 bg-background/25 ${compact ? "p-2.5" : "p-3"}`}>
+    <div className={embedded ? "" : `rounded-xl border border-border/50 bg-background/25 ${compact ? "p-2.5" : "p-3"}`}>
+      {!embedded ? (
       <div className={`${compact ? "mb-2" : "mb-3"} flex items-start justify-between gap-3`}>
         <div className="min-w-0">
           <div className="font-retro text-sm text-foreground">Launch Safety</div>
@@ -47,6 +51,9 @@ export function LaunchpadSafetyStatus({
           {status.adapterId.toUpperCase()}
         </Badge>
       </div>
+      ) : (
+        <p className="mb-2 text-xs text-muted-foreground">{status.description}</p>
+      )}
 
       <div className={compact ? "grid gap-1" : "grid gap-2"}>
         {status.checks.map((check) => (

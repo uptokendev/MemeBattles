@@ -147,7 +147,7 @@ async function createApplication(req, res) {
     contactChannel,
     cleanText(body.applicantWallet, 160) || null,
     websiteUrl,
-    cleanText(body.imageUrl, 500) || null,
+    cleanText(body.imageUrl, 2000) || null,
     bio,
     cleanText(body.preferredSlot, 80) || "featured-top-left",
     normalizeDate(body.preferredStart),

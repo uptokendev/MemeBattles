@@ -61,16 +61,26 @@ function isScheduledDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
   return String(draft.status) === "scheduled";
 }
 
-/** Armed timed launches stay discoverable even when campaignAddress is already set. */
-function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
-  return isScheduledDraft(draft) && Boolean(draft.campaignAddress || scheduledLaunchSeconds(draft));
+/**
+ * Pre-launch scheduled drafts only. Past-due scheduled with a campaign address
+ * are live/bonding and must leave War Room Drafts (same rule as home Drafts grid).
+ */
+function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle | CampaignDraft, nowMs = Date.now()) {
+  if (!isScheduledDraft(draft)) return false;
+  const launchAt = scheduledLaunchSeconds(draft);
+  const hasCampaign = Boolean(draft.campaignAddress);
+  if (hasCampaign) {
+    if (!launchAt || launchAt <= Math.floor(nowMs / 1000)) return false;
+    return true;
+  }
+  return Boolean(launchAt);
 }
 
 /** Same discoverability rules as Showcase DraftCampaignGrid. */
-function isDiscoverableDraft(draft: CampaignDraftLifecycle | CampaignDraft) {
+function isDiscoverableDraft(draft: CampaignDraftLifecycle | CampaignDraft, nowMs = Date.now()) {
   const status = String(draft.status);
   if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
-  if (status === "scheduled") return isDiscoverableScheduledDraft(draft);
+  if (status === "scheduled") return isDiscoverableScheduledDraft(draft, nowMs);
   // Un-deployed prepare pages only (armed timed launches use status=scheduled).
   return !draft.campaignAddress;
 }

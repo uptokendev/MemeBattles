@@ -4,7 +4,6 @@
 
 import { BookOpen, Eye, Plus, Trophy, User } from "lucide-react";
 import carouselIcon from "@/assets/menu-icons/carousel.png";
-import userIcon from "@/assets/menu-icons/user.png";
 import twitterIcon from "@/assets/social/twitter.png";
 import discordIcon from "@/assets/social/discord.png";
 import telegramIcon from "@/assets/social/telegram.png";
@@ -36,7 +35,6 @@ export const navItems: NavItem[] = [
   { icon: Trophy, label: "Leagues", path: "/league" },
   ...(warRoomEnabled ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
-  { icon: userIcon, label: "Creator tools", path: "/command" },
   { icon: User, label: "Profile", path: "/profile" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone" },
 ];

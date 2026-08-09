@@ -35,17 +35,8 @@ export default async function handler(req, res) {
       if (!user || !campaign) return json(res, 400, { error: "Invalid address" });
       if (!isSol && (!isAddress(user) || !isAddress(campaign))) return json(res, 400, { error: "Invalid address" });
       if (action !== "follow" && action !== "unfollow") return json(res, 400, { error: "Invalid action" });
-      const verified = await requireWalletActionAuth({
-        res,
-        pool,
-        auth: body.auth || body,
-        expectedWallet: user,
-        chainId,
-        action: action === "follow" ? "follow_campaign" : "unfollow_campaign",
-        routeLabel: "follows/campaign",
-        extraLines: ["Campaign: " + campaign],
-      });
-      if (!verified) return;
+      // Social follows intentionally skip wallet signatures: connect-wallet identity only.
+      // Low-risk write; rate limiting can be added later if spam appears.
 
       if (action === "follow") {
         await pool.query(

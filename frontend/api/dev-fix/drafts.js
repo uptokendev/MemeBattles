@@ -49,14 +49,35 @@ async function enrichPayload(payload, pool) {
   return payload;
 }
 
-function belongsInDraftSection(item, _nowMs = Date.now()) {
+function scheduledLaunchSeconds(item) {
+  const raw = item?.scheduledLaunchAt ?? item?.tradingLaunchAt ?? item?.scheduled_launch_at ?? null;
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    // seconds vs ms
+    return raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw);
+  }
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+function belongsInDraftSection(item, nowMs = Date.now()) {
   const status = String(item?.status || "draft");
-  // Only fully deployed drafts leave the draft discovery surface. Keep
-  // status=scheduled rows visible even after launchAt — many live rows stay
-  // "scheduled" because the scheduled→deployed flip never ran, and live UI
-  // still lists them. Hiding by clock made BNB armed drafts vanish on postgrad
-  // while Solana promotion_published drafts still appeared.
+  // Fully deployed drafts leave the public Drafts surface.
   if (status === "deployed") return false;
+
+  // Past-due scheduled rows that already have a campaign address are live/bonding
+  // (status flip to deployed is often missing). Hide them from Drafts so WIC-style
+  // tokens only appear in Trending/New/bonding feeds.
+  if (status === "scheduled") {
+    const campaignAddress = String(item?.campaignAddress || item?.campaign_address || "").trim();
+    if (campaignAddress) {
+      const launchAt = scheduledLaunchSeconds(item);
+      const nowSec = Math.floor(nowMs / 1000);
+      // No launch time, or launch already passed → treat as left Drafts.
+      if (!launchAt || launchAt <= nowSec) return false;
+    }
+  }
+
   return true;
 }
 

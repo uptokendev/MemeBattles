@@ -1,39 +1,20 @@
-import { isAddress, type JsonRpcSigner } from "ethers";
+import { isAddress } from "ethers";
 import { apiFetch } from "@/lib/apiBase";
 import { isSolanaAddress } from "@/lib/address";
 import { isEvmChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { signWalletAction, type WalletActionAuthPayload } from "@/lib/walletActionAuth";
 
+/**
+ * Social follows: connected wallet address only — no signature popup.
+ * (Server accepts unsigned follow/unfollow writes.)
+ */
 export type FollowSignOpts = {
-  signer?: JsonRpcSigner | null;
+  /** @deprecated Follows no longer require signing; kept for call-site compatibility. */
+  signer?: unknown;
+  /** @deprecated Follows no longer require signing; kept for call-site compatibility. */
   signMessage?: (message: string) => Promise<string>;
-  auth?: WalletActionAuthPayload | null;
+  /** @deprecated Follows no longer require signing; kept for call-site compatibility. */
+  auth?: unknown;
 };
-
-async function maybeFollowAuth(
-  action: "follow_user" | "unfollow_user" | "follow_campaign" | "unfollow_campaign",
-  walletAddress: string,
-  chainId: number,
-  opts?: FollowSignOpts,
-  extraLines: string[] = [],
-): Promise<WalletActionAuthPayload | null> {
-  if (opts?.auth) return opts.auth;
-  if (!opts?.signer && !opts?.signMessage) return null;
-  try {
-    return await signWalletAction({
-      action,
-      walletAddress,
-      // May be 0 for EVM wallet-global user follows (matches API body + walletActionAuth).
-      chainId: Number.isFinite(chainId) ? chainId : 56,
-      extraLines,
-      signer: opts.signer,
-      signMessage: opts.signMessage,
-    });
-  } catch (error) {
-    console.warn(`[followApi] ${action} sign skipped:`, error);
-    return null;
-  }
-}
 
 type FollowUserPayload = {
   chainId: number;
@@ -112,7 +93,7 @@ export async function followUser(
   followerAddress: string,
   followingAddress: string,
   chainId = 0,
-  signOpts?: FollowSignOpts,
+  _signOpts?: FollowSignOpts,
 ): Promise<void> {
   const follower = assertAddr(followerAddress, "follower");
   const following = assertAddr(followingAddress, "following");
@@ -121,11 +102,9 @@ export async function followUser(
     followerAddress: follower,
     followingAddress: following,
   };
-  // Auth chain must match body chainId (0 for EVM wallet-global follows).
-  const auth = await maybeFollowAuth("follow_user", follower, payload.chainId, signOpts, [`Following: ${following}`]);
   await api<{ ok: true }>(`/api/follows/user`, {
     method: "POST",
-    body: JSON.stringify({ ...payload, action: "follow", ...(auth || {}), auth: auth || undefined }),
+    body: JSON.stringify({ ...payload, action: "follow" }),
   });
 }
 
@@ -133,7 +112,7 @@ export async function unfollowUser(
   followerAddress: string,
   followingAddress: string,
   chainId = 0,
-  signOpts?: FollowSignOpts,
+  _signOpts?: FollowSignOpts,
 ): Promise<void> {
   const follower = assertAddr(followerAddress, "follower");
   const following = assertAddr(followingAddress, "following");
@@ -142,10 +121,9 @@ export async function unfollowUser(
     followerAddress: follower,
     followingAddress: following,
   };
-  const auth = await maybeFollowAuth("unfollow_user", follower, payload.chainId, signOpts, [`Following: ${following}`]);
   await api<{ ok: true }>(`/api/follows/user`, {
     method: "POST",
-    body: JSON.stringify({ ...payload, action: "unfollow", ...(auth || {}), auth: auth || undefined }),
+    body: JSON.stringify({ ...payload, action: "unfollow" }),
   });
 }
 
@@ -193,7 +171,7 @@ export async function followCampaign(
   userAddress: string,
   campaignAddress: string,
   chainId = 0,
-  signOpts?: FollowSignOpts,
+  _signOpts?: FollowSignOpts,
 ): Promise<void> {
   const user = assertAddr(userAddress, "user");
   const campaign = assertAddr(campaignAddress, "campaign");
@@ -203,12 +181,9 @@ export async function followCampaign(
     userAddress: user,
     campaignAddress: campaign,
   };
-  const auth = await maybeFollowAuth("follow_campaign", user, payload.chainId, signOpts, [
-    `Campaign: ${campaign}`,
-  ]);
   await api<{ ok: true }>(`/api/follows/campaign`, {
     method: "POST",
-    body: JSON.stringify({ ...payload, action: "follow", ...(auth || {}), auth: auth || undefined }),
+    body: JSON.stringify({ ...payload, action: "follow" }),
   });
 }
 
@@ -216,7 +191,7 @@ export async function unfollowCampaign(
   userAddress: string,
   campaignAddress: string,
   chainId = 0,
-  signOpts?: FollowSignOpts,
+  _signOpts?: FollowSignOpts,
 ): Promise<void> {
   const user = assertAddr(userAddress, "user");
   const campaign = assertAddr(campaignAddress, "campaign");
@@ -226,12 +201,9 @@ export async function unfollowCampaign(
     userAddress: user,
     campaignAddress: campaign,
   };
-  const auth = await maybeFollowAuth("unfollow_campaign", user, payload.chainId, signOpts, [
-    `Campaign: ${campaign}`,
-  ]);
   await api<{ ok: true }>(`/api/follows/campaign`, {
     method: "POST",
-    body: JSON.stringify({ ...payload, action: "unfollow", ...(auth || {}), auth: auth || undefined }),
+    body: JSON.stringify({ ...payload, action: "unfollow" }),
   });
 }
 

@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
+import { X, ImageIcon, Info, BookOpen, FileText, Rocket, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
@@ -681,48 +682,6 @@ const Create = () => {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/50 bg-background/25 p-3">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <label className="font-retro text-sm text-foreground">Graduation threshold</label>
-                <p className="mt-1 text-xs text-muted-foreground">Choose how much bonding volume is needed before the campaign graduates to DEX liquidity.</p>
-              </div>
-              {chainId === 97 && testGraduationThresholdEnabled ? (
-                <span className="rounded-full border border-orange-400/40 bg-orange-400/10 px-2 py-1 font-retro text-[10px] uppercase tracking-[0.12em] text-orange-200">
-                  Test mode
-                </span>
-              ) : null}
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-4">
-              {graduationOptions.map((option) => {
-                const selected = graduationTargetWei === option.targetWei;
-                const isTest = option.id === "test";
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setGraduationTargetWei(option.targetWei)}
-                    disabled={isProjectDisabled}
-                    className={`rounded-lg border px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
-                      selected
-                        ? isTest
-                          ? "border-orange-300 bg-orange-400/15 text-orange-100 shadow-lg shadow-orange-400/15"
-                          : "border-accent bg-accent/15 text-foreground shadow-lg shadow-accent/10"
-                        : "border-border bg-muted/30 text-muted-foreground hover:border-accent/60 hover:text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-retro text-sm">{option.label}</span>
-                      <span className="font-retro text-[10px] uppercase tracking-[0.12em]">{option.title}</span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-[0.68rem] leading-4">{option.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           <div>
             <label className="mb-2 block font-retro text-sm text-foreground">
               Token description <span className="text-muted-foreground">(optional)</span>
@@ -755,6 +714,77 @@ const Create = () => {
         </section>
 
         <section className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background/20 p-3">
+          <Collapsible defaultOpen={false} className="rounded-xl border border-border/50 bg-background/25">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 p-2.5 text-left">
+              <div className="min-w-0">
+                <div className="font-retro text-sm text-foreground">Graduation threshold</div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {graduationOptions.find((o) => o.targetWei === graduationTargetWei)?.label || "$30K"}
+                  {" · "}
+                  {graduationOptions.find((o) => o.targetWei === graduationTargetWei)?.title || "Normal bond"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {chainId === 97 && testGraduationThresholdEnabled ? (
+                  <span className="rounded-full border border-orange-400/40 bg-orange-400/10 px-2 py-1 font-retro text-[10px] uppercase tracking-[0.12em] text-orange-200">
+                    Test
+                  </span>
+                ) : null}
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 px-2.5 pb-2.5">
+              <p className="text-xs text-muted-foreground">
+                Bonding volume needed before graduation to DEX liquidity.
+              </p>
+              <div className="grid gap-2">
+                {graduationOptions.map((option) => {
+                  const selected = graduationTargetWei === option.targetWei;
+                  const isTest = option.id === "test";
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setGraduationTargetWei(option.targetWei)}
+                      disabled={isProjectDisabled}
+                      className={`rounded-lg border px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selected
+                          ? isTest
+                            ? "border-orange-300 bg-orange-400/15 text-orange-100 shadow-lg shadow-orange-400/15"
+                            : "border-accent bg-accent/15 text-foreground shadow-lg shadow-accent/10"
+                          : "border-border bg-muted/30 text-muted-foreground hover:border-accent/60 hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-retro text-sm">{option.label}</span>
+                        <span className="font-retro text-[10px] uppercase tracking-[0.12em]">{option.title}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[0.68rem] leading-4">{option.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <Collapsible defaultOpen={false} className="rounded-xl border border-border/50 bg-background/25">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 p-2.5 text-left">
+              <div className="min-w-0">
+                <div className="font-retro text-sm text-foreground">Launch Safety</div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {launchpadSafetyStatus.protocolLabel
+                    ?? (launchpadSafetyStatus.protocolStatus === "ready" ? "Live" : launchpadSafetyStatus.protocolStatus)}
+                  {" · "}
+                  {launchpadSafetyStatus.chainLabel}
+                </p>
+              </div>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="px-2.5 pb-2.5">
+              <LaunchpadSafetyStatus status={launchpadSafetyStatus} compact embedded />
+            </CollapsibleContent>
+          </Collapsible>
+
           <div className="rounded-xl border border-border/50 bg-background/25 p-2.5">
             <div className="mb-2">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
@@ -765,8 +795,6 @@ const Create = () => {
               {isDrafting ? "Saving Draft..." : isSolanaCreator ? "Sign Solana Draft" : "Save Draft"}
             </Button>
           </div>
-
-          <LaunchpadSafetyStatus status={launchpadSafetyStatus} compact />
 
           <div className="rounded-xl border border-border/50 bg-background/25 p-2.5">
             <div className="mb-2">
@@ -820,11 +848,6 @@ const Create = () => {
               <Rocket className="mr-2 h-4 w-4" />
               {deployButtonLabel}
             </Button>
-          </div>
-
-          <div className="mt-auto rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground md:hidden">
-            <div className="mb-1 font-retro text-foreground">Official links</div>
-            Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
           </div>
         </section>
       </form>

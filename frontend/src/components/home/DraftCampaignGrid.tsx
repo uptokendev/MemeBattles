@@ -67,9 +67,21 @@ function isFutureScheduledDraft(draft: CampaignDraftLifecycle, nowMs = Date.now(
   );
 }
 
-/** Armed timed launches stay discoverable even after launchAt if status never flipped to deployed. */
-function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle) {
-  return isScheduledDraft(draft) && Boolean(draft.campaignAddress || scheduledLaunchSeconds(draft));
+/**
+ * Pre-launch scheduled drafts only. Once launchAt is past (or missing with a live
+ * campaign address), the token belongs in bonding/trending — not Drafts.
+ */
+function isDiscoverableScheduledDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
+  if (!isScheduledDraft(draft)) return false;
+  const launchAt = scheduledLaunchSeconds(draft);
+  const hasCampaign = Boolean(draft.campaignAddress);
+  if (hasCampaign) {
+    // Armed future launch still counts as Drafts; past/unknown launch with address does not.
+    if (!launchAt || launchAt <= Math.floor(nowMs / 1000)) return false;
+    return true;
+  }
+  // Scheduled without campaign address yet (armed but not deployed) — keep visible.
+  return Boolean(launchAt);
 }
 
 function formatLaunchDate(value?: string | number | null) {
@@ -102,13 +114,13 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
   const created = (item: DraftCampaignVM) => String(item.draft.draftCreatedAt || item.draft.createdAt || "");
   const active = items.filter((item) => {
     if (String(item.draft.status) === "deployed") return false;
-    if (String(item.draft.status) === "scheduled") return isDiscoverableScheduledDraft(item.draft);
+    if (String(item.draft.status) === "scheduled") return isDiscoverableScheduledDraft(item.draft, nowMs);
     return true;
   });
 
   if (sort === "progress_desc") {
     return active
-      .filter((item) => isFutureScheduledDraft(item.draft, nowMs) || isDiscoverableScheduledDraft(item.draft))
+      .filter((item) => isFutureScheduledDraft(item.draft, nowMs) || isDiscoverableScheduledDraft(item.draft, nowMs))
       .sort((a, b) => {
         const launchDiff = Number(scheduledLaunchSeconds(a.draft) || Number.MAX_SAFE_INTEGER)
           - Number(scheduledLaunchSeconds(b.draft) || Number.MAX_SAFE_INTEGER);
@@ -120,10 +132,10 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
   return active.slice().sort((a, b) => created(b).localeCompare(created(a)));
 }
 
-function isDiscoverableDraft(draft: CampaignDraftLifecycle, _nowMs = Date.now()) {
+function isDiscoverableDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
   const status = String(draft.status);
   if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
-  if (status === "scheduled") return isDiscoverableScheduledDraft(draft);
+  if (status === "scheduled") return isDiscoverableScheduledDraft(draft, nowMs);
   // Un-deployed prepare pages only (armed timed launches use status=scheduled).
   return !draft.campaignAddress;
 }

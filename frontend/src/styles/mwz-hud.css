@@ -95,9 +95,73 @@ img.rounded-full,
 .h-8.w-8.rounded-full,
 .h-9.w-9.rounded-full,
 .h-10.w-10.rounded-full,
-.avatar,
-.mwz-radar {
+.avatar {
   border-radius: 9999px !important;
+}
+
+/* Recon radar (Prepare promotion page) — green rings + rotating sweep */
+.mwz-radar {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  overflow: hidden;
+  border: 1px solid rgba(57, 255, 79, 0.42);
+  border-radius: 9999px !important;
+  background:
+    radial-gradient(
+      circle,
+      transparent 0 17%,
+      rgba(57, 255, 79, 0.08) 18% 19%,
+      transparent 20% 39%,
+      rgba(57, 255, 79, 0.08) 40% 41%,
+      transparent 42% 62%,
+      rgba(57, 255, 79, 0.08) 63% 64%,
+      transparent 65%
+    ),
+    conic-gradient(from 0deg, rgba(57, 255, 79, 0.32), transparent 18%, transparent 100%);
+  box-shadow: 0 0 24px rgba(57, 255, 79, 0.12), inset 0 0 18px rgba(57, 255, 79, 0.06);
+}
+
+.mwz-radar::before,
+.mwz-radar::after {
+  content: "";
+  position: absolute;
+  inset: 50% 8px auto 8px;
+  height: 1px;
+  background: rgba(57, 255, 79, 0.62);
+  pointer-events: none;
+}
+
+.mwz-radar::after {
+  transform: rotate(90deg);
+}
+
+.mwz-radar-sweep {
+  position: absolute;
+  inset: 50% 50% auto auto;
+  width: 52%;
+  height: 1px;
+  transform-origin: right center;
+  background: linear-gradient(90deg, transparent, var(--mwz-green));
+  box-shadow: 0 0 10px rgba(57, 255, 79, 0.55);
+  animation: mwz-radar-spin 4s linear infinite;
+  pointer-events: none;
+}
+
+.mwz-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(57, 255, 79, 0.86), transparent);
+  box-shadow: 0 0 18px rgba(57, 255, 79, 0.34);
+}
+
+@keyframes mwz-radar-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mwz-app-shell {

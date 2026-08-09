@@ -48,8 +48,6 @@ export function SponsorshipApplyDialog({
     websiteUrl: "",
     imageUrl: "",
     bio: "",
-    applicantWallet: "",
-    paymentReference: "",
   });
 
   useEffect(() => {
@@ -101,13 +99,11 @@ export function SponsorshipApplyDialog({
           projectName: form.projectName.trim(),
           contactName: form.contactName.trim(),
           contactChannel: form.contactChannel.trim(),
-          applicantWallet: form.applicantWallet.trim(),
           websiteUrl: form.websiteUrl.trim(),
           imageUrl: form.imageUrl.trim(),
           bio: form.bio.trim(),
           preferredSlot: defaultSlot,
           packageCode,
-          paymentReference: form.paymentReference.trim(),
           status: "submitted",
         }),
       });
@@ -121,8 +117,6 @@ export function SponsorshipApplyDialog({
         websiteUrl: "",
         imageUrl: "",
         bio: "",
-        applicantWallet: "",
-        paymentReference: "",
       });
       onOpenChange(false);
     } catch (error: any) {
@@ -146,28 +140,22 @@ export function SponsorshipApplyDialog({
         </DialogHeader>
 
         <div className="grid gap-3">
-          <div className="space-y-2">
+          <label className="space-y-1.5">
             <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Package</span>
-            <div className="grid gap-2">
-              {packages.map((pkg) => {
-                const selected = packageCode === pkg.code;
-                return (
-                  <button
-                    key={pkg.code}
-                    type="button"
-                    onClick={() => setPackageCode(pkg.code)}
-                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
-                      selected ? "border-amber-400/60 bg-amber-500/10" : "border-border bg-background/40 hover:border-amber-400/30"
-                    }`}
-                  >
-                    <span className="font-medium text-foreground">{pkg.label}</span>
-                    <span className="text-amber-200">{formatPackagePrice(pkg)}</span>
-                  </button>
-                );
-              })}
-              {!packages.length ? <p className="text-xs text-muted-foreground">Loading packages…</p> : null}
-            </div>
-          </div>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={packageCode}
+              onChange={(e) => setPackageCode(e.target.value)}
+              disabled={!packages.length || submitting}
+            >
+              {!packages.length ? <option value="">Loading packages…</option> : null}
+              {packages.map((pkg) => (
+                <option key={pkg.code} value={pkg.code}>
+                  {pkg.label} — {formatPackagePrice(pkg)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="space-y-1.5">
             <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Project name</span>
             <Input value={form.projectName} onChange={(e) => update("projectName", e.target.value)} placeholder="Project or token name" />
@@ -223,14 +211,6 @@ export function SponsorshipApplyDialog({
           <label className="space-y-1.5">
             <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Short bio</span>
             <Textarea value={form.bio} onChange={(e) => update("bio", e.target.value)} className="min-h-20" placeholder="What should Featured visitors know?" />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Payment wallet (optional)</span>
-            <Input value={form.applicantWallet} onChange={(e) => update("applicantWallet", e.target.value)} placeholder="0x… or treasury note" />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Payment reference (optional)</span>
-            <Input value={form.paymentReference} onChange={(e) => update("paymentReference", e.target.value)} placeholder="Invoice / transfer note" />
           </label>
           <Button type="button" className="mwz-button mwz-button-orange font-retro" disabled={submitting || uploading} onClick={() => void handleSubmit()}>
             {submitting ? "Submitting…" : "Submit application"}

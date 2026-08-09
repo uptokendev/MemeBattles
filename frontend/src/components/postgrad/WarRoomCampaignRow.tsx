@@ -134,7 +134,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               onError={(event) => {
                 (event.currentTarget as HTMLImageElement).src = "/placeholder.svg";
               }}
-              className="h-9 w-9 rounded-lg border border-white/10 object-cover lg:h-10 lg:w-10"
+              className="h-9 w-9 shrink-0 rounded-lg border border-white/10 object-cover lg:h-10 lg:w-10"
             />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -151,6 +151,18 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 <span className="hidden sm:inline">Creator {shortenAddress(campaign.creator)}</span>
               </div>
             </div>
+            {/* Mobile collapsed bar: only MCap on the right (desktop uses table columns). */}
+            {!isDraft ? (
+              <div className="ml-1 shrink-0 text-right lg:hidden">
+                <div className="text-[8px] uppercase tracking-[0.14em] text-white/35">MCap</div>
+                <div className="text-xs font-semibold text-white">{metrics.marketCapLabel}</div>
+              </div>
+            ) : null}
+            {!isDraft ? (
+              <span className="shrink-0 text-white/50 lg:hidden" aria-hidden>
+                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </span>
+            ) : null}
           </div>
         </button>
 
@@ -170,56 +182,27 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-1.5 text-sm sm:grid-cols-3 lg:contents">
-            <div className="lg:block">
-              <div className="lg:hidden"><MobileMetric label="MCap" value={metrics.marketCapLabel} /></div>
-              <div className="hidden font-semibold text-white lg:block">{metrics.marketCapLabel}</div>
-            </div>
-            <div className="lg:block">
-              <div className="lg:hidden"><MobileMetric label="Liquidity" value={metrics.liquidityLabel} /></div>
-              <div className="hidden font-semibold text-white lg:block">{metrics.liquidityLabel}</div>
-            </div>
-            <div className="lg:block">
-              <div className="lg:hidden"><MobileMetric label="Volume" value={metrics.volumeLabel} /></div>
-              <div className="hidden font-semibold text-white lg:block">{metrics.volumeLabel}</div>
-            </div>
-            <div className="lg:block">
-              <div className="lg:hidden"><MobileMetric label="Holders" value={metrics.holdersLabel} /></div>
-              <div className="hidden font-semibold text-white lg:block">{metrics.holdersLabel}</div>
-            </div>
-            <div className="col-span-2 sm:col-span-2 lg:col-span-1 lg:block">
-              <div className="lg:hidden">
-                <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-white/65">
-                    <span>ATH {metrics.athLabel}</span>
-                    <span>{metrics.athProgressPct}%</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
-                  </div>
-                </div>
+          /* Desktop metric columns only — mobile metrics live inside the expanded panel. */
+          <div className="hidden lg:contents">
+            <div className="font-semibold text-white">{metrics.marketCapLabel}</div>
+            <div className="font-semibold text-white">{metrics.liquidityLabel}</div>
+            <div className="font-semibold text-white">{metrics.volumeLabel}</div>
+            <div className="font-semibold text-white">{metrics.holdersLabel}</div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2 text-xs text-white/65">
+                <span>{metrics.athLabel}</span>
+                <span>{metrics.athProgressPct}%</span>
               </div>
-              <div className="hidden space-y-1 lg:block">
-                <div className="flex items-center justify-between gap-2 text-xs text-white/65">
-                  <span>{metrics.athLabel}</span>
-                  <span>{metrics.athProgressPct}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
-                </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
               </div>
             </div>
           </div>
         )}
 
         {!isDraft ? (
-          <div className="flex items-center justify-between gap-2 lg:contents">
-            {tokenRoute ? (
-              <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-[11px] lg:hidden">
-                <Link to={tokenRoute}>Token details</Link>
-              </Button>
-            ) : <div />}
-            <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:ml-0 lg:justify-self-end">
+          <div className="hidden lg:flex lg:justify-self-end">
+            <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="h-8 px-2">
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
           </div>
@@ -305,6 +288,15 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
           </div>
         ) : (
           <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-2.5 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[1.35fr_0.65fr]">
+            {/* Mobile expand order: metrics text → chart → buy/sell (+ links). Desktop: chart | trade. */}
+            <div className="order-1 col-span-full flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/8 pb-2 text-[10px] text-white/70 xl:hidden">
+              <span><span className="text-white/40">MCap</span> {metrics.marketCapLabel}</span>
+              <span><span className="text-white/40">Liq</span> {metrics.liquidityLabel}</span>
+              <span><span className="text-white/40">Vol</span> {metrics.volumeLabel}</span>
+              <span><span className="text-white/40">Holders</span> {metrics.holdersLabel}</span>
+              <span><span className="text-white/40">ATH</span> {metrics.athLabel}</span>
+            </div>
+
             <div className="order-2 flex h-[300px] flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:h-[380px] md:rounded-[18px] md:p-3 xl:order-1">
               <div className="mb-1.5 flex shrink-0 items-center justify-between gap-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-300">
@@ -321,7 +313,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               />
             </div>
 
-            <div className="order-1 space-y-2.5 md:space-y-3 xl:order-2">
+            <div className="order-3 space-y-2.5 md:space-y-3 xl:order-2">
               <WarRoomTradePanel campaign={campaign} />
 
               <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
