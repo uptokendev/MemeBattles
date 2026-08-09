@@ -245,10 +245,11 @@ function LeagueSwitch({ selected, period, onSelect }: { selected: LeagueKey; per
           <button
             key={league.key}
             type="button"
+            data-selected={active ? "true" : "false"}
             onClick={() => onSelect(league.key)}
             className={[
-              "mwz-hud-frame min-h-[118px] !border !border-accent/30 p-4 text-left transition hover:!border-accent hover:!bg-accent/10 hover:!shadow-[0_0_26px_rgba(245,132,32,0.22)] focus-visible:!border-accent",
-              active ? "!border-accent bg-accent/12 !shadow-[0_0_28px_rgba(245,132,32,0.26)]" : "bg-card/70",
+              "mwz-hud-frame min-h-[118px] p-4 text-left transition focus-visible:outline-none",
+              active ? "is-selected" : "",
             ].join(" ")}
           >
             <div className="flex items-start justify-between gap-3">
@@ -673,7 +674,32 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 Compared to previous {period} epoch · {trendBasis.replace(/_/g, " ")}
               </div>
             </div>
-            <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Current #1s</div><div className="mt-4 space-y-2">{!isSolana && summary?.currentLeaders.length ? summary.currentLeaders.map((leader) => <button key={leader.leagueKey} type="button" onClick={() => handleSelectLeague(leader.leagueKey)} className="w-full rounded-xl border border-border/40 bg-card/55 px-3 py-2 text-left transition hover:border-accent/60"><div className="text-[11px] text-muted-foreground">{leader.leagueTitle}</div><div className="truncate text-sm font-semibold">{leader.label}</div><div className="truncate text-[11px] text-accent">{leader.metric}</div></button>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana leaders pending." : "No leaders yet."}</div>}</div></div>
+            <div className="mwz-hud-frame p-5">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80">
+                <Trophy className="h-4 w-4" />
+                Current #1s
+              </div>
+              <div className="mt-4 space-y-2">
+                {!isSolana && summary?.currentLeaders.length ? (
+                  summary.currentLeaders.map((leader) => (
+                    <button
+                      key={leader.leagueKey}
+                      type="button"
+                      onClick={() => handleSelectLeague(leader.leagueKey)}
+                      className="w-full border border-border/40 bg-card/55 px-3 py-2 text-left transition"
+                    >
+                      <div className="text-[11px] text-muted-foreground">{leader.leagueTitle}</div>
+                      <div className="truncate text-sm font-semibold">{leader.label}</div>
+                      <div className="truncate text-[11px] text-accent">{leader.metric}</div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    {isSolana ? "Solana leaders pending." : "No leaders yet."}
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Hall of Fame</div><div className="mt-4 space-y-3 text-sm"><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Most wins</div><div className="truncate font-semibold text-foreground">{topWinner?.name || topWinner?.symbol || shortAddr(topWinner?.wallet) || "Awaiting history"}</div><div className="text-[11px] text-accent">{topWinner?.wins ? `${topWinner.wins} wins` : hallOfFame?.basis || "summary_history_scaffold"}</div></div><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Biggest pool</div><div className="font-semibold text-foreground">{biggestPrizePool ? formatUsd(Number(biggestPrizePool.playerPrizePoolUsd || biggestPrizePool.generatedUsd || 0)) : "Awaiting history"}</div><div className="text-[11px] text-accent">{biggestPrizePool?.period || "No finalized pool yet"}</div></div></div></div>
             
             <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Recent winners</div><div className="mt-4 space-y-2">{!isSolana && summary?.history.length ? summary.history.slice(0, 5).map((item) => <div key={item.id} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2"><div className="text-sm font-semibold text-foreground">{item.winnerLabel || item.label}</div><div className="mt-1 text-[11px] text-muted-foreground">{item.completedAt || "Finalized epoch"}</div></div>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana winner history pending." : "Winner history will appear once finalized league epochs are published."}</div>}</div></div>

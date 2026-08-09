@@ -208,7 +208,7 @@ export function CampaignCard({
           <img
             src={campaignImage || "/placeholder.svg"}
             alt={vm.name}
-            className="h-full w-full object-cover bg-black transition-transform duration-300 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover bg-black"
             draggable={false}
             loading="lazy"
             onError={(event) => {

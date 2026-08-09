@@ -67,6 +67,7 @@ import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings"
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
 import { isPostGradRouteEnabled, postGradFlags, warRoomEnabled } from "@/features/postgrad/config";
+import { DocumentTitleSync } from "@/hooks/useDocumentTitle";
 
 const queryClient = new QueryClient();
 
@@ -101,6 +102,7 @@ function AppShellLayout({
 
   return (
     <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
+      <DocumentTitleSync />
       <div className="hidden lg:block">
         <LeftBattleSidebar collapsed={leftSidebarCollapsed} onToggleCollapse={toggleLeftSidebar} />
       </div>

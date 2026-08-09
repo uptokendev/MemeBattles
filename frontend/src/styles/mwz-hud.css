@@ -248,15 +248,12 @@ img.rounded-full,
 }
 
 .mwz-card {
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
+/* Non-interactive cards stay still; clickable surfaces use card-cleanup orange hover. */
 .mwz-card:hover {
-  border-color: rgba(255, 153, 0, 0.62);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 153, 0, 0.1),
-    0 16px 34px -30px rgba(0, 0, 0, 0.95);
-  transform: translateY(-1px);
+  /* intentionally no transform / lift */
 }
 
 .mwz-hud-frame .snap-x {

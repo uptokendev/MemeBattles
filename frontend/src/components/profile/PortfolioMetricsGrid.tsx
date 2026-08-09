@@ -49,8 +49,8 @@ export function PortfolioMetricCard({
   return (
     <div
       className={[
-        "mwz-command-metric p-4 font-retro",
-        isProminent ? "mwz-command-metric-prominent" : "",
+        /* Static metric tiles — never interactive / never hover-glow */
+        "mwz-command-metric p-4 font-retro pointer-events-none",
         className,
       ]
         .filter(Boolean)
@@ -62,8 +62,8 @@ export function PortfolioMetricCard({
 
       <div
         className={[
-          "mt-1 text-xl leading-none text-foreground md:text-2xl font-semibold",
-          isProminent ? "text-accent" : "",
+          "mt-1 text-xl leading-none md:text-2xl font-semibold",
+          isProminent ? "text-accent" : "text-foreground",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -156,7 +156,6 @@ export function PortfolioMetricsGrid({
           label="TOP HOLDING"
           value={topValue}
           subValue={topSubValue}
-          isProminent
         />
 
         <PortfolioMetricCard

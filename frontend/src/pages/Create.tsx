@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ImageIcon, FileText, Rocket, BookOpen } from "lucide-react";
+import { ImageIcon, FileText, Rocket, BookOpen, ChevronDown } from "lucide-react";
 import { z } from "zod";
+import { AnimatePresence, motion } from "framer-motion";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
@@ -32,7 +33,26 @@ import { Link, useNavigate } from "react-router-dom";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { CreateDraftCardPreview, CreateLiveCardPreview } from "@/components/create/CreateCardPreviews";
 import { CreateSplitPane, CreateWizardShell } from "@/components/create/CreateWizardShell";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+
+/** next = slide left (new from right); back = slide right (new from left) */
+type SlideDir = "next" | "back";
+
+const stepSlideVariants = {
+  enter: (dir: SlideDir) => ({
+    x: dir === "next" ? "55%" : "-55%",
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (dir: SlideDir) => ({
+    x: dir === "next" ? "-55%" : "55%",
+    opacity: 0,
+  }),
+};
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
@@ -123,7 +143,9 @@ const Create = () => {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [step, setStep] = useState(1);
+  const [slideDir, setSlideDir] = useState<SlideDir>("next");
   const [mode, setMode] = useState<CreateMode>(null);
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [checkingTicker, setCheckingTicker] = useState(false);
@@ -138,7 +160,11 @@ const Create = () => {
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
   const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
   const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
-  const testGraduationThresholdEnabled = readFlag(import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD, false);
+  // BNB testnet always offers $6 test grad. Env can force-hide with =0/false.
+  const testGraduationThresholdEnabled = readFlag(
+    import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD,
+    true,
+  );
   const graduationOptions = useMemo(
     () =>
       chainId === 97 && testGraduationThresholdEnabled
@@ -518,19 +544,19 @@ const Create = () => {
     }
   };
 
-  // --- Step gates ---
+  // --- Step gates (strict — no forward without required fields) ---
+  const hasImage = Boolean(formData.imagePreview?.trim() && formData.image);
   const identityReady = Boolean(
-    formData.name.trim() &&
-      normalizedTicker &&
-      formData.image &&
-      formData.imagePreview &&
+    formData.name.trim().length > 0 &&
+      normalizedTicker.length > 0 &&
+      hasImage &&
       tickerConfirmedAvailable &&
       !checkingTicker &&
       !tickerCheckError,
   );
-  const storyReady = Boolean(formData.description.trim());
+  const storyReady = Boolean(formData.description.trim().length > 0);
   const canGoNext = (fromStep: number) => {
-    if (fromStep === 1) return mode != null;
+    if (fromStep === 1) return mode === "draft" || mode === "deploy";
     if (fromStep === 2) return identityReady;
     if (fromStep === 3) return storyReady;
     if (fromStep === 4) return true;
@@ -538,15 +564,26 @@ const Create = () => {
   };
 
   const goNext = () => {
+    if (step >= TOTAL_STEPS) return;
     if (!canGoNext(step)) {
       if (step === 1) toast.error("Choose Draft mode or Direct deploy first.");
-      else if (step === 2) toast.error("Add image, name, and an available ticker before continuing.");
-      else if (step === 3) toast.error("Add a short description before continuing.");
+      else if (step === 2) {
+        if (!hasImage) toast.error("Upload a token image first.");
+        else if (!formData.name.trim()) toast.error("Enter a coin name.");
+        else if (!normalizedTicker) toast.error("Enter a ticker.");
+        else if (checkingTicker) toast.error("Wait for ticker availability check to finish.");
+        else toast.error(tickerAvailability?.reason || "Ticker must be available before continuing.");
+      } else if (step === 3) toast.error("Add a short description before continuing.");
       return;
     }
+    setSlideDir("next");
     setStep((s) => Math.min(TOTAL_STEPS, s + 1));
   };
-  const goBack = () => setStep((s) => Math.max(1, s - 1));
+  const goBack = () => {
+    if (step <= 1 || isDrafting || isDeploying) return;
+    setSlideDir("back");
+    setStep((s) => Math.max(1, s - 1));
+  };
 
   const selectedGraduation = graduationOptions.find((o) => o.targetWei === graduationTargetWei);
   const preview =
@@ -556,6 +593,7 @@ const Create = () => {
         symbol={normalizedTicker || formData.ticker}
         logoUrl={formData.imagePreview}
         creator={creatorWallet}
+        description={formData.description}
       />
     ) : (
       <CreateDraftCardPreview
@@ -566,6 +604,10 @@ const Create = () => {
         creatorWallet={creatorWallet}
       />
     );
+
+  const modeSelectedClass =
+    "border-orange-400/70 bg-orange-500/10 shadow-lg shadow-orange-500/10";
+  const modeIdleClass = "border-border bg-background/40 hover:border-orange-400/40";
 
   const tickerStatusLine = !normalizedTicker
     ? "Enter a ticker to check availability."
@@ -578,8 +620,8 @@ const Create = () => {
           : tickerAvailability?.reason || "Ticker is not available.";
 
   return (
-    <ContentContainer className="flex min-h-[calc(100dvh-9rem)] flex-col px-1 pb-4 pt-2 sm:px-2 md:px-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+    <ContentContainer className="flex flex-col px-1 pb-3 pt-2 sm:px-2 md:px-3">
+      <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 px-1">
         <div className="text-xs text-muted-foreground">
           Wallet{" "}
           <span className="text-foreground">
@@ -603,319 +645,361 @@ const Create = () => {
         canNext={step < TOTAL_STEPS && canGoNext(step) && !isDrafting && !isDeploying}
         onBack={goBack}
         onNext={goNext}
-        fullWidth={step === 5}
       >
-        {/* STEP 1 — mode */}
-        {step === 1 ? (
-          <CreateSplitPane
-            left={
-              <div className="max-w-md space-y-4 text-sm leading-relaxed text-muted-foreground">
-                <p className="font-retro text-xs uppercase tracking-[0.2em] text-orange-300">// Choose your path</p>
-                <h2 className="font-retro text-2xl text-foreground">Draft first — or go live now</h2>
-                <p>
-                  <span className="font-semibold text-accent">Draft mode</span> saves your coin with a wallet signature only
-                  (no gas). You get a promotion page, can build heat, then push live when ready.
-                </p>
-                <p>
-                  <span className="font-semibold text-accent">Direct deploy</span> uploads the creative, asks your BNB wallet
-                  to sign the LaunchFactory transaction, pays gas, and lands you on Token Details when the contract is live.
-                </p>
-                <p className="text-xs text-muted-foreground/80">
-                  You can still step back with the arrows if you change your mind.
-                </p>
-              </div>
-            }
-            right={
-              <div className="flex h-full flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMode("draft")}
-                  className={cn(
-                    "rounded-xl border p-4 text-left transition",
-                    mode === "draft"
-                      ? "border-accent bg-accent/15 shadow-lg shadow-accent/10"
-                      : "border-border bg-background/40 hover:border-accent/50",
-                  )}
-                >
-                  <div className="flex items-center gap-2 font-retro text-lg text-foreground">
-                    <FileText className="h-5 w-5 text-accent" />
-                    Draft mode
+        <AnimatePresence mode="wait" custom={slideDir} initial={false}>
+          <motion.div
+            key={step}
+            custom={slideDir}
+            variants={stepSlideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+          >
+            {/* STEP 1 — mode */}
+            {step === 1 ? (
+              <CreateSplitPane
+                left={
+                  <div className="max-w-md space-y-3 text-sm leading-relaxed text-muted-foreground">
+                    <p className="font-retro text-xs uppercase tracking-[0.2em] text-orange-300">// Choose your path</p>
+                    <h2 className="font-retro text-xl text-foreground sm:text-2xl">Draft first — or go live now</h2>
+                    <p>
+                      <span className="font-semibold text-orange-200">Draft mode</span> saves your coin with a wallet signature only
+                      (no gas). You get a promotion page, can build heat, then push live when ready.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-orange-200">Direct deploy</span> uploads the creative, asks your BNB wallet
+                      to sign the LaunchFactory transaction, pays gas, and lands you on Token Details when the contract is live.
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    Free to save. Sign once, open the promotion setup page, launch later.
-                  </p>
-                </button>
+                }
+                right={
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setMode("draft")}
+                      className={cn("rounded-xl border p-4 text-left transition", mode === "draft" ? modeSelectedClass : modeIdleClass)}
+                    >
+                      <div className="flex items-center gap-2 font-retro text-lg text-foreground">
+                        <FileText className="h-5 w-5 text-orange-300" />
+                        Draft mode
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                        Free to save. Sign once, open the promotion setup page, launch later.
+                      </p>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setMode("deploy")}
-                  className={cn(
-                    "rounded-xl border p-4 text-left transition",
-                    mode === "deploy"
-                      ? "border-orange-400/70 bg-orange-500/10 shadow-lg shadow-orange-500/10"
-                      : "border-border bg-background/40 hover:border-orange-400/40",
-                  )}
-                >
-                  <div className="flex items-center gap-2 font-retro text-lg text-foreground">
-                    <Rocket className="h-5 w-5 text-orange-300" />
-                    Direct deploy
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {directDeployRouteReady
-                      ? "Wallet + gas. Live bonding campaign as soon as the tx confirms."
-                      : isSolanaCreator || isSolanaProtocolPending
-                        ? "Solana on-chain deploy is not open here yet — use Draft mode."
-                        : bnbDirectDeployEnabled
-                          ? "Contracts still wiring up — you can pick this, but deploy may be locked on the last step."
-                          : "Locked in Prepare Mode for this environment — pick Draft for now."}
-                  </p>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode("deploy")}
+                      className={cn("rounded-xl border p-4 text-left transition", mode === "deploy" ? modeSelectedClass : modeIdleClass)}
+                    >
+                      <div className="flex items-center gap-2 font-retro text-lg text-foreground">
+                        <Rocket className="h-5 w-5 text-orange-300" />
+                        Direct deploy
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                        {directDeployRouteReady
+                          ? "Wallet + gas. Live bonding campaign as soon as the tx confirms."
+                          : isSolanaCreator || isSolanaProtocolPending
+                            ? "Solana on-chain deploy is not open here yet — use Draft mode."
+                            : bnbDirectDeployEnabled
+                              ? "Contracts still wiring up — you can pick this, but deploy may be locked on the last step."
+                              : "Locked in Prepare Mode for this environment — pick Draft for now."}
+                      </p>
+                    </button>
 
-                <Button
-                  type="button"
-                  className="mwz-button mwz-button-orange mt-auto h-11 font-retro"
-                  disabled={!mode}
-                  onClick={goNext}
-                >
-                  Next
-                </Button>
-              </div>
-            }
-          />
-        ) : null}
-
-        {/* STEP 2 — identity */}
-        {step === 2 ? (
-          <CreateSplitPane
-            left={
-              <div className="flex w-full flex-col items-center gap-3">
-                <p className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  {mode === "deploy" ? "Live card preview" : "Draft card preview"}
-                </p>
-                {preview}
-              </div>
-            }
-            right={
-              <div className="flex h-full flex-col gap-3">
-                <div>
-                  <label className="font-retro text-sm text-foreground">Token image</label>
-                  <p className="mt-0.5 text-xs text-muted-foreground">PNG / JPG / WebP · max 5 MB</p>
-                </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp"
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" className="font-retro" onClick={() => fileRef.current?.click()}>
-                    <ImageIcon className="mr-2 h-4 w-4" />
-                    {formData.imagePreview ? "Replace image" : "Upload image"}
-                  </Button>
-                  {formData.imagePreview ? (
-                    <Button type="button" variant="ghost" size="sm" onClick={handleRemoveImage}>
-                      Remove
+                    <Button
+                      type="button"
+                      className="mwz-button mwz-button-orange mt-auto h-11 font-retro"
+                      disabled={!mode}
+                      onClick={goNext}
+                    >
+                      Next
                     </Button>
-                  ) : null}
-                </div>
-                <div>
-                  <label className="mb-1 block font-retro text-sm">Name</label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setTokenName(e.target.value)}
-                    placeholder="Coin name"
-                    maxLength={TOKEN_VALIDATION_LIMITS.NAME_MAX_LENGTH}
-                    className="font-retro"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-retro text-sm">Ticker</label>
-                  <Input
-                    value={formData.ticker}
-                    onChange={(e) => setTicker(e.target.value)}
-                    placeholder="TICKER"
-                    maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH}
-                    className="font-retro uppercase"
-                  />
-                  <p
-                    className={cn(
-                      "mt-1 text-xs",
-                      tickerConfirmedAvailable ? "text-green-300" : tickerCheckError || tickerAvailability ? "text-orange-300" : "text-muted-foreground",
-                    )}
-                  >
-                    {tickerStatusLine}
-                  </p>
-                </div>
-                <Button type="button" className="mwz-button mwz-button-orange mt-auto h-11 font-retro" disabled={!canGoNext(2)} onClick={goNext}>
-                  Next
-                </Button>
-              </div>
-            }
-          />
-        ) : null}
+                  </div>
+                }
+              />
+            ) : null}
 
-        {/* STEP 3 — story + socials */}
-        {step === 3 ? (
-          <CreateSplitPane
-            left={
-              <div className="flex w-full flex-col items-center gap-3">
-                <p className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Preview updates live</p>
-                {preview}
-              </div>
-            }
-            right={
-              <div className="flex h-full flex-col gap-3">
-                <div>
-                  <label className="mb-1 block font-retro text-sm">
-                    Short description <span className="text-orange-300">*</span>
-                  </label>
-                  <Textarea
-                    value={formData.description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What should visitors know?"
-                    className="min-h-24 font-retro text-sm"
-                    maxLength={TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH}
-                  />
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Input value={formData.website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website" className="font-retro text-sm" />
-                  <Input value={formData.twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="X / @handle / url" className="font-retro text-sm" />
-                  <Input value={formData.telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="Telegram" className="font-retro text-sm" />
-                  <Input value={formData.discord} onChange={(e) => setDiscord(e.target.value)} placeholder="Discord" className="font-retro text-sm" />
-                  <Input value={formData.otherLink} onChange={(e) => setOtherLink(e.target.value)} placeholder="Other link" className="font-retro text-sm sm:col-span-2" />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Socials optional. Use @memewarzone, https://x.com/memewarzone, or bare memewarzone — same as before.
-                </p>
-                <Button type="button" className="mwz-button mwz-button-orange mt-auto h-11 font-retro" disabled={!canGoNext(3)} onClick={goNext}>
-                  Next
-                </Button>
-              </div>
-            }
-          />
-        ) : null}
-
-        {/* STEP 4 — graduation + safety */}
-        {step === 4 ? (
-          <CreateSplitPane
-            left={
-              <div className="flex w-full flex-col items-center gap-3">
-                {preview}
-                {selectedGraduation ? (
-                  <p className="text-center text-xs text-muted-foreground">
-                    Graduation: <span className="text-accent">{selectedGraduation.label}</span> · {selectedGraduation.title}
-                  </p>
-                ) : null}
-              </div>
-            }
-            right={
-              <div className="flex h-full flex-col gap-3">
-                <div>
-                  <div className="font-retro text-sm text-foreground">Graduation threshold</div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Bonding volume before DEX graduation.</p>
-                </div>
-                <div className="grid gap-2">
-                  {graduationOptions.map((option) => {
-                    const selected = graduationTargetWei === option.targetWei;
-                    const isTest = option.id === "test";
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setGraduationTargetWei(option.targetWei)}
+            {/* STEP 2 — identity */}
+            {step === 2 ? (
+              <CreateSplitPane
+                left={
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <p className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      {mode === "deploy" ? "Live card preview" : "Draft card preview"}
+                    </p>
+                    {preview}
+                  </div>
+                }
+                right={
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <div>
+                      <label className="font-retro text-sm text-foreground">Token image</label>
+                      <p className="mt-0.5 text-xs text-muted-foreground">PNG / JPG / WebP · max 5 MB</p>
+                    </div>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" className="font-retro" onClick={() => fileRef.current?.click()}>
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                        {formData.imagePreview ? "Replace image" : "Upload image"}
+                      </Button>
+                      {formData.imagePreview ? (
+                        <Button type="button" variant="ghost" size="sm" onClick={handleRemoveImage}>
+                          Remove
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-retro text-sm">Name</label>
+                      {/* Normal casing font so mixed-case names like WhatIsThisForACoin display correctly */}
+                      <Input
+                        value={formData.name}
+                        onChange={(e) => setTokenName(e.target.value)}
+                        placeholder="WhatIsThisForACoin"
+                        maxLength={TOKEN_VALIDATION_LIMITS.NAME_MAX_LENGTH}
+                        className="font-sans normal-case tracking-normal"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-retro text-sm">Ticker</label>
+                      <Input
+                        value={formData.ticker}
+                        onChange={(e) => setTicker(e.target.value)}
+                        placeholder="TICKER"
+                        maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH}
+                        className="font-retro uppercase"
+                      />
+                      <p
                         className={cn(
-                          "rounded-lg border px-3 py-2 text-left transition",
-                          selected
-                            ? isTest
-                              ? "border-orange-300 bg-orange-400/15 text-orange-100"
-                              : "border-accent bg-accent/15 text-foreground"
-                            : "border-border bg-muted/30 text-muted-foreground hover:border-accent/60",
+                          "mt-1 text-xs",
+                          tickerConfirmedAvailable
+                            ? "text-green-300"
+                            : tickerCheckError || tickerAvailability
+                              ? "text-orange-300"
+                              : "text-muted-foreground",
                         )}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-retro text-sm">{option.label}</span>
-                          <span className="font-retro text-[10px] uppercase tracking-[0.12em]">{option.title}</span>
+                        {tickerStatusLine}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      className="mwz-button mwz-button-orange mt-auto h-11 font-retro"
+                      disabled={!canGoNext(2)}
+                      onClick={goNext}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                }
+              />
+            ) : null}
+
+            {/* STEP 3 — story + socials */}
+            {step === 3 ? (
+              <CreateSplitPane
+                left={
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <p className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Preview updates live</p>
+                    {preview}
+                  </div>
+                }
+                right={
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <div>
+                      <label className="mb-1 block font-retro text-sm">
+                        Short description <span className="text-orange-300">*</span>
+                      </label>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="What should visitors know?"
+                        className="min-h-20 font-sans text-sm normal-case tracking-normal"
+                        maxLength={TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH}
+                      />
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input value={formData.website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website" className="font-sans text-sm normal-case" />
+                      <Input value={formData.twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="X / @handle / url" className="font-sans text-sm normal-case" />
+                      <Input value={formData.telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="Telegram" className="font-sans text-sm normal-case" />
+                      <Input value={formData.discord} onChange={(e) => setDiscord(e.target.value)} placeholder="Discord" className="font-sans text-sm normal-case" />
+                      <Input value={formData.otherLink} onChange={(e) => setOtherLink(e.target.value)} placeholder="Other link" className="font-sans text-sm normal-case sm:col-span-2" />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Socials optional. Use @memewarzone, https://x.com/memewarzone, or bare memewarzone.
+                    </p>
+                    <Button
+                      type="button"
+                      className="mwz-button mwz-button-orange mt-auto h-11 font-retro"
+                      disabled={!canGoNext(3)}
+                      onClick={goNext}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                }
+              />
+            ) : null}
+
+            {/* STEP 4 — graduation + safety */}
+            {step === 4 ? (
+              <CreateSplitPane
+                left={
+                  <div className="flex w-full flex-col items-center gap-2">
+                    {preview}
+                    {selectedGraduation ? (
+                      <p className="text-center text-xs text-muted-foreground">
+                        Graduation: <span className="text-accent">{selectedGraduation.label}</span> · {selectedGraduation.title}
+                      </p>
+                    ) : null}
+                  </div>
+                }
+                right={
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <div>
+                      <div className="font-retro text-sm text-foreground">Graduation threshold</div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Bonding volume before DEX graduation.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {graduationOptions.map((option) => {
+                        const selected = graduationTargetWei === option.targetWei;
+                        const isTest = option.id === "test";
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setGraduationTargetWei(option.targetWei)}
+                            className={cn(
+                              "rounded-lg border px-2.5 py-2 text-left transition",
+                              isTest && "col-span-2 border-dashed",
+                              selected
+                                ? isTest
+                                  ? "border-orange-300 bg-orange-400/15 text-orange-100"
+                                  : "border-accent bg-accent/15 text-foreground"
+                                : "border-border bg-muted/30 text-muted-foreground hover:border-accent/60",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-retro text-sm">{option.label}</span>
+                              <span className="font-retro text-[10px] uppercase tracking-[0.12em]">{option.title}</span>
+                            </div>
+                            <p className="mt-0.5 line-clamp-2 text-[0.65rem] leading-4 opacity-90">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <Collapsible open={safetyOpen} onOpenChange={setSafetyOpen} className="rounded-xl border border-border/50 bg-background/25">
+                      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 p-3 text-left">
+                        <div>
+                          <div className="font-retro text-sm text-foreground">Launch Safety</div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {launchpadSafetyStatus.protocolLabel
+                              ?? (launchpadSafetyStatus.protocolStatus === "ready" ? "Live" : launchpadSafetyStatus.protocolStatus)}
+                            {" · "}
+                            {launchpadSafetyStatus.chainLabel}
+                          </p>
                         </div>
-                        <p className="mt-1 text-[0.68rem] leading-4 opacity-90">{option.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="rounded-xl border border-border/50 bg-background/25 p-3">
-                  <div className="mb-2 font-retro text-sm text-foreground">Launch Safety</div>
-                  <LaunchpadSafetyStatus status={launchpadSafetyStatus} compact embedded />
-                </div>
-                <Button type="button" className="mwz-button mwz-button-orange mt-auto h-11 font-retro" onClick={goNext}>
-                  Next
-                </Button>
-              </div>
-            }
-          />
-        ) : null}
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="px-3 pb-3">
+                        <LaunchpadSafetyStatus status={launchpadSafetyStatus} compact embedded />
+                      </CollapsibleContent>
+                    </Collapsible>
 
-        {/* STEP 5 — confirm */}
-        {step === 5 ? (
-          <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-5 py-2">
-            {preview}
-            <div className="w-full space-y-2 rounded-xl border border-border/50 bg-background/30 p-4 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Mode</span>
-                <span className="font-retro text-foreground">{mode === "deploy" ? "Direct deploy" : "Draft"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Name</span>
-                <span className="truncate font-medium text-foreground">{formData.name || "—"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Ticker</span>
-                <span className="font-medium text-foreground">{normalizedTicker ? `$${normalizedTicker}` : "—"}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Graduation</span>
-                <span className="text-foreground">{selectedGraduation?.label || "—"}</span>
-              </div>
-              {!creatorWallet ? (
-                <p className="pt-1 text-xs text-orange-300">Connect your wallet before launching.</p>
-              ) : null}
-              {mode === "deploy" && !directDeployRouteReady ? (
-                <p className="pt-1 text-xs text-orange-300">
-                  Direct deploy is not ready in this environment — go back and choose Draft, or try again when contracts are live.
-                </p>
-              ) : null}
-              {creatorEligibilityError ? (
-                <p className="pt-1 text-xs text-orange-300">{creatorEligibilityError}</p>
-              ) : null}
-            </div>
+                    <Button type="button" className="mwz-button mwz-button-orange mt-auto h-11 font-retro" onClick={goNext}>
+                      Next
+                    </Button>
+                  </div>
+                }
+              />
+            ) : null}
 
-            {mode === "deploy" ? (
-              <Button
-                type="button"
-                className="mwz-button mwz-button-orange h-12 w-full font-retro text-base"
-                disabled={isDeploying || isDrafting || !directDeployRouteReady}
-                onClick={() => void handleDeployNow()}
-              >
-                <Rocket className="mr-2 h-5 w-5" />
-                {isDeploying ? "Deploying… waiting for confirmation" : "Deploy now"}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                className="mwz-button h-12 w-full font-retro text-base"
-                disabled={isDrafting || isDeploying}
-                onClick={() => void handleCreateDraft()}
-              >
-                <FileText className="mr-2 h-5 w-5" />
-                {isDrafting ? "Signing & saving draft…" : "Save Draft"}
-              </Button>
-            )}
-            <p className="text-center text-[11px] text-muted-foreground">
-              {mode === "deploy"
-                ? "Your wallet will prompt to sign and pay gas. Stay on this page until the contract deploys — then we open Token Details."
-                : "One signature to save. No gas. Next stop: promotion setup / edit page."}
-            </p>
-          </div>
-        ) : null}
+            {/* STEP 5 — confirm: preview left, summary + CTA right */}
+            {step === 5 ? (
+              <CreateSplitPane
+                left={
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <p className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Final preview</p>
+                    {preview}
+                  </div>
+                }
+                right={
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <div className="space-y-2 rounded-xl border border-border/50 bg-background/30 p-3 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Mode</span>
+                        <span className="font-retro text-foreground">{mode === "deploy" ? "Direct deploy" : "Draft"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Name</span>
+                        <span className="truncate font-medium text-foreground">{formData.name || "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Ticker</span>
+                        <span className="font-medium text-foreground">{normalizedTicker ? `$${normalizedTicker}` : "—"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Graduation</span>
+                        <span className="text-foreground">{selectedGraduation?.label || "—"}</span>
+                      </div>
+                      {!creatorWallet ? (
+                        <p className="pt-1 text-xs text-orange-300">Connect your wallet before launching.</p>
+                      ) : null}
+                      {mode === "deploy" && !directDeployRouteReady ? (
+                        <p className="pt-1 text-xs text-orange-300">
+                          Direct deploy is not ready here — go back and choose Draft, or try later.
+                        </p>
+                      ) : null}
+                      {creatorEligibilityError ? (
+                        <p className="pt-1 text-xs text-orange-300">{creatorEligibilityError}</p>
+                      ) : null}
+                    </div>
+
+                    {mode === "deploy" ? (
+                      <Button
+                        type="button"
+                        className="mwz-button mwz-button-orange mt-auto h-12 w-full font-retro text-base"
+                        disabled={isDeploying || isDrafting || !directDeployRouteReady}
+                        onClick={() => void handleDeployNow()}
+                      >
+                        <Rocket className="mr-2 h-5 w-5" />
+                        {isDeploying ? "Deploying… waiting for confirmation" : "Deploy now"}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        className="mwz-button mt-auto h-12 w-full font-retro text-base"
+                        disabled={isDrafting || isDeploying}
+                        onClick={() => void handleCreateDraft()}
+                      >
+                        <FileText className="mr-2 h-5 w-5" />
+                        {isDrafting ? "Signing & saving draft…" : "Save Draft"}
+                      </Button>
+                    )}
+                    <p className="text-[11px] text-muted-foreground">
+                      {mode === "deploy"
+                        ? "Wallet signs + gas. Stay here until deploy confirms — then Token Details."
+                        : "One signature to save. No gas. Next: promotion setup / edit page."}
+                    </p>
+                  </div>
+                }
+              />
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
       </CreateWizardShell>
     </ContentContainer>
   );

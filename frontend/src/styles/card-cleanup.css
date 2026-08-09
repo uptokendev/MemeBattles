@@ -1,9 +1,12 @@
 /*
   Site-wide card cleanup
 
-  The only sliced frame that should remain is the outer application frame
-  rendered by .mwz-app-shell::before/::after. Every repeated panel, card, HUD
-  frame, menu, and utility surface inside the frontend should use flat borders.
+  Rules:
+  1) Flat square cards (no diagonal cut edges).
+  2) Non-interactive surfaces NEVER change on hover.
+  3) Only true controls (a / button / role=button / .cursor-pointer / .mwz-button)
+     get the orange hover language.
+  4) Selected tiles keep the orange selected look (league switcher, etc.).
 */
 
 :root {
@@ -11,18 +14,23 @@
   --mwz-flat-card-border-strong: rgba(204, 197, 176, 0.46);
   --mwz-flat-card-bg: rgba(4, 6, 6, 0.44);
   --mwz-flat-card-bg-hover: rgba(8, 10, 10, 0.56);
+  --mwz-interactive-border: rgba(var(--mwz-orange-rgb), 0.72);
+  --mwz-interactive-bg: rgba(var(--mwz-orange-rgb), 0.12);
+  --mwz-interactive-glow: 0 0 22px rgba(var(--mwz-orange-rgb), 0.18);
+  --mwz-selected-border: rgba(var(--mwz-orange-rgb), 0.92);
+  --mwz-selected-bg: rgba(var(--mwz-orange-rgb), 0.15);
+  --mwz-selected-glow: 0 0 28px rgba(var(--mwz-orange-rgb), 0.24);
 }
 
-:where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .mwz-command-card,
-  .mwz-command-header,
-  .mwz-command-metric,
-  .holo-card
-):not(.mwz-app-shell) {
+/* ---------- Flat frame defaults (no hover side-effects) ---------- */
+.mwz-app-shell .mwz-hud-frame,
+.mwz-app-shell .mwz-panel,
+.mwz-app-shell .mwz-card,
+.mwz-app-shell .mwz-flat-card,
+.mwz-app-shell .mwz-command-card,
+.mwz-app-shell .mwz-command-header,
+.mwz-app-shell .mwz-command-metric,
+.mwz-app-shell .holo-card {
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -37,117 +45,160 @@
   box-shadow: none !important;
   backdrop-filter: none !important;
   transform: none !important;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease !important;
 }
 
-:where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .mwz-command-card,
-  .mwz-command-header,
-  .mwz-command-metric,
-  .holo-card
-):not(.mwz-app-shell)::before,
-:where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .mwz-command-card,
-  .mwz-command-header,
-  .mwz-command-metric,
-  .holo-card
-):not(.mwz-app-shell)::after {
+.mwz-app-shell .mwz-hud-frame::before,
+.mwz-app-shell .mwz-panel::before,
+.mwz-app-shell .mwz-card::before,
+.mwz-app-shell .mwz-flat-card::before,
+.mwz-app-shell .mwz-command-card::before,
+.mwz-app-shell .mwz-command-header::before,
+.mwz-app-shell .mwz-command-metric::before,
+.mwz-app-shell .holo-card::before,
+.mwz-app-shell .mwz-hud-frame::after,
+.mwz-app-shell .mwz-panel::after,
+.mwz-app-shell .mwz-card::after,
+.mwz-app-shell .mwz-flat-card::after,
+.mwz-app-shell .mwz-command-card::after,
+.mwz-app-shell .mwz-command-header::after,
+.mwz-app-shell .mwz-command-metric::after,
+.mwz-app-shell .holo-card::after {
   content: none !important;
   display: none !important;
-  background: none !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  clip-path: none !important;
 }
 
-:where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .mwz-command-card,
-  .mwz-command-header,
-  .mwz-command-metric,
-  .holo-card
-):not(.mwz-app-shell) > * {
+.mwz-app-shell .mwz-hud-frame > *,
+.mwz-app-shell .mwz-panel > *,
+.mwz-app-shell .mwz-card > *,
+.mwz-app-shell .mwz-flat-card > *,
+.mwz-app-shell .mwz-command-card > *,
+.mwz-app-shell .mwz-command-header > *,
+.mwz-app-shell .mwz-command-metric > *,
+.mwz-app-shell .holo-card > * {
   position: relative;
   z-index: 1;
 }
 
-/* Static cards must stay calm on hover. Clickable card surfaces are allowed to
-   brighten below, but passive dashboard/profile cards should not light up. */
-:where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .mwz-command-card,
-  .mwz-command-header,
-  .mwz-command-metric,
-  .holo-card
-):not(.mwz-app-shell):hover {
+/* Explicit freeze for non-control frames — higher specificity than utility hovers */
+.mwz-app-shell main .mwz-hud-frame:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-panel:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-card:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-flat-card:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-command-card:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-command-header:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .mwz-command-metric:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover,
+.mwz-app-shell main .holo-card:not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):hover {
   border-color: var(--mwz-flat-card-border) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 44%),
     var(--mwz-flat-card-bg) !important;
   box-shadow: none !important;
   transform: none !important;
+  filter: none !important;
 }
 
-:where(
-  a,
-  button,
-  [role="button"],
-  [tabindex="0"],
-  .cursor-pointer,
-  .campaign-card,
-  .draft-card,
-  .mwz-campaign-card,
-  .mwz-draft-card,
-  [data-card-kind="campaign"],
-  [data-card-kind="draft"],
-  [data-addr][role="button"]
-):where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .holo-card,
+/* Tailwind border shells that are plain div/section/article — never hover-glow */
+.mwz-app-shell main :is(section, article, div):is(
   [class*="bg-card/"],
   [class*="bg-background/"][class*="border"],
   [class*="border-border"],
   [class*="border-accent"]
-):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
-  border-color: var(--mwz-flat-card-border-strong) !important;
+):not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
+  border-color: var(--mwz-flat-card-border) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
-    var(--mwz-flat-card-bg-hover) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
+    var(--mwz-flat-card-bg) !important;
   box-shadow: none !important;
   transform: none !important;
 }
 
-/* Tailwind-made card surfaces that do not use the MWZ classes still get the
-   same flat treatment. Force border width/style too, because many cards only
-   had a border color utility and vanished after the old frame was removed. */
-.mwz-app-shell main :where(
-  section,
-  article,
-  div,
-  a,
-  button
-):where(
+/* ---------- Interactive orange hover (controls only) ---------- */
+.mwz-app-shell main a.mwz-hud-frame:hover,
+.mwz-app-shell main a.mwz-panel:hover,
+.mwz-app-shell main a.mwz-card:hover,
+.mwz-app-shell main a.mwz-flat-card:hover,
+.mwz-app-shell main a.holo-card:hover,
+.mwz-app-shell main button.mwz-hud-frame:hover,
+.mwz-app-shell main button.mwz-panel:hover,
+.mwz-app-shell main button.mwz-card:hover,
+.mwz-app-shell main button.mwz-flat-card:hover,
+.mwz-app-shell main button.holo-card:hover,
+.mwz-app-shell main [role="button"].mwz-hud-frame:hover,
+.mwz-app-shell main [role="button"].mwz-panel:hover,
+.mwz-app-shell main [role="button"].mwz-card:hover,
+.mwz-app-shell main .cursor-pointer.mwz-hud-frame:hover,
+.mwz-app-shell main .cursor-pointer.mwz-panel:hover,
+.mwz-app-shell main .cursor-pointer.mwz-card:hover,
+.mwz-app-shell main a.campaign-card:hover,
+.mwz-app-shell main a.draft-card:hover,
+.mwz-app-shell main button.campaign-card:hover,
+.mwz-app-shell main button.draft-card:hover,
+.mwz-app-shell main [data-card-kind="campaign"]:hover,
+.mwz-app-shell main [data-card-kind="draft"]:hover,
+.mwz-app-shell main a[class*="border-border"]:hover,
+.mwz-app-shell main button[class*="border-border"]:hover,
+.mwz-app-shell main [role="button"][class*="border-border"]:hover,
+.mwz-app-shell main .cursor-pointer[class*="border-border"]:hover,
+.mwz-app-shell main a[class*="border-accent"]:hover,
+.mwz-app-shell main button[class*="border-accent"]:hover,
+.mwz-app-shell main .cursor-pointer[class*="border-accent"]:hover {
+  border-color: var(--mwz-interactive-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%),
+    var(--mwz-interactive-bg) !important;
+  box-shadow:
+    var(--mwz-interactive-glow),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.08) !important;
+  transform: none !important;
+}
+
+/* mwz-button / chip already have their own orange hover in tactical CSS — leave them. */
+
+/* ---------- Selected state (must beat base flat + hover) ---------- */
+.mwz-app-shell main [data-selected="true"],
+.mwz-app-shell main .is-selected,
+.mwz-app-shell main button[data-selected="true"],
+.mwz-app-shell main button.is-selected,
+.mwz-app-shell main a[data-selected="true"],
+.mwz-app-shell main a.is-selected,
+.mwz-app-shell main .mwz-hud-frame[data-selected="true"],
+.mwz-app-shell main .mwz-hud-frame.is-selected,
+.mwz-app-shell main .mwz-card[data-selected="true"],
+.mwz-app-shell main .mwz-card.is-selected {
+  border-width: 2px !important;
+  border-style: solid !important;
+  border-color: var(--mwz-selected-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 44%),
+    var(--mwz-selected-bg) !important;
+  box-shadow:
+    var(--mwz-selected-glow),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.1) !important;
+  transform: none !important;
+}
+
+.mwz-app-shell main [data-selected="true"]:hover,
+.mwz-app-shell main .is-selected:hover,
+.mwz-app-shell main button[data-selected="true"]:hover,
+.mwz-app-shell main button.is-selected:hover {
+  border-color: var(--mwz-selected-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 44%),
+    rgba(var(--mwz-orange-rgb), 0.18) !important;
+  box-shadow:
+    var(--mwz-selected-glow),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.12) !important;
+  transform: none !important;
+}
+
+/* Flat treatment for non-MWZ bordered shells (base only — no hover unless control) */
+.mwz-app-shell main :is(section, article, div):is(
   [class*="bg-card/"],
   [class*="bg-background/"][class*="border"],
   [class*="border-border"],
   [class*="border-accent"]
-):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip) {
+):not(a):not(button):not([role="button"]):not(.cursor-pointer):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip) {
   clip-path: none !important;
   border-radius: 0 !important;
   border-width: 1px !important;
@@ -161,59 +212,7 @@
   transform: none !important;
 }
 
-.mwz-app-shell main :where(
-  section,
-  article,
-  div,
-  a,
-  button
-):where(
-  [class*="bg-card/"],
-  [class*="bg-background/"][class*="border"],
-  [class*="border-border"],
-  [class*="border-accent"]
-):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
-  border-color: var(--mwz-flat-card-border) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
-    var(--mwz-flat-card-bg) !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-.mwz-app-shell main :where(
-  a,
-  button,
-  [role="button"],
-  [tabindex="0"],
-  .cursor-pointer,
-  .campaign-card,
-  .draft-card,
-  .mwz-campaign-card,
-  .mwz-draft-card,
-  [data-card-kind="campaign"],
-  [data-card-kind="draft"],
-  [data-addr][role="button"]
-):where(
-  .mwz-hud-frame,
-  .mwz-panel,
-  .mwz-card,
-  .mwz-flat-card,
-  .holo-card,
-  [class*="bg-card/"],
-  [class*="bg-background/"][class*="border"],
-  [class*="border-border"],
-  [class*="border-accent"]
-):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
-  border-color: var(--mwz-flat-card-border-strong) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
-    var(--mwz-flat-card-bg-hover) !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-/* Keep the command menu glow, but still with a clear light-gray/amber border. */
+/* Command sidebar chrome */
 .mwz-command-sidebar {
   border-width: 1px !important;
   border-style: solid !important;
@@ -244,19 +243,49 @@
 }
 
 .mwz-command-nav-item:hover {
-  border-color: var(--mwz-flat-card-border) !important;
-  background: rgba(255, 255, 255, 0.026) !important;
+  border-color: var(--mwz-interactive-border) !important;
+  background: var(--mwz-interactive-bg) !important;
 }
 
-.mwz-command-nav-item-active,
+/* Prominent metric = accent number only, not a permanently "selected" card */
 .mwz-command-metric-prominent {
   border-width: 1px !important;
   border-style: solid !important;
-  border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
-  background: rgba(var(--mwz-orange-rgb), 0.075) !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.06) !important;
+  border-color: var(--mwz-flat-card-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 44%),
+    var(--mwz-flat-card-bg) !important;
+  box-shadow: none !important;
 }
 
 .mwz-app-shell main :where(input, textarea, select, img) {
   box-shadow: none !important;
+}
+
+/* Kill leftover diagonal cut-edge frames */
+.mwz-app-shell .mwz-hud-frame,
+.mwz-app-shell .mwz-panel,
+.mwz-app-shell .mwz-card,
+.mwz-app-shell .mwz-flat-card,
+.mwz-app-shell .mwz-button,
+.mwz-app-shell .mwz-chip,
+.mwz-app-shell .mwz-nav-link,
+.mwz-app-shell .holo-card {
+  clip-path: none !important;
+  border-radius: 0 !important;
+}
+
+/* Campaign / status pills: square */
+.mwz-app-shell main .rounded-full:not(img):not(input):not(textarea),
+.mwz-app-shell main .rounded-2xl:not(img):not(input):not(textarea),
+.mwz-app-shell main .rounded-xl:not(img):not(input):not(textarea),
+.mwz-app-shell main .rounded-lg:not(img):not(input):not(textarea) {
+  border-radius: 0 !important;
+}
+
+/* No hover zoom on card media */
+.mwz-app-shell main .group:hover img,
+.mwz-app-shell main .mwz-card:hover img,
+.mwz-app-shell main .mwz-hud-frame:hover img {
+  transform: none !important;
 }

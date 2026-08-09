@@ -283,9 +283,14 @@ function ShareModal({
   const [busy, setBusy] = useState<"download" | "open-x" | "guided" | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [openedX, setOpenedX] = useState(false);
+  const [imageStatus, setImageStatus] = useState<"loading" | "ready" | "error">("loading");
   const pngUrl = buildShareCardUrl(bundle, false, "4");
   const pageUrl = buildPreparePageUrl(bundle.draft.slug);
   const fileName = `memewarzone-${bundle.draft.slug || "prepare"}-share-card.png`;
+
+  useEffect(() => {
+    setImageStatus("loading");
+  }, [pngUrl]);
 
   const tweetText = buildPrepareTweetText({
     name: bundle.draft.name,
@@ -364,14 +369,14 @@ function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="mwz-card max-h-[92vh] w-full max-w-5xl overflow-auto border-orange-400/50 bg-black/95 p-4 md:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4">
+      <div className="mwz-card flex max-h-[min(92vh,900px)] w-full max-w-5xl flex-col overflow-hidden border-orange-400/50 bg-black/95">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/50 p-4 md:p-5">
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-[0.22em] text-orange-300">
               // Dynamic share card
             </div>
-            <h3 className="mt-1 font-retro text-3xl uppercase tracking-[0.08em] text-foreground">
+            <h3 className="mt-1 font-retro text-2xl uppercase tracking-[0.08em] text-foreground md:text-3xl">
               Share on X
             </h3>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -380,13 +385,44 @@ function ShareModal({
             </p>
           </div>
 
-          <button onClick={onClose} className="mwz-button h-9 w-9">
+          <button type="button" onClick={onClose} className="mwz-button h-9 w-9 shrink-0">
             <X className="mx-auto h-4 w-4" />
           </button>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-border/70 bg-black/50">
-          <img src={pngUrl} alt="Generated Prepare Mode share card" className="w-full" />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
+        <div className="relative overflow-hidden border border-border/70 bg-black/50">
+          {imageStatus === "loading" ? (
+            <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+              <div className="h-8 w-8 animate-spin border-2 border-orange-400/30 border-t-orange-400" />
+              <div className="font-retro text-sm uppercase tracking-[0.16em] text-orange-200">
+                Creating share card…
+              </div>
+              <p className="max-w-sm text-xs text-muted-foreground">
+                Rendering your Prepare Mode art. This can take a few seconds.
+              </p>
+            </div>
+          ) : null}
+          {imageStatus === "error" ? (
+            <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+              <p className="text-sm text-orange-200">Share card failed to load.</p>
+              <Button
+                type="button"
+                className="mwz-button font-retro text-xs"
+                onClick={() => setImageStatus("loading")}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          <img
+            key={pngUrl}
+            src={pngUrl}
+            alt="Generated Prepare Mode share card"
+            className={`w-full ${imageStatus === "ready" ? "block" : "absolute h-px w-px opacity-0"}`}
+            onLoad={() => setImageStatus("ready")}
+            onError={() => setImageStatus("error")}
+          />
         </div>
 
         {/* Primary guided CTA */}
@@ -486,7 +522,7 @@ function ShareModal({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-border/50 pt-4">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-border/50 pt-4 pb-1">
           <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
             <Share2 className="mr-2 h-4 w-4" />
             Copy page link
@@ -504,6 +540,7 @@ function ShareModal({
             <ImageDown className="mr-2 h-4 w-4" />
             Copy PNG link
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1055,38 +1092,52 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
-            {fixedMissionPhases().map(([title, body], index) => (
+            {fixedMissionPhases().map(([title, body], index) => {
+              const isActive = index === 0;
+              return (
               <div
                 key={title}
-                className={`mwz-card p-5 ${
-                  index === 0 ? "border-orange-400/70 bg-orange-500/5" : ""
-                }`}
+                data-selected={isActive ? "true" : undefined}
+                className={
+                  isActive
+                    ? "mwz-card border-2 !border-orange-400 bg-orange-500/15 p-5 shadow-[0_0_28px_rgba(245,132,32,0.2)]"
+                    : "mwz-card border border-border/50 bg-black/30 p-5 opacity-90"
+                }
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  <span
+                    className={`text-[10px] uppercase tracking-[0.2em] ${
+                      isActive ? "text-orange-300" : "text-muted-foreground"
+                    }`}
+                  >
                     Phase 0{index + 1}
                   </span>
-                  {index === 0 ? (
+                  {isActive ? (
                     <Flame className="h-4 w-4 text-orange-300" />
                   ) : (
                     <Rocket className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
 
-                <div className="mt-4 font-retro text-3xl uppercase text-foreground">
+                <div className="mt-4 font-retro text-2xl uppercase text-foreground md:text-3xl">
                   {title}
                 </div>
 
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{body}</p>
 
-                {index === 0 && (
-                  <div className="mt-4 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-orange-300">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
-                    Active
+                {isActive ? (
+                  <div className="mt-4 inline-flex items-center gap-2 border border-orange-400/60 bg-orange-500/20 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-orange-200">
+                    <span className="h-1.5 w-1.5 animate-pulse bg-orange-300" />
+                    Active · Prepare Mode
+                  </div>
+                ) : (
+                  <div className="mt-4 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+                    Locked until prior phase
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
