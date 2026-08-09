@@ -1,12 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarClock, CreditCard, Globe, Image as ImageIcon, Mail, Megaphone, Wallet } from "lucide-react";
+import { CalendarClock, CreditCard, Globe, Image as ImageIcon, ImagePlus, Mail, Megaphone, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/apiBase";
+import {
+  FEATURED_SPONSOR_CREATIVE_H,
+  FEATURED_SPONSOR_CREATIVE_W,
+  FEATURED_SPONSOR_DIMENSIONS_COPY,
+  uploadSponsorCreative,
+} from "@/lib/sponsorCreative";
 
 const STORAGE_KEY = "mwz:sponsorship-application-draft";
 
@@ -80,8 +86,10 @@ function loadDraft(): SponsorshipApplicationForm {
 }
 
 const SponsorshipApplication = () => {
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<SponsorshipApplicationForm>(defaultForm);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     setForm(loadDraft());
@@ -107,9 +115,28 @@ const SponsorshipApplication = () => {
     toast.success("Sponsorship draft cleared.");
   };
 
+  const handleImageUpload = async (file: File | null | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadSponsorCreative(file);
+      update("imageUrl", url);
+      toast.success("Creative uploaded.");
+    } catch (error: any) {
+      toast.error(error?.message || "Image upload failed.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const handleSubmit = async () => {
     if (!form.projectName.trim() || !form.contactName.trim() || !form.contactChannel.trim() || !form.websiteUrl.trim() || !form.bio.trim()) {
       toast.error("Add the project, contact, website, and bio before submitting.");
+      return;
+    }
+    if (!form.imageUrl.trim()) {
+      toast.error("Upload a Featured creative image before submitting.");
       return;
     }
 
@@ -193,10 +220,31 @@ const SponsorshipApplication = () => {
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Website URL</span>
               <Input value={form.websiteUrl} onChange={(event) => update("websiteUrl", event.target.value)} className={inputClass()} placeholder="https://project.xyz" />
             </label>
-            <label className="space-y-2">
-              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Image URL</span>
-              <Input value={form.imageUrl} onChange={(event) => update("imageUrl", event.target.value)} className={inputClass()} placeholder="https://cdn.project.xyz/asset.png" />
-            </label>
+            <div className="space-y-2 md:col-span-2 rounded-lg border border-amber-400/25 bg-amber-500/5 p-4">
+              <span className="text-xs uppercase tracking-[0.16em] text-amber-200/90">Featured creative upload</span>
+              <p className="text-xs leading-relaxed text-muted-foreground">{FEATURED_SPONSOR_DIMENSIONS_COPY}</p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={(e) => void handleImageUpload(e.target.files?.[0])}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" className="font-retro" disabled={uploading || submitting} onClick={() => fileRef.current?.click()}>
+                  <ImagePlus className="mr-2 h-4 w-4" />
+                  {uploading ? "Uploading…" : form.imageUrl ? "Replace image" : "Upload image"}
+                </Button>
+                <span className="text-[10px] text-muted-foreground">
+                  {FEATURED_SPONSOR_CREATIVE_W}×{FEATURED_SPONSOR_CREATIVE_H}px (2× display {392}×{150})
+                </span>
+              </div>
+              {form.imageUrl ? (
+                <div className="mt-2 overflow-hidden rounded border border-border/60 bg-black">
+                  <img src={form.imageUrl} alt="Creative preview" className="h-[75px] w-full object-cover" />
+                </div>
+              ) : null}
+            </div>
             <label className="space-y-2 md:col-span-2">
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Short bio</span>
               <Textarea value={form.bio} onChange={(event) => update("bio", event.target.value)} className="min-h-28 border-border bg-background/60 font-retro text-foreground placeholder:text-muted-foreground" placeholder="Short public-facing sponsor copy for the placement rail." />
@@ -232,7 +280,7 @@ const SponsorshipApplication = () => {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button type="button" onClick={handleSubmit} disabled={submitting} className="mwz-button mwz-button-orange font-retro">
+            <Button type="button" onClick={handleSubmit} disabled={submitting || uploading} className="mwz-button mwz-button-orange font-retro">
               {submitting ? "Submitting..." : "Submit application"}
             </Button>
             <Button type="button" variant="outline" onClick={resetDraft} className="font-retro">

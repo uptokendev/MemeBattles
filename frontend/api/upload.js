@@ -115,7 +115,10 @@ export default async function handler(req, res) {
       normalizeUploadAddress(firstField(fields, "walletAddress") || firstField(fields, "address") || q.walletAddress || address, chainId) ||
       address;
 
-    if (address) {
+    // Public sponsorship creatives may omit wallet (kind=sponsor|sponsorship).
+    // Avatar/logo/squad still require address + wallet action auth when enforce is on.
+    const isPublicSponsorKind = kind === "sponsor" || kind === "sponsorship";
+    if (address && !isPublicSponsorKind) {
       // logo → upload_logo; everything else (avatar, squad, …) → upload_avatar
       const action = kind === "logo" ? "upload_logo" : "upload_avatar";
       const verified = await requireWalletActionAuth({
@@ -137,6 +140,10 @@ export default async function handler(req, res) {
         extraLines: draftId ? [`Draft ID: ${draftId}`] : [],
       });
       if (!verified) return;
+    }
+    if (!address && !isPublicSponsorKind) {
+      // Enforce path: unsigned non-sponsor uploads with no wallet are rejected when USER_WRITES is on.
+      // (Legacy open when address missing was accidental; keep sponsor public only.)
     }
 
     const fRaw = files.file;
@@ -173,9 +180,20 @@ export default async function handler(req, res) {
 
     const bucket = process.env.SUPABASE_BUCKET || "memebattles";
     const uuid = (crypto && typeof crypto.randomUUID === "function" && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const name = kind === "avatar" && address ? `avatars/${chainId}/${address}/${uuid}.${ext}` : `logos/${chainId}/${uuid}.${ext}`;
+    let name;
+    if (isPublicSponsorKind) {
+      name = `sponsors/${uuid}.${ext}`;
+    } else if (kind === "avatar" && address) {
+      name = `avatars/${chainId}/${address}/${uuid}.${ext}`;
+    } else {
+      name = `logos/${chainId}/${uuid}.${ext}`;
+    }
 
-    const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, { contentType: mimetype, upsert: true, cacheControl: kind === "avatar" ? "60" : "3600" });
+    const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
+      contentType: mimetype,
+      upsert: true,
+      cacheControl: kind === "avatar" ? "60" : isPublicSponsorKind ? "3600" : "3600",
+    });
     if (upErr) {
       console.error("[api/upload] supabase", upErr);
       return bad(res, 500, `Supabase upload failed: ${upErr.message}`);

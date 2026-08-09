@@ -1,8 +1,7 @@
 /**
- * Fixed Featured top-left sponsorship cell.
- * Isolated from organic vote ranking and Arena sponsored rail.
+ * Fixed Featured top-left sponsorship cell — full-bleed creative only.
+ * House ad: soft centered "Advertise here". Paid: small bottom title overlay.
  */
-import { ExternalLink } from "lucide-react";
 import { resolveImageUri } from "@/lib/media";
 
 export type FeaturedSponsorPlacement = {
@@ -22,10 +21,10 @@ export type FeaturedSponsorPlacement = {
 export const FEATURED_HOUSE_AD: FeaturedSponsorPlacement = {
   id: "house-advertise-featured",
   name: "Advertise here",
-  bio: "Put your project in Featured. Apply for a rotating sponsorship slot.",
+  bio: null,
   imageUrl: "/assets/memewarzone.png",
   logoUri: "/assets/memewarzone.png",
-  placementLabel: "Open spot",
+  placementLabel: "Sponsored",
   slotCode: "featured-top-left",
   isHouseAd: true,
 };
@@ -49,7 +48,6 @@ export function SponsoredFeaturedSlotCard({
   const image = usefulImage(imageRaw) ? resolveImageUri(String(imageRaw)) : null;
   const href = String(placement.targetUrl || placement.websiteUrl || "").trim();
   const isHouse = Boolean(placement.isHouseAd);
-  const pill = String(placement.placementLabel || (isHouse ? "Open spot" : "Sponsored")).trim() || "Sponsored";
   const clickable = isHouse || Boolean(href);
 
   const open = () => {
@@ -67,9 +65,7 @@ export function SponsoredFeaturedSlotCard({
 
   return (
     <div
-      className={`mwz-hud-frame group relative flex h-[150px] w-full overflow-hidden rounded-none border ${
-        isHouse ? "border-dashed border-amber-400/55" : "border-amber-400/45"
-      } bg-black/80 transition hover:border-amber-300/80 hover:shadow-[0_0_18px_rgba(251,191,36,0.18)] ${clickable ? "cursor-pointer" : ""} ${className}`}
+      className={`mwz-hud-frame group relative flex h-[150px] w-full overflow-hidden rounded-none border border-amber-400/40 bg-black transition hover:border-amber-300/70 hover:shadow-[0_0_18px_rgba(251,191,36,0.16)] ${clickable ? "cursor-pointer" : ""} ${className}`}
       role={clickable ? "button" : "article"}
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? open : undefined}
@@ -82,50 +78,41 @@ export function SponsoredFeaturedSlotCard({
       }}
       aria-label={isHouse ? "Advertise here — open sponsorship application" : `Sponsored: ${title}`}
     >
-      <div className="absolute inset-0">
-        <img
-          src={image || "/placeholder.svg"}
-          alt=""
-          className="h-full w-full object-cover opacity-95 transition duration-300 group-hover:scale-[1.03]"
-          draggable={false}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={(event) => {
-            const el = event.currentTarget;
-            if (el.dataset.fallbackApplied === "1") return;
-            el.dataset.fallbackApplied = "1";
-            el.src = "/placeholder.svg";
-          }}
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(105deg,rgba(0,0,0,0.15)_0%,rgba(0,0,0,0.55)_48%,rgba(0,0,0,0.88)_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(251,191,36,0.12),transparent_55%)]" />
-      </div>
+      {/* Full-bleed creative */}
+      <img
+        src={image || "/placeholder.svg"}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+        draggable={false}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={(event) => {
+          const el = event.currentTarget;
+          if (el.dataset.fallbackApplied === "1") return;
+          el.dataset.fallbackApplied = "1";
+          el.src = "/placeholder.svg";
+        }}
+      />
 
-      <div className="absolute right-2 top-2 z-10 border border-amber-300/70 bg-black/80 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200">
-        {pill}
-      </div>
-
-      <div className="relative z-10 flex h-full w-full flex-col justify-end p-3 pl-4">
-        <div className="max-w-[92%]">
-          <div className="truncate text-[18px] font-semibold leading-tight text-foreground drop-shadow-[0_1px_8px_rgba(0,0,0,0.85)] group-hover:text-amber-100">
-            {title}
+      {isHouse ? (
+        <>
+          <div className="absolute inset-0 bg-black/35 transition group-hover:bg-black/40" />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <span className="text-center text-[20px] font-semibold tracking-wide text-white/90 drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)] group-hover:text-white md:text-[22px]">
+              Advertise here
+            </span>
           </div>
-          {placement.bio ? (
-            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-white/80">{placement.bio}</p>
-          ) : (
-            <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-amber-200/80">Featured partner</p>
-          )}
-        </div>
-        {isHouse ? (
-          <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200">
-            Apply now <ExternalLink className="h-3 w-3" />
+        </>
+      ) : (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2.5 pt-6">
+            <div className="truncate text-[13px] font-semibold leading-tight text-white/95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]">
+              {title}
+            </div>
           </div>
-        ) : href ? (
-          <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
-            Visit <ExternalLink className="h-3 w-3" />
-          </div>
-        ) : null}
-      </div>
+        </>
+      )}
     </div>
   );
 }
