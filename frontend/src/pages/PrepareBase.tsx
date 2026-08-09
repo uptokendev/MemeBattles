@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { RadarLoader, RadarLoaderOverlay } from "@/components/ui/RadarLoader";
 import { useWallet } from "@/contexts/WalletContext";
 import { resolveImageUri } from "@/lib/media";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
@@ -186,7 +187,7 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
         // RECON HEAT
       </div>
 
-      <div className="mx-auto mt-5 flex h-48 w-48 items-center justify-center rounded-full bg-[radial-gradient(circle,rgba(255,153,0,0.20),transparent_58%)] shadow-[0_0_40px_rgba(255,153,0,0.13)]">
+      <div className="mx-auto mt-5 flex h-40 w-40 items-center justify-center">
         <div className="mwz-radar h-40 w-40">
           <span className="mwz-radar-sweep" />
 
@@ -195,8 +196,8 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
               key={classes}
               className={`absolute ${classes} rounded-full bg-orange-300 transition-all duration-300 ${
                 pulse === index
-                  ? "scale-150 opacity-100 shadow-[0_0_24px_rgba(255,185,71,1)]"
-                  : "opacity-55 shadow-[0_0_10px_rgba(255,153,0,0.45)]"
+                  ? "scale-150 opacity-100 shadow-[0_0_18px_rgba(255,185,71,0.9)]"
+                  : "opacity-55 shadow-[0_0_8px_rgba(255,153,0,0.4)]"
               }`}
             />
           ))}
@@ -393,12 +394,9 @@ function ShareModal({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
         <div className="relative overflow-hidden border border-border/70 bg-black/50">
           {imageStatus === "loading" ? (
-            <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-4 py-10 text-center">
-              <div className="h-8 w-8 animate-spin border-2 border-orange-400/30 border-t-orange-400" />
-              <div className="font-retro text-sm uppercase tracking-[0.16em] text-orange-200">
-                Creating share card…
-              </div>
-              <p className="max-w-sm text-xs text-muted-foreground">
+            <div className="flex min-h-[220px] flex-col items-center justify-center bg-black px-4 py-8 text-center">
+              <RadarLoader label="Creating share card…" size="sm" />
+              <p className="mt-2 max-w-sm text-xs text-muted-foreground">
                 Rendering your Prepare Mode art. This can take a few seconds.
               </p>
             </div>
@@ -677,13 +675,34 @@ function TransmissionList({
             ) : (
               items.map((item) => (
                 <div key={item.id} className="mwz-card flex gap-3 p-4">
-                  <div className="h-10 w-10 shrink-0 rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,153,0,0.55),rgba(25,8,2,0.9))]" />
+                  {item.avatarUrl ? (
+                    <img
+                      src={item.avatarUrl}
+                      alt=""
+                      className="h-10 w-10 shrink-0 border border-border/60 object-cover bg-black/40"
+                      onError={(event) => {
+                        (event.currentTarget as HTMLImageElement).style.display = "none";
+                        const fallback = event.currentTarget.nextElementSibling as HTMLElement | null;
+                        if (fallback) fallback.classList.remove("hidden");
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    className={`h-10 w-10 shrink-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,153,0,0.55),rgba(25,8,2,0.9))] ${
+                      item.avatarUrl ? "hidden" : ""
+                    }`}
+                    aria-hidden={Boolean(item.avatarUrl)}
+                  />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="truncate font-retro text-sm text-foreground" title={item.walletAddress}>
+                      <Link
+                        to={`/profile/${encodeURIComponent(item.walletAddress)}`}
+                        className="truncate font-retro text-sm text-foreground hover:text-orange-200"
+                        title={item.walletAddress}
+                      >
                         {item.displayName || shortWallet(item.walletAddress)}
-                      </span>
+                      </Link>
                       <span className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                         {new Date(item.createdAt).toLocaleDateString()}
                       </span>
@@ -849,8 +868,8 @@ export default function Prepare() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl py-20 text-center font-retro text-muted-foreground">
-        Loading war room dossier...
+      <div className="relative min-h-[70dvh] bg-black">
+        <RadarLoaderOverlay show mode="fullscreen" label="Scanning promotion dossier…" />
       </div>
     );
   }

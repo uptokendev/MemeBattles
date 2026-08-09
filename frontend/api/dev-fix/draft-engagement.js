@@ -51,11 +51,15 @@ function mapCommentRow(row) {
     typeof rawDisplayName === "string" && rawDisplayName.trim().length > 0
       ? rawDisplayName.trim()
       : null;
+  const rawAvatar = row.author_avatar_url ?? row.avatar_url ?? null;
+  const avatarUrl =
+    typeof rawAvatar === "string" && rawAvatar.trim().length > 0 ? rawAvatar.trim() : null;
   return {
     id: String(row.id),
     draftId: String(row.draft_id),
     walletAddress: String(row.wallet_address),
     displayName,
+    avatarUrl,
     body: row.body,
     parentCommentId: row.parent_comment_id ? String(row.parent_comment_id) : null,
     reactionCount: Number(row.reaction_count || 0),
@@ -300,15 +304,27 @@ export async function signedDraftComments(req, res) {
   if (req.method === "GET") {
     const pool = await getPool();
     if (pool) {
-      // LEFT JOIN user_profiles on (chain_id, address) to fetch the author's
-      // display name without forcing a separate per-comment lookup on the
-      // client. Falls back to null if the author hasn't set a display name.
+      // Prefer profile for the draft chain, then wallet-global (0), then any match.
       const result = await pool.query(
-        `select c.*, up.display_name as author_display_name
+        `select c.*,
+                up.display_name as author_display_name,
+                up.avatar_url as author_avatar_url
            from campaign_draft_comments c
            left join campaign_drafts d on d.id = c.draft_id
-           left join user_profiles up
-             on up.chain_id = d.chain_id and up.address = c.wallet_address
+           left join lateral (
+             select p.display_name, p.avatar_url
+               from public.user_profiles p
+              where lower(p.address) = lower(c.wallet_address)
+              order by
+                case
+                  when p.chain_id = d.chain_id then 0
+                  when p.chain_id = 0 then 1
+                  when p.chain_id in (56, 97) and d.chain_id in (56, 97) then 2
+                  else 3
+                end,
+                p.updated_at desc nulls last
+              limit 1
+           ) up on true
           where c.draft_id = $1 and c.moderation_status = 'visible'
           order by c.created_at asc
           limit 120`,

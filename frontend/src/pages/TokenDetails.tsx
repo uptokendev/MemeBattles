@@ -54,6 +54,13 @@ import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
+import {
+  CrypticPumpBadge,
+  CrypticPumpListButton,
+  fetchCrypticPumpListing,
+  type CrypticPumpListingData,
+} from "@/components/token/CrypticPumpListing";
+import { RadarLoader } from "@/components/ui/RadarLoader";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchPublicCampaignLifecycleDrafts } from "@/lib/scheduledLaunchApi";
 import {
@@ -619,6 +626,7 @@ const TokenDetails = () => {
 
   // Creator profile (best-effort; used in the header)
   const [creatorProfile, setCreatorProfile] = useState<UserProfile | null>(null);
+  const [crypticPumpListing, setCrypticPumpListing] = useState<CrypticPumpListingData | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -667,6 +675,23 @@ const TokenDetails = () => {
       cancelled = true;
     };
   }, [campaign?.creator, wallet.chainId]);
+
+  // CrypticPump listing badge (public)
+  useEffect(() => {
+    const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
+    const chainIdNum = Number(chainIdForStorage || wallet.chainId || 97);
+    if (!campaignKey || !Number.isFinite(chainIdNum)) {
+      setCrypticPumpListing(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchCrypticPumpListing(chainIdNum, campaignKey).then((listing) => {
+      if (!cancelled) setCrypticPumpListing(listing);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaign?.campaign, campaignAddr, chainIdForStorage, wallet.chainId]);
 
   // Load campaign + metrics based on :campaignAddress (preferred).
   // Backward-compatible fallback: if param is not a 0x address, treat it as symbol.
@@ -2626,12 +2651,8 @@ const bnbUsd = useMemo(() => {
 
   if (loading && !campaign) {
     return (
-      <div className="h-full w-full flex items-center justify-center px-4">
-        <Card className="p-4 md:p-6 bg-card/40 border border-border/40 max-w-md w-full text-center">
-          <p className="text-xs md:text-sm text-muted-foreground">
-            Loading token data...
-          </p>
-        </Card>
+      <div className="flex h-full min-h-[60dvh] w-full items-center justify-center bg-black px-4">
+        <RadarLoader label="Scanning token dossier…" size="md" />
       </div>
     );
   }
@@ -2678,6 +2699,10 @@ const bnbUsd = useMemo(() => {
                 >
                   {stagePill}
                 </span>
+
+                {crypticPumpListing?.listingUrl ? (
+                  <CrypticPumpBadge listingUrl={crypticPumpListing.listingUrl} className="flex-shrink-0" />
+                ) : null}
 
                 {(() => {
                   const creator = String(campaign?.creator ?? "").trim();
@@ -2841,6 +2866,29 @@ const bnbUsd = useMemo(() => {
                       buttonSize="sm"
                       className="h-8 px-3 text-xs flex-shrink-0"
                     />
+
+                    {(() => {
+                      const creator = String(campaign?.creator ?? "").trim().toLowerCase();
+                      const me = String(wallet.account ?? "").trim().toLowerCase();
+                      const isCreator = Boolean(creator && me && creator === me);
+                      if (!isCreator || crypticPumpListing?.listingUrl) return null;
+                      const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
+                      if (!campaignKey) return null;
+                      return (
+                        <CrypticPumpListButton
+                          className="flex-shrink-0"
+                          chainId={Number(chainIdForStorage || wallet.chainId || 97)}
+                          campaignAddress={campaignKey}
+                          tokenAddress={campaign?.token || null}
+                          name={tokenData.name}
+                          ticker={tokenData.ticker}
+                          website={campaign?.website || null}
+                          creatorWallet={String(wallet.account)}
+                          listing={crypticPumpListing}
+                          onListed={setCrypticPumpListing}
+                        />
+                      );
+                    })()}
                   </>
                 ) : null}
               </div>

@@ -623,6 +623,8 @@ export type DraftComment = {
   draftId: string;
   walletAddress: string;
   displayName: string | null;
+  /** Profile avatar when set; UI falls back to placeholder gradient. */
+  avatarUrl?: string | null;
   body: string;
   parentCommentId: string | null;
   reactionCount: number;

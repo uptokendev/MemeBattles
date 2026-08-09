@@ -118,16 +118,17 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
 
   return (
     <div className="border-b border-white/8 last:border-b-0">
-      <div className={isDraft
-        ? "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
-        : "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"}
+      {/* Entire collapsed bar is the expand/collapse control */}
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className={
+          isDraft
+            ? "grid w-full grid-cols-1 gap-2 px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.035] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
+            : "grid w-full grid-cols-1 gap-2 px-2.5 py-2.5 text-left transition-colors hover:bg-white/[0.035] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
+        }
       >
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="min-w-0 rounded-xl text-left transition-colors hover:bg-white/[0.03]"
-        >
-          <div className="flex items-center gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
             <img
               src={campaign.logoURI || "/placeholder.svg"}
               alt={campaign.name}
@@ -164,7 +165,6 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               </span>
             ) : null}
           </div>
-        </button>
 
         {isDraft ? (
           <div className="grid grid-cols-3 gap-1.5 text-sm lg:contents">
@@ -202,12 +202,12 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
 
         {!isDraft ? (
           <div className="hidden lg:flex lg:justify-self-end">
-            <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="h-8 px-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center text-white/70">
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
+            </span>
           </div>
         ) : null}
-      </div>
+      </button>
 
       {expanded ? (
         isDraft ? (
@@ -314,14 +314,13 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
             </div>
 
             <div className="order-3 space-y-2.5 md:space-y-3 xl:order-2">
-              <WarRoomTradePanel campaign={campaign} />
-
+              {/* Token details / links sit above buy-sell so they are seen first */}
               <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Links</div>
+                <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Token details</div>
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:mt-4">
                   {tokenRoute ? (
                     <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm sm:col-span-2">
-                      <Link to={tokenRoute}>
+                      <Link to={tokenRoute} onClick={(e) => e.stopPropagation()}>
                         Open token details
                         <ShoppingCart className="h-4 w-4" />
                       </Link>
@@ -329,7 +328,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                   ) : null}
                   {websiteHref ? (
                     <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm">
-                      <a href={websiteHref} target="_blank" rel="noreferrer">
+                      <a href={websiteHref} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
                         Website
                         <Globe className="h-4 w-4" />
                       </a>
@@ -337,7 +336,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                   ) : null}
                   {xHref ? (
                     <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm">
-                      <a href={xHref} target="_blank" rel="noreferrer">
+                      <a href={xHref} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
                         X account
                         <ExternalLink className="h-4 w-4" />
                       </a>
@@ -345,6 +344,8 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                   ) : null}
                 </div>
               </div>
+
+              <WarRoomTradePanel campaign={campaign} />
             </div>
           </div>
         )

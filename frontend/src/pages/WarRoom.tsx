@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { ChainFeedSwitch, useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { ContentContainer } from "@/components/layout/ContentContainer";
+import { RadarLoader } from "@/components/ui/RadarLoader";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import {
@@ -283,7 +284,9 @@ const WarRoom = () => {
         </div>
         <div>
           {loading ? (
-            <div className="py-10 text-center text-sm text-white/55">Loading coins...</div>
+            <div className="flex min-h-[320px] items-center justify-center bg-black py-14">
+              <RadarLoader label="Scanning trade radar…" size="md" />
+            </div>
           ) : filteredCampaigns.length ? (
             filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} bnbUsd={bnbUsd ?? 0} />)
           ) : (

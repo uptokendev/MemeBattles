@@ -99,7 +99,8 @@ img.rounded-full,
   border-radius: 9999px !important;
 }
 
-/* Recon radar (Prepare promotion page) — green rings + rotating sweep */
+/* Recon radar (Prepare promotion page) — green rings + rotating sweep.
+   No outer square glow — scope is circular only. */
 .mwz-radar {
   position: relative;
   width: 128px;
@@ -119,7 +120,8 @@ img.rounded-full,
       transparent 65%
     ),
     conic-gradient(from 0deg, rgba(57, 255, 79, 0.32), transparent 18%, transparent 100%);
-  box-shadow: 0 0 24px rgba(57, 255, 79, 0.12), inset 0 0 18px rgba(57, 255, 79, 0.06);
+  /* inset only — avoid rectangular outer glow/box-shadow */
+  box-shadow: inset 0 0 14px rgba(57, 255, 79, 0.06);
 }
 
 .mwz-radar::before,

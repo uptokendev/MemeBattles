@@ -101,7 +101,10 @@ function AppShellLayout({
   const mainStyle = { "--mwz-left-sidebar-width": `${currentSidebarWidth}px` } as CSSProperties;
 
   return (
-    <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
+    <div
+      className="mwz-app-shell flex h-screen flex-col overflow-x-hidden overflow-y-hidden"
+      style={mainStyle}
+    >
       <DocumentTitleSync />
       <div className="hidden lg:block">
         <LeftBattleSidebar collapsed={leftSidebarCollapsed} onToggleCollapse={toggleLeftSidebar} />
@@ -118,12 +121,12 @@ function AppShellLayout({
 
       <main
         className={[
-          "flex-1 overflow-auto pb-4 md:pb-6 lg:pb-8 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]",
+          /* overflow-x-hidden kills the awkward horizontal scroll from footer/frame overflow */
+          "flex-1 overflow-x-hidden overflow-y-auto pb-10 md:pb-12 lg:pb-14 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]",
           isShowcaseRoute
             ? "scroll-pt-2 pt-2 md:scroll-pt-3 md:pt-3"
             : "scroll-pt-5 pt-5 md:scroll-pt-[4.5rem] md:pt-[4.5rem] [&>:first-child]:!pt-0",
         ].join(" ")}
-        style={mainStyle}
       >
         <Routes>
           <Route path="/" element={<Showcase />} />
@@ -185,8 +188,9 @@ function AppShellLayout({
           <Route path="/status" element={<Status />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-        <Footer />
       </main>
+      {/* Fixed footer: copyright sits under ScreenFrame bottom edge (frame z-index higher). */}
+      <Footer />
       <ScreenFrame />
     </div>
   );

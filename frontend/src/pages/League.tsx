@@ -5,6 +5,7 @@ import { AlertTriangle, TrendingUp, Trophy, Users, Wallet, Zap } from "lucide-re
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
+import { RadarLoader } from "@/components/ui/RadarLoader";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 import {
@@ -643,7 +644,23 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 <div><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Standings</div><h2 className="mt-1 font-retro text-2xl text-foreground">{selectedLeague.title}</h2><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{selectedLeague.ruleSummary}</p></div>
                 <TacticalTag label={`${selectedEntrants} qualified`} tone="success" />
               </div>
-              <div className="mt-5">{error ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div> : loading ? <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">Loading league feed...</div> : <StandingsTable league={selectedLeague} rows={rows} status={selectedStatus} pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning || selectedLeague.emptyStateCopy} warningCopy={selectedCard?.warning} />}</div>
+              <div className="mt-5">
+                {error ? (
+                  <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div>
+                ) : loading ? (
+                  <div className="flex min-h-[280px] items-center justify-center bg-black py-12">
+                    <RadarLoader label="Scanning league standings…" size="md" />
+                  </div>
+                ) : (
+                  <StandingsTable
+                    league={selectedLeague}
+                    rows={rows}
+                    status={selectedStatus}
+                    pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning || selectedLeague.emptyStateCopy}
+                    warningCopy={selectedCard?.warning}
+                  />
+                )}
+              </div>
             </section>
 
             <section className="grid gap-5 lg:grid-cols-2">

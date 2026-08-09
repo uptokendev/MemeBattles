@@ -275,12 +275,17 @@
   border-radius: 0 !important;
 }
 
-/* Campaign / status pills: square */
-.mwz-app-shell main .rounded-full:not(img):not(input):not(textarea),
-.mwz-app-shell main .rounded-2xl:not(img):not(input):not(textarea),
-.mwz-app-shell main .rounded-xl:not(img):not(input):not(textarea),
-.mwz-app-shell main .rounded-lg:not(img):not(input):not(textarea) {
+/* Campaign / status pills: square — keep radar scopes circular */
+.mwz-app-shell main .rounded-full:not(img):not(input):not(textarea):not(.mwz-radar),
+.mwz-app-shell main .rounded-2xl:not(img):not(input):not(textarea):not(.mwz-radar),
+.mwz-app-shell main .rounded-xl:not(img):not(input):not(textarea):not(.mwz-radar),
+.mwz-app-shell main .rounded-lg:not(img):not(input):not(textarea):not(.mwz-radar) {
   border-radius: 0 !important;
+}
+
+.mwz-app-shell .mwz-radar,
+.mwz-app-shell .mwz-radar * {
+  border-radius: 9999px !important;
 }
 
 /* No hover zoom on card media */

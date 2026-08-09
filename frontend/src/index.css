@@ -5,7 +5,8 @@
 /* Campaign ticker marquee. It is intentionally not sticky; HeaderBand renders it
    in normal page flow so it scrolls away with the homepage content. */
 .mwz-campaign-ticker-track {
-  animation: mwz-campaign-ticker-scroll 38s linear infinite;
+  /* Slower marquee — was 38s (felt rushed). */
+  animation: mwz-campaign-ticker-scroll 58s linear infinite;
   will-change: transform;
 }
 
