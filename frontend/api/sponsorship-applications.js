@@ -44,9 +44,34 @@ function mapRow(row) {
     paymentReference: row.paymentReference,
     notes: row.notes,
     status: row.status,
+    packageCode: row.packageCode ?? null,
+    packageLabel: row.packageLabel ?? null,
+    packageDurationDays: row.packageDurationDays != null ? Number(row.packageDurationDays) : null,
+    packagePriceUsd: row.packagePriceUsd != null ? Number(row.packagePriceUsd) : null,
+    paymentDueUsd: row.paymentDueUsd != null ? Number(row.paymentDueUsd) : null,
+    paymentInstructions: row.paymentInstructions ?? null,
+    approvedAt: row.approvedAt ?? null,
+    paidAt: row.paidAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+async function resolvePackage(packageCode) {
+  const code = cleanText(packageCode, 40);
+  if (!code || !pool) return null;
+  try {
+    const result = await pool.query(
+      `select code, label, duration_days as "durationDays", price_usd::float8 as "priceUsd"
+         from public.sponsorship_packages
+        where lower(code) = lower($1) and coalesce(active, true) = true
+        limit 1`,
+      [code],
+    );
+    return result.rows[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 async function listApplications(req, res) {
@@ -77,6 +102,14 @@ async function listApplications(req, res) {
        payment_reference as "paymentReference",
        notes,
        status,
+       package_code as "packageCode",
+       package_label as "packageLabel",
+       package_duration_days as "packageDurationDays",
+       package_price_usd as "packagePriceUsd",
+       payment_due_usd as "paymentDueUsd",
+       payment_instructions as "paymentInstructions",
+       approved_at as "approvedAt",
+       paid_at as "paidAt",
        created_at as "createdAt",
        updated_at as "updatedAt"
      from public.sponsorship_applications
@@ -99,6 +132,15 @@ async function createApplication(req, res) {
     return json(res, 400, { error: "projectName, contactName, contactChannel, websiteUrl, and bio are required" });
   }
 
+  // No upfront payment — lock package snapshot at apply time. Admin can adjust before approve.
+  const pkg = await resolvePackage(body.packageCode || body.package_code);
+  if (!pkg) {
+    return json(res, 400, {
+      error: "Select a valid sponsorship package (3 days, 1 week, 2 weeks, 1 month, or 3 months).",
+      code: "PACKAGE_REQUIRED",
+    });
+  }
+
   const values = [
     projectName,
     contactName,
@@ -107,38 +149,85 @@ async function createApplication(req, res) {
     websiteUrl,
     cleanText(body.imageUrl, 500) || null,
     bio,
-    cleanText(body.preferredSlot, 80) || "homepage-sponsored-rail",
+    cleanText(body.preferredSlot, 80) || "featured-top-left",
     normalizeDate(body.preferredStart),
     normalizeDate(body.preferredEnd),
     cleanText(body.paymentReference, 160) || null,
     cleanText(body.notes, 1000) || null,
     normalizeStatus(body.status, "submitted"),
+    pkg.code,
+    pkg.label,
+    Number(pkg.durationDays),
+    Number(pkg.priceUsd),
+    Number(pkg.priceUsd), // payment_due snapshot (still not paid)
   ];
 
-  const result = await pool.query(
-    `insert into public.sponsorship_applications (
-       project_name, contact_name, contact_channel, applicant_wallet, website_url, image_url, bio,
-       preferred_slot, preferred_start, preferred_end, payment_reference, notes, status
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     returning
-       id,
-       project_name as "projectName",
-       contact_name as "contactName",
-       contact_channel as "contactChannel",
-       applicant_wallet as "applicantWallet",
-       website_url as "websiteUrl",
-       image_url as "imageUrl",
-       bio,
-       preferred_slot as "preferredSlot",
-       preferred_start as "preferredStart",
-       preferred_end as "preferredEnd",
-       payment_reference as "paymentReference",
-       notes,
-       status,
-       created_at as "createdAt",
-       updated_at as "updatedAt"`,
-    values,
-  );
+  let result;
+  try {
+    result = await pool.query(
+      `insert into public.sponsorship_applications (
+         project_name, contact_name, contact_channel, applicant_wallet, website_url, image_url, bio,
+         preferred_slot, preferred_start, preferred_end, payment_reference, notes, status,
+         package_code, package_label, package_duration_days, package_price_usd, payment_due_usd
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       returning
+         id,
+         project_name as "projectName",
+         contact_name as "contactName",
+         contact_channel as "contactChannel",
+         applicant_wallet as "applicantWallet",
+         website_url as "websiteUrl",
+         image_url as "imageUrl",
+         bio,
+         preferred_slot as "preferredSlot",
+         preferred_start as "preferredStart",
+         preferred_end as "preferredEnd",
+         payment_reference as "paymentReference",
+         notes,
+         status,
+         package_code as "packageCode",
+         package_label as "packageLabel",
+         package_duration_days as "packageDurationDays",
+         package_price_usd as "packagePriceUsd",
+         payment_due_usd as "paymentDueUsd",
+         payment_instructions as "paymentInstructions",
+         approved_at as "approvedAt",
+         paid_at as "paidAt",
+         created_at as "createdAt",
+         updated_at as "updatedAt"`,
+      values,
+    );
+  } catch (error) {
+    // Schema not migrated yet — insert without package columns.
+    if (error?.code === "42703") {
+      result = await pool.query(
+        `insert into public.sponsorship_applications (
+           project_name, contact_name, contact_channel, applicant_wallet, website_url, image_url, bio,
+           preferred_slot, preferred_start, preferred_end, payment_reference, notes, status
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         returning
+           id,
+           project_name as "projectName",
+           contact_name as "contactName",
+           contact_channel as "contactChannel",
+           applicant_wallet as "applicantWallet",
+           website_url as "websiteUrl",
+           image_url as "imageUrl",
+           bio,
+           preferred_slot as "preferredSlot",
+           preferred_start as "preferredStart",
+           preferred_end as "preferredEnd",
+           payment_reference as "paymentReference",
+           notes,
+           status,
+           created_at as "createdAt",
+           updated_at as "updatedAt"`,
+        values.slice(0, 13),
+      );
+    } else {
+      throw error;
+    }
+  }
   return json(res, 201, { item: mapRow(result.rows[0]), updatedAt: new Date().toISOString() });
 }
 

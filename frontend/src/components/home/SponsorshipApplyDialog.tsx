@@ -1,7 +1,7 @@
 /**
  * Compact sponsorship intake popup with creative upload.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,10 @@ import {
   FEATURED_SPONSOR_CREATIVE_H,
   FEATURED_SPONSOR_CREATIVE_W,
   FEATURED_SPONSOR_DIMENSIONS_COPY,
+  fetchSponsorshipPackages,
+  formatPackagePrice,
   uploadSponsorCreative,
+  type SponsorshipPackage,
 } from "@/lib/sponsorCreative";
 
 const FEATURED_SLOT = "featured-top-left";
@@ -36,6 +39,8 @@ export function SponsorshipApplyDialog({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [packages, setPackages] = useState<SponsorshipPackage[]>([]);
+  const [packageCode, setPackageCode] = useState("");
   const [form, setForm] = useState({
     projectName: "",
     contactName: "",
@@ -46,6 +51,14 @@ export function SponsorshipApplyDialog({
     applicantWallet: "",
     paymentReference: "",
   });
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchSponsorshipPackages().then((items) => {
+      setPackages(items);
+      if (items.length && !packageCode) setPackageCode(items[0].code);
+    });
+  }, [open]);
 
   const update = (key: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -75,6 +88,10 @@ export function SponsorshipApplyDialog({
       toast.error("Upload a Featured creative image.");
       return;
     }
+    if (!packageCode) {
+      toast.error("Select a sponsorship package.");
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await apiFetch("/api/sponsorship-applications", {
@@ -89,13 +106,14 @@ export function SponsorshipApplyDialog({
           imageUrl: form.imageUrl.trim(),
           bio: form.bio.trim(),
           preferredSlot: defaultSlot,
+          packageCode,
           paymentReference: form.paymentReference.trim(),
           status: "submitted",
         }),
       });
       const json = await response.json().catch(() => null);
       if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
-      toast.success("Sponsorship application submitted. We will review and confirm payment.");
+      toast.success("Application submitted — no payment yet. We review first, then send payment details.");
       setForm({
         projectName: "",
         contactName: "",
@@ -123,11 +141,33 @@ export function SponsorshipApplyDialog({
             Advertise in Featured
           </DialogTitle>
           <DialogDescription>
-            Apply for the homepage Featured top-left slot. Paid creatives rotate here as full-bleed images.
+            No payment upfront. Choose a package, submit for review — only after we approve do you pay to go live.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
+          <div className="space-y-2">
+            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Package</span>
+            <div className="grid gap-2">
+              {packages.map((pkg) => {
+                const selected = packageCode === pkg.code;
+                return (
+                  <button
+                    key={pkg.code}
+                    type="button"
+                    onClick={() => setPackageCode(pkg.code)}
+                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
+                      selected ? "border-amber-400/60 bg-amber-500/10" : "border-border bg-background/40 hover:border-amber-400/30"
+                    }`}
+                  >
+                    <span className="font-medium text-foreground">{pkg.label}</span>
+                    <span className="text-amber-200">{formatPackagePrice(pkg)}</span>
+                  </button>
+                );
+              })}
+              {!packages.length ? <p className="text-xs text-muted-foreground">Loading packages…</p> : null}
+            </div>
+          </div>
           <label className="space-y-1.5">
             <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Project name</span>
             <Input value={form.projectName} onChange={(e) => update("projectName", e.target.value)} placeholder="Project or token name" />

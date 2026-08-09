@@ -380,7 +380,7 @@ router.all("/vote-ingest", wrap(votesIngest));
 router.all("/votes/ingest", wrap(votesIngest));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
-router.all(/^\/(?:arena\/ops\/health|arena\/battles(?:\/.*)?|arena\/events(?:\/.*)?|arena\/league(?:\/.*)?|arena\/war-pools(?:\/.*)?|sponsored|sponsorship-applications|war-room(?:\/.*)?)$/, wrap(postgrad));
+router.all(/^\/(?:arena\/ops\/health|arena\/battles(?:\/.*)?|arena\/events(?:\/.*)?|arena\/league(?:\/.*)?|arena\/war-pools(?:\/.*)?|sponsored|sponsorship-applications|sponsorship-packages|war-room(?:\/.*)?)$/, wrap(postgrad));
 router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
 router.all("/drafts/ticker-availability", wrap(tickerAvailability));

@@ -5,6 +5,7 @@ import arenaOps from "./arenaOps.js";
 import arenaWarPools from "./arenaWarPools.js";
 import sponsored from "./sponsored.js";
 import sponsorshipApplications from "./sponsorship-applications.js";
+import sponsorshipPackages from "./sponsorship-packages.js";
 import warRoom from "./warRoom.js";
 
 const ROUTES = [
@@ -13,8 +14,10 @@ const ROUTES = [
   { pattern: /^\/arena\/events(?:\/.*)?$/, flag: "POSTGRAD_EVENTS_ENABLED", handler: arenaEvents },
   { pattern: /^\/arena\/league(?:\/.*)?$/, flag: "POSTGRAD_LEAGUE_ENABLED", handler: arenaLeague },
   { pattern: /^\/arena\/war-pools(?:\/.*)?$/, flag: "POSTGRAD_WAR_POOLS_ENABLED", handler: arenaWarPools },
-  { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored },
-  { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications },
+  // Sponsored product is independent of battles; keep available without battle flags.
+  { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored, alwaysOn: true },
+  { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications, alwaysOn: true },
+  { pattern: /^\/sponsorship-packages$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipPackages, alwaysOn: true },
   {
     pattern: /^\/war-room(?:\/.*)?$/,
     flag: "WAR_ROOM_ENABLED",
@@ -32,6 +35,7 @@ function enabled(name) {
 }
 
 function routeEnabled(route) {
+  if (route.alwaysOn) return true;
   return enabled(route.flag) || Boolean(route.legacyFlag && enabled(route.legacyFlag));
 }
 

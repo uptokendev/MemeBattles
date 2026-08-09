@@ -11,7 +11,10 @@ import {
   FEATURED_SPONSOR_CREATIVE_H,
   FEATURED_SPONSOR_CREATIVE_W,
   FEATURED_SPONSOR_DIMENSIONS_COPY,
+  fetchSponsorshipPackages,
+  formatPackagePrice,
   uploadSponsorCreative,
+  type SponsorshipPackage,
 } from "@/lib/sponsorCreative";
 
 const STORAGE_KEY = "mwz:sponsorship-application-draft";
@@ -25,6 +28,7 @@ type SponsorshipApplicationForm = {
   imageUrl: string;
   bio: string;
   preferredSlot: string;
+  packageCode: string;
   preferredStart: string;
   preferredEnd: string;
   paymentReference: string;
@@ -40,6 +44,7 @@ const defaultForm: SponsorshipApplicationForm = {
   imageUrl: "",
   bio: "",
   preferredSlot: "featured-top-left",
+  packageCode: "",
   preferredStart: "",
   preferredEnd: "",
   paymentReference: "",
@@ -90,9 +95,17 @@ const SponsorshipApplication = () => {
   const [form, setForm] = useState<SponsorshipApplicationForm>(defaultForm);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [packages, setPackages] = useState<SponsorshipPackage[]>([]);
 
   useEffect(() => {
     setForm(loadDraft());
+    void fetchSponsorshipPackages().then((items) => {
+      setPackages(items);
+      setForm((current) => ({
+        ...current,
+        packageCode: current.packageCode || items[0]?.code || "",
+      }));
+    });
   }, []);
 
   useEffect(() => {
@@ -139,6 +152,10 @@ const SponsorshipApplication = () => {
       toast.error("Upload a Featured creative image before submitting.");
       return;
     }
+    if (!form.packageCode.trim()) {
+      toast.error("Select a sponsorship package. No payment is due until we approve.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -154,6 +171,7 @@ const SponsorshipApplication = () => {
           imageUrl: form.imageUrl.trim(),
           bio: form.bio.trim(),
           preferredSlot: form.preferredSlot,
+          packageCode: form.packageCode,
           preferredStart: form.preferredStart || null,
           preferredEnd: form.preferredEnd || null,
           paymentReference: form.paymentReference.trim(),
@@ -166,8 +184,8 @@ const SponsorshipApplication = () => {
       if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
 
       if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
-      setForm(defaultForm);
-      toast.success("Sponsorship application submitted.");
+      setForm({ ...defaultForm, packageCode: packages[0]?.code || "" });
+      toast.success("Application submitted — no payment yet. We review first, then send payment details.");
     } catch (error: any) {
       toast.error(error?.message || "The sponsorship intake API is unavailable right now.");
       toast.message("Your application draft is still saved locally in this browser.");
@@ -257,6 +275,27 @@ const SponsorshipApplication = () => {
                 ))}
               </select>
             </label>
+            <div className="space-y-2 md:col-span-2">
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Package (no payment until approved)</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {packages.map((pkg) => {
+                  const selected = form.packageCode === pkg.code;
+                  return (
+                    <button
+                      key={pkg.code}
+                      type="button"
+                      onClick={() => update("packageCode", pkg.code)}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm ${
+                        selected ? "border-amber-400/60 bg-amber-500/10" : "border-border bg-background/40"
+                      }`}
+                    >
+                      <span className="font-medium text-foreground">{pkg.label}</span>
+                      <span className="text-amber-200">{formatPackagePrice(pkg)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <label className="space-y-2">
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payment reference</span>
               <Input value={form.paymentReference} onChange={(event) => update("paymentReference", event.target.value)} className={inputClass()} placeholder="Treasury transfer note or invoice ref" />

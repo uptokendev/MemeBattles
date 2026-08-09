@@ -15,6 +15,39 @@ export const FEATURED_SPONSOR_DIMENSIONS_COPY =
   `Upload a PNG, JPG, or WebP at ${FEATURED_SPONSOR_CREATIVE_W}×${FEATURED_SPONSOR_CREATIVE_H}px (2×) for a sharp full-bleed image. ` +
   `Max ${FEATURED_SPONSOR_MAX_BYTES / (1024 * 1024)} MB.`;
 
+export type SponsorshipPackage = {
+  id?: string;
+  code: string;
+  label: string;
+  durationDays: number;
+  priceUsd: number;
+  currency?: string;
+};
+
+export async function fetchSponsorshipPackages(): Promise<SponsorshipPackage[]> {
+  try {
+    const res = await apiFetch("/api/sponsorship-packages", { cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+    const items = Array.isArray(json?.items) ? json.items : [];
+    return items.map((item: any) => ({
+      id: item.id,
+      code: String(item.code || ""),
+      label: String(item.label || item.code || "Package"),
+      durationDays: Number(item.durationDays ?? item.duration_days ?? 0),
+      priceUsd: Number(item.priceUsd ?? item.price_usd ?? 0),
+      currency: String(item.currency || "USD"),
+    })).filter((p: SponsorshipPackage) => p.code && p.durationDays > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function formatPackagePrice(pkg: SponsorshipPackage) {
+  const n = Number(pkg.priceUsd);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: pkg.currency || "USD", maximumFractionDigits: 0 }).format(n);
+}
+
 export async function uploadSponsorCreative(file: File): Promise<string> {
   if (!file) throw new Error("Choose an image file.");
   if (file.size > FEATURED_SPONSOR_MAX_BYTES) {
