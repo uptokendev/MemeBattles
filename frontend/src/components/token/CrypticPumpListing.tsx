@@ -3,14 +3,12 @@
  * - Creator: "List on CrypticPump.com" opens iframe modal
  * - Everyone: badge with link once listing_url is stored
  *
- * Cross-origin success needs CrypticPump to postMessage listing URL, or creator
- * pastes the listing URL after submitting (fallback).
+ * Success path: partner postMessage with listing URL, or Close re-fetches our API.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/apiBase";
 import { cn } from "@/lib/utils";
 
@@ -290,48 +288,16 @@ export function CrypticPumpListButton({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [manualUrl, setManualUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [iframeStatus, setIframeStatus] = useState<"loading" | "loaded" | "timeout">("loading");
-  const [copiedTokenLink, setCopiedTokenLink] = useState(false);
-  /** Second iframe load usually means form POST finished (success/error page) — promote paste UI. */
-  const [awaitingListingUrl, setAwaitingListingUrl] = useState(false);
-  const [handshakeHint, setHandshakeHint] = useState<string | null>(null);
-  const iframeLoadCountRef = useRef(0);
 
-  // Absolute public token page → launchUrl in iframe + copy strip in modal.
+  // Absolute public token page → launchUrl query param (partner form prefill).
   const tokenPageUrl = useMemo(
     () => buildPublicTokenPageUrl(campaignAddress, chainId),
     [campaignAddress, chainId],
   );
-
-  const copyTokenPageUrl = useCallback(async () => {
-    if (!tokenPageUrl) return;
-    try {
-      await navigator.clipboard.writeText(tokenPageUrl);
-      setCopiedTokenLink(true);
-      window.setTimeout(() => setCopiedTokenLink(false), 2000);
-    } catch {
-      // Fallback for older browsers / denied clipboard
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = tokenPageUrl;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        setCopiedTokenLink(true);
-        window.setTimeout(() => setCopiedTokenLink(false), 2000);
-      } catch {
-        setError("Could not copy link — select it manually");
-      }
-    }
-  }, [tokenPageUrl]);
 
   const iframeSrc = useMemo(
     () =>
@@ -350,15 +316,9 @@ export function CrypticPumpListButton({
   useEffect(() => {
     if (!open) {
       setIframeStatus("loading");
-      setAwaitingListingUrl(false);
-      setHandshakeHint(null);
-      iframeLoadCountRef.current = 0;
       return;
     }
     setIframeStatus("loading");
-    setAwaitingListingUrl(false);
-    setHandshakeHint(null);
-    iframeLoadCountRef.current = 0;
     // Cross-origin iframes don't fire a reliable error if X-Frame blocks them;
     // if we never get onLoad, surface a fallback after a short wait.
     const t = window.setTimeout(() => {
@@ -370,13 +330,9 @@ export function CrypticPumpListButton({
   const persist = useCallback(
     async (listingUrl: string) => {
       const normalized = normalizePartnerListingUrl(listingUrl);
-      if (!normalized) {
-        setError("Paste a full CrypticPump listing URL (e.g. https://crypticpump.com/coin.php?id=…)");
-        return false;
-      }
+      if (!normalized) return false;
       setSaving(true);
       setError(null);
-      setHandshakeHint(null);
       try {
         const saved = await saveCrypticPumpListing({
           chainId,
@@ -387,8 +343,6 @@ export function CrypticPumpListButton({
         });
         onListed(saved);
         setOpen(false);
-        setManualUrl("");
-        setAwaitingListingUrl(false);
         return true;
       } catch (e: any) {
         setError(e?.message || "Could not save listing");
@@ -400,35 +354,23 @@ export function CrypticPumpListButton({
     [chainId, campaignAddress, tokenAddress, creatorWallet, onListed],
   );
 
-  /**
-   * Close path: if a listing URL was pasted, save it; otherwise re-fetch API
-   * (postMessage may have saved while the modal was open) and show the badge.
-   */
+  /** Close re-fetches API (postMessage may have saved) and shows the badge when present. */
   const handleClose = useCallback(async () => {
     if (saving || closing) return;
     setClosing(true);
     setError(null);
     try {
-      const pasted = manualUrl.trim();
-      if (pasted) {
-        const ok = await persist(pasted);
-        if (!ok) return; // keep modal open so user can fix the URL / error
-        return;
-      }
       const existing = await fetchCrypticPumpListing(chainId, campaignAddress);
       if (existing?.listingUrl) {
         onListed(existing);
       }
       setOpen(false);
-      setManualUrl("");
-      setAwaitingListingUrl(false);
-      setHandshakeHint(null);
     } catch {
       setOpen(false);
     } finally {
       setClosing(false);
     }
-  }, [saving, closing, manualUrl, persist, chainId, campaignAddress, onListed]);
+  }, [saving, closing, chainId, campaignAddress, onListed]);
 
   // Partner success handshake (part 2). Modal must stay open; form POST reloads iframe.
   useEffect(() => {
@@ -436,17 +378,7 @@ export function CrypticPumpListButton({
     const onMessage = (event: MessageEvent) => {
       if (!isCrypticPumpPartnerOrigin(String(event.origin || ""))) return;
       const listingUrl = extractListingUrlFromPartnerMessage(event.data);
-      if (listingUrl) {
-        void persist(listingUrl);
-        return;
-      }
-      // Partner ping without URL — still surface paste path.
-      if (event.data && typeof event.data === "object") {
-        setAwaitingListingUrl(true);
-        setHandshakeHint(
-          "CrypticPump messaged us but without a listing URL yet. Paste the coin page URL below to attach the badge.",
-        );
-      }
+      if (listingUrl) void persist(listingUrl);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -473,76 +405,16 @@ export function CrypticPumpListButton({
               className="flex max-h-[min(94vh,920px)] w-full max-w-3xl flex-col overflow-hidden border border-orange-400/45 bg-black"
               style={{ borderImage: "none", boxShadow: "none", clipPath: "none", borderRadius: 0 }}
             >
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/50 bg-black p-3 sm:p-4">
-                <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-orange-300">// Partner</div>
-                  <h3 className="font-retro text-lg text-foreground sm:text-xl">List on CrypticPump</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Free basic listing via the form. When it lands (or you paste the listing URL), a public badge appears
-                    on this token for everyone.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="mwz-button mwz-button-orange shrink-0 font-retro text-xs px-3"
-                  disabled={busy}
-                  onClick={() => void handleClose()}
-                >
-                  {closing ? (
-                    <>
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                      Checking…
-                    </>
-                  ) : (
-                    <>
-                      <X className="mr-1.5 h-3.5 w-3.5" />
-                      Close
-                    </>
-                  )}
-                </Button>
+              <div className="shrink-0 border-b border-border/50 bg-black p-3 sm:p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-orange-300">// Partner</div>
+                <h3 className="font-retro text-lg text-foreground sm:text-xl">List on CrypticPump</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Free basic listing via the form. After a successful submit, press Close so we can attach the public
+                  badge on this token.
+                </p>
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-black p-3 sm:p-4">
-                {tokenPageUrl ? (
-                  <div className="mb-3 space-y-1.5 border border-orange-400/30 bg-muted/10 p-2.5 sm:p-3">
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-orange-300/90">
-                      Trading / Launch link
-                    </div>
-                    <p className="text-[11px] text-muted-foreground leading-snug">
-                      Sent to CrypticPump as <span className="font-mono text-foreground/80">launchUrl</span> so
-                      Trading / Launch Link can auto-fill. If it&apos;s empty, copy and paste below.
-                    </p>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Input
-                        readOnly
-                        value={tokenPageUrl}
-                        onFocus={(e) => e.currentTarget.select()}
-                        className="font-mono text-[11px] sm:text-xs"
-                        aria-label="Meme Warzone token page URL"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mwz-button mwz-button-orange shrink-0 font-retro text-xs"
-                        onClick={() => void copyTokenPageUrl()}
-                      >
-                        {copiedTokenLink ? (
-                          <>
-                            <Check className="mr-1.5 h-3.5 w-3.5" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="mr-1.5 h-3.5 w-3.5" />
-                            Copy link
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className="relative min-h-[min(70vh,720px)] w-full border border-orange-400/40 bg-black">
                   {iframeStatus === "loading" ? (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black text-xs text-muted-foreground">
@@ -563,7 +435,7 @@ export function CrypticPumpListButton({
                         Open CrypticPump form in a new tab
                       </a>
                       <p className="max-w-md text-xs text-muted-foreground">
-                        After free listing, paste the public listing URL below to attach the badge.
+                        After listing, return here and press Close so we can check for the badge.
                       </p>
                     </div>
                   ) : null}
@@ -573,70 +445,14 @@ export function CrypticPumpListButton({
                     title="Submit your project to CrypticPump"
                     className="min-h-[min(70vh,720px)] w-full border-0 bg-black"
                     style={{ borderImage: "none", borderRadius: 0, boxShadow: "none" }}
-                    // Avoid lazy-load inside a portal modal (can stay blank on some browsers).
                     loading="eager"
-                    // Let CrypticPump see our origin as partner referrer if they gate by site.
                     referrerPolicy="strict-origin-when-cross-origin"
-                    onLoad={() => {
-                      setIframeStatus("loaded");
-                      iframeLoadCountRef.current += 1;
-                      // Form submit navigates the iframe → 2nd load ≈ success/result page.
-                      if (iframeLoadCountRef.current >= 2) {
-                        setAwaitingListingUrl(true);
-                      }
-                    }}
+                    onLoad={() => setIframeStatus("loaded")}
                   />
                 </div>
-
-                <div
-                  className={cn(
-                    "mt-4 space-y-2 border-t pt-4",
-                    awaitingListingUrl
-                      ? "border-orange-400/50 bg-orange-500/10 p-3 -mx-0"
-                      : "border-border/50",
-                  )}
-                >
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-orange-300">
-                    {awaitingListingUrl
-                      ? "Attach badge — paste your CrypticPump listing URL"
-                      : "After submit — paste listing URL to show badge"}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Submitting on CrypticPump does not change the button by itself until we receive the public listing
-                    link. Open your coin on CrypticPump (e.g.{" "}
-                    <span className="font-mono text-foreground/80">crypticpump.com/coin.php?id=…</span>), copy that
-                    URL, paste it here, and hit Save badge.
-                  </p>
-                  {handshakeHint ? <p className="text-xs text-orange-200">{handshakeHint}</p> : null}
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      value={manualUrl}
-                      onChange={(e) => setManualUrl(e.target.value)}
-                      placeholder="https://crypticpump.com/coin.php?id=…"
-                      className="font-sans text-sm"
-                      autoFocus={awaitingListingUrl}
-                    />
-                    <Button
-                      type="button"
-                      className="mwz-button mwz-button-orange shrink-0 font-retro"
-                      disabled={busy || !manualUrl.trim()}
-                      onClick={() => void persist(manualUrl.trim())}
-                    >
-                      {saving ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving…
-                        </>
-                      ) : (
-                        "Save badge"
-                      )}
-                    </Button>
-                  </div>
-                  {error ? <p className="text-xs text-orange-300">{error}</p> : null}
-                </div>
+                {error ? <p className="mt-3 text-xs text-orange-300">{error}</p> : null}
               </div>
 
-              {/* Footer: explicit Close re-checks listing so badge can flip after partner handshake */}
               <div className="flex shrink-0 flex-col gap-2 border-t border-orange-400/30 bg-black p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
                 <p className="text-[11px] text-muted-foreground leading-snug sm:max-w-[65%]">
                   After you submit on CrypticPump, press <span className="text-orange-200">Close</span>. We re-check
@@ -653,8 +469,6 @@ export function CrypticPumpListButton({
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Checking listing…
                     </>
-                  ) : manualUrl.trim() ? (
-                    "Save & close"
                   ) : (
                     "Close"
                   )}
@@ -674,9 +488,6 @@ export function CrypticPumpListButton({
         className={cn(CP_BTN, className)}
         onClick={() => {
           setError(null);
-          setHandshakeHint(null);
-          setCopiedTokenLink(false);
-          setAwaitingListingUrl(false);
           setOpen(true);
         }}
       >
