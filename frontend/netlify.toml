@@ -30,7 +30,8 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self'; connect-src 'self' https: wss:; media-src 'self' data: blob: https:; worker-src 'self' blob:; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+    # frame-src explicitly allows CrypticPump partner embed (+ any https partner forms).
+    Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self' https://crypticpump.com https://www.crypticpump.com https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self'; connect-src 'self' https: wss:; media-src 'self' data: blob: https:; worker-src 'self' blob:; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"

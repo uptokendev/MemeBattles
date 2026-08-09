@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, X } from "lucide-react";
+import { Check, Copy, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/apiBase";
@@ -24,12 +24,57 @@ const CP_BTN =
 /** Official partner badge art (public for everyone once listing URL is saved). */
 const CP_BADGE_SRC = "/assets/partners/crypticpump-listed-badge.jpg";
 
+/** Map MWZ chainId → CrypticPump form "chain" select values (BNB | Solana). */
+function crypticPumpChainLabel(chainId?: number | null): "BNB" | "Solana" | null {
+  if (!chainId || !Number.isFinite(chainId)) return null;
+  // Solana mainnet/devnet (MWZ uses 101 in places); everything else BNB family (56/97).
+  if (chainId === 101 || chainId === 102 || chainId === 103) return "Solana";
+  if (chainId === 56 || chainId === 97) return "BNB";
+  // Default EVM → BNB option on their form
+  return "BNB";
+}
+
 export type CrypticPumpListingData = {
   listingUrl: string;
   campaignAddress?: string;
   tokenAddress?: string | null;
 };
 
+/** Absolute public MWZ token details URL (Trading / Launch Link for CrypticPump). */
+export function buildPublicTokenPageUrl(
+  campaignAddress?: string | null,
+  chainId?: number | null,
+  originOverride?: string | null,
+): string | null {
+  const campaign = String(campaignAddress || "").trim();
+  if (!campaign) return null;
+  const origin = String(
+    originOverride ||
+      (typeof window !== "undefined" ? window.location?.origin : "") ||
+      "",
+  ).replace(/\/$/, "");
+  if (!origin) return null;
+  try {
+    const u = new URL(`/token/${encodeURIComponent(campaign)}`, `${origin}/`);
+    if (chainId && Number.isFinite(Number(chainId))) {
+      u.searchParams.set("chainId", String(chainId));
+    }
+    return u.toString();
+  } catch {
+    return `${origin}/token/${encodeURIComponent(campaign)}${
+      chainId ? `?chainId=${encodeURIComponent(String(chainId))}` : ""
+    }`;
+  }
+}
+
+/**
+ * Partner prefill handshake.
+ * Canonical params CrypticPump maps (agreed):
+ *   partner, campaign, token, chainId, name, ticker, website,
+ *   launchUrl  → Trading / Launch Link (public MWZ token page)
+ * Alias: launchLink (same value). chain = BNB | Solana.
+ * chainId 56 + 97 both map to BNB on their side.
+ */
 function buildIframeSrc(args: {
   campaignAddress?: string | null;
   tokenAddress?: string | null;
@@ -37,14 +82,43 @@ function buildIframeSrc(args: {
   name?: string | null;
   ticker?: string | null;
   website?: string | null;
+  /** Absolute public MWZ token page → launchUrl / Trading field. */
+  tokenPageUrl?: string | null;
 }) {
-  const qs = new URLSearchParams({ partner: "memewarzone" });
-  if (args.campaignAddress) qs.set("campaign", args.campaignAddress);
-  if (args.tokenAddress) qs.set("token", args.tokenAddress);
-  if (args.chainId) qs.set("chainId", String(args.chainId));
-  if (args.name) qs.set("name", args.name);
-  if (args.ticker) qs.set("ticker", args.ticker.replace(/^\$/, ""));
-  if (args.website) qs.set("website", args.website);
+  const qs = new URLSearchParams();
+  qs.set("partner", "memewarzone");
+
+  if (args.campaignAddress) qs.set("campaign", String(args.campaignAddress).trim());
+
+  // Trading / Launch Link — set early so server logs always show it.
+  // Canonical: launchUrl (primary). Alias: launchLink.
+  const launchUrl = String(
+    args.tokenPageUrl || buildPublicTokenPageUrl(args.campaignAddress, args.chainId) || "",
+  ).trim();
+  if (launchUrl) {
+    qs.set("launchUrl", launchUrl);
+    qs.set("launchLink", launchUrl);
+  }
+
+  const token = String(args.tokenAddress || "").trim();
+  if (token) {
+    qs.set("token", token);
+    qs.set("contract_address", token);
+  }
+
+  if (args.chainId) {
+    qs.set("chainId", String(args.chainId));
+  }
+  const chainLabel = crypticPumpChainLabel(args.chainId);
+  if (chainLabel) qs.set("chain", chainLabel);
+
+  if (args.name) qs.set("name", String(args.name).trim());
+  if (args.ticker) qs.set("ticker", String(args.ticker).replace(/^\$/, "").trim());
+
+  // Project website only (separate from launchUrl).
+  const website = String(args.website || "").trim();
+  if (website) qs.set("website", website);
+
   return `${PARTNER_SUBMIT}?${qs.toString()}`;
 }
 
@@ -148,6 +222,40 @@ export function CrypticPumpListButton({
   const [manualUrl, setManualUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iframeStatus, setIframeStatus] = useState<"loading" | "loaded" | "timeout">("loading");
+  const [copiedTokenLink, setCopiedTokenLink] = useState(false);
+
+  // Absolute public token page → launchUrl in iframe + copy strip in modal.
+  const tokenPageUrl = useMemo(
+    () => buildPublicTokenPageUrl(campaignAddress, chainId),
+    [campaignAddress, chainId],
+  );
+
+  const copyTokenPageUrl = useCallback(async () => {
+    if (!tokenPageUrl) return;
+    try {
+      await navigator.clipboard.writeText(tokenPageUrl);
+      setCopiedTokenLink(true);
+      window.setTimeout(() => setCopiedTokenLink(false), 2000);
+    } catch {
+      // Fallback for older browsers / denied clipboard
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = tokenPageUrl;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopiedTokenLink(true);
+        window.setTimeout(() => setCopiedTokenLink(false), 2000);
+      } catch {
+        setError("Could not copy link — select it manually");
+      }
+    }
+  }, [tokenPageUrl]);
 
   const iframeSrc = useMemo(
     () =>
@@ -158,9 +266,24 @@ export function CrypticPumpListButton({
         name,
         ticker,
         website,
+        tokenPageUrl,
       }),
-    [campaignAddress, tokenAddress, chainId, name, ticker, website],
+    [campaignAddress, tokenAddress, chainId, name, ticker, website, tokenPageUrl],
   );
+
+  useEffect(() => {
+    if (!open) {
+      setIframeStatus("loading");
+      return;
+    }
+    setIframeStatus("loading");
+    // Cross-origin iframes don't fire a reliable error if X-Frame blocks them;
+    // if we never get onLoad, surface a fallback after a short wait.
+    const t = window.setTimeout(() => {
+      setIframeStatus((s) => (s === "loading" ? "timeout" : s));
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [open, iframeSrc]);
 
   const persist = useCallback(
     async (listingUrl: string) => {
@@ -245,14 +368,82 @@ export function CrypticPumpListButton({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-black p-3 sm:p-4">
-                <iframe
-                  src={iframeSrc}
-                  title="Submit your project to CrypticPump"
-                  className="min-h-[min(70vh,720px)] w-full border border-orange-400/40 bg-black"
-                  style={{ borderImage: "none", borderRadius: 0, boxShadow: "none" }}
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
+                {tokenPageUrl ? (
+                  <div className="mb-3 space-y-1.5 border border-orange-400/30 bg-muted/10 p-2.5 sm:p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-orange-300/90">
+                      Trading / Launch link
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Sent to CrypticPump as <span className="font-mono text-foreground/80">launchUrl</span> so
+                      Trading / Launch Link can auto-fill. If it&apos;s empty, copy and paste below.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        readOnly
+                        value={tokenPageUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="font-mono text-[11px] sm:text-xs"
+                        aria-label="Meme Warzone token page URL"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mwz-button mwz-button-orange shrink-0 font-retro text-xs"
+                        onClick={() => void copyTokenPageUrl()}
+                      >
+                        {copiedTokenLink ? (
+                          <>
+                            <Check className="mr-1.5 h-3.5 w-3.5" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="mr-1.5 h-3.5 w-3.5" />
+                            Copy link
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="relative min-h-[min(70vh,720px)] w-full border border-orange-400/40 bg-black">
+                  {iframeStatus === "loading" ? (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black text-xs text-muted-foreground">
+                      Loading CrypticPump form…
+                    </div>
+                  ) : null}
+                  {iframeStatus === "timeout" ? (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black px-4 text-center">
+                      <p className="text-sm text-orange-200">
+                        The form didn&apos;t load in this window (common if production framing is blocked).
+                      </p>
+                      <a
+                        href={iframeSrc}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mwz-button mwz-button-orange px-4 py-2 font-retro text-xs"
+                      >
+                        Open CrypticPump form in a new tab
+                      </a>
+                      <p className="max-w-md text-xs text-muted-foreground">
+                        After free listing, paste the public listing URL below to attach the badge.
+                      </p>
+                    </div>
+                  ) : null}
+                  <iframe
+                    key={iframeSrc}
+                    src={iframeSrc}
+                    title="Submit your project to CrypticPump"
+                    className="min-h-[min(70vh,720px)] w-full border-0 bg-black"
+                    style={{ borderImage: "none", borderRadius: 0, boxShadow: "none" }}
+                    // Avoid lazy-load inside a portal modal (can stay blank on some browsers).
+                    loading="eager"
+                    // Let CrypticPump see our origin as partner referrer if they gate by site.
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    onLoad={() => setIframeStatus("loaded")}
+                  />
+                </div>
 
                 <div className="mt-4 space-y-2 border-t border-border/50 pt-4">
                   <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -301,6 +492,7 @@ export function CrypticPumpListButton({
         className={cn(CP_BTN, className)}
         onClick={() => {
           setError(null);
+          setCopiedTokenLink(false);
           setOpen(true);
         }}
       >
