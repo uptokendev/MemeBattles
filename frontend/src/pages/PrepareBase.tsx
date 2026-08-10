@@ -22,7 +22,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { RadarLoader, RadarLoaderOverlay } from "@/components/ui/RadarLoader";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useWallet } from "@/contexts/WalletContext";
+import { isSolanaChainId } from "@/lib/chainConfig";
 import { resolveImageUri } from "@/lib/media";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
 import {
@@ -45,6 +47,14 @@ import {
 
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
+
+/** EVM: case-insensitive. Solana: exact base58 (case-sensitive). BNB path unchanged. */
+function sameWallet(a?: string | null, b?: string | null, solana = false) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  return solana ? left === right : left.toLowerCase() === right.toLowerCase();
+}
 
 function shortWallet(value: string) {
   if (!value) return "Unknown";
@@ -843,6 +853,7 @@ function TransmissionList({
 export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
 
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -960,11 +971,10 @@ export default function Prepare() {
 const ticker = `$${draft.ticker}`;
 const heroImageUrl = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
 const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
-  const isCreator = Boolean(
-    wallet.account &&
-      draft.creatorWallet &&
-      wallet.account.toLowerCase() === draft.creatorWallet.toLowerCase(),
-  );
+  // BNB: compare EVM wallet (case-insensitive). Solana: compare Solana wallet (exact base58).
+  const isSolanaDraft = isSolanaChainId(Number(draft.chainId));
+  const ownerWallet = isSolanaDraft ? solanaWallet.solanaAccount : wallet.account;
+  const isCreator = sameWallet(draft.creatorWallet, ownerWallet, isSolanaDraft);
 
   const links = [
     ["X / Twitter", normalizeExternalUrl(promo.xUrl || draft.xUrl, "x"), "Frontline updates", "X"],

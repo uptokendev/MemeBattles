@@ -572,14 +572,16 @@ export default function DraftPromotionSetup() {
               <div className="h-full bg-gradient-to-r from-orange-500 to-green-400" style={{ width: `${readiness}%` }} />
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">Image, mission, launch plan, one comms channel, and visibility.</p>
-            {isSolanaDraft ? <p className="mt-2 text-xs leading-5 text-sky-200">Solana promotion setup uses Solana wallet signatures. Push Live unlocks after the Solana protocol adapter is connected.</p> : null}
+            {isSolanaDraft ? <p className="mt-2 text-xs leading-5 text-sky-200">Solana promotion setup uses Solana wallet signatures. After publish, Push Live deploys the campaign on Solana (V4 authorized create).</p> : null}
             <Button onClick={() => save({ publish: true })} disabled={saving || uploadingLogo || !ownerConnected} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
             {canPushLive && (
               DRAFT_PUSH_LIVE_ENABLED ? (
-                <Button asChild={!isSolanaDraft} disabled={isSolanaDraft} className="mwz-button mwz-button-orange mt-2 h-10 w-full justify-center font-retro">
-                  {isSolanaDraft ? <span><Rocket className="mr-2 h-4 w-4" /> Solana Protocol Pending</span> : <Link to={`/drafts/${draft.id}/push-live`}><Rocket className="mr-2 h-4 w-4" /> Push Live</Link>}
+                <Button asChild className="mwz-button mwz-button-orange mt-2 h-10 w-full justify-center font-retro">
+                  <Link to={`/drafts/${draft.id}/push-live`}>
+                    <Rocket className="mr-2 h-4 w-4" /> Push Live
+                  </Link>
                 </Button>
               ) : (
                 <Button disabled variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro opacity-70">
