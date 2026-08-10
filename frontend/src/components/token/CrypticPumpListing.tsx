@@ -180,9 +180,10 @@ function normalizePartnerListingUrl(raw: unknown): string | null {
 }
 
 /**
- * Flexible partner postMessage parser (part 2 handshake).
- * Agreed shape: { source: 'crypticpump', type: 'listing_submitted', listingUrl }
- * Also accepts common aliases until their payload is finalized.
+ * Flexible partner postMessage parser (return handshake).
+ * Agreed shape:
+ *   { source: 'crypticpump', type: 'listing_submitted', listingUrl: 'https://crypticpump.com/coin.php?ca=0x…' }
+ * Also accepts aliases + coin id / ca fields until their payload is finalized.
  */
 function extractListingUrlFromPartnerMessage(data: unknown): string | null {
   let payload: any = data;
@@ -219,6 +220,26 @@ function extractListingUrlFromPartnerMessage(data: unknown): string | null {
     if (n) return n;
   }
 
+  // Build canonical coin page from discrete fields if they only send ids.
+  const ca = String(
+    payload.ca ||
+      payload.contract ||
+      payload.contract_address ||
+      payload.contractAddress ||
+      payload.token ||
+      payload.tokenAddress ||
+      "",
+  ).trim();
+  if (ca && (/^0x[a-fA-F0-9]{40}$/.test(ca) || ca.length >= 32)) {
+    const built = normalizePartnerListingUrl(`${PARTNER_ORIGIN}/coin.php?ca=${encodeURIComponent(ca)}`);
+    if (built) return built;
+  }
+  const coinId = payload.coinId ?? payload.coin_id ?? payload.id;
+  if (coinId != null && String(coinId).trim() && /^\d+$/.test(String(coinId).trim())) {
+    const built = normalizePartnerListingUrl(`${PARTNER_ORIGIN}/coin.php?id=${encodeURIComponent(String(coinId).trim())}`);
+    if (built) return built;
+  }
+
   // Last resort: any string field that looks like a CrypticPump listing page.
   for (const v of Object.values(payload)) {
     if (typeof v !== "string") continue;
@@ -227,6 +248,15 @@ function extractListingUrlFromPartnerMessage(data: unknown): string | null {
     if (n) return n;
   }
   return null;
+}
+
+function summarizePartnerMessage(data: unknown): string {
+  try {
+    if (typeof data === "string") return data.slice(0, 240);
+    return JSON.stringify(data).slice(0, 240);
+  } catch {
+    return String(data);
+  }
 }
 
 function isCrypticPumpPartnerOrigin(origin: string): boolean {
@@ -292,6 +322,9 @@ export function CrypticPumpListButton({
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [iframeStatus, setIframeStatus] = useState<"loading" | "loaded" | "timeout">("loading");
+  /** Debug / ops: last partner postMessage we saw (even if URL could not be parsed). */
+  const [lastPartnerPing, setLastPartnerPing] = useState<string | null>(null);
+  const [handshakeNote, setHandshakeNote] = useState<string | null>(null);
 
   // Absolute public token page → launchUrl query param (partner form prefill).
   const tokenPageUrl = useMemo(
@@ -319,6 +352,7 @@ export function CrypticPumpListButton({
       return;
     }
     setIframeStatus("loading");
+    setHandshakeNote(null);
     // Cross-origin iframes don't fire a reliable error if X-Frame blocks them;
     // if we never get onLoad, surface a fallback after a short wait.
     const t = window.setTimeout(() => {
@@ -333,6 +367,7 @@ export function CrypticPumpListButton({
       if (!normalized) return false;
       setSaving(true);
       setError(null);
+      setHandshakeNote(`Saving listing: ${normalized}`);
       try {
         const saved = await saveCrypticPumpListing({
           chainId,
@@ -343,9 +378,11 @@ export function CrypticPumpListButton({
         });
         onListed(saved);
         setOpen(false);
+        setHandshakeNote(null);
         return true;
       } catch (e: any) {
         setError(e?.message || "Could not save listing");
+        setHandshakeNote(null);
         return false;
       } finally {
         setSaving(false);
@@ -372,17 +409,27 @@ export function CrypticPumpListButton({
     }
   }, [saving, closing, chainId, campaignAddress, onListed]);
 
-  // Partner success handshake (part 2). Modal must stay open; form POST reloads iframe.
+  /**
+   * Partner return handshake — listen whenever this control is mounted (creator token page),
+   * not only while the modal is open. Approval-time messages would otherwise be dropped.
+   */
   useEffect(() => {
-    if (!open) return;
     const onMessage = (event: MessageEvent) => {
       if (!isCrypticPumpPartnerOrigin(String(event.origin || ""))) return;
+      setLastPartnerPing(`${event.origin} · ${summarizePartnerMessage(event.data)}`);
       const listingUrl = extractListingUrlFromPartnerMessage(event.data);
-      if (listingUrl) void persist(listingUrl);
+      if (listingUrl) {
+        setHandshakeNote(`Got listing URL from partner: ${listingUrl}`);
+        void persist(listingUrl);
+        return;
+      }
+      setHandshakeNote(
+        "CrypticPump messaged us, but no listing URL was found in the payload. They need to send listingUrl (or coin.php?ca=… / coin id).",
+      );
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [open, persist]);
+  }, [persist]);
 
   if (listing?.listingUrl) {
     return <CrypticPumpBadge listingUrl={listing.listingUrl} className={className} />;
@@ -451,6 +498,19 @@ export function CrypticPumpListButton({
                   />
                 </div>
                 {error ? <p className="mt-3 text-xs text-orange-300">{error}</p> : null}
+                <div className="mt-3 space-y-1 border border-border/40 bg-muted/10 p-2.5 text-[11px] text-muted-foreground">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-orange-300/90">Return handshake</div>
+                  <p>
+                    Waiting for CrypticPump to <span className="font-mono text-foreground/80">postMessage</span> the
+                    public coin URL after submit (or approval). Until that lands, the badge cannot auto-activate.
+                  </p>
+                  {handshakeNote ? <p className="text-orange-200">{handshakeNote}</p> : null}
+                  {lastPartnerPing ? (
+                    <p className="break-all font-mono text-[10px] text-foreground/70">Last ping: {lastPartnerPing}</p>
+                  ) : (
+                    <p className="text-foreground/50">No postMessage from crypticpump.com received yet this session.</p>
+                  )}
+                </div>
               </div>
 
               <div className="flex shrink-0 flex-col gap-2 border-t border-orange-400/30 bg-black p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
