@@ -151,8 +151,13 @@ function normalizeUintString(value, fallback = "0") {
 function validateGraduationTarget(chainId, graduationTarget) {
   if (graduationTarget === "0") return;
   if (STANDARD_GRADUATION_TARGETS.has(graduationTarget)) return;
-  const testThresholdEnabled = isTruthy(process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD);
-  if (Number(chainId) === 97 && testThresholdEnabled && graduationTarget === TEST_GRADUATION_TARGET) return;
+  const testThresholdEnabled = isTruthy(
+    process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD || "true",
+  );
+  const cid = Number(chainId);
+  if (testThresholdEnabled && (cid === 97 || cid === 101 || cid === 102) && graduationTarget === TEST_GRADUATION_TARGET) {
+    return;
+  }
   throw new Error("Unsupported graduation target");
 }
 

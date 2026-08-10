@@ -59,8 +59,12 @@ function normalizeTarget(chainId, value) {
     throw new Error("graduationTarget must be a uint-compatible value");
   }
   if (STANDARD_TARGETS.has(target)) return target;
-  const testEnabled = isTruthy(process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD);
-  if (Number(chainId) === 97 && testEnabled && target === TEST_TARGET) return target;
+  const testEnabled = isTruthy(
+    process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD || "true",
+  );
+  const cid = Number(chainId);
+  // $6 test threshold: BNB testnet + Solana (matches on-chain devnet generation mask bit 0).
+  if (testEnabled && (cid === 97 || cid === 101 || cid === 102) && target === TEST_TARGET) return target;
   throw new Error("Unsupported graduation target");
 }
 

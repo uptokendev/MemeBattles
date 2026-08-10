@@ -41,16 +41,24 @@ export const TEST_GRADUATION_TIER: GraduationTier = {
   id: "test",
   label: "$6",
   title: "Test grad",
-  description: "BSC Testnet only. Rehearse graduation, LP locking, DEX trading, and fee collection.",
+  description:
+    "Dev/test only (BNB testnet + Solana). Rehearse graduation, LP lock, DEX trading, and fees without a $15k bond.",
   targetWei: TEST_GRADUATION_TARGET_WEI,
   testOnly: true,
 };
 
-export function isTestGraduationTierEnabled(chainId: number): boolean {
-  const raw = String(import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || "").trim().toLowerCase();
-  // BSC testnet (97) and Solana product id (101) when test threshold flag is on.
+/** Chains that may expose the $6 test graduation threshold. */
+export function isTestGraduationChain(chainId: number): boolean {
   const id = Number(chainId);
-  return (id === 97 || id === 101 || id === 102) && TRUE_VALUES.has(raw);
+  return id === 97 || id === 101 || id === 102;
+}
+
+export function isTestGraduationTierEnabled(chainId: number): boolean {
+  if (!isTestGraduationChain(chainId)) return false;
+  const raw = String(import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD ?? "").trim().toLowerCase();
+  // Default ON for test chains when env is unset (same as Create.tsx historical default).
+  if (!raw) return true;
+  return TRUE_VALUES.has(raw);
 }
 
 /** Solana V4 create uses USD micros (1 USD = 1_000_000). BNB UI stores wei-scale USD wad. */
@@ -70,9 +78,21 @@ export function graduationTargetToUsdMicros(targetWei: bigint | string | number)
 }
 
 export function getGraduationTiers(chainId: number): GraduationTier[] {
-  return isTestGraduationTierEnabled(chainId)
-    ? [...STANDARD_GRADUATION_TIERS, TEST_GRADUATION_TIER]
-    : [...STANDARD_GRADUATION_TIERS];
+  const withTest = isTestGraduationTierEnabled(chainId);
+  // Solana devnet generation currently allows only the $6 mask (bit 0). Prefer the
+  // test tier first so creators do not pick $15k/$30k/$50k that on-chain rejects.
+  if (Number(chainId) === 101 || Number(chainId) === 102) {
+    return withTest ? [TEST_GRADUATION_TIER, ...STANDARD_GRADUATION_TIERS] : [...STANDARD_GRADUATION_TIERS];
+  }
+  return withTest ? [...STANDARD_GRADUATION_TIERS, TEST_GRADUATION_TIER] : [...STANDARD_GRADUATION_TIERS];
+}
+
+/** Default selected target: $6 on Solana/test chains when available, else $30K. */
+export function getDefaultGraduationTargetWei(chainId: number): bigint {
+  if (isTestGraduationTierEnabled(chainId) && (Number(chainId) === 101 || Number(chainId) === 102 || Number(chainId) === 97)) {
+    return TEST_GRADUATION_TARGET_WEI;
+  }
+  return DEFAULT_GRADUATION_TARGET_WEI;
 }
 
 export function isSupportedGraduationTarget(chainId: number, targetWei: bigint): boolean {

@@ -80,7 +80,11 @@ function normalizeDraftGraduationTarget(chainId, value) {
     }
   }
   if (STANDARD_GRADUATION_TARGETS.has(target)) return target.toString();
-  if (Number(chainId) === 97 && target === TEST_GRADUATION_TARGET_WEI) return target.toString();
+  // $6 test threshold: BNB testnet (97) and Solana product chains (101/102).
+  const cid = Number(chainId);
+  if ((cid === 97 || cid === 101 || cid === 102) && target === TEST_GRADUATION_TARGET_WEI) {
+    return target.toString();
+  }
   throw new TickerReservationError("Unsupported graduation target for this chain.", { code: "INVALID_GRADUATION_TARGET", httpStatus: 400 });
 }
 

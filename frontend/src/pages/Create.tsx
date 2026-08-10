@@ -24,6 +24,11 @@ import { BNB_CHAIN_ID, getActiveChainId, getChainLabel, getDefaultChainId, isEvm
 import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import {
+  getDefaultGraduationTargetWei,
+  getGraduationTiers,
+  type GraduationTier,
+} from "@/lib/graduationTiers";
+import {
   readScheduledCreatorLaunchEligibility,
   type ScheduledCreatorLaunchEligibility,
 } from "@/lib/scheduledLaunchClientV2";
@@ -55,41 +60,8 @@ const stepSlideVariants = {
 };
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
-const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
-const WAD = 10n ** 18n;
 const TOTAL_STEPS = 5;
-
-const STANDARD_GRADUATION_OPTIONS = [
-  {
-    id: "fast",
-    label: "$15K",
-    title: "Fast grad",
-    description: "Shortest bonding phase for quick graduation tests and high-velocity launches.",
-    targetWei: 15_000n * WAD,
-  },
-  {
-    id: "normal",
-    label: "$30K",
-    title: "Normal bond",
-    description: "Default balanced curve with enough room for launch discovery.",
-    targetWei: 30_000n * WAD,
-  },
-  {
-    id: "deep",
-    label: "$50K",
-    title: "Deep liquidity",
-    description: "Longer bonding phase designed to seed stronger DEX liquidity.",
-    targetWei: 50_000n * WAD,
-  },
-] as const;
-
-const TEST_GRADUATION_OPTION = {
-  id: "test",
-  label: "$6",
-  title: "Test grad",
-  description: "BNB testnet only. Use this to rehearse graduation, LP lock, DEX trading, and fees.",
-  targetWei: 6n * WAD,
-} as const;
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
 type CreateMode = "draft" | "deploy" | null;
 
@@ -151,7 +123,7 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
-  const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(30_000n * WAD);
+  const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(() => getDefaultGraduationTargetWei(BNB_CHAIN_ID));
   const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
   const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
   const armDialogShownForWallet = useRef<string | null>(null);
@@ -160,18 +132,8 @@ const Create = () => {
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
   const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
   const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
-  // BNB testnet always offers $6 test grad. Env can force-hide with =0/false.
-  const testGraduationThresholdEnabled = readFlag(
-    import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD,
-    true,
-  );
-  const graduationOptions = useMemo(
-    () =>
-      chainId === 97 && testGraduationThresholdEnabled
-        ? [...STANDARD_GRADUATION_OPTIONS, TEST_GRADUATION_OPTION]
-        : [...STANDARD_GRADUATION_OPTIONS],
-    [chainId, testGraduationThresholdEnabled],
-  );
+  // BNB testnet (97) + Solana (101): include $6 test grad when flag allows (default on).
+  const graduationOptions: GraduationTier[] = useMemo(() => getGraduationTiers(chainId), [chainId]);
   const configuredBnbChainId = useMemo(() => {
     const configured = getDefaultChainId();
     return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
@@ -230,8 +192,8 @@ const Create = () => {
 
   useEffect(() => {
     const selectedStillAvailable = graduationOptions.some((option) => option.targetWei === graduationTargetWei);
-    if (!selectedStillAvailable) setGraduationTargetWei(30_000n * WAD);
-  }, [graduationOptions, graduationTargetWei]);
+    if (!selectedStillAvailable) setGraduationTargetWei(getDefaultGraduationTargetWei(chainId));
+  }, [graduationOptions, graduationTargetWei, chainId]);
 
   useEffect(() => {
     if (isSolanaCreator || !wallet.account || !wallet.signer || !isEvmChainId(chainId)) {
