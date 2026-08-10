@@ -485,7 +485,13 @@ app.use((req, res) => res.status(404).json({ error: `Unknown route: ${req.path}`
 app.use((err, _req, res, _next) => {
   console.error("[api/server] unhandled", err);
   if (res.headersSent) return;
-  res.status(500).json({ error: "Server error" });
+  // Surface a short message so Solana draft/create failures are debuggable in the browser Network tab.
+  const message = String(err?.message || err || "Server error").slice(0, 300);
+  res.status(500).json({
+    error: "Server error",
+    message,
+    code: err?.code || undefined,
+  });
 });
 
 const port = Number(process.env.PORT || process.env.API_PORT || 3001);

@@ -458,12 +458,28 @@ export async function drafts(req, res) {
   if (!ticker) return json(res, 400, { error: "Draft ticker is required." });
 
   const visibility = VISIBILITIES.has(body.visibility) ? body.visibility : "private";
-  const graduationTargetWei = normalizeDraftGraduationTarget(chainId, body.graduationTargetWei);
+  let graduationTargetWei;
+  try {
+    graduationTargetWei = normalizeDraftGraduationTarget(chainId, body.graduationTargetWei);
+  } catch (error) {
+    return json(res, error?.httpStatus || 400, {
+      error: error?.message || "Unsupported graduation target for this chain.",
+      code: error?.code || "INVALID_GRADUATION_TARGET",
+    });
+  }
   const now = new Date().toISOString();
   const pool = await getPool();
 
   const authOk = await requireDraftActionAuth({ res, pool, auth: body.auth, expectedWallet: creatorWallet, chainId, action: "create_draft" });
   if (!authOk) return;
+
+  // Prefer explicit Solana cluster from client or env (devnet vs mainnet-beta).
+  const reservationCluster =
+    body.cluster ||
+    body.networkCluster ||
+    (Number(chainId) === 101 || Number(chainId) === 102
+      ? process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-devnet"
+      : "");
 
   if (pool) {
     try {
@@ -500,7 +516,7 @@ export async function drafts(req, res) {
           draftId: draft.id,
           creatorWallet,
           chainId,
-          cluster: body.cluster || body.networkCluster || "",
+          cluster: reservationCluster,
           ticker,
           published: visibility === "public",
         });
@@ -525,13 +541,29 @@ export async function drafts(req, res) {
       });
       return json(res, 201, created);
     } catch (error) {
-      if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+      if (
+        error instanceof TickerReservationError ||
+        error?.name === "TickerReservationError" ||
+        isTickerReservationConflict(error)
+      ) {
         return json(res, error.httpStatus || 409, {
           error: error.message || "Ticker already reserved by an active draft or live campaign.",
           code: error.code || "TICKER_UNAVAILABLE",
         });
       }
-      throw error;
+      console.error("[drafts] create failed", {
+        message: error?.message,
+        code: error?.code,
+        detail: error?.detail,
+        constraint: error?.constraint,
+        chainId,
+        creatorWallet,
+      });
+      return json(res, 500, {
+        error: "Server error",
+        message: String(error?.message || error),
+        code: error?.code || "DRAFT_CREATE_FAILED",
+      });
     }
   }
 

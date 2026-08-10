@@ -400,6 +400,10 @@ const Create = () => {
         otherUrl: formData.otherLink || null,
         graduationTargetWei: graduationTargetWei.toString(),
         visibility: "private",
+        // Keep Solana reservations on the same cluster as create-auth (Railway SOLANA_CLUSTER).
+        ...(isSolanaCreator
+          ? { cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-devnet") }
+          : {}),
       });
       cacheDraftLogo(draft.id, logoUrl);
       toast.success(isSolanaCreator ? "Solana draft signed and saved. No gas spent." : "Draft saved. No gas spent.");

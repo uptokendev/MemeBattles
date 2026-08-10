@@ -261,8 +261,14 @@ export async function signSolanaMessage(message: string, walletAddress?: string)
   if (walletAddress && normalizePublicKey(walletAddress) !== publicKey) throw new Error("Connected Solana wallet does not match the selected payout wallet.");
 
   const encoded = new TextEncoder().encode(message);
-  const signed = await provider.signMessage(encoded, "utf8");
-  const signature = signed instanceof Uint8Array ? signed : signed.signature;
+  const signed = await provider.signMessage(encoded);
+  const rawSig = signed instanceof Uint8Array ? signed : signed?.signature;
+  const signature =
+    rawSig instanceof Uint8Array
+      ? rawSig
+      : rawSig?.buffer
+        ? new Uint8Array(rawSig.buffer, rawSig.byteOffset || 0, rawSig.byteLength || rawSig.length)
+        : null;
   if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
 
   notifySolanaWalletChanged(publicKey, detectSolanaWallets().find((wallet) => wallet.id === storedId) || null);
@@ -344,8 +350,15 @@ export async function signSolanaDraftAction(input: {
 
   const message = lines.join("\n");
   const encoded = new TextEncoder().encode(message);
-  const signed = await provider.signMessage(encoded, "utf8");
-  const signature = signed instanceof Uint8Array ? signed : signed.signature;
+  // Phantom: signMessage(Uint8Array) only — a second "utf8" arg can break some extension versions.
+  const signed = await provider.signMessage(encoded);
+  const rawSig = signed instanceof Uint8Array ? signed : signed?.signature;
+  const signature =
+    rawSig instanceof Uint8Array
+      ? rawSig
+      : rawSig?.buffer
+        ? new Uint8Array(rawSig.buffer, rawSig.byteOffset || 0, rawSig.byteLength || rawSig.length)
+        : null;
   if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
 
   notifySolanaWalletChanged(walletAddress, detectedWallet);
