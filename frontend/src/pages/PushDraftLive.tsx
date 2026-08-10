@@ -233,32 +233,87 @@ export default function PushDraftLive() {
         launchAt = at;
       }
 
-      const deployAuth = await signSolanaDraftAction({
+      // One draft_owner_session signature covers authorize + mark-deploy.
+      // A one-shot deploy_draft nonce is consumed on authorize and then 401s on mark.
+      const { clearSolanaDraftOwnerSession } = await import("@/lib/solanaWallet");
+      let deployAuth = await signSolanaDraftAction({
         walletAddress: solanaWallet.solanaAccount,
         chainId: Number(draft.chainId),
         action: "deploy_draft",
         draftId: draft.id,
       });
 
-      const authorization = await requestSolanaCreateAuthorizationV4({
-        draftId: draft.id,
-        auth: deployAuth,
-        graduationTargetUsdMicros,
-        launchAt,
-      });
+      const refreshDeployAuth = async () => {
+        clearSolanaDraftOwnerSession({
+          walletAddress: solanaWallet.solanaAccount!,
+          chainId: Number(draft.chainId),
+          draftId: draft.id,
+        });
+        deployAuth = await signSolanaDraftAction({
+          walletAddress: solanaWallet.solanaAccount!,
+          chainId: Number(draft.chainId),
+          action: "deploy_draft",
+          draftId: draft.id,
+          forceNewOwnerSession: true,
+        });
+        return deployAuth;
+      };
+
+      let authorization;
+      try {
+        authorization = await requestSolanaCreateAuthorizationV4({
+          draftId: draft.id,
+          auth: deployAuth,
+          graduationTargetUsdMicros,
+          launchAt,
+        });
+      } catch (authErr: any) {
+        const msg = String(authErr?.message || authErr || "");
+        if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
+          await refreshDeployAuth();
+          authorization = await requestSolanaCreateAuthorizationV4({
+            draftId: draft.id,
+            auth: deployAuth,
+            graduationTargetUsdMicros,
+            launchAt,
+          });
+        } else {
+          throw authErr;
+        }
+      }
 
       const created = await submitSolanaV4CreateFromAuthorization(authorization, {
         creatorAddress: solanaWallet.solanaAccount,
       });
 
-      await markDraftDeployment({
-        draftId: draft.id,
-        auth: deployAuth,
-        campaignAddress: created.campaignAddress,
-        tokenAddress: created.mintAddress,
-        deployTxHash: created.signature,
-        scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
-      });
+      // Reuse the same owner-session credential (nonce already consumed on first use;
+      // subsequent calls hit draft_owner_sessions, not auth_nonces).
+      try {
+        await markDraftDeployment({
+          draftId: draft.id,
+          auth: deployAuth,
+          campaignAddress: created.campaignAddress,
+          tokenAddress: created.mintAddress,
+          deployTxHash: created.signature,
+          scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+        });
+      } catch (markErr: any) {
+        const msg = String(markErr?.message || markErr || "");
+        if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
+          // On-chain create already succeeded — only re-auth finalize, do not re-create.
+          await refreshDeployAuth();
+          await markDraftDeployment({
+            draftId: draft.id,
+            auth: deployAuth,
+            campaignAddress: created.campaignAddress,
+            tokenAddress: created.mintAddress,
+            deployTxHash: created.signature,
+            scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+          });
+        } else {
+          throw markErr;
+        }
+      }
 
       toast.success(
         mode === "scheduled"

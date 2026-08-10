@@ -306,11 +306,164 @@ function resolveSolanaProviderForAddress(walletAddress?: string): { provider: So
   return { provider: fallback.provider, wallet: fallback };
 }
 
+const SOLANA_OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
+const SOLANA_OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
+  "read_draft",
+  "save_promotion",
+  "publish_promotion",
+  "archive_draft",
+  "deploy_draft",
+  "manage_ticker_reservation",
+]);
+const SOLANA_OWNER_SESSION_CACHE_PREFIX = "mwz:solana-draft-owner-session:v1:";
+const SOLANA_OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
+const SOLANA_OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
+const SOLANA_OWNER_SESSION_IN_FLIGHT = new Map<string, Promise<DraftActionAuth & { walletType: "solana" }>>();
+
+function solanaOwnerSessionCacheKey(input: { walletAddress: string; chainId: number; draftId: string }) {
+  // Solana addresses are case-sensitive — never lowercase the cache key.
+  return `${SOLANA_OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizePublicKey(input.walletAddress)}:${input.draftId}`;
+}
+
+function readSolanaOwnerSession(input: {
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+}): (DraftActionAuth & { walletType: "solana" }) | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(solanaOwnerSessionCacheKey(input));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      auth?: DraftActionAuth & { walletType?: "solana" };
+      cachedAt?: number;
+      expiresAt?: string | null;
+    };
+    const auth = parsed?.auth;
+    const now = Date.now();
+    const cachedAt = Number(parsed.cachedAt || 0);
+    const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+    if (!auth || auth.action !== SOLANA_OWNER_SESSION_ACTION) return null;
+    if (normalizePublicKey(auth.walletAddress) !== normalizePublicKey(input.walletAddress)) return null;
+    if (Number(auth.chainId) !== Number(input.chainId)) return null;
+    if (String(auth.draftId || "") !== input.draftId) return null;
+    if (!auth.nonce || !auth.message || !auth.signature) return null;
+    if (cachedAt <= 0 || now - cachedAt > SOLANA_OWNER_SESSION_MAX_AGE_MS) return null;
+    if (expiresAtMs && expiresAtMs <= now + SOLANA_OWNER_SESSION_SAFETY_WINDOW_MS) return null;
+    return { ...auth, walletType: "solana" as const };
+  } catch {
+    return null;
+  }
+}
+
+function cacheSolanaOwnerSession(input: {
+  auth: DraftActionAuth & { walletType: "solana" };
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+  expiresAt: string | null;
+}) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(
+      solanaOwnerSessionCacheKey(input),
+      JSON.stringify({ auth: input.auth, cachedAt: Date.now(), expiresAt: input.expiresAt }),
+    );
+  } catch {
+    // Ignore storage failures; user can re-sign.
+  }
+}
+
+export function clearSolanaDraftOwnerSession(input: {
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+}) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(solanaOwnerSessionCacheKey(input));
+  } catch {
+    // ignore
+  }
+  SOLANA_OWNER_SESSION_IN_FLIGHT.delete(solanaOwnerSessionCacheKey(input));
+}
+
+async function createSignedSolanaDraftAction(input: {
+  provider: SolanaProvider;
+  detectedWallet: DetectedSolanaWallet | null;
+  walletAddress: string;
+  chainId: number;
+  action: DraftAuthAction;
+  draftId: string | null;
+}): Promise<DraftActionAuth & { walletType: "solana" }> {
+  const { provider, detectedWallet, walletAddress, chainId, draftId } = input;
+
+  // Fetch nonce immediately before signing so nothing else can replace it
+  // (auth_nonces is unique on chain_id + address).
+  const nonce = await fetchNonce(chainId, walletAddress);
+  const lines = [
+    "MemeWarzone Prepare Mode",
+    `Action: ${input.action}`,
+    `Wallet: ${walletAddress}`,
+    `Chain ID: ${chainId}`,
+  ];
+  if (draftId) lines.push(`Draft ID: ${draftId}`);
+  lines.push(`Nonce: ${nonce}`);
+
+  const message = lines.join("\n");
+  const encoded = new TextEncoder().encode(message);
+  // Phantom: signMessage(Uint8Array) only — a second "utf8" arg can break some extension versions.
+  const signed = await provider.signMessage(encoded);
+  const rawSig = signed instanceof Uint8Array ? signed : signed?.signature;
+  const signature =
+    rawSig instanceof Uint8Array
+      ? rawSig
+      : rawSig?.buffer
+        ? new Uint8Array(rawSig.buffer, rawSig.byteOffset || 0, rawSig.byteLength || rawSig.length)
+        : null;
+  if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
+
+  notifySolanaWalletChanged(walletAddress, detectedWallet);
+
+  const auth: DraftActionAuth & { walletType: "solana" } = {
+    walletType: "solana",
+    action: input.action,
+    walletAddress,
+    chainId,
+    draftId,
+    nonce,
+    message,
+    signature: bytesToBase64(signature),
+  };
+
+  if (input.action === SOLANA_OWNER_SESSION_ACTION && draftId) {
+    // expiresAt is not returned from fetchNonce here; session server TTL still applies on first use.
+    cacheSolanaOwnerSession({
+      auth,
+      walletAddress,
+      chainId,
+      draftId,
+      expiresAt: null,
+    });
+  }
+
+  return auth;
+}
+
+/**
+ * Sign a Solana draft action.
+ *
+ * For draft-scoped actions (including deploy_draft), reuses a cached
+ * `draft_owner_session` signature so authorize + mark-deploy can share one
+ * wallet popup. auth_nonces is unique per (chain_id, address) — consuming the
+ * same one-shot deploy_draft nonce twice always 401s.
+ */
 export async function signSolanaDraftAction(input: {
   walletAddress: string;
   chainId: number;
   action: DraftAuthAction;
   draftId?: string | null;
+  forceNewOwnerSession?: boolean;
 }): Promise<DraftActionAuth & { walletType: "solana" }> {
   const { provider, wallet: detectedWallet } = resolveSolanaProviderForAddress(input.walletAddress);
 
@@ -335,41 +488,42 @@ export async function signSolanaDraftAction(input: {
 
   const chainId = Number(input.chainId);
   const draftId = input.draftId || null;
-  // Fetch nonce immediately before signing so nothing else can replace it
-  // (auth_nonces is unique on chain_id + address).
-  const nonce = await fetchNonce(chainId, walletAddress);
-  const lines = [
-    "MemeWarzone Prepare Mode",
-    `Action: ${input.action}`,
-    `Wallet: ${walletAddress}`,
-    `Chain ID: ${chainId}`,
-  ];
+  const useOwnerSession = Boolean(draftId && SOLANA_OWNER_SESSION_ACTIONS.has(input.action));
 
-  if (draftId) lines.push(`Draft ID: ${draftId}`);
-  lines.push(`Nonce: ${nonce}`);
+  if (!useOwnerSession || !draftId) {
+    return createSignedSolanaDraftAction({
+      provider,
+      detectedWallet,
+      walletAddress,
+      chainId,
+      action: input.action,
+      draftId,
+    });
+  }
 
-  const message = lines.join("\n");
-  const encoded = new TextEncoder().encode(message);
-  // Phantom: signMessage(Uint8Array) only — a second "utf8" arg can break some extension versions.
-  const signed = await provider.signMessage(encoded);
-  const rawSig = signed instanceof Uint8Array ? signed : signed?.signature;
-  const signature =
-    rawSig instanceof Uint8Array
-      ? rawSig
-      : rawSig?.buffer
-        ? new Uint8Array(rawSig.buffer, rawSig.byteOffset || 0, rawSig.byteLength || rawSig.length)
-        : null;
-  if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
+  const cacheInput = { walletAddress, chainId, draftId };
+  if (input.forceNewOwnerSession) {
+    clearSolanaDraftOwnerSession(cacheInput);
+  } else {
+    const cached = readSolanaOwnerSession(cacheInput);
+    if (cached) return cached;
+  }
 
-  notifySolanaWalletChanged(walletAddress, detectedWallet);
-  return {
-    walletType: "solana",
-    action: input.action,
+  const inFlightKey = solanaOwnerSessionCacheKey(cacheInput);
+  const existing = SOLANA_OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
+  if (existing) return existing;
+
+  const signing = createSignedSolanaDraftAction({
+    provider,
+    detectedWallet,
     walletAddress,
     chainId,
+    action: SOLANA_OWNER_SESSION_ACTION,
     draftId,
-    nonce,
-    message,
-    signature: bytesToBase64(signature),
-  };
+  }).finally(() => {
+    SOLANA_OWNER_SESSION_IN_FLIGHT.delete(inFlightKey);
+  });
+
+  SOLANA_OWNER_SESSION_IN_FLIGHT.set(inFlightKey, signing);
+  return signing;
 }
