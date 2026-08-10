@@ -4,14 +4,23 @@ use anchor_lang::{
         ed25519_program,
         hash::hash,
         instruction::Instruction,
+        program::{invoke, invoke_signed},
         program_option::COption,
+        program_pack::Pack,
+        system_instruction,
         sysvar::instructions::{
             load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
         },
     },
 };
 use anchor_spl::token::{
-    self, spl_token::instruction::AuthorityType, Mint, MintTo, SetAuthority, Token, TokenAccount,
+    self,
+    spl_token::{
+        self,
+        instruction::AuthorityType,
+        state::{Account as SplTokenAccount, Mint as SplMint},
+    },
+    MintTo, SetAuthority,
 };
 
 use crate::{
@@ -39,85 +48,53 @@ const ED25519_SIGNATURE_SIZE: usize = 64;
 const ED25519_PUBLIC_KEY_SIZE: usize = 32;
 const ED25519_CURRENT_INSTRUCTION: u16 = u16::MAX;
 
+// BPF stack is limited to 4KB. Avoid large `init` + Account<> work in try_accounts:
+// protocol PDAs and campaign-owned accounts are created/loaded in the handler.
 #[derive(Accounts)]
 #[instruction(args: CreateCampaignArgs)]
 pub struct CreateCampaign<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
+    /// CHECK: global config PDA; owner/data checked when typed in handler.
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump)]
+    pub global_config: UncheckedAccount<'info>,
+    /// CHECK: generation config; seeds + typed load in handler.
+    pub generation_config: UncheckedAccount<'info>,
+    /// CHECK: creator profile PDA; typed load in handler.
+    #[account(mut, seeds = [CREATOR_PROFILE_SEED, creator.key().as_ref()], bump)]
+    pub creator_profile: UncheckedAccount<'info>,
+    /// CHECK: risk profile PDA; typed load in handler.
+    #[account(seeds = [RISK_PROFILE_SEED, creator.key().as_ref()], bump)]
+    pub risk_profile: UncheckedAccount<'info>,
+    /// CHECK: cluster profile; PDA seeds verified in handler via risk.cluster_id.
+    pub cluster_profile: UncheckedAccount<'info>,
+    /// CHECK: campaign PDA; created in handler (avoids huge Account stack in try_accounts).
+    #[account(mut, seeds = [CAMPAIGN_SEED, args.campaign_id.as_ref()], bump)]
+    pub campaign: UncheckedAccount<'info>,
+    /// CHECK: mint PDA; created + initialize_mint in handler (init constraints blow the BPF stack
+    /// and corrupted account mapping — GlobalConfig was observed as Instructions sysvar).
+    #[account(mut, seeds = [CAMPAIGN_MINT_SEED, args.campaign_id.as_ref()], bump)]
+    pub mint: UncheckedAccount<'info>,
+    /// CHECK: token vault PDA; created + initialize_account in handler.
+    #[account(mut, seeds = [TOKEN_VAULT_SEED, args.campaign_id.as_ref()], bump)]
+    pub token_vault: UncheckedAccount<'info>,
+    /// CHECK: SOL vault PDA; created in handler.
+    #[account(mut, seeds = [SOL_VAULT_SEED, args.campaign_id.as_ref()], bump)]
+    pub sol_vault: UncheckedAccount<'info>,
+    /// CHECK: create-auth PDA; created in handler.
     #[account(
         mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-    #[account(
-        seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
-        bump = generation_config.bump
-    )]
-    pub generation_config: Box<Account<'info, GenerationConfig>>,
-    #[account(
-        mut,
-        seeds = [CREATOR_PROFILE_SEED, creator.key().as_ref()],
-        bump = creator_profile.bump
-    )]
-    pub creator_profile: Box<Account<'info, CreatorProfile>>,
-    #[account(
-        seeds = [RISK_PROFILE_SEED, creator.key().as_ref()],
-        bump = risk_profile.bump
-    )]
-    pub risk_profile: Box<Account<'info, RiskProfile>>,
-    #[account(
-        seeds = [CLUSTER_PROFILE_SEED, risk_profile.cluster_id.as_ref()],
-        bump = cluster_profile.bump
-    )]
-    pub cluster_profile: Box<Account<'info, ClusterProfile>>,
-    #[account(
-        init,
-        payer = creator,
-        space = 8 + Campaign::INIT_SPACE,
-        seeds = [CAMPAIGN_SEED, args.campaign_id.as_ref()],
-        bump
-    )]
-    pub campaign: Box<Account<'info, Campaign>>,
-    #[account(
-        init,
-        payer = creator,
-        seeds = [CAMPAIGN_MINT_SEED, args.campaign_id.as_ref()],
-        bump,
-        mint::decimals = generation_config.token_decimals,
-        mint::authority = campaign
-    )]
-    pub mint: Box<Account<'info, Mint>>,
-    #[account(
-        init,
-        payer = creator,
-        seeds = [TOKEN_VAULT_SEED, args.campaign_id.as_ref()],
-        bump,
-        token::mint = mint,
-        token::authority = campaign
-    )]
-    pub token_vault: Box<Account<'info, TokenAccount>>,
-    #[account(
-        init,
-        payer = creator,
-        space = 8 + CampaignSolVault::INIT_SPACE,
-        seeds = [SOL_VAULT_SEED, args.campaign_id.as_ref()],
-        bump
-    )]
-    pub sol_vault: Box<Account<'info, CampaignSolVault>>,
-    #[account(
-        init,
-        payer = creator,
-        space = 8 + CreateAuthorization::INIT_SPACE,
         seeds = [CREATE_AUTH_SEED, creator.key().as_ref(), args.nonce.as_ref()],
         bump
     )]
-    pub create_authorization: Box<Account<'info, CreateAuthorization>>,
+    pub create_authorization: UncheckedAccount<'info>,
     /// CHECK: The address constraint pins this account to the Instructions sysvar.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
     pub instructions: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
+    /// CHECK: SPL Token program.
+    pub token_program: UncheckedAccount<'info>,
+    /// CHECK: System program.
+    pub system_program: UncheckedAccount<'info>,
 }
 
 #[account]
@@ -253,55 +230,170 @@ pub struct CampaignCreated {
     pub created_at: i64,
 }
 
+fn create_token_program_account<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    space: usize,
+    signer_seeds: &[&[u8]],
+    rent: &Rent,
+) -> Result<()> {
+    require_keys_eq!(*token_program.key, token::ID, LaunchpadError::InvalidCampaign);
+    require!(account.lamports() == 0, LaunchpadError::InvalidCampaign);
+    require!(account.data_is_empty(), LaunchpadError::InvalidCampaign);
+    let lamports = rent.minimum_balance(space);
+    let ix = system_instruction::create_account(
+        payer.key,
+        account.key,
+        lamports,
+        space as u64,
+        &token::ID,
+    );
+    invoke_signed(
+        &ix,
+        &[payer.clone(), account.clone(), system_program.clone()],
+        &[signer_seeds],
+    )?;
+    Ok(())
+}
+
+fn create_program_account<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    signer_seeds: &[&[u8]],
+) -> Result<()> {
+    require!(account.lamports() == 0, LaunchpadError::InvalidCampaign);
+    require!(account.data_is_empty(), LaunchpadError::InvalidCampaign);
+    let rent = Rent::get()?;
+    let lamports = rent.minimum_balance(space);
+    let ix = system_instruction::create_account(
+        payer.key,
+        account.key,
+        lamports,
+        space as u64,
+        &crate::ID,
+    );
+    invoke_signed(
+        &ix,
+        &[payer.clone(), account.clone(), system_program.clone()],
+        &[signer_seeds],
+    )?;
+    Ok(())
+}
+
 pub fn create_campaign_handler(
     ctx: &mut Context<CreateCampaign>,
     args: &CreateCampaignArgs,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let now = clock.unix_timestamp;
+
+    // Owned deserializations from UncheckedAccount PDAs (avoids try_accounts stack bloat
+    // and Account<> lifetime coupling to Context).
     let generation_key = ctx.accounts.generation_config.key();
+    let cluster_key = ctx.accounts.cluster_profile.key();
+
+    let global_config = {
+        let data = ctx.accounts.global_config.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        GlobalConfig::try_deserialize(&mut slice)?
+    };
+    let generation_config = {
+        let data = ctx.accounts.generation_config.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        GenerationConfig::try_deserialize(&mut slice)?
+    };
+    let mut creator_profile = {
+        let data = ctx.accounts.creator_profile.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        CreatorProfile::try_deserialize(&mut slice)?
+    };
+    let risk_profile = {
+        let data = ctx.accounts.risk_profile.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        RiskProfile::try_deserialize(&mut slice)?
+    };
+    let cluster_profile = {
+        let data = ctx.accounts.cluster_profile.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        ClusterProfile::try_deserialize(&mut slice)?
+    };
+
+    // generation PDA seeds: ["generation", generation_id]
+    {
+        let (expected_generation, _) = Pubkey::find_program_address(
+            &[
+                GENERATION_CONFIG_SEED,
+                generation_config.generation_id.as_ref(),
+            ],
+            &crate::ID,
+        );
+        require_keys_eq!(
+            generation_key,
+            expected_generation,
+            LaunchpadError::InvalidCampaign
+        );
+    }
+    // cluster PDA seeds: ["cluster", risk.cluster_id]
+    {
+        let (expected_cluster, _) = Pubkey::find_program_address(
+            &[CLUSTER_PROFILE_SEED, risk_profile.cluster_id.as_ref()],
+            &crate::ID,
+        );
+        require_keys_eq!(cluster_key, expected_cluster, LaunchpadError::InvalidCampaign);
+    }
+
     let campaign_key = ctx.accounts.campaign.key();
     let mint_key = ctx.accounts.mint.key();
     let token_vault_key = ctx.accounts.token_vault.key();
     let sol_vault_key = ctx.accounts.sol_vault.key();
     let token_program_key = ctx.accounts.token_program.key();
     let creator_key = ctx.accounts.creator.key();
-    let route_signer = ctx.accounts.global_config.route_signer;
+    let route_signer = global_config.route_signer;
 
-    require_create_enabled(&ctx.accounts.global_config)?;
-    validate_campaign_generation(
-        &ctx.accounts.global_config,
-        generation_key,
-        &ctx.accounts.generation_config,
-    )?;
+    require_create_enabled(&global_config)?;
+    validate_campaign_generation(&global_config, generation_key, &generation_config)?;
     let launch_at = validate_create_args(&args, now)?;
-    validate_graduation_target(
-        &ctx.accounts.generation_config,
-        args.graduation_target_usd_micros,
-    )?;
-    validate_creator_can_launch(&ctx.accounts.creator_profile, now)?;
-    validate_create_risk_profiles(
-        creator_key,
-        &ctx.accounts.risk_profile,
-        &ctx.accounts.cluster_profile,
-    )?;
+    validate_graduation_target(&generation_config, args.graduation_target_usd_micros)?;
+    validate_creator_can_launch(&creator_profile, now)?;
+    validate_create_risk_profiles(creator_key, &risk_profile, &cluster_profile)?;
 
-    let creator_buy_lock_seconds = ctx.accounts.creator_profile.creator_buy_lock_seconds;
-    let creator_buy_cap_bps = ctx.accounts.creator_profile.creator_buy_cap_bps;
-    let risk_cluster_id = ctx.accounts.risk_profile.cluster_id;
+    // Token mint is program-created with generation decimals (no Anchor init constraints —
+    // those exceeded the BPF stack and corrupted CreateCampaign account mapping).
+    require!(
+        generation_config.token_decimals > 0,
+        LaunchpadError::InvalidCampaign
+    );
+    require_keys_eq!(
+        *ctx.accounts.token_program.key,
+        token::ID,
+        LaunchpadError::InvalidCampaign
+    );
+    require_keys_eq!(
+        *ctx.accounts.system_program.key,
+        anchor_lang::system_program::ID,
+        LaunchpadError::InvalidCampaign
+    );
+
+    let creator_buy_lock_seconds = creator_profile.creator_buy_lock_seconds;
+    let creator_buy_cap_bps = creator_profile.creator_buy_cap_bps;
+    let risk_cluster_id = risk_profile.cluster_id;
     let creator_buy_lock_until = launch_at
         .checked_add(i64::from(creator_buy_lock_seconds))
         .ok_or(LaunchpadError::MathOverflow)?;
     let allocation = calculate_token_allocation(
-        ctx.accounts.generation_config.token_total_supply,
-        ctx.accounts.generation_config.curve_supply_bps,
-        ctx.accounts.generation_config.liquidity_token_bps,
+        generation_config.token_total_supply,
+        generation_config.curve_supply_bps,
+        generation_config.liquidity_token_bps,
     )?;
 
     let authorization_message = build_create_authorization_message(
         crate::id(),
         generation_key,
-        &ctx.accounts.generation_config,
+        &generation_config,
         creator_key,
         risk_cluster_id,
         creator_buy_lock_seconds,
@@ -325,134 +417,238 @@ pub fn create_campaign_handler(
         &authorization_hash,
     )?;
 
-    {
-        let generation = &ctx.accounts.generation_config;
-        let campaign = &mut ctx.accounts.campaign;
-        campaign.campaign_id = args.campaign_id;
-        campaign.generation_id = generation.generation_id;
-        campaign.generation_config = generation_key;
-        campaign.generation_manifest_hash = generation.manifest_hash;
-        campaign.creator = creator_key;
-        campaign.mint = mint_key;
-        campaign.token_vault = token_vault_key;
-        campaign.sol_vault = sol_vault_key;
-        campaign.metadata_hash = args.metadata_hash;
-        campaign.cluster_hash = args.cluster_hash;
-        campaign.ticker_hash = args.ticker_hash;
-        campaign.reservation_id_hash = args.reservation_id_hash;
-        campaign.reservation_version = args.reservation_version;
-        campaign.launch_at = launch_at;
-        campaign.graduation_target_usd_micros = args.graduation_target_usd_micros;
-        campaign.cluster_kind = generation.cluster_kind;
-        campaign.economics_version = generation.economics_version;
-        campaign.curve_kind = generation.curve_kind;
-        campaign.token_total_supply = generation.token_total_supply;
-        campaign.curve_token_supply = allocation.curve_tokens;
-        campaign.liquidity_token_supply = allocation.liquidity_tokens;
-        campaign.reserve_token_supply = allocation.reserve_tokens;
-        campaign.token_decimals = generation.token_decimals;
-        campaign.curve_supply_bps = generation.curve_supply_bps;
-        campaign.liquidity_token_bps = generation.liquidity_token_bps;
-        campaign.base_price_lamports = generation.base_price_lamports;
-        campaign.price_slope_lamports = generation.price_slope_lamports;
-        campaign.buy_fee_bps = generation.buy_fee_bps;
-        campaign.sell_fee_bps = generation.sell_fee_bps;
-        campaign.finalize_fee_bps = generation.finalize_fee_bps;
-        campaign.creator_post_finalize_bps = generation.creator_post_finalize_bps;
-        campaign.liquidity_post_finalize_bps = generation.liquidity_post_finalize_bps;
-        campaign.dex_adapter = generation.dex_adapter;
-        campaign.trade_route_profile = generation.trade_route_profile;
-        campaign.finalize_route_profile = generation.finalize_route_profile;
-        campaign.treasury_profile = generation.treasury_profile;
-        campaign.dex_profile = generation.dex_profile;
-        campaign.oracle_profile = generation.oracle_profile;
-        campaign.creator_buy_lock_until = creator_buy_lock_until;
-        campaign.creator_buy_cap_bps = creator_buy_cap_bps;
-        campaign.created_at = now;
-        campaign.sold_tokens = 0;
-        campaign.net_raised_lamports = 0;
-        campaign.total_buy_volume_lamports = 0;
-        campaign.total_sell_volume_lamports = 0;
-        campaign.buyer_count = 0;
-        campaign.creator_bought_tokens = 0;
-        campaign.asset_initialization_version = ASSET_INITIALIZATION_VERSION;
-        campaign.mint_authority_revoked = false;
-        campaign.graduated = false;
-        campaign.bump = ctx.bumps.campaign;
-        campaign.mint_bump = ctx.bumps.mint;
-        campaign.token_vault_bump = ctx.bumps.token_vault;
-        campaign.sol_vault_bump = ctx.bumps.sol_vault;
-    }
-
-    {
-        let sol_vault = &mut ctx.accounts.sol_vault;
-        sol_vault.campaign = campaign_key;
-        sol_vault.generation_id = ctx.accounts.generation_config.generation_id;
-        sol_vault.created_at = now;
-        sol_vault.bump = ctx.bumps.sol_vault;
-    }
-
     let campaign_bump_seed = [ctx.bumps.campaign];
-    let campaign_signer_seeds: &[&[u8]] = &[
+    let mint_bump_seed = [ctx.bumps.mint];
+    let token_vault_bump_seed = [ctx.bumps.token_vault];
+    let sol_vault_bump_seed = [ctx.bumps.sol_vault];
+    let create_auth_bump_seed = [ctx.bumps.create_authorization];
+    let campaign_seeds: &[&[u8]] = &[
         CAMPAIGN_SEED,
         args.campaign_id.as_ref(),
         &campaign_bump_seed,
     ];
-    let campaign_signer = &[campaign_signer_seeds];
+    let mint_seeds: &[&[u8]] = &[
+        CAMPAIGN_MINT_SEED,
+        args.campaign_id.as_ref(),
+        &mint_bump_seed,
+    ];
+    let token_vault_seeds: &[&[u8]] = &[
+        TOKEN_VAULT_SEED,
+        args.campaign_id.as_ref(),
+        &token_vault_bump_seed,
+    ];
+    let sol_vault_seeds: &[&[u8]] = &[
+        SOL_VAULT_SEED,
+        args.campaign_id.as_ref(),
+        &sol_vault_bump_seed,
+    ];
+    let create_auth_seeds: &[&[u8]] = &[
+        CREATE_AUTH_SEED,
+        creator_key.as_ref(),
+        args.nonce.as_ref(),
+        &create_auth_bump_seed,
+    ];
+
+    let payer_info = ctx.accounts.creator.to_account_info();
+    let system_info = ctx.accounts.system_program.to_account_info();
+    let token_program_info = ctx.accounts.token_program.to_account_info();
+    let mint_info = ctx.accounts.mint.to_account_info();
+    let token_vault_info = ctx.accounts.token_vault.to_account_info();
+    let campaign_info = ctx.accounts.campaign.to_account_info();
+    let rent = Rent::get()?;
+
+    // Mint + vault before campaign body so supply minting can run with campaign PDA signer.
+    create_token_program_account(
+        &payer_info,
+        &mint_info,
+        &system_info,
+        &token_program_info,
+        SplMint::LEN,
+        mint_seeds,
+        &rent,
+    )?;
+    // initialize_mint2 / initialize_account3 avoid the Rent sysvar (stack/account pressure).
+    invoke(
+        &spl_token::instruction::initialize_mint2(
+            &token::ID,
+            &mint_key,
+            &campaign_key,
+            None,
+            generation_config.token_decimals,
+        )?,
+        &[mint_info.clone()],
+    )?;
+
+    create_token_program_account(
+        &payer_info,
+        &token_vault_info,
+        &system_info,
+        &token_program_info,
+        SplTokenAccount::LEN,
+        token_vault_seeds,
+        &rent,
+    )?;
+    invoke(
+        &spl_token::instruction::initialize_account3(
+            &token::ID,
+            &token_vault_key,
+            &mint_key,
+            &campaign_key,
+        )?,
+        &[token_vault_info.clone(), mint_info.clone()],
+    )?;
+
+    create_program_account(
+        &payer_info,
+        &campaign_info,
+        &system_info,
+        8 + Campaign::INIT_SPACE,
+        campaign_seeds,
+    )?;
+    create_program_account(
+        &payer_info,
+        &ctx.accounts.sol_vault.to_account_info(),
+        &system_info,
+        8 + CampaignSolVault::INIT_SPACE,
+        sol_vault_seeds,
+    )?;
+    create_program_account(
+        &payer_info,
+        &ctx.accounts.create_authorization.to_account_info(),
+        &system_info,
+        8 + CreateAuthorization::INIT_SPACE,
+        create_auth_seeds,
+    )?;
+
+    let generation = &generation_config;
+    let mut campaign = Campaign {
+        campaign_id: args.campaign_id,
+        generation_id: generation.generation_id,
+        generation_config: generation_key,
+        generation_manifest_hash: generation.manifest_hash,
+        creator: creator_key,
+        mint: mint_key,
+        token_vault: token_vault_key,
+        sol_vault: sol_vault_key,
+        metadata_hash: args.metadata_hash,
+        cluster_hash: args.cluster_hash,
+        ticker_hash: args.ticker_hash,
+        reservation_id_hash: args.reservation_id_hash,
+        reservation_version: args.reservation_version,
+        launch_at,
+        graduation_target_usd_micros: args.graduation_target_usd_micros,
+        cluster_kind: generation.cluster_kind,
+        economics_version: generation.economics_version,
+        curve_kind: generation.curve_kind,
+        token_total_supply: generation.token_total_supply,
+        curve_token_supply: allocation.curve_tokens,
+        liquidity_token_supply: allocation.liquidity_tokens,
+        reserve_token_supply: allocation.reserve_tokens,
+        token_decimals: generation.token_decimals,
+        curve_supply_bps: generation.curve_supply_bps,
+        liquidity_token_bps: generation.liquidity_token_bps,
+        base_price_lamports: generation.base_price_lamports,
+        price_slope_lamports: generation.price_slope_lamports,
+        buy_fee_bps: generation.buy_fee_bps,
+        sell_fee_bps: generation.sell_fee_bps,
+        finalize_fee_bps: generation.finalize_fee_bps,
+        creator_post_finalize_bps: generation.creator_post_finalize_bps,
+        liquidity_post_finalize_bps: generation.liquidity_post_finalize_bps,
+        dex_adapter: generation.dex_adapter,
+        trade_route_profile: generation.trade_route_profile,
+        finalize_route_profile: generation.finalize_route_profile,
+        treasury_profile: generation.treasury_profile,
+        dex_profile: generation.dex_profile,
+        oracle_profile: generation.oracle_profile,
+        creator_buy_lock_until,
+        creator_buy_cap_bps,
+        created_at: now,
+        sold_tokens: 0,
+        net_raised_lamports: 0,
+        total_buy_volume_lamports: 0,
+        total_sell_volume_lamports: 0,
+        buyer_count: 0,
+        creator_bought_tokens: 0,
+        asset_initialization_version: ASSET_INITIALIZATION_VERSION,
+        mint_authority_revoked: false,
+        graduated: false,
+        bump: ctx.bumps.campaign,
+        mint_bump: ctx.bumps.mint,
+        token_vault_bump: ctx.bumps.token_vault,
+        sol_vault_bump: ctx.bumps.sol_vault,
+    };
+
+    {
+        let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
+        let mut cursor = std::io::Cursor::new(&mut data[..]);
+        campaign.try_serialize(&mut cursor)?;
+    }
+
+    {
+        let sol_vault = CampaignSolVault {
+            campaign: campaign_key,
+            generation_id: generation_config.generation_id,
+            created_at: now,
+            bump: ctx.bumps.sol_vault,
+        };
+        let mut data = ctx.accounts.sol_vault.try_borrow_mut_data()?;
+        let mut cursor = std::io::Cursor::new(&mut data[..]);
+        sol_vault.try_serialize(&mut cursor)?;
+    }
+
+    let campaign_signer = &[campaign_seeds];
 
     token::mint_to(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             MintTo {
-                mint: ctx.accounts.mint.to_account_info(),
-                to: ctx.accounts.token_vault.to_account_info(),
-                authority: ctx.accounts.campaign.to_account_info(),
+                mint: mint_info.clone(),
+                to: token_vault_info.clone(),
+                authority: campaign_info.clone(),
             },
             campaign_signer,
         ),
-        ctx.accounts.generation_config.token_total_supply,
+        generation_config.token_total_supply,
     )?;
 
-    ctx.accounts.mint.reload()?;
-    ctx.accounts.token_vault.reload()?;
+    let mint_state = {
+        let data = mint_info.try_borrow_data()?;
+        SplMint::unpack(&data)?
+    };
+    let vault_state = {
+        let data = token_vault_info.try_borrow_data()?;
+        SplTokenAccount::unpack(&data)?
+    };
 
     require!(
-        ctx.accounts.mint.supply == ctx.accounts.generation_config.token_total_supply,
+        mint_state.supply == generation_config.token_total_supply,
         LaunchpadError::InvalidCampaign
     );
     require!(
-        ctx.accounts.token_vault.amount == ctx.accounts.generation_config.token_total_supply,
+        vault_state.amount == generation_config.token_total_supply,
         LaunchpadError::InvalidCampaign
     );
     require!(
-        ctx.accounts.mint.decimals == ctx.accounts.generation_config.token_decimals,
+        mint_state.decimals == generation_config.token_decimals,
         LaunchpadError::InvalidCampaign
     );
     require!(
-        ctx.accounts.mint.mint_authority == COption::Some(campaign_key),
+        mint_state.mint_authority == COption::Some(campaign_key),
         LaunchpadError::InvalidCampaign
     );
     require!(
-        ctx.accounts.mint.freeze_authority == COption::None,
+        mint_state.freeze_authority == COption::None,
         LaunchpadError::InvalidCampaign
     );
-    require_keys_eq!(
-        ctx.accounts.token_vault.mint,
-        mint_key,
-        LaunchpadError::InvalidCampaign
-    );
-    require_keys_eq!(
-        ctx.accounts.token_vault.owner,
-        campaign_key,
-        LaunchpadError::InvalidCampaign
-    );
+    require_keys_eq!(vault_state.mint, mint_key, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(vault_state.owner, campaign_key, LaunchpadError::InvalidCampaign);
 
     token::set_authority(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             SetAuthority {
-                account_or_mint: ctx.accounts.mint.to_account_info(),
-                current_authority: ctx.accounts.campaign.to_account_info(),
+                account_or_mint: mint_info.clone(),
+                current_authority: campaign_info.clone(),
             },
             campaign_signer,
         ),
@@ -460,31 +656,42 @@ pub fn create_campaign_handler(
         None,
     )?;
 
-    ctx.accounts.mint.reload()?;
+    let mint_state_after = {
+        let data = mint_info.try_borrow_data()?;
+        SplMint::unpack(&data)?
+    };
     require!(
-        ctx.accounts.mint.mint_authority == COption::None,
+        mint_state_after.mint_authority == COption::None,
         LaunchpadError::InvalidCampaign
     );
     require!(
-        ctx.accounts.mint.freeze_authority == COption::None,
+        mint_state_after.freeze_authority == COption::None,
         LaunchpadError::InvalidCampaign
     );
-    ctx.accounts.campaign.mint_authority_revoked = true;
-
+    campaign.mint_authority_revoked = true;
     {
-        let create_authorization = &mut ctx.accounts.create_authorization;
-        create_authorization.creator = creator_key;
-        create_authorization.nonce = args.nonce;
-        create_authorization.deadline = args.deadline;
-        create_authorization.used_at = now;
-        create_authorization.route_signer = route_signer;
-        create_authorization.message_hash = authorization_hash;
-        create_authorization.schema_version = CREATE_AUTH_SCHEMA_VERSION;
-        create_authorization.bump = ctx.bumps.create_authorization;
+        let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
+        let mut cursor = std::io::Cursor::new(&mut data[..]);
+        campaign.try_serialize(&mut cursor)?;
     }
 
     {
-        let creator_profile = &mut ctx.accounts.creator_profile;
+        let create_authorization = CreateAuthorization {
+            creator: creator_key,
+            nonce: args.nonce,
+            deadline: args.deadline,
+            used_at: now,
+            route_signer,
+            message_hash: authorization_hash,
+            schema_version: CREATE_AUTH_SCHEMA_VERSION,
+            bump: ctx.bumps.create_authorization,
+        };
+        let mut data = ctx.accounts.create_authorization.try_borrow_mut_data()?;
+        let mut cursor = std::io::Cursor::new(&mut data[..]);
+        create_authorization.try_serialize(&mut cursor)?;
+    }
+
+    {
         creator_profile.live_bonding_count = creator_profile
             .live_bonding_count
             .checked_add(1)
@@ -494,9 +701,11 @@ pub fn create_campaign_handler(
             .checked_add(1)
             .ok_or(LaunchpadError::MathOverflow)?;
         creator_profile.last_launch_timestamp = now;
+        let mut data = ctx.accounts.creator_profile.try_borrow_mut_data()?;
+        let mut cursor = std::io::Cursor::new(&mut data[..]);
+        creator_profile.try_serialize(&mut cursor)?;
     }
 
-    let campaign = &ctx.accounts.campaign;
     emit!(CampaignCreated {
         campaign: campaign_key,
         campaign_id: campaign.campaign_id,
