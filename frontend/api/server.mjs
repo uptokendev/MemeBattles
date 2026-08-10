@@ -97,6 +97,7 @@ import {
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
 import {
   followedDrafts,
+  signedDraftCommentReaction,
   signedDraftComments,
   signedDraftFollow,
   signedDraftNotificationSubscription,
@@ -316,6 +317,7 @@ router.all("/drafts/:draftId/archive", wrap(draftArchive));
 router.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 router.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 router.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscription));
+router.all("/drafts/:draftId/comments/:commentId/reactions", wrap(signedDraftCommentReaction));
 router.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 router.all("/drafts/:draftId", wrap(signedDraftById));
 router.all("/prepare/:slug", wrap(signedPrepareBySlug));

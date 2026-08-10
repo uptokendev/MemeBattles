@@ -59,6 +59,7 @@ function mapCommentRow(row) {
     body: row.body,
     parentCommentId: row.parent_comment_id ? String(row.parent_comment_id) : null,
     reactionCount: Number(row.reaction_count || 0),
+    viewerReacted: Boolean(row.viewer_reacted),
     createdAt: row.created_at,
   };
 }
@@ -297,11 +298,32 @@ export async function signedDraftComments(req, res) {
   if (req.method === "GET") {
     const pool = await getPool();
     if (pool) {
+      const query = getQuery(req);
+      // Prefer draft chain when known; fall back to query chainId, then EVM default for address normalize.
+      const draftMeta = await pool
+        .query("select chain_id from campaign_drafts where id::text = $1 limit 1", [draftId])
+        .catch(() => null);
+      const draftChainId = Number(draftMeta?.rows?.[0]?.chain_id || query.chainId || 56);
+      const viewerWallet =
+        normalizeAddress(query.wallet || query.walletAddress || query.address, draftChainId) || null;
+
       // LEFT JOIN user_profiles on (chain_id, address) to fetch the author's
       // display name without forcing a separate per-comment lookup on the
       // client. Falls back to null if the author hasn't set a display name.
       const result = await pool.query(
-        `select c.*, up.display_name as author_display_name
+        `select c.*,
+                up.display_name as author_display_name,
+                case
+                  when $2::text is null then false
+                  else exists (
+                    select 1
+                      from campaign_draft_reactions r
+                     where r.comment_id = c.id
+                       and r.draft_id = c.draft_id
+                       and lower(r.wallet_address) = lower($2)
+                       and r.reaction_type = 'upvote'
+                  )
+                end as viewer_reacted
            from campaign_draft_comments c
            left join campaign_drafts d on d.id = c.draft_id
            left join user_profiles up
@@ -309,7 +331,7 @@ export async function signedDraftComments(req, res) {
           where c.draft_id = $1 and c.moderation_status = 'visible'
           order by c.created_at asc
           limit 120`,
-        [draftId],
+        [draftId, viewerWallet],
       );
       return json(res, 200, { items: nestComments(result.rows.map(mapCommentRow)) });
     }
@@ -374,4 +396,145 @@ export async function signedDraftComments(req, res) {
   }
 
   return json(res, 201, { comment: mapCommentRow(inserted.rows[0]) });
+}
+
+export async function signedDraftCommentReaction(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+
+  const draftId = String(req.params?.draftId || "");
+  const commentId = String(req.params?.commentId || "");
+  const body = await readJson(req);
+  const pool = await getPool();
+
+  if (!commentId) return json(res, 400, { error: "Comment id is required." });
+  if (!pool) return json(res, 503, { error: "Comment reactions require DATABASE_URL-backed wallet auth." });
+
+  const draft = await getDraftAuthContext(pool, draftId);
+  if (!draft) return json(res, 404, { error: "Draft not found" });
+
+  const wallet = normalizeAddress(
+    body.auth?.walletAddress || body.walletAddress || body.address || body.userAddress,
+    draft.chainId,
+  );
+  if (!wallet) return json(res, 400, { error: "Connect wallet to fire this transmission." });
+
+  const authOk = await requireDraftActionAuth({
+    res,
+    pool,
+    auth: body.auth,
+    expectedWallet: wallet,
+    chainId: draft.chainId,
+    action: "react_draft_comment",
+    draftId,
+  });
+  if (!authOk) return;
+
+  const commentRes = await pool.query(
+    `select id, reaction_count
+       from campaign_draft_comments
+      where id::text = $1
+        and draft_id::text = $2
+        and moderation_status = 'visible'
+      limit 1`,
+    [commentId, draftId],
+  );
+  if (!commentRes.rows[0]) return json(res, 404, { error: "Transmission not found." });
+
+  const client = await pool.connect();
+  let reacted = false;
+  let reactionCount = Number(commentRes.rows[0].reaction_count || 0);
+
+  try {
+    await client.query("begin");
+
+    const removed = await client.query(
+      `delete from campaign_draft_reactions
+        where draft_id::text = $1
+          and comment_id::text = $2
+          and lower(wallet_address) = lower($3)
+          and reaction_type = 'upvote'
+        returning id`,
+      [draftId, commentId, wallet],
+    );
+
+    if (removed.rows.length) {
+      reacted = false;
+      const updated = await client.query(
+        `update campaign_draft_comments
+            set reaction_count = greatest(reaction_count - 1, 0),
+                updated_at = now()
+          where id::text = $1
+          returning reaction_count`,
+        [commentId],
+      );
+      reactionCount = Number(updated.rows[0]?.reaction_count || 0);
+
+      await client.query(
+        `insert into campaign_draft_metrics (draft_id, reactions, signed_actions)
+         values ($1, 0, 0)
+         on conflict (draft_id) do update set
+           reactions = greatest(campaign_draft_metrics.reactions - 1, 0),
+           updated_at = now()`,
+        [draftId],
+      );
+    } else {
+      await client.query(
+        `insert into campaign_draft_reactions (draft_id, comment_id, wallet_address, reaction_type)
+         values ($1, $2, $3, 'upvote')`,
+        [draftId, commentId, wallet],
+      );
+      reacted = true;
+      const updated = await client.query(
+        `update campaign_draft_comments
+            set reaction_count = reaction_count + 1,
+                updated_at = now()
+          where id::text = $1
+          returning reaction_count`,
+        [commentId],
+      );
+      reactionCount = Number(updated.rows[0]?.reaction_count || 0);
+
+      await client.query(
+        `insert into campaign_draft_metrics (draft_id, reactions, signed_actions)
+         values ($1, 1, 1)
+         on conflict (draft_id) do update set
+           reactions = campaign_draft_metrics.reactions + 1,
+           signed_actions = campaign_draft_metrics.signed_actions + 1,
+           updated_at = now()`,
+        [draftId],
+      );
+    }
+
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    if (String(err?.code || "") === "23505") {
+      const countRes = await pool.query(
+        `select reaction_count from campaign_draft_comments where id::text = $1 limit 1`,
+        [commentId],
+      );
+      const existing = await pool.query(
+        `select 1 from campaign_draft_reactions
+          where draft_id::text = $1 and comment_id::text = $2
+            and lower(wallet_address) = lower($3) and reaction_type = 'upvote'
+          limit 1`,
+        [draftId, commentId, wallet],
+      );
+      return json(res, 200, {
+        reacted: Boolean(existing.rows[0]),
+        reactionCount: Number(countRes.rows[0]?.reaction_count || 0),
+        commentId: String(commentId),
+      });
+    }
+    console.warn("[draft-engagement] reaction toggle failed", err?.message || err);
+    return json(res, 500, { error: "Failed to update reaction." });
+  } finally {
+    client.release();
+  }
+
+  return json(res, 200, {
+    reacted,
+    reactionCount,
+    commentId: String(commentId),
+  });
 }

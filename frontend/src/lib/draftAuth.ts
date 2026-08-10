@@ -12,6 +12,7 @@ export type DraftAuthAction =
   | "follow_draft"
   | "comment_draft"
   | "arm_draft_notifications"
+  | "react_draft_comment"
   | "draft_owner_session";
 
 export type DraftActionAuth = {
