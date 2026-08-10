@@ -222,14 +222,16 @@ export async function submitSolanaV4CreatePlan(
   tx.recentBlockhash = latest.blockhash;
 
   const signed = await provider.signTransaction(tx);
-  const signature = await connection.sendRawTransaction(signed.serialize(), {
-    skipPreflight: false,
-    preflightCommitment: "confirmed",
-  });
-  await connection.confirmTransaction(
-    { signature, ...latest },
-    "confirmed",
-  );
+  let signature: string;
+  try {
+    signature = await connection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+    });
+    await connection.confirmTransaction({ signature, ...latest }, "confirmed");
+  } catch (error: unknown) {
+    throw new Error(formatSolanaSendError(error));
+  }
 
   return {
     signature,
@@ -238,4 +240,40 @@ export async function submitSolanaV4CreatePlan(
     programId: plan.programId,
     plan,
   };
+}
+
+/** Collapse wallet/RPC simulation dumps into a short operator-readable message. */
+function formatSolanaSendError(error: unknown): string {
+  const anyErr = error as {
+    message?: string;
+    logs?: string[];
+    getLogs?: () => string[] | Promise<string[]>;
+  };
+  const message = String(anyErr?.message || error || "Solana transaction failed.");
+  const logs = Array.isArray(anyErr?.logs) ? anyErr.logs : [];
+
+  const anchorLine = logs.find((line) => /AnchorError|Error Code:|Error Message:/i.test(line));
+  if (anchorLine) {
+    const code = anchorLine.match(/Error Code:\s*([A-Za-z0-9_]+)/i)?.[1];
+    const msg = anchorLine.match(/Error Message:\s*([^.]+)/i)?.[1];
+    const account = anchorLine.match(/account:\s*([A-Za-z0-9_]+)/i)?.[1];
+    const parts = ["Solana create simulation failed"];
+    if (code) parts.push(code);
+    if (account) parts.push(`account ${account}`);
+    if (msg) parts.push(msg.trim());
+    return parts.join(" — ");
+  }
+
+  // Prefer the first Program log line over the full “Catch SendTransactionError…” dump.
+  const programLog = logs.find((line) => line.startsWith("Program log:"));
+  if (programLog) return programLog.replace(/^Program log:\s*/i, "Solana program: ");
+
+  if (/AccountDiscriminatorMismatch/i.test(message)) {
+    return "Solana create failed: on-chain account layout does not match the deployed program (AccountDiscriminatorMismatch). Operator must upgrade/redeploy the program binary.";
+  }
+  if (/Simulation failed/i.test(message)) {
+    const short = message.split(/Logs:/i)[0]?.trim() || message;
+    return short.length > 280 ? `${short.slice(0, 277)}...` : short;
+  }
+  return message.length > 320 ? `${message.slice(0, 317)}...` : message;
 }
