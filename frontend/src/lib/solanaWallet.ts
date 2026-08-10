@@ -173,12 +173,22 @@ export function ensureSolanaListeners(options: { readExistingAccount?: boolean }
 
     const sync = (clearIfEmpty = false) => {
       if (solanaDisconnected()) return;
+      // Only the currently selected wallet may update app state. Otherwise
+      // Backpack/Phantom/Solflare all fire connect/accountChanged and steal focus.
+      const storedId = getStoredSolanaWalletId();
+      if (storedId && storedId !== wallet.id) return;
       const key = normalizePublicKey(provider.publicKey?.toString?.() || "");
       if (key || clearIfEmpty) notifySolanaWalletChanged(key, wallet);
     };
 
     try { provider.on?.("connect", () => sync(true)); } catch {}
-    try { provider.on?.("disconnect", () => notifySolanaWalletChanged("")); } catch {}
+    try {
+      provider.on?.("disconnect", () => {
+        const storedId = getStoredSolanaWalletId();
+        if (storedId && storedId !== wallet.id) return;
+        notifySolanaWalletChanged("");
+      });
+    } catch {}
     try { provider.on?.("accountChanged", () => sync(true)); } catch {}
 
     if (options.readExistingAccount) sync(false);
@@ -271,23 +281,56 @@ async function fetchNonce(chainId: number, walletAddress: string) {
   return String(json.nonce);
 }
 
+function resolveSolanaProviderForAddress(walletAddress?: string): { provider: SolanaProvider; wallet: DetectedSolanaWallet | null } {
+  const wallets = detectSolanaWallets();
+  const wanted = normalizePublicKey(walletAddress || "");
+
+  // Prefer the wallet that already exposes this public key (avoids signing with Backpack while UI shows Phantom).
+  if (wanted) {
+    const byKey = wallets.find((w) => normalizePublicKey(w.provider?.publicKey?.toString?.() || "") === wanted);
+    if (byKey?.provider) return { provider: byKey.provider, wallet: byKey };
+  }
+
+  const storedId = getStoredSolanaWalletId();
+  const byStored = storedId ? wallets.find((w) => w.id === storedId) : null;
+  if (byStored?.provider) return { provider: byStored.provider, wallet: byStored };
+
+  const fallback = wallets[0] || null;
+  if (!fallback?.provider) throw new Error("No supported Solana wallet detected.");
+  return { provider: fallback.provider, wallet: fallback };
+}
+
 export async function signSolanaDraftAction(input: {
   walletAddress: string;
   chainId: number;
   action: DraftAuthAction;
   draftId?: string | null;
 }): Promise<DraftActionAuth & { walletType: "solana" }> {
-  const provider = getSolanaProvider();
+  const { provider, wallet: detectedWallet } = resolveSolanaProviderForAddress(input.walletAddress);
 
   if (!provider?.signMessage) {
     throw new Error("This Solana wallet does not support message signing.");
   }
 
-  const walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || getStoredSolanaWallet());
+  let walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || getStoredSolanaWallet());
+  if (!walletAddress && provider.connect) {
+    const result = await provider.connect({ onlyIfTrusted: false } as any);
+    walletAddress = normalizePublicKey(result?.publicKey?.toString?.() || provider.publicKey?.toString?.() || "");
+  }
   if (!walletAddress) throw new Error("Solana wallet not connected.");
+
+  const providerKey = normalizePublicKey(provider.publicKey?.toString?.() || "");
+  if (providerKey && providerKey !== walletAddress) {
+    throw new Error(
+      `Connected wallet (${detectedWallet?.name || "extension"}) is ${providerKey.slice(0, 4)}…${providerKey.slice(-4)}, ` +
+        `but this action expects ${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}. Reconnect the correct wallet.`,
+    );
+  }
 
   const chainId = Number(input.chainId);
   const draftId = input.draftId || null;
+  // Fetch nonce immediately before signing so nothing else can replace it
+  // (auth_nonces is unique on chain_id + address).
   const nonce = await fetchNonce(chainId, walletAddress);
   const lines = [
     "MemeWarzone Prepare Mode",
@@ -305,7 +348,7 @@ export async function signSolanaDraftAction(input: {
   const signature = signed instanceof Uint8Array ? signed : signed.signature;
   if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
 
-  notifySolanaWalletChanged(walletAddress, detectSolanaWallets().find((wallet) => wallet.provider === provider) || null);
+  notifySolanaWalletChanged(walletAddress, detectedWallet);
   return {
     walletType: "solana",
     action: input.action,

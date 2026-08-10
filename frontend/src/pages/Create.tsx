@@ -378,8 +378,11 @@ const Create = () => {
     if (!validateCoreForm()) return;
     setIsDrafting(true);
     try {
-      const auth = await createDraftAuth();
+      // Logo upload may sign a separate auth nonce. auth_nonces is unique per
+      // (chain_id, address), so uploading AFTER create_draft auth would replace
+      // the create_draft nonce and cause "nonce invalid / already used".
       const logoUrl = await uploadLogo();
+      const auth = await createDraftAuth();
       const draft = await createCampaignDraft({
         auth,
         chainId,
