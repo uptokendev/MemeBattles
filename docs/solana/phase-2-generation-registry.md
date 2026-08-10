@@ -33,7 +33,7 @@ The PDA stores:
 - base price and price slope;
 - buy, sell and finalize fee rates;
 - creator/liquidity post-finalize split;
-- Meteora or Raydium adapter identity;
+- Meteora DAMM v2 adapter identity (product lock: Meteora-only post-grad; no Raydium path);
 - trading, finalization, treasury, DEX and oracle profile hashes;
 - deployment manifest hash;
 - support and active-creation flags;

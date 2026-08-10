@@ -59,12 +59,14 @@
 
 **User exit:** Graduate in-app; continuous chart; permanent LP lock; post-grad swaps.
 
+**Product lock (2026-08-10):** Solana post-grad DEX is **Meteora DAMM v2 only**. No multi-DEX system; no Raydium product path. Bonding stays MWZ V4 (not Meteora DBC). LP fee harvest must match BNB: permanent principal + **80% creator / 20% protocol**.
+
 | Step | Work |
 | --- | --- |
 | P2.1 | Graduation ix + SOL/USD policy |
-| P2.2 | Meteora DAMM v2 primary; Raydium fallback |
-| P2.3 | Continuity indexer + FE chart handoff |
-| P2.4 | LP fee harvest + creator Command Center claims |
+| P2.2 | Seed **Meteora DAMM v2** pool; permanent lock position |
+| P2.3 | Continuity indexer + FE chart handoff; post-grad swap vs Meteora |
+| P2.4 | LP fee harvest (80/20) + creator Command Center claims |
 
 ### P3 — Incentives (BNB league / recruiter / featured heat)
 
@@ -100,10 +102,12 @@
 
 1. ~~This doc + cleanup quarantine~~ (done on `devpostgrad`)  
 2. ~~P0.1 FE V4 Push Live wire + legacy quarantine~~ (done)  
-3. **Ops P0.2–P0.3** when keys ready (devnet deploy + Railway env)  
-4. Enable `SOLANA_CREATE_AUTH_ENABLED=true` after one success + one reject  
-5. Minimal V4 create indexer row (P0.5)  
-6. P1 buy/sell program + FE  
+3. ~~Post-grad DEX product lock: Meteora DAMM v2 only~~ (done)  
+4. **Ops P0.2–P0.3** when keys ready (devnet deploy + Railway env)  
+5. Enable `SOLANA_CREATE_AUTH_ENABLED=true` after one success + one reject  
+6. Minimal V4 create indexer row (P0.5)  
+7. **P1** buy/sell program + FE (next eng after create is live or on local-validator)  
+8. **P2** graduate → Meteora permanent lock → 80/20 harvest → post-grad trade
 
 ### Engineering already on `devpostgrad`
 
@@ -122,6 +126,7 @@
 - Mainnet Solana before P1 exit on devnet  
 - Merging draft PR #55 wholesale into `devpostgrad`  
 - Claiming league/claim parity before P3  
+- Raydium CPMM adapter, multi-DEX router, or Meteora DBC as product bonding
 
 ## Success metrics
 
@@ -129,5 +134,5 @@
 | --- | --- |
 | P0 | 1 authorized create + 1 unauthorized reject on devnet; explorer shows mint/vaults |
 | P1 | 1 buy + 1 sell; chart updates; War Room quotes |
-| P2 | 1 graduation + continuous chart + LP claim path |
+| P2 | 1 Meteora graduation + permanent LP + 80/20 harvest + post-grad swap |
 | P3 | League row for Solana campaign; claimable reward smoke |

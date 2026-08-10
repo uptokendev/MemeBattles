@@ -10,7 +10,9 @@ pub const CLUSTER_PROFILE_SEED: &[u8] = b"cluster";
 pub const EMPTY_GENERATION_ID: [u8; 32] = [0; 32];
 pub const EMPTY_CLUSTER_ID: [u8; 32] = [0; 32];
 
+/// Post-grad DEX product lock: Meteora DAMM v2 only.
 pub const DEX_ADAPTER_METEORA_DAMM_V2: u8 = 1;
+/// Historical enum value — not accepted by generation validation (no Raydium product path).
 pub const DEX_ADAPTER_RAYDIUM_CPMM: u8 = 2;
 
 pub const CLUSTER_KIND_DEVNET: u8 = 1;
@@ -1056,7 +1058,7 @@ fn resolve_generation_support_update(
 }
 
 fn is_supported_dex_adapter(dex_adapter: u8) -> bool {
-    dex_adapter == DEX_ADAPTER_METEORA_DAMM_V2 || dex_adapter == DEX_ADAPTER_RAYDIUM_CPMM
+    dex_adapter == DEX_ADAPTER_METEORA_DAMM_V2
 }
 
 fn is_empty_generation_id(generation_id: [u8; 32]) -> bool {
@@ -1214,15 +1216,16 @@ mod tests {
     }
 
     #[test]
-    fn generation_settings_accept_supported_dex_adapters() {
+    fn generation_settings_accept_meteora_only_dex_adapter() {
         let global = test_global_config();
         let mut settings = test_generation_settings();
 
         settings.dex_adapter = DEX_ADAPTER_METEORA_DAMM_V2;
         assert!(validate_generation_settings(&global, &settings).is_ok());
 
+        // Product lock: no Raydium / multi-DEX path.
         settings.dex_adapter = DEX_ADAPTER_RAYDIUM_CPMM;
-        assert!(validate_generation_settings(&global, &settings).is_ok());
+        assert!(validate_generation_settings(&global, &settings).is_err());
     }
 
     #[test]

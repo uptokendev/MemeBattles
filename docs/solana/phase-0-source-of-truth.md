@@ -74,8 +74,8 @@ Solana create, buy, sell, graduation and reward claims remain disabled until all
 8. Local-validator and devnet tests prove the real mint, token-vault and SOL-vault account states plus rejection of substituted accounts.
 9. Graduation uses `net_raised_lamports`; direct transfers to the SOL vault never advance the threshold or increase sell solvency.
 10. Dynamic USD graduation uses fresh SOL/USD oracle data and rejects stale or invalid prices.
-11. Meteora DAMM v2 graduation, permanent principal lock, fee harvest and creator/protocol fee split pass acceptance; Raydium CPMM remains a compatible fallback adapter.
-12. Jupiter is used only after graduation and cannot bypass pre-graduation bonding controls.
+11. Meteora DAMM v2 graduation, permanent principal lock, fee harvest and creator/protocol (80/20) fee split pass acceptance. Solana post-grad DEX is Meteora-only (no Raydium product path).
+12. Jupiter is used only after graduation (optional quote/router) and cannot bypass pre-graduation bonding controls.
 13. Treasury routing, weekly/monthly allocation, monthly cap, charity overflow, rewards and replay-safe claims exist program-side.
 14. A generation-aware Solana indexer covers every supported generation from configured start slots and reconciles accounts, vaults, DEX locks, seals and rewards.
 15. The operator dashboard exposes generation health, authorities, indexer cursors, DEX/locker state, monthly seals and multisig-safe admin payloads.
@@ -96,9 +96,9 @@ Solana create, buy, sell, graduation and reward claims remain disabled until all
 | Graduation tier | Generation-owned exact allowlist, including devnet-only 6 USD and approved production tiers. | Implemented on-chain and exercised by local create acceptance. |
 | Buy | Authorized bonding buy with slippage, max cost, timer and risk checks. | Pending. |
 | Sell | Authorized bonding sell with net-raised solvency and risk checks. | Pending. |
-| Graduation | Fresh-oracle USD threshold, Meteora DAMM v2 primary adapter, permanent principal lock and fee harvest. | Pending. |
-| DEX fallback | Raydium CPMM behind the same adapter boundary. | Adapter identity only. |
-| Post-graduation swap | Jupiter quote/swap UX only after the DEX pool exists. | Pending. |
+| Graduation | Fresh-oracle USD threshold, Meteora DAMM v2 only, permanent principal lock and 80/20 fee harvest. | Pending. |
+| Post-grad DEX | Meteora DAMM v2 only (no multi-DEX / no Raydium product path). | Enum may still exist in program; do not build Raydium. |
+| Post-graduation swap | In-app Meteora pool trade; Jupiter only as optional post-grad quote/router. | Pending. |
 | Treasury and rewards | Program-owned SOL vaults, weekly/monthly routing, monthly cap, charity overflow and replay-safe claims. | Pending. |
 | Indexer and reconciliation | Per-generation cursoring with account, vault, DEX, seal and reward reconciliation. | Pending. |
 | Security/admin | Split authorities, multisig operations, locked defaults and complete audit trail. | On-chain authority foundation implemented; operational dashboard pending. |
