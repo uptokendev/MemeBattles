@@ -21,7 +21,7 @@ const CP_BTN =
   "h-8 border border-violet-400/80 bg-gradient-to-b from-violet-500/90 to-purple-800/95 px-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-50 shadow-[0_0_18px_rgba(139,92,246,0.35)] hover:from-violet-400 hover:to-purple-700 hover:border-violet-300 hover:text-white";
 
 /** Official partner badge art (public for everyone once listing URL is saved). */
-const CP_BADGE_SRC = "/assets/partners/crypticpump-listed-badge.jpg";
+const CP_BADGE_SRC = "/assets/partners/crypticpump-listed-badge.png";
 
 /** Map MWZ chainId → CrypticPump form "chain" select values (BNB | Solana). */
 function crypticPumpChainLabel(chainId?: number | null): "BNB" | "Solana" | null {
