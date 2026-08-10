@@ -5,7 +5,7 @@
  *
  * Success path: partner postMessage with listing URL, or Close re-fetches our API.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 const PARTNER_ORIGIN = "https://crypticpump.com";
 const PARTNER_SUBMIT = `${PARTNER_ORIGIN}/partner_submit.php`;
+const PENDING_LISTING_PREFIX = "mwz:crypticpump:pendingListing:";
 
 /** CrypticPump purple CTA (list button only) */
 const CP_BTN =
@@ -82,11 +83,24 @@ function buildIframeSrc(args: {
   website?: string | null;
   /** Absolute public MWZ token page → launchUrl / Trading field. */
   tokenPageUrl?: string | null;
+  /**
+   * Exact parent window origin for partner postMessage targetOrigin.
+   * If they hardcode https://memewar.zone while the user is on Netlify/www, the browser drops the message.
+   */
+  parentOrigin?: string | null;
 }) {
   const qs = new URLSearchParams();
   qs.set("partner", "memewarzone");
 
   if (args.campaignAddress) qs.set("campaign", String(args.campaignAddress).trim());
+
+  // Tell partner which origin to target with postMessage (also returnOrigin / embedOrigin aliases).
+  const parentOrigin = String(args.parentOrigin || "").trim();
+  if (parentOrigin) {
+    qs.set("parentOrigin", parentOrigin);
+    qs.set("returnOrigin", parentOrigin);
+    qs.set("embedOrigin", parentOrigin);
+  }
 
   // Trading / Launch Link — set early so server logs always show it.
   // Canonical: launchUrl (primary). Alias: launchLink.
@@ -118,6 +132,35 @@ function buildIframeSrc(args: {
   if (website) qs.set("website", website);
 
   return `${PARTNER_SUBMIT}?${qs.toString()}`;
+}
+
+function pendingListingStorageKey(chainId: number, campaignAddress: string) {
+  return `${PENDING_LISTING_PREFIX}${chainId}:${String(campaignAddress || "").toLowerCase()}`;
+}
+
+function readPendingListingUrl(chainId: number, campaignAddress: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(pendingListingStorageKey(chainId, campaignAddress));
+    return normalizePartnerListingUrl(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writePendingListingUrl(chainId: number, campaignAddress: string, listingUrl: string) {
+  try {
+    sessionStorage.setItem(pendingListingStorageKey(chainId, campaignAddress), listingUrl);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function clearPendingListingUrl(chainId: number, campaignAddress: string) {
+  try {
+    sessionStorage.removeItem(pendingListingStorageKey(chainId, campaignAddress));
+  } catch {
+    // ignore
+  }
 }
 
 export async function fetchCrypticPumpListing(
@@ -326,6 +369,9 @@ export function CrypticPumpListButton({
   const [lastPartnerPing, setLastPartnerPing] = useState<string | null>(null);
   const [handshakeNote, setHandshakeNote] = useState<string | null>(null);
 
+  const parentOrigin =
+    typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+
   // Absolute public token page → launchUrl query param (partner form prefill).
   const tokenPageUrl = useMemo(
     () => buildPublicTokenPageUrl(campaignAddress, chainId),
@@ -342,29 +388,16 @@ export function CrypticPumpListButton({
         ticker,
         website,
         tokenPageUrl,
+        parentOrigin,
       }),
-    [campaignAddress, tokenAddress, chainId, name, ticker, website, tokenPageUrl],
+    [campaignAddress, tokenAddress, chainId, name, ticker, website, tokenPageUrl, parentOrigin],
   );
-
-  useEffect(() => {
-    if (!open) {
-      setIframeStatus("loading");
-      return;
-    }
-    setIframeStatus("loading");
-    setHandshakeNote(null);
-    // Cross-origin iframes don't fire a reliable error if X-Frame blocks them;
-    // if we never get onLoad, surface a fallback after a short wait.
-    const t = window.setTimeout(() => {
-      setIframeStatus((s) => (s === "loading" ? "timeout" : s));
-    }, 8000);
-    return () => window.clearTimeout(t);
-  }, [open, iframeSrc]);
 
   const persist = useCallback(
     async (listingUrl: string) => {
       const normalized = normalizePartnerListingUrl(listingUrl);
       if (!normalized) return false;
+      writePendingListingUrl(chainId, campaignAddress, normalized);
       setSaving(true);
       setError(null);
       setHandshakeNote(`Saving listing: ${normalized}`);
@@ -376,13 +409,15 @@ export function CrypticPumpListButton({
           listingUrl: normalized,
           creatorWallet,
         });
+        clearPendingListingUrl(chainId, campaignAddress);
         onListed(saved);
         setOpen(false);
-        setHandshakeNote(null);
+        setHandshakeNote(`Badge saved: ${saved.listingUrl}`);
         return true;
       } catch (e: any) {
-        setError(e?.message || "Could not save listing");
-        setHandshakeNote(null);
+        const msg = e?.message || "Could not save listing";
+        setError(msg);
+        setHandshakeNote(`Received URL but save failed: ${msg}`);
         return false;
       } finally {
         setSaving(false);
@@ -391,7 +426,30 @@ export function CrypticPumpListButton({
     [chainId, campaignAddress, tokenAddress, creatorWallet, onListed],
   );
 
-  /** Close re-fetches API (postMessage may have saved) and shows the badge when present. */
+  // Stable refs so the message listener is not torn down on every persist identity change.
+  const persistRef = useRef(persist);
+  persistRef.current = persist;
+  const chainIdRef = useRef(chainId);
+  chainIdRef.current = chainId;
+  const campaignRef = useRef(campaignAddress);
+  campaignRef.current = campaignAddress;
+
+  useEffect(() => {
+    if (!open) {
+      setIframeStatus("loading");
+      return;
+    }
+    setIframeStatus("loading");
+    // Do not clear lastPartnerPing / handshakeNote here — success may arrive while status flips.
+    // Cross-origin iframes don't fire a reliable error if X-Frame blocks them;
+    // if we never get onLoad, surface a fallback after a short wait.
+    const t = window.setTimeout(() => {
+      setIframeStatus((s) => (s === "loading" ? "timeout" : s));
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [open, iframeSrc]);
+
+  /** Close: API re-check, then session pending URL from a prior postMessage. */
   const handleClose = useCallback(async () => {
     if (saving || closing) return;
     setClosing(true);
@@ -399,7 +457,15 @@ export function CrypticPumpListButton({
     try {
       const existing = await fetchCrypticPumpListing(chainId, campaignAddress);
       if (existing?.listingUrl) {
+        clearPendingListingUrl(chainId, campaignAddress);
         onListed(existing);
+        setOpen(false);
+        return;
+      }
+      const pending = readPendingListingUrl(chainId, campaignAddress);
+      if (pending) {
+        const ok = await persist(pending);
+        if (ok) return;
       }
       setOpen(false);
     } catch {
@@ -407,29 +473,40 @@ export function CrypticPumpListButton({
     } finally {
       setClosing(false);
     }
-  }, [saving, closing, chainId, campaignAddress, onListed]);
+  }, [saving, closing, chainId, campaignAddress, onListed, persist]);
 
   /**
-   * Partner return handshake — listen whenever this control is mounted (creator token page),
-   * not only while the modal is open. Approval-time messages would otherwise be dropped.
+   * Partner return handshake — long-lived listener (empty deps + refs).
+   * Partner must postMessage with targetOrigin = this page's origin (or '*').
+   * Hardcoding only https://memewar.zone drops messages on Netlify / www.
    */
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!isCrypticPumpPartnerOrigin(String(event.origin || ""))) return;
-      setLastPartnerPing(`${event.origin} · ${summarizePartnerMessage(event.data)}`);
+
+      const summary = `${event.origin} · ${summarizePartnerMessage(event.data)}`;
+      // Parent console — iframe success.php logs are NOT proof the parent received the event.
+      console.info("[CrypticPump parent] postMessage received", {
+        origin: event.origin,
+        data: event.data,
+        pageOrigin: typeof window !== "undefined" ? window.location.origin : "",
+      });
+      setLastPartnerPing(summary);
+
       const listingUrl = extractListingUrlFromPartnerMessage(event.data);
       if (listingUrl) {
+        writePendingListingUrl(chainIdRef.current, campaignRef.current, listingUrl);
         setHandshakeNote(`Got listing URL from partner: ${listingUrl}`);
-        void persist(listingUrl);
+        void persistRef.current(listingUrl);
         return;
       }
       setHandshakeNote(
-        "CrypticPump messaged us, but no listing URL was found in the payload. They need to send listingUrl (or coin.php?ca=… / coin id).",
+        "CrypticPump messaged us, but no listing URL was found in the payload. They need listingUrl (or ca / coin id).",
       );
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [persist]);
+  }, []);
 
   if (listing?.listingUrl) {
     return <CrypticPumpBadge listingUrl={listing.listingUrl} className={className} />;
@@ -501,14 +578,26 @@ export function CrypticPumpListButton({
                 <div className="mt-3 space-y-1 border border-border/40 bg-muted/10 p-2.5 text-[11px] text-muted-foreground">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-orange-300/90">Return handshake</div>
                   <p>
-                    Waiting for CrypticPump to <span className="font-mono text-foreground/80">postMessage</span> the
-                    public coin URL after submit (or approval). Until that lands, the badge cannot auto-activate.
+                    Parent page origin:{" "}
+                    <span className="font-mono text-foreground/80">{parentOrigin || "(unknown)"}</span>
+                    . Partner must <span className="font-mono text-foreground/80">postMessage(..., parentOrigin)</span>{" "}
+                    or <span className="font-mono text-foreground/80">'*'</span>. Hardcoding only{" "}
+                    <span className="font-mono text-foreground/80">https://memewar.zone</span> drops the event on
+                    Netlify / www.
+                  </p>
+                  <p className="text-foreground/50">
+                    We pass <span className="font-mono">parentOrigin</span> /{" "}
+                    <span className="font-mono">returnOrigin</span> on the iframe URL for them to read.
                   </p>
                   {handshakeNote ? <p className="text-orange-200">{handshakeNote}</p> : null}
                   {lastPartnerPing ? (
-                    <p className="break-all font-mono text-[10px] text-foreground/70">Last ping: {lastPartnerPing}</p>
+                    <p className="break-all font-mono text-[10px] text-foreground/70">Last parent ping: {lastPartnerPing}</p>
                   ) : (
-                    <p className="text-foreground/50">No postMessage from crypticpump.com received yet this session.</p>
+                    <p className="text-foreground/50">
+                      No postMessage received on the <strong>parent</strong> page yet. Iframe{" "}
+                      <span className="font-mono">[CrypticPump handshake]</span> logs only prove they <em>sent</em> —
+                      not that this page got it.
+                    </p>
                   )}
                 </div>
               </div>
