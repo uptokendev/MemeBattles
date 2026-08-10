@@ -11,8 +11,8 @@ import {
 import type { SolanaV4CreateAuthorizationResponse } from "@/lib/solanaCreateAuthorizationV4";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { loadSolanaWeb3, type SolanaWeb3Module } from "@/lib/solanaWeb3";
 
-const WEB3_URL = "https://esm.sh/@solana/web3.js@1.95.3?bundle";
 const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
 const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -22,11 +22,6 @@ const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const CREATE_CAMPAIGN_DISCRIMINATOR = new Uint8Array([
   0x6f, 0x83, 0xbb, 0x62, 0xa0, 0xc1, 0x72, 0xf4,
 ]);
-
-async function loadWeb3() {
-  const mod = await import(/* @vite-ignore */ WEB3_URL);
-  return (mod as any).default || mod;
-}
 
 function u64le(value: string | number | bigint): Uint8Array {
   let n = BigInt(value);
@@ -78,21 +73,21 @@ function encodeCreateCampaignData(args: SolanaV4GeneratedIdlInvocationPlan["crea
   return out;
 }
 
-function buildEd25519VerifyIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPlan) {
-  const { PublicKey, Ed25519Program } = web3;
-  const publicKey = new PublicKey(plan.ed25519Verification.publicKey).toBytes();
+function buildEd25519VerifyIx(web3: SolanaWeb3Module, plan: SolanaV4GeneratedIdlInvocationPlan) {
+  const { PublicKey, Ed25519Program, TransactionInstruction } = web3;
+  const publicKeyBytes = new PublicKey(plan.ed25519Verification.publicKey).toBytes();
   const message = plan.ed25519Verification.message;
   const signature = plan.ed25519Verification.signature;
 
   if (typeof Ed25519Program?.createInstructionWithPublicKey === "function") {
     return Ed25519Program.createInstructionWithPublicKey({
-      publicKey,
+      publicKey: publicKeyBytes,
       message,
       signature,
     });
   }
 
-  // Fallback encoding if the dynamic web3 bundle omits Ed25519Program helpers.
+  // Fallback encoding if the web3 build omits Ed25519Program helpers.
   const numSignatures = 1;
   const padding = 0;
   const signatureOffset = 16;
@@ -121,7 +116,6 @@ function buildEd25519VerifyIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPla
   data.set(publicKeyBytes, publicKeyOffset);
   data.set(message, messageDataOffset);
 
-  const { TransactionInstruction } = web3;
   return new TransactionInstruction({
     keys: [],
     programId: new PublicKey(ED25519_PROGRAM_ID),
@@ -129,7 +123,7 @@ function buildEd25519VerifyIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPla
   });
 }
 
-function buildCreateCampaignIx(web3: any, plan: SolanaV4GeneratedIdlInvocationPlan) {
+function buildCreateCampaignIx(web3: SolanaWeb3Module, plan: SolanaV4GeneratedIdlInvocationPlan) {
   const { PublicKey, TransactionInstruction, SystemProgram } = web3;
   const a = plan.createCampaign.accounts;
   const data = encodeCreateCampaignData(plan.createCampaign.args);
@@ -202,7 +196,7 @@ export async function submitSolanaV4CreatePlan(
     throw new Error("Authorization creator account does not match the connected Solana wallet.");
   }
 
-  const web3 = await loadWeb3();
+  const web3 = await loadSolanaWeb3();
   const { Connection, Transaction, PublicKey, ComputeBudgetProgram } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||

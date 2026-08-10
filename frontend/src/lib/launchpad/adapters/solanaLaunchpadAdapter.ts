@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getSolanaProvider, type SolanaProvider } from "@/lib/solanaWallet";
+import { loadSolanaSplToken, loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
 /**
  * LEGACY SCAFFOLD ADAPTER — quarantined for product mutations.
@@ -32,8 +33,6 @@ const PROGRAM_PENDING_MESSAGE =
 const V4_ONLY_MUTATION_MESSAGE =
   "Solana create must use V4 authorized create (Push Live → authorize_solana_v4). Buy/sell/graduate land in parity P1–P2 — not this legacy scaffold.";
 const WALLET_PENDING_MESSAGE = "Connect a Solana wallet that supports transaction signing.";
-const WEB3_URL = "https://esm.sh/@solana/web3.js@1.95.3?bundle";
-const SPL_TOKEN_URL = "https://esm.sh/@solana/spl-token@0.4.9?bundle";
 const TOKEN_PROGRAM_ID_BASE58 = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const MINT_SIZE = 82;
 
@@ -164,10 +163,7 @@ async function loadRuntime(hasSolanaWallet?: boolean): Promise<SolanaRuntime> {
   }
   if (!walletAddress) throw createSolanaWalletPendingError();
 
-  const [web3, splToken] = await Promise.all([
-    import(/* @vite-ignore */ WEB3_URL),
-    import(/* @vite-ignore */ SPL_TOKEN_URL),
-  ]);
+  const [web3, splToken] = await Promise.all([loadSolanaWeb3(), loadSolanaSplToken()]);
   const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
   return {
     web3,

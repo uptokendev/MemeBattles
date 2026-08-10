@@ -275,8 +275,21 @@ async function getMultipleAccounts(rpcUrl, addresses) {
   return result.value;
 }
 
-function decodeOwnedAccount(info, address, programId, decoder, label) {
+function decodeOwnedAccount(info, address, programId, decoder, label, context = {}) {
   if (!info) {
+    const creator = context.creator ? String(context.creator) : "";
+    if (label === "CreatorProfile") {
+      throw new SolanaCreateAuthorizationError(
+        `CreatorProfile is not initialized for creator ${creator || "wallet"} (PDA ${address}). Operator must run sync_creator_profile + sync_risk_profile before Push Live.`,
+        { code: "SOLANA_CREATOR_PROFILE_MISSING", httpStatus: 409 },
+      );
+    }
+    if (label === "RiskProfile") {
+      throw new SolanaCreateAuthorizationError(
+        `RiskProfile is not initialized for creator ${creator || "wallet"} (PDA ${address}). Operator must run sync_creator_profile + sync_risk_profile before Push Live.`,
+        { code: "SOLANA_RISK_PROFILE_MISSING", httpStatus: 409 },
+      );
+    }
     throw new SolanaCreateAuthorizationError(`${label} account ${address} does not exist.`, {
       code: "SOLANA_REQUIRED_ACCOUNT_MISSING",
       httpStatus: 409,
@@ -455,6 +468,7 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer }
     programId,
     decodeCreatorProfile,
     "CreatorProfile",
+    { creator },
   );
   const riskProfile = decodeOwnedAccount(
     riskInfo,
@@ -462,6 +476,7 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer }
     programId,
     decodeRiskProfile,
     "RiskProfile",
+    { creator },
   );
   const clusterProfilePda = findProgramAddressSync(
     [Buffer.from("cluster", "utf8"), nonZeroBytes32(riskProfile.clusterId, "RiskProfile.clusterId")],

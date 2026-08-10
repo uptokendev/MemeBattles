@@ -198,7 +198,12 @@ export async function requestSolanaCreateAuthorizationV4(
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(String(payload?.error || payload?.message || `Solana authorization failed (${response.status}).`));
+    const message = String(payload?.error || payload?.message || `Solana authorization failed (${response.status}).`);
+    const code = payload?.code ? String(payload.code) : "";
+    const err = new Error(code ? `${message} [${code}]` : message) as Error & { code?: string; status?: number };
+    err.code = code || undefined;
+    err.status = response.status;
+    throw err;
   }
   assertSolanaV4AuthorizationResponse(payload);
   return payload;
