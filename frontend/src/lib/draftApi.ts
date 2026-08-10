@@ -422,7 +422,7 @@ async function signDraftActionWithKnownChain(input: {
 }
 
 async function signPrepareEngagement(input: {
-  action: "follow_draft" | "comment_draft" | "arm_draft_notifications";
+  action: "follow_draft" | "comment_draft" | "arm_draft_notifications" | "react_draft_comment";
   draftId: string;
   walletAddress: string;
 }): Promise<DraftActionAuth> {
@@ -628,6 +628,8 @@ export type DraftComment = {
   body: string;
   parentCommentId: string | null;
   reactionCount: number;
+  /** True when the requesting wallet has an active fire reaction on this comment. */
+  viewerReacted?: boolean;
   createdAt: string;
   replies?: DraftComment[];
 };
@@ -909,8 +911,17 @@ export async function armDraftNotifications(input: DraftActionAuth | string, wal
   return { armed: Boolean(json.armed) };
 }
 
-export async function fetchDraftComments(draftId: string): Promise<DraftComment[]> {
-  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/comments`);
+export async function fetchDraftComments(
+  draftId: string,
+  walletAddress?: string | null
+): Promise<DraftComment[]> {
+  const params = new URLSearchParams();
+  const wallet = normalizeWallet(walletAddress || "");
+  if (wallet) params.set("wallet", wallet);
+  const query = params.toString();
+  const res = await apiFetch(
+    `/api/drafts/${encodeURIComponent(draftId)}/comments${query ? `?${query}` : ""}`
+  );
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as DraftComment[]) : [];
 }
@@ -934,6 +945,33 @@ export async function addDraftComment(
   });
   const json = await parseJson(res);
   return json.comment as DraftComment;
+}
+
+export async function toggleDraftCommentReaction(
+  draftId: string,
+  commentId: string,
+  walletAddress: string
+): Promise<{ reacted: boolean; reactionCount: number; commentId: string }> {
+  const auth = await signPrepareEngagement({
+    action: "react_draft_comment",
+    draftId,
+    walletAddress,
+  });
+
+  const res = await apiFetch(
+    `/api/drafts/${encodeURIComponent(draftId)}/comments/${encodeURIComponent(commentId)}/reactions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ auth }),
+    }
+  );
+  const json = await parseJson(res);
+  return {
+    reacted: Boolean(json.reacted),
+    reactionCount: Number(json.reactionCount || 0),
+    commentId: String(json.commentId || commentId),
+  };
 }
 
 export async function manageTickerReservation(input: {

@@ -330,7 +330,7 @@ export function CrypticPumpBadge({
       <img
         src={CP_BADGE_SRC}
         alt="Listed on crypticpump.com"
-        className="h-8 w-auto max-w-[min(220px,46vw)] object-contain object-left sm:h-9"
+        className="h-14 w-auto max-w-[min(300px,62vw)] object-contain object-left"
         draggable={false}
       />
     </a>

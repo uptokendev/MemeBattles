@@ -2679,9 +2679,9 @@ const bnbUsd = useMemo(() => {
             />
           </div>
 
-          <div className="min-w-0 flex flex-col justify-between gap-3 p-3 md:p-4 xl:p-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 md:px-4 md:py-3 min-h-[60px]">
-              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:flex-nowrap xl:justify-start xl:gap-2.5 xl:overflow-x-auto">
+          <div className="min-w-0 flex flex-col justify-start gap-2 p-3 md:p-4 xl:p-5">
+            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-2.5 md:px-4 md:py-2.5 min-h-0">
+              <div className="flex flex-wrap items-center gap-2 md:gap-2.5 xl:flex-nowrap xl:justify-start xl:gap-2 xl:overflow-x-auto">
                 <h1 className="text-lg md:text-2xl font-retro text-foreground whitespace-nowrap">
                   {tokenData.name}
                 </h1>
@@ -2699,10 +2699,6 @@ const bnbUsd = useMemo(() => {
                 >
                   {stagePill}
                 </span>
-
-                {crypticPumpListing?.listingUrl ? (
-                  <CrypticPumpBadge listingUrl={crypticPumpListing.listingUrl} className="flex-shrink-0" />
-                ) : null}
 
                 {(() => {
                   const creator = String(campaign?.creator ?? "").trim();
@@ -2867,72 +2863,73 @@ const bnbUsd = useMemo(() => {
                       className="h-8 px-3 text-xs flex-shrink-0"
                     />
 
-                    {(() => {
-                      const creator = String(campaign?.creator ?? "").trim().toLowerCase();
-                      const me = String(wallet.account ?? "").trim().toLowerCase();
-                      const isCreator = Boolean(creator && me && creator === me);
-                      if (!isCreator || crypticPumpListing?.listingUrl) return null;
-                      const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
-                      if (!campaignKey) return null;
-                      return (
-                        <CrypticPumpListButton
-                          className="flex-shrink-0"
-                          chainId={Number(chainIdForStorage || wallet.chainId || 97)}
-                          campaignAddress={campaignKey}
-                          tokenAddress={campaign?.token || null}
-                          name={tokenData.name}
-                          ticker={tokenData.ticker}
-                          website={campaign?.website || null}
-                          creatorWallet={String(wallet.account)}
-                          listing={crypticPumpListing}
-                          onListed={setCrypticPumpListing}
-                        />
-                      );
-                    })()}
+                    {/* CrypticPump badge / list CTA sits to the right of upvote */}
+                    {crypticPumpListing?.listingUrl ? (
+                      <CrypticPumpBadge
+                        listingUrl={crypticPumpListing.listingUrl}
+                        className="flex-shrink-0 self-center"
+                      />
+                    ) : (
+                      (() => {
+                        const creator = String(campaign?.creator ?? "").trim().toLowerCase();
+                        const me = String(wallet.account ?? "").trim().toLowerCase();
+                        const isCreator = Boolean(creator && me && creator === me);
+                        if (!isCreator) return null;
+                        const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
+                        if (!campaignKey) return null;
+                        return (
+                          <CrypticPumpListButton
+                            className="flex-shrink-0 self-center"
+                            chainId={Number(chainIdForStorage || wallet.chainId || 97)}
+                            campaignAddress={campaignKey}
+                            tokenAddress={campaign?.token || null}
+                            name={tokenData.name}
+                            ticker={tokenData.ticker}
+                            website={campaign?.website || null}
+                            creatorWallet={String(wallet.account)}
+                            listing={crypticPumpListing}
+                            onListed={setCrypticPumpListing}
+                          />
+                        );
+                      })()
+                    )}
                   </>
                 ) : null}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 md:px-4 md:py-4 min-h-[90px]">
-              <div className="flex flex-col gap-2.2">
-                <div className="flex items-center justify-start">
-                </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:w-full xl:max-w-[920px] xl:grid-cols-5">
+              <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Market cap</p>
+                <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{marketCapDisplay}</p>
+              </div>
 
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:w-full xl:max-w-[920px] xl:grid-cols-5">
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Market cap</p>
-                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{marketCapDisplay}</p>
-                  </div>
+              <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Price</p>
+                <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{priceDisplay}</p>
+                <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Spot</p>
+              </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Price</p>
-                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{priceDisplay}</p>
-                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Spot</p>
-                  </div>
+              <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Volume</p>
+                <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{volumeDisplay}</p>
+                <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Window {selectedTimeframe}</p>
+              </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Volume</p>
-                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{volumeDisplay}</p>
-                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Window {selectedTimeframe}</p>
-                  </div>
+              <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{liquidityLabel}</p>
+                <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{liquidityDisplay}</p>
+                {!isDexStage ? (
+                  <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
+                ) : (
+                  <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Stage {stagePill}</p>
+                )}
+              </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{liquidityLabel}</p>
-                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{liquidityDisplay}</p>
-                    {!isDexStage ? (
-                      <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
-                    ) : (
-                      <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Stage {stagePill}</p>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 col-span-2 md:col-span-1">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Holders</p>
-                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground">{tokenData.holders}</p>
-                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
-                  </div>
-                </div>
+              <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 col-span-2 md:col-span-1">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Holders</p>
+                <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground">{tokenData.holders}</p>
+                <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
               </div>
             </div>
           </div>

@@ -31,6 +31,7 @@ import {
   fetchDraftComments,
   fetchPrepareDraft,
   followDraft,
+  toggleDraftCommentReaction,
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
@@ -558,11 +559,12 @@ function TransmissionList({
   const [replyingTo, setReplyingTo] = useState<DraftComment | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reactingIds, setReactingIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
 
-    void fetchDraftComments(draftId)
+    void fetchDraftComments(draftId, wallet.account)
       .then((comments) => {
         if (!cancelled) setItems(comments);
       })
@@ -573,7 +575,7 @@ function TransmissionList({
     return () => {
       cancelled = true;
     };
-  }, [draftId]);
+  }, [draftId, wallet.account]);
 
   const send = async (reply = false) => {
     const text = reply ? replyBody.trim() : body.trim();
@@ -610,6 +612,62 @@ function TransmissionList({
       toast.error(err?.message || "Failed to send transmission");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const react = async (comment: DraftComment) => {
+    if (!wallet.account) {
+      toast.error("Connect wallet to fire this transmission.");
+      return;
+    }
+    if (reactingIds[comment.id]) return;
+
+    const previousCount = Number(comment.reactionCount || 0);
+    const previousReacted = Boolean(comment.viewerReacted);
+    const optimisticReacted = !previousReacted;
+    const optimisticCount = Math.max(0, previousCount + (optimisticReacted ? 1 : -1));
+
+    setReactingIds((prev) => ({ ...prev, [comment.id]: true }));
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === comment.id
+          ? { ...item, reactionCount: optimisticCount, viewerReacted: optimisticReacted }
+          : item
+      )
+    );
+
+    try {
+      const result = await toggleDraftCommentReaction(draftId, comment.id, wallet.account);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === comment.id
+            ? {
+                ...item,
+                reactionCount: result.reactionCount,
+                viewerReacted: result.reacted,
+              }
+            : item
+        )
+      );
+    } catch (err: any) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === comment.id
+            ? {
+                ...item,
+                reactionCount: previousCount,
+                viewerReacted: previousReacted,
+              }
+            : item
+        )
+      );
+      toast.error(err?.message || "Failed to fire transmission");
+    } finally {
+      setReactingIds((prev) => {
+        const next = { ...prev };
+        delete next[comment.id];
+        return next;
+      });
     }
   };
 
@@ -713,7 +771,21 @@ function TransmissionList({
                     </p>
 
                     <div className="mt-3 flex gap-4 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                      <span>🔥 {item.reactionCount}</span>
+                      <button
+                        type="button"
+                        onClick={() => void react(item)}
+                        disabled={Boolean(reactingIds[item.id])}
+                        aria-pressed={Boolean(item.viewerReacted)}
+                        aria-label={item.viewerReacted ? "Remove fire" : "Fire this transmission"}
+                        className={`inline-flex items-center gap-1 transition-colors disabled:opacity-60 ${
+                          item.viewerReacted
+                            ? "text-orange-300 hover:text-orange-200"
+                            : "text-muted-foreground hover:text-orange-200"
+                        }`}
+                      >
+                        <span aria-hidden="true">🔥</span>
+                        <span>{item.reactionCount || 0}</span>
+                      </button>
 
                       <button
                         type="button"

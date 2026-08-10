@@ -2,7 +2,12 @@ import crypto from "node:crypto";
 import { ethers } from "ethers";
 import { isSolanaChain, normalizeAddress, normalizeWalletFlexible, json } from "../../server/http.js";
 
-const ENGAGEMENT_ACTIONS = new Set(["follow_draft", "comment_draft", "arm_draft_notifications"]);
+const ENGAGEMENT_ACTIONS = new Set([
+  "follow_draft",
+  "comment_draft",
+  "arm_draft_notifications",
+  "react_draft_comment",
+]);
 
 function resolveAuthWallet(value, chainId, action) {
   if (ENGAGEMENT_ACTIONS.has(action)) {
@@ -22,6 +27,7 @@ const ACTIONS = new Set([
   "follow_draft",
   "comment_draft",
   "arm_draft_notifications",
+  "react_draft_comment",
   "draft_owner_session",
 ]);
 

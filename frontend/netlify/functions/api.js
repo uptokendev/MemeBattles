@@ -40,6 +40,7 @@ import voteCounts from "../../api/vote_counts.js";
 import { draftDeploy } from "../../api/dev-fix/draft-deploy.js";
 import {
   followedDrafts,
+  signedDraftCommentReaction,
   signedDraftComments,
   signedDraftFollow,
   signedDraftNotificationSubscription,
@@ -176,6 +177,7 @@ app.all("/drafts/:draftId/archive", wrap(draftArchive));
 app.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 app.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 app.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscription));
+app.all("/drafts/:draftId/comments/:commentId/reactions", wrap(signedDraftCommentReaction));
 app.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 app.all("/drafts/:draftId", wrap(signedDraftById));
 app.all("/prepare/:slug", wrap(signedPrepareBySlug));
