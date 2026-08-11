@@ -282,6 +282,38 @@ export default function PushDraftLive() {
         }
       }
 
+      // Server-side recovery: campaign already on-chain and draft was finalized in authorize.
+      if (authorization.alreadyOnChain || authorization.draftFinalized || authorization.existingDeployment) {
+        const campaignAddress =
+          authorization.existingDeployment?.campaignAddress || authorization.accounts?.campaign || "";
+        const mintAddress =
+          authorization.existingDeployment?.mintAddress || authorization.accounts?.mint || "";
+
+        if (!authorization.draftFinalized) {
+          // Older recovery response without server finalize — still mark once.
+          try {
+            await markDraftDeployment({
+              draftId: draft.id,
+              auth: deployAuth,
+              campaignAddress,
+              tokenAddress: mintAddress,
+              deployTxHash: "already-on-chain",
+              scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+            });
+          } catch (markErr: any) {
+            console.warn("[PushDraftLive] recovery mark-deploy", markErr);
+            // authorize recovery may have partially linked; treat as success if campaign known
+          }
+        }
+
+        toast.success(
+          `Existing Solana campaign linked to this draft (${campaignAddress.slice(0, 8)}…). No new create was sent.`,
+          { duration: 12_000 },
+        );
+        navigate(`/prepare/${draft.slug}`);
+        return;
+      }
+
       const created = await submitSolanaV4CreateFromAuthorization(authorization, {
         creatorAddress: solanaWallet.solanaAccount,
       });
@@ -304,10 +336,16 @@ export default function PushDraftLive() {
         marked = true;
       } catch (markErr: any) {
         const msg = String(markErr?.message || markErr || "");
-        if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
+        if (
+          /nonce invalid|already used|sign again|Unauthorized|401|already has an on-chain|ALREADY_DEPLOYED/i.test(
+            msg,
+          )
+        ) {
           // On-chain create already succeeded — only re-auth finalize, do not re-create.
           try {
-            await refreshDeployAuth();
+            if (/401|nonce|Unauthorized|sign again/i.test(msg)) {
+              await refreshDeployAuth();
+            }
             await markDraftDeployment({
               draftId: draft.id,
               auth: deployAuth,
@@ -318,7 +356,10 @@ export default function PushDraftLive() {
             });
             marked = true;
           } catch {
-            // fall through to partial-success UX below
+            // If draft is already linked, treat as success.
+            if (/already has an on-chain|ALREADY_DEPLOYED|alreadyDeployed/i.test(msg)) {
+              marked = true;
+            }
           }
         }
         if (!marked) {
@@ -326,7 +367,7 @@ export default function PushDraftLive() {
           // that used to arm cooldown/live-count and block re-deploy forever.
           console.error("[PushDraftLive] mark-deploy failed after Solana create", markErr);
           toast.success(
-            `Solana campaign created on-chain, but draft finalize failed. Campaign: ${created.campaignAddress.slice(0, 8)}… Tx: ${created.signature.slice(0, 12)}… Retry Push Live or contact ops to link the draft.`,
+            `Solana campaign created on-chain, but draft finalize failed. Campaign: ${created.campaignAddress.slice(0, 8)}… Tx: ${created.signature.slice(0, 12)}… Retry Push Live — recovery will link the draft without re-creating.`,
             { duration: 20_000 },
           );
           navigate(`/prepare/${draft.slug}`);

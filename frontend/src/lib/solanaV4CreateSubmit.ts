@@ -226,6 +226,7 @@ export async function submitSolanaV4CreatePlan(
 
   // Preflight: deterministic PDAs may already exist from a prior successful create
   // that failed to mark the draft (would otherwise sim-fail with InvalidCampaign).
+  // Create order is mint → vault → campaign; catch mint-only partials too.
   const existing = await connection.getMultipleAccountsInfo([campaignPk, mintPk], "confirmed");
   if (existing[0] && existing[0].owner.equals(programPk)) {
     return {
@@ -236,6 +237,12 @@ export async function submitSolanaV4CreatePlan(
       plan,
       recovered: true,
     };
+  }
+  if (existing[1] && existing[1].owner.equals(new PublicKey(TOKEN_PROGRAM))) {
+    throw new Error(
+      "Solana create blocked: mint PDA already exists but campaign account is empty (partial prior create). " +
+        "Retry will keep failing — use a new draft or ask ops to reclaim the mint PDA.",
+    );
   }
 
   const ed25519Ix = buildEd25519VerifyIx(web3, plan);
@@ -310,30 +317,35 @@ function formatSolanaSendError(error: unknown): string {
   };
   const message = String(anyErr?.message || error || "Solana transaction failed.");
   const logs = Array.isArray(anyErr?.logs) ? anyErr.logs : [];
+  // Some wallets only embed logs in the message string.
+  const combined = `${logs.join("\n")}\n${message}`;
 
-  const anchorLine = logs.find((line) => /AnchorError|Error Code:|Error Message:/i.test(line));
+  if (/InvalidCampaign|Campaign data is invalid/i.test(combined)) {
+    return (
+      "Solana create failed (InvalidCampaign): campaign/mint PDAs already exist from a prior create. " +
+      "Hard-refresh and retry Push Live — authorize recovery will link the existing campaign (no re-create)."
+    );
+  }
+  if (/InvalidCreateAuthorization/i.test(combined)) {
+    return (
+      "Solana create failed (InvalidCreateAuthorization): route digest mismatch or wallet/tx instruction order. " +
+      "Ensure Ed25519 verify is immediately before createCampaign and retry."
+    );
+  }
+  if (/CreatorCooldownActive/i.test(combined)) {
+    return (
+      "Solana create failed: creator launch cooldown is active on-chain. " +
+      "If a prior create already landed, retry Push Live for recovery instead of a fresh create."
+    );
+  }
+
+  const anchorLine =
+    logs.find((line) => /AnchorError|Error Code:|Error Message:/i.test(line)) ||
+    message.match(/Error Code:\s*[A-Za-z0-9_]+[^\n]*/i)?.[0];
   if (anchorLine) {
     const code = anchorLine.match(/Error Code:\s*([A-Za-z0-9_]+)/i)?.[1];
     const msg = anchorLine.match(/Error Message:\s*([^.]+)/i)?.[1];
     const account = anchorLine.match(/account:\s*([A-Za-z0-9_]+)/i)?.[1];
-    if (code === "InvalidCampaign" || /Campaign data is invalid/i.test(anchorLine)) {
-      return (
-        "Solana create failed (InvalidCampaign): campaign/mint PDAs may already exist from a prior create. " +
-        "Retry Push Live — recovery should link the existing on-chain campaign to this draft."
-      );
-    }
-    if (code === "InvalidCreateAuthorization") {
-      return (
-        "Solana create failed (InvalidCreateAuthorization): route digest mismatch or wallet/tx instruction order. " +
-        "Ensure Ed25519 verify is immediately before createCampaign and retry."
-      );
-    }
-    if (code === "CreatorCooldownActive") {
-      return (
-        "Solana create failed: creator launch cooldown is active on-chain. " +
-        "If a prior create already landed, use recovery/retry rather than a fresh create."
-      );
-    }
     const parts = ["Solana create simulation failed"];
     if (code) parts.push(code);
     if (account) parts.push(`account ${account}`);

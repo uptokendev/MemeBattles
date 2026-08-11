@@ -107,10 +107,13 @@ export type SolanaV4CreateAuthorizationResponse = {
   transactionPolicy: string;
   /** Set when deterministic campaign PDA already exists from a prior create. */
   alreadyOnChain?: boolean;
+  /** Server already wrote campaign_address / reservation LIVE — client may skip mark-deploy. */
+  draftFinalized?: boolean;
   existingDeployment?: {
     campaignAddress: string;
     mintAddress: string;
     recovered: boolean;
+    draftStatus?: string;
   };
 };
 

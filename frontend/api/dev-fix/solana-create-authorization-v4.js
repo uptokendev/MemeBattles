@@ -7,6 +7,7 @@ import {
   TickerReservationError,
   canonicalClusterForChain,
   loadTickerReservationByDraft,
+  markTickerReservationDeployed,
   refreshExpiredTickerReservations,
   withTickerReservationTransaction,
 } from "./ticker-reservation-service.js";
@@ -584,22 +585,217 @@ function validateDraft(row) {
       httpStatus: 400,
     });
   }
-  if (!ALLOWED_DRAFT_STATUSES.has(String(row.status))) {
+  // Already-linked drafts are recovered/finalized in the main handler (not a hard 409).
+  const alreadyLinked = Boolean(row.campaign_address);
+  if (!alreadyLinked && !ALLOWED_DRAFT_STATUSES.has(String(row.status))) {
     throw new SolanaCreateAuthorizationError("Publish the Prepare Mode promotion before authorizing Solana deployment.", {
       code: "SOLANA_DRAFT_NOT_READY",
     });
   }
-  if (row.campaign_address) {
-    throw new SolanaCreateAuthorizationError("This draft already has an on-chain campaign.", {
-      code: "SOLANA_DRAFT_ALREADY_DEPLOYED",
-    });
-  }
-  if (!String(row.logo_url || "").trim()) {
+  if (!alreadyLinked && !String(row.logo_url || "").trim()) {
     throw new SolanaCreateAuthorizationError("Draft requires a saved logo before Solana deployment.", {
       code: "SOLANA_DRAFT_LOGO_REQUIRED",
     });
   }
   publicKeyString(row.creator_wallet, "draft creator wallet");
+}
+
+function deriveCampaignAccounts({ draftId, reservationIdHash, generationId, programId, creator, nonce }) {
+  const campaignId = deriveCampaignId({
+    draftId,
+    reservationIdHash,
+    generationId,
+    programId,
+  });
+  const campaign = findProgramAddressSync([Buffer.from("campaign", "utf8"), campaignId], programId);
+  const mint = findProgramAddressSync([Buffer.from("campaign-mint", "utf8"), campaignId], programId);
+  const tokenVault = findProgramAddressSync([Buffer.from("token-vault", "utf8"), campaignId], programId);
+  const solVault = findProgramAddressSync([Buffer.from("sol-vault", "utf8"), campaignId], programId);
+  const createAuthorization = findProgramAddressSync(
+    [Buffer.from("create-auth", "utf8"), publicKeyBytes(creator), nonce || Buffer.alloc(32)],
+    programId,
+  );
+  return { campaignId, campaign, mint, tokenVault, solVault, createAuthorization };
+}
+
+/**
+ * When a prior create already landed, link draft + reservation and return recovery payload.
+ * Never ask the wallet to createCampaign again (deterministic PDAs → InvalidCampaign).
+ */
+async function finalizeExistingOnChainDeployment({
+  pool,
+  draft,
+  cluster,
+  programId,
+  onchain,
+  deploymentEvidence,
+  campaignAddress,
+  mintAddress,
+  reservation,
+  launchAt = 0n,
+}) {
+  const draftId = String(draft.id);
+  const scheduledLaunchAt =
+    launchAt && launchAt !== 0n ? Number(launchAt) : null;
+  const isScheduled =
+    Number.isInteger(scheduledLaunchAt) && scheduledLaunchAt > Math.floor(Date.now() / 1000);
+
+  const finalized = await withTickerReservationTransaction(pool, async (db) => {
+    const updated = await db.query(
+      `update public.campaign_drafts
+          set status = case
+                when $5::bigint is not null then 'scheduled'
+                when status in ('deployed', 'scheduled', 'live') then status
+                else 'deployed'
+              end,
+              visibility = 'public',
+              campaign_address = $2,
+              token_address = coalesce(nullif($3, ''), token_address, $3),
+              deploy_tx_hash = coalesce(nullif(deploy_tx_hash, ''), $4),
+              scheduled_launch_at = case
+                when $5::bigint is not null then to_timestamp($5)
+                else scheduled_launch_at
+              end,
+              deployed_at = coalesce(deployed_at, now()),
+              updated_at = now()
+        where id::text = $1
+        returning id, status, campaign_address, token_address, deploy_tx_hash`,
+      [
+        draftId,
+        campaignAddress,
+        mintAddress || null,
+        "already-on-chain",
+        isScheduled ? scheduledLaunchAt : null,
+      ],
+    );
+    let tickerReservation = reservation || null;
+    try {
+      tickerReservation = await markTickerReservationDeployed(db, {
+        draftId,
+        creatorWallet: draft.creator_wallet,
+        campaignAddress,
+        mint: mintAddress || null,
+        deploymentSignature: "already-on-chain",
+        scheduledLaunchAt: isScheduled ? scheduledLaunchAt : null,
+        programId,
+        generationId: hex32(onchain.generation.generationId),
+      });
+    } catch (error) {
+      // Reservation may already be LIVE/ARMED, missing, or released — still finalize the draft.
+      if (!(error instanceof TickerReservationError)) throw error;
+      console.warn(
+        "[solana-v4-create] recovery reservation mark:",
+        error.code,
+        error.message,
+      );
+      tickerReservation = await loadTickerReservationByDraft(db, draftId).catch(() => reservation || null);
+    }
+    return { draftRow: updated.rows[0] || null, tickerReservation };
+  });
+
+  const accounts = {
+    creator: publicKeyString(draft.creator_wallet),
+    globalConfig: onchain.accounts.globalConfig,
+    generationConfig: onchain.accounts.generationConfig,
+    creatorProfile: onchain.accounts.creatorProfile,
+    riskProfile: onchain.accounts.riskProfile,
+    clusterProfile: onchain.accounts.clusterProfile,
+    campaign: campaignAddress,
+    mint: mintAddress,
+    tokenVault: reservation
+      ? findProgramAddressSync(
+          [
+            Buffer.from("token-vault", "utf8"),
+            deriveCampaignId({
+              draftId,
+              reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
+              generationId: onchain.generation.generationId,
+              programId,
+            }),
+          ],
+          programId,
+        ).publicKey
+      : campaignAddress,
+    solVault: reservation
+      ? findProgramAddressSync(
+          [
+            Buffer.from("sol-vault", "utf8"),
+            deriveCampaignId({
+              draftId,
+              reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
+              generationId: onchain.generation.generationId,
+              programId,
+            }),
+          ],
+          programId,
+        ).publicKey
+      : campaignAddress,
+    createAuthorization: onchain.accounts.creatorProfile,
+    instructions: SYSVAR_INSTRUCTIONS_ID,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SYSTEM_PROGRAM_ID,
+  };
+
+  // Prefer accurate vault PDAs when we have reservation hashes.
+  if (reservation?.reservationIdHash) {
+    try {
+      const pdas = deriveCampaignAccounts({
+        draftId,
+        reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
+        generationId: onchain.generation.generationId,
+        programId,
+        creator: draft.creator_wallet,
+      });
+      accounts.tokenVault = pdas.tokenVault.publicKey;
+      accounts.solVault = pdas.solVault.publicKey;
+      accounts.createAuthorization = pdas.createAuthorization.publicKey;
+      accounts.campaign = pdas.campaign.publicKey;
+      accounts.mint = mintAddress || pdas.mint.publicKey;
+    } catch {
+      // keep fallbacks above
+    }
+  }
+
+  const metadata = normalizeDraftMetadata(draft, reservation || { normalizedTicker: draft.ticker });
+
+  return {
+    schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
+    mode: isScheduled ? "countdown" : "draft_deploy_now",
+    alreadyOnChain: true,
+    draftFinalized: true,
+    cluster,
+    programId,
+    createArgs: null,
+    accounts,
+    authorization: null,
+    generation: publicGeneration(onchain.generation),
+    deploymentEvidence,
+    metadata: {
+      canonical: metadata,
+      canonicalJsonSha256: sha256Hex(Buffer.from(canonicalJson(metadata), "utf8")),
+    },
+    existingDeployment: {
+      campaignAddress,
+      mintAddress: mintAddress || accounts.mint,
+      recovered: true,
+      draftStatus: finalized.draftRow?.status || "deployed",
+    },
+    tickerReservation: finalized.tickerReservation,
+    preflight: {
+      chainNow: onchain.chainNow,
+      recovery: true,
+      draftFinalized: true,
+      globalSecurityDefaultsLocked: onchain.global.securityDefaultsLocked,
+      creatorTier: onchain.creatorProfile.tier,
+      creatorLiveBondingCount: onchain.creatorProfile.liveBondingCount,
+      creatorMaxLiveBondingCount: onchain.creatorProfile.maxLiveBondingCount,
+      riskLevel: onchain.riskProfile.riskLevel,
+      riskClusterSize: onchain.clusterProfile.size,
+    },
+    transaction: null,
+    transactionPolicy:
+      "Campaign already exists on-chain. Railway finalized the draft; no wallet create transaction is required.",
+  };
 }
 
 async function authorizeReservation(pool, {
@@ -619,11 +815,6 @@ async function authorizeReservation(pool, {
         httpStatus: 409,
       });
     }
-    if ([TICKER_RESERVATION_STATUS.ARMED_ONCHAIN, TICKER_RESERVATION_STATUS.LIVE].includes(reservation.status)) {
-      throw new TickerReservationError("Ticker is already permanently armed on-chain or live.", {
-        code: "RESERVATION_ALREADY_ARMED",
-      });
-    }
     if (Number(reservation.chainId) !== Number(draft.chain_id) || reservation.cluster !== cluster) {
       throw new TickerReservationError("Ticker reservation chain or cluster does not match this Solana deployment.", {
         code: "RESERVATION_CLUSTER_MISMATCH",
@@ -638,6 +829,18 @@ async function authorizeReservation(pool, {
       throw new TickerReservationError("Ticker reservation no longer matches the draft ticker.", {
         code: "RESERVATION_TICKER_MISMATCH",
       });
+    }
+
+    // Already LIVE/ARMED: only recovery is allowed (buildAuthorization returns alreadyOnChain).
+    if ([TICKER_RESERVATION_STATUS.ARMED_ONCHAIN, TICKER_RESERVATION_STATUS.LIVE].includes(reservation.status)) {
+      const nonce = crypto.randomBytes(32);
+      const result = await buildAuthorization(reservation, nonce);
+      if (!result?.response?.alreadyOnChain && !result?.response?.existingDeployment) {
+        throw new TickerReservationError("Ticker is already permanently armed on-chain or live.", {
+          code: "RESERVATION_ALREADY_ARMED",
+        });
+      }
+      return { reservation, ...result };
     }
 
     const nextVersion = BigInt(reservation.reservationVersion) + 1n;
@@ -814,7 +1017,116 @@ export async function solanaCreateAuthorizationV4(req, res) {
     const graduationTarget = toBigInt(body.graduationTargetUsdMicros, "graduationTargetUsdMicros");
     validateGraduationTarget(onchain.generation, graduationTarget);
     const launchAt = body.launchAt == null || body.launchAt === "" ? 0n : toBigInt(body.launchAt, "launchAt");
-    validateLaunchAt(launchAt, onchain.chainNow);
+    // Recovery may skip schedule window checks; only enforce for true fresh creates.
+    if (!draft.campaign_address) {
+      validateLaunchAt(launchAt, onchain.chainNow);
+    }
+
+    // ── Early recovery (before reservation arming / cooldown) ──────────────
+    // Covers: create succeeded + mark failed, draft already linked, reservation LIVE/ARMED.
+    const peekReservation = await loadTickerReservationByDraft(pool, draftId);
+    const recoveryCandidates = [];
+    if (draft.campaign_address) {
+      recoveryCandidates.push({
+        campaignAddress: String(draft.campaign_address).trim(),
+        mintAddress: String(draft.token_address || "").trim() || null,
+        source: "draft_row",
+      });
+    }
+    if (peekReservation?.campaignPda) {
+      recoveryCandidates.push({
+        campaignAddress: String(peekReservation.campaignPda).trim(),
+        mintAddress: String(peekReservation.mint || "").trim() || null,
+        source: "reservation_row",
+      });
+    }
+    if (peekReservation?.reservationIdHash) {
+      try {
+        const pdas = deriveCampaignAccounts({
+          draftId,
+          reservationIdHash: nonZeroBytes32(peekReservation.reservationIdHash, "reservationIdHash"),
+          generationId: onchain.generation.generationId,
+          programId,
+          creator: draft.creator_wallet,
+        });
+        recoveryCandidates.push({
+          campaignAddress: pdas.campaign.publicKey,
+          mintAddress: pdas.mint.publicKey,
+          source: "derived_pda",
+          pdas,
+        });
+      } catch (error) {
+        console.warn("[solana-v4-create] PDA derive for recovery failed", error?.message || error);
+      }
+    }
+
+    // Deduplicate by campaign address.
+    const seenCampaign = new Set();
+    for (const candidate of recoveryCandidates) {
+      const key = candidate.campaignAddress;
+      if (!key || seenCampaign.has(key)) continue;
+      seenCampaign.add(key);
+
+      let campaignInfo = null;
+      let mintInfo = null;
+      try {
+        const addresses = [candidate.campaignAddress];
+        if (candidate.mintAddress) addresses.push(candidate.mintAddress);
+        const infos = await getMultipleAccounts(rpcUrl, addresses);
+        campaignInfo = infos[0];
+        mintInfo = infos[1] || null;
+      } catch (error) {
+        console.warn("[solana-v4-create] recovery account lookup failed", error?.message || error);
+        continue;
+      }
+
+      const campaignOwned = campaignInfo && samePublicKey(campaignInfo.owner, programId);
+      const mintOwned =
+        candidate.mintAddress && mintInfo && samePublicKey(mintInfo.owner, TOKEN_PROGRAM_ID);
+
+      // Mint-only partial create (create failed mid-instruction) — cannot re-create or recover cleanly.
+      if (!campaignOwned && mintOwned) {
+        throw new SolanaCreateAuthorizationError(
+          `Solana mint PDA ${candidate.mintAddress} already exists but campaign PDA ${candidate.campaignAddress} does not. ` +
+            `A prior create partially landed; operator must reclaim/close the mint PDA or use a new draft/reservation.`,
+          { code: "SOLANA_PARTIAL_CREATE_ORPHAN", httpStatus: 409 },
+        );
+      }
+
+      if (campaignOwned) {
+        const mintAddress =
+          mintOwned && candidate.mintAddress
+            ? candidate.mintAddress
+            : candidate.mintAddress || candidate.pdas?.mint?.publicKey || draft.token_address || candidate.campaignAddress;
+        const recovery = await finalizeExistingOnChainDeployment({
+          pool,
+          draft,
+          cluster,
+          programId,
+          onchain,
+          deploymentEvidence,
+          campaignAddress: candidate.campaignAddress,
+          mintAddress,
+          reservation: peekReservation,
+          launchAt,
+        });
+        return json(res, 200, recovery);
+      }
+    }
+
+    // Fresh create requires a free campaign PDA and a non-deployed draft status.
+    if (draft.campaign_address) {
+      // Candidate checks above should have recovered; if not, chain account is missing.
+      throw new SolanaCreateAuthorizationError(
+        `Draft is linked to campaign ${draft.campaign_address} but that account is not program-owned on RPC. Check SOLANA_RPC_URL / program id.`,
+        { code: "SOLANA_DRAFT_CAMPAIGN_MISSING_ONCHAIN", httpStatus: 409 },
+      );
+    }
+    if (!ALLOWED_DRAFT_STATUSES.has(String(draft.status))) {
+      throw new SolanaCreateAuthorizationError("Publish the Prepare Mode promotion before authorizing Solana deployment.", {
+        code: "SOLANA_DRAFT_NOT_READY",
+      });
+    }
 
     const ttlSeconds = parsePositiveInteger(
       process.env.SOLANA_CREATE_AUTH_TTL_SECONDS,
@@ -835,22 +1147,16 @@ export async function solanaCreateAuthorizationV4(req, res) {
         const tickerHash = nonZeroBytes32(reservation.tickerHash, "tickerHash");
         const metadata = normalizeDraftMetadata(draft, reservation);
         const metadataHash = sha256(Buffer.from(canonicalJson(metadata), "utf8"));
-        const campaignId = deriveCampaignId({
+        const { campaignId, campaign, mint, tokenVault, solVault, createAuthorization } = deriveCampaignAccounts({
           draftId,
           reservationIdHash,
           generationId: onchain.generation.generationId,
           programId,
+          creator: draft.creator_wallet,
+          nonce,
         });
-        const campaign = findProgramAddressSync([Buffer.from("campaign", "utf8"), campaignId], programId);
-        const mint = findProgramAddressSync([Buffer.from("campaign-mint", "utf8"), campaignId], programId);
-        const tokenVault = findProgramAddressSync([Buffer.from("token-vault", "utf8"), campaignId], programId);
-        const solVault = findProgramAddressSync([Buffer.from("sol-vault", "utf8"), campaignId], programId);
-        const createAuthorization = findProgramAddressSync(
-          [Buffer.from("create-auth", "utf8"), publicKeyBytes(draft.creator_wallet), nonce],
-          programId,
-        );
 
-        // Recovery: deterministic campaign already exists from a prior successful create.
+        // Double-check inside the arming transaction (race with another tab).
         const [campaignInfo, mintInfo] = await getMultipleAccounts(rpcUrl, [
           campaign.publicKey,
           mint.publicKey,
@@ -860,6 +1166,7 @@ export async function solanaCreateAuthorizationV4(req, res) {
             mintInfo && samePublicKey(mintInfo.owner, TOKEN_PROGRAM_ID)
               ? mint.publicKey
               : mint.publicKey;
+          // Signal recovery; outer handler finalizes after authorizeReservation returns.
           return {
             auditMetadata: {
               schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
@@ -874,6 +1181,7 @@ export async function solanaCreateAuthorizationV4(req, res) {
               schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
               mode: launchAt === 0n ? "draft_deploy_now" : "countdown",
               alreadyOnChain: true,
+              draftFinalized: false,
               cluster,
               programId,
               createArgs: null,
@@ -907,6 +1215,12 @@ export async function solanaCreateAuthorizationV4(req, res) {
               },
             },
           };
+        }
+        if (mintInfo && samePublicKey(mintInfo.owner, TOKEN_PROGRAM_ID) && !campaignInfo) {
+          throw new SolanaCreateAuthorizationError(
+            `Solana mint PDA ${mint.publicKey} already exists but campaign is empty (partial create). Cannot re-create; operator must reclaim the mint or use a new draft.`,
+            { code: "SOLANA_PARTIAL_CREATE_ORPHAN", httpStatus: 409 },
+          );
         }
 
         // Fresh create: enforce cooldown / live-count now that we know PDAs are free.
@@ -1025,6 +1339,31 @@ export async function solanaCreateAuthorizationV4(req, res) {
         };
       },
     });
+
+    // Race recovery: authorizeReservation saw the campaign PDA after early check missed it.
+    if (authorized.response?.alreadyOnChain || authorized.response?.existingDeployment) {
+      const campaignAddress =
+        authorized.response.existingDeployment?.campaignAddress ||
+        authorized.response.accounts?.campaign;
+      const mintAddress =
+        authorized.response.existingDeployment?.mintAddress ||
+        authorized.response.accounts?.mint;
+      if (campaignAddress) {
+        const recovery = await finalizeExistingOnChainDeployment({
+          pool,
+          draft,
+          cluster,
+          programId,
+          onchain,
+          deploymentEvidence,
+          campaignAddress,
+          mintAddress,
+          reservation: authorized.reservation || peekReservation,
+          launchAt,
+        });
+        return json(res, 200, recovery);
+      }
+    }
 
     return json(res, 200, {
       ...authorized.response,

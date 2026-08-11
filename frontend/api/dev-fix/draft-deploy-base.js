@@ -341,6 +341,73 @@ export async function draftDeploy(req, res) {
 
   if (!campaignAddress) return json(res, 400, { error: "Missing deployed campaign address." });
 
+  // Idempotent mark: draft already linked to this same campaign (re-try after partial mark).
+  const existingCampaign = String(row.campaign_address || "").trim();
+  if (existingCampaign) {
+    const sameCampaign = isSolanaChain(Number(row.chain_id))
+      ? existingCampaign === campaignAddress
+      : existingCampaign.toLowerCase() === String(campaignAddress).toLowerCase();
+    if (!sameCampaign) {
+      return json(res, 409, {
+        error: "This draft already has an on-chain campaign.",
+        code: "DRAFT_ALREADY_DEPLOYED",
+      });
+    }
+    try {
+      const redeployed = await withTickerReservationTransaction(pool, async (db) => {
+        const updated = await db.query(
+          `update campaign_drafts
+              set status = case
+                    when $4::bigint is not null then 'scheduled'
+                    when status in ('deployed', 'scheduled', 'live') then status
+                    else 'deployed'
+                  end,
+                  visibility = 'public',
+                  token_address = coalesce($3, token_address),
+                  deploy_tx_hash = coalesce(deploy_tx_hash, $5),
+                  deployed_at = coalesce(deployed_at, now()),
+                  updated_at = now()
+            where id::text = $1
+            returning *`,
+          [
+            draftId,
+            existingCampaign,
+            tokenAddress || null,
+            isScheduled ? scheduledLaunchAt : null,
+            deployTxHash || "already-on-chain",
+          ],
+        );
+        let tickerReservation = null;
+        try {
+          tickerReservation = await markTickerReservationDeployed(db, {
+            draftId,
+            creatorWallet: row.creator_wallet,
+            campaignAddress: existingCampaign,
+            mint: tokenAddress || null,
+            deploymentSignature: deployTxHash || "already-on-chain",
+            scheduledLaunchAt: isScheduled ? scheduledLaunchAt : null,
+            programId: String(body.factoryAddress || "").trim() || null,
+            generationId: body.generationId == null ? null : String(body.generationId),
+          });
+        } catch (err) {
+          if (!(err instanceof TickerReservationError)) throw err;
+        }
+        return { draft: mapDraftRow(updated.rows[0]), tickerReservation };
+      });
+      return json(res, 200, {
+        ok: true,
+        alreadyDeployed: true,
+        draft: redeployed.draft,
+        tickerReservation: redeployed.tickerReservation,
+      });
+    } catch (error) {
+      if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+        return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+      }
+      throw error;
+    }
+  }
+
   let deployed;
   try {
     deployed = await withTickerReservationTransaction(pool, async (db) => {
