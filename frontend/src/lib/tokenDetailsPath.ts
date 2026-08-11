@@ -64,13 +64,21 @@ export function tokenDetailsPath(
   if (!id) return "/";
 
   const params = new URLSearchParams();
-  const resolvedChain =
-    Number.isFinite(chainId) && chainId > 0
-      ? chainId
-      : isSolanaBase58Address(id)
-        ? 101
+  // Always pin Solana; for EVM only attach chainId when the caller provided one
+  // (preserves legacy `/token/0x…` links without forcing ?chainId=).
+  const resolvedChain = isSolana
+    ? chainId || 101
+    : isSolanaBase58Address(id)
+      ? 101
+      : Number.isFinite(chainId) && chainId > 0
+        ? chainId
         : 0;
-  if (resolvedChain > 0) params.set("chainId", String(resolvedChain));
+  if (resolvedChain === 101 || resolvedChain === 102) {
+    params.set("chainId", String(resolvedChain));
+  } else if (resolvedChain > 0 && (options?.chainId != null || tokenOrCampaign.chainId != null)) {
+    // Explicit chain from caller (Create / Featured) — keep multi-chain BNB correct.
+    params.set("chainId", String(resolvedChain));
+  }
 
   const extra = String(options?.search || "").replace(/^\?/, "");
   if (extra) {
@@ -80,6 +88,7 @@ export function tokenDetailsPath(
     });
   }
 
+  // encodeURIComponent is a no-op for 0x hex; required for some base58 edge chars.
   const qs = params.toString();
   return qs ? `/token/${encodeURIComponent(id)}?${qs}` : `/token/${encodeURIComponent(id)}`;
 }

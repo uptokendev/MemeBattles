@@ -173,17 +173,20 @@ export default async function handler(req, res) {
 
     const canAddLiveFallback = tab !== "dex" && status !== "graduated" && status !== "ended";
     if (canAddLiveFallback) {
+      const solanaFeed = Number(chainId) === 101 || Number(chainId) === 102;
       for (const row of rows) {
         const scheduledMs = row?.scheduled_launch_at ? new Date(row.scheduled_launch_at).getTime() : NaN;
         const isFutureSchedule = Number.isFinite(scheduledMs) && scheduledMs > now;
         if (isFutureSchedule) continue;
-        // Include immediately deployed drafts (Solana) and past-schedule arms.
-        const isDeployedLive =
+        // BNB: only past-schedule draft arms (pre-existing behavior — indexer owns live rows).
+        // Solana: also include immediately deployed public drafts (no full indexer yet).
+        const isDeployedLiveSolana =
+          solanaFeed &&
           String(row.status) === "deployed" &&
           String(row.visibility) === "public" &&
           Boolean(row.campaign_address);
         const isPastSchedule = Number.isFinite(scheduledMs) && scheduledMs <= now;
-        if (!isDeployedLive && !isPastSchedule) continue;
+        if (!isDeployedLiveSolana && !isPastSchedule) continue;
         if (!matchesSearch(row, query.search)) continue;
         const key = lifecycleKey(row.chain_id, row.campaign_address);
         if (seen.has(key)) continue;
