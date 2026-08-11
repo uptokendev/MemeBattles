@@ -1910,7 +1910,7 @@ const bnbUsd = useMemo(() => {
 
     const loadReserve = async () => {
       try {
-        if (!campaign?.campaign) {
+        if (!campaign?.campaign || !readProvider || isSolanaPage) {
           setCurveReserveWei(null);
           return;
         }
@@ -1926,7 +1926,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [readProvider, campaign?.campaign]);
+  }, [readProvider, campaign?.campaign, isSolanaPage]);
 
   // Campaign activity counters (buy/sell volume, buyers). Used for Flywheel and related panels.
   useEffect(() => {
@@ -1960,7 +1960,7 @@ const bnbUsd = useMemo(() => {
 
     const loadBalances = async () => {
       try {
-        if (!wallet.account) {
+        if (!wallet.account || !readProvider || isSolanaPage) {
           setBnbBalanceWei(null);
           setTokenBalanceWei(null);
           return;
@@ -1997,7 +1997,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [readProvider, wallet.account, campaign?.token]);
+  }, [readProvider, wallet.account, campaign?.token, isSolanaPage]);
 
   // Build transactions table rows from continuous market trade stream.
   useEffect(() => {
@@ -2422,6 +2422,96 @@ const bnbUsd = useMemo(() => {
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
+
+    // ── Solana bonding: exact SOL in (buy) / exact tokens in (sell) ─────────
+    if (isSolanaPage) {
+      try {
+        setTradePending(true);
+        const { getSolanaProvider } = await import("@/lib/solanaWallet");
+        const {
+          requestSolanaTradeAuthorization,
+          submitSolanaTradeV1,
+          ensureTraderAta,
+          calculateFee,
+        } = await import("@/lib/solanaTradeV1");
+
+        const provider = getSolanaProvider();
+        const trader = String(provider?.publicKey?.toString?.() || "");
+        if (!trader) {
+          toast({
+            title: "Connect Solana wallet",
+            description: "Connect Phantom / Solflare to trade Solana campaigns.",
+          });
+          window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+          return;
+        }
+
+        const mint = String(campaign.token || campaign.campaign);
+        const decimals = 6; // V4 devnet generation uses 6
+        const scale = 10n ** BigInt(decimals);
+
+        // Buy: tradeAmount is SOL (BNB denom UI label still shows BNB — force SOL parse).
+        // Sell: tradeAmount is tokens.
+        let amountIn: bigint;
+        let minOut: bigint;
+        if (tradeTab === "buy") {
+          // Parse as SOL with up to 9 decimals (lamports)
+          const solStr = String(tradeAmount || "0").trim();
+          const solParts = solStr.split(".");
+          const whole = BigInt(solParts[0] || "0");
+          const frac = (solParts[1] || "").slice(0, 9).padEnd(9, "0");
+          amountIn = whole * 1_000_000_000n + BigInt(frac || "0");
+          if (amountIn <= 0n) throw new Error("Enter a SOL amount to buy.");
+          // Without live curve snapshot, minOut=0 (program still validates economics).
+          minOut = 0n;
+          void calculateFee;
+          toast({
+            title: "Submitting Solana buy",
+            description: `Exact ${solStr} SOL in → tokens out (fee from gross on-chain).`,
+          });
+        } else {
+          const tokStr = String(tradeAmount || "0").trim();
+          const parts = tokStr.split(".");
+          const whole = BigInt(parts[0] || "0");
+          const frac = (parts[1] || "").slice(0, decimals).padEnd(decimals, "0");
+          amountIn = whole * scale + BigInt(frac || "0");
+          if (amountIn <= 0n) throw new Error("Enter a token amount to sell.");
+          minOut = 0n;
+          toast({
+            title: "Submitting Solana sell",
+            description: `Exact ${tokStr} tokens in → SOL out.`,
+          });
+        }
+
+        await ensureTraderAta({ mint, owner: trader });
+
+        // Vaults optional — if campaign row doesn't have them, authorize may still work with campaignId later.
+        const auth = await requestSolanaTradeAuthorization({
+          side: tradeTab === "buy" ? "buy" : "sell",
+          campaignAddress: campaign.campaign,
+          mintAddress: mint,
+          traderAddress: trader,
+          amountIn,
+          minOut,
+          chainId: SOLANA_CHAIN_ID,
+        });
+        const result = await submitSolanaTradeV1(auth, { traderAddress: trader });
+        toast({
+          title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
+          description: `Tx: ${result.signature.slice(0, 12)}…`,
+        });
+      } catch (e: any) {
+        console.error("[TokenDetails] Solana trade failed", e);
+        toast({
+          title: "Solana trade failed",
+          description: String(e?.message || e || "Unknown error"),
+          variant: "destructive",
+        });
+      } finally {
+        setTradePending(false);
+      }
+      return;
+    }
 
     if (isDexStage) {
       if (!isTopazTradingActive || !campaign?.token) {

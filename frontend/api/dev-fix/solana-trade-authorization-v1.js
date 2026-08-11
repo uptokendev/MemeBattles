@@ -1,0 +1,318 @@
+/**
+ * Solana V1 bonding trade authorization (buy exact SOL in / sell exact tokens in).
+ * Signs a 32-byte digest for Ed25519 verify immediately before buy_tokens / sell_tokens.
+ * Fail-closed until SOLANA_TRADE_AUTH_ENABLED=true.
+ *
+ * Digest layout matches programs/memewarzone_solana/src/authorized_trade.rs:
+ *   TRADE_AUTH_DOMAIN | u16 schema | program_id | campaign | mint | trader |
+ *   u8 side | u64 amount_in | u64 min_out | i64 deadline | nonce[32]
+ */
+import crypto from "node:crypto";
+
+import { badMethod, isSolanaChain, json, readJson, isSolanaAddress } from "../../server/http.js";
+import {
+  SYSVAR_INSTRUCTIONS_ID,
+  SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  createEd25519Signer,
+  findProgramAddressSync,
+  publicKeyBytes,
+  publicKeyString,
+  sha256,
+  toBigInt,
+  u16,
+  u64,
+  u8,
+  i64,
+} from "./solana-v4-primitives.js";
+
+const TRADE_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_TRADE_V1", "utf8");
+const TRADE_AUTH_SCHEMA_VERSION = 1;
+const TRADE_SIDE_BUY = 1;
+const TRADE_SIDE_SELL = 2;
+const DEFAULT_AUTH_TTL_SECONDS = 5 * 60;
+const MAX_AUTH_TTL_SECONDS = 30 * 60;
+const TRADE_AUTH_SEED = Buffer.from("trade-auth", "utf8");
+const TOKEN_VAULT_SEED = Buffer.from("token-vault", "utf8");
+const SOL_VAULT_SEED = Buffer.from("sol-vault", "utf8");
+const ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
+class SolanaTradeAuthorizationError extends Error {
+  constructor(message, { code = "SOLANA_TRADE_AUTHORIZATION_ERROR", httpStatus = 409, cause = null } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = "SolanaTradeAuthorizationError";
+    this.code = code;
+    this.httpStatus = httpStatus;
+  }
+}
+
+function isTruthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function requiredEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) {
+    throw new SolanaTradeAuthorizationError(`${name} is not configured.`, {
+      code: "SOLANA_TRADE_CONFIGURATION_INCOMPLETE",
+      httpStatus: 503,
+    });
+  }
+  return value;
+}
+
+function parsePositiveInteger(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(maximum, Math.trunc(n));
+}
+
+function methodAllowed(req, res, allowed) {
+  if (allowed.includes(req.method)) return true;
+  badMethod(res);
+  return false;
+}
+
+function samePublicKey(left, right) {
+  try {
+    return publicKeyBytes(left).equals(publicKeyBytes(right));
+  } catch {
+    return false;
+  }
+}
+
+async function rpcCall(rpcUrl, method, params) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (payload.error) {
+    throw new SolanaTradeAuthorizationError(`Solana RPC ${method} failed: ${payload.error.message || "unknown"}`, {
+      code: "SOLANA_RPC_ERROR",
+      httpStatus: 503,
+    });
+  }
+  return payload.result;
+}
+
+async function getChainUnixTime(rpcUrl) {
+  const slot = await rpcCall(rpcUrl, "getSlot", [{ commitment: "confirmed" }]);
+  const blockTime = await rpcCall(rpcUrl, "getBlockTime", [slot]);
+  if (!Number.isInteger(blockTime) || blockTime <= 0) {
+    throw new SolanaTradeAuthorizationError("Solana RPC did not return a confirmed block time.", {
+      code: "SOLANA_CHAIN_TIME_UNAVAILABLE",
+      httpStatus: 503,
+    });
+  }
+  return blockTime;
+}
+
+function findAssociatedTokenAddress(owner, mint) {
+  return findProgramAddressSync(
+    [publicKeyBytes(owner), publicKeyBytes(TOKEN_PROGRAM_ID), publicKeyBytes(mint)],
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
+}
+
+function parseCampaignId(value) {
+  if (!value) return null;
+  if (Buffer.isBuffer(value) && value.length === 32) return value;
+  if (Array.isArray(value) && value.length === 32) return Buffer.from(value);
+  const raw = String(value).replace(/^0x/i, "").trim();
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
+  return null;
+}
+
+function buildTradeAuthorizationDigest({
+  programId,
+  campaign,
+  mint,
+  trader,
+  side,
+  amountIn,
+  minOut,
+  deadline,
+  nonce,
+}) {
+  return sha256(
+    TRADE_AUTH_DOMAIN,
+    u16(TRADE_AUTH_SCHEMA_VERSION, "schemaVersion"),
+    publicKeyBytes(programId, "programId"),
+    publicKeyBytes(campaign, "campaign"),
+    publicKeyBytes(mint, "mint"),
+    publicKeyBytes(trader, "trader"),
+    u8(side, "side"),
+    u64(amountIn, "amountIn"),
+    u64(minOut, "minOut"),
+    i64(deadline, "deadline"),
+    Buffer.from(nonce),
+  );
+}
+
+/**
+ * POST /api/solana/trade-authorize
+ */
+export async function solanaTradeAuthorizationV1(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+
+  try {
+    if (!isTruthy(process.env.SOLANA_TRADE_AUTH_ENABLED)) {
+      throw new SolanaTradeAuthorizationError(
+        "Solana trade authorization is disabled. Set SOLANA_TRADE_AUTH_ENABLED=true after program upgrade + buy/sell unpause.",
+        { code: "SOLANA_TRADE_AUTH_DISABLED", httpStatus: 503 },
+      );
+    }
+
+    const body = await readJson(req);
+    const chainId = Number(body.chainId || 101);
+    if (!isSolanaChain(chainId)) {
+      throw new SolanaTradeAuthorizationError("chainId must be a Solana chain (101).", {
+        code: "NOT_A_SOLANA_CHAIN",
+        httpStatus: 400,
+      });
+    }
+
+    const sideRaw = String(body.side || "").trim().toLowerCase();
+    if (sideRaw !== "buy" && sideRaw !== "sell") {
+      throw new SolanaTradeAuthorizationError('side must be "buy" or "sell".', {
+        code: "INVALID_TRADE_SIDE",
+        httpStatus: 400,
+      });
+    }
+    const side = sideRaw === "buy" ? TRADE_SIDE_BUY : TRADE_SIDE_SELL;
+
+    const campaignAddress = publicKeyString(body.campaignAddress, "campaignAddress");
+    const mintAddress = publicKeyString(
+      body.mintAddress || body.tokenAddress || body.campaignAddress,
+      "mintAddress",
+    );
+    const traderAddress = publicKeyString(body.traderAddress || body.walletAddress, "traderAddress");
+    if (!isSolanaAddress(traderAddress)) {
+      throw new SolanaTradeAuthorizationError("traderAddress must be a Solana base58 public key.", {
+        code: "INVALID_TRADER",
+        httpStatus: 400,
+      });
+    }
+
+    const amountIn = toBigInt(body.amountIn, "amountIn");
+    const minOut = toBigInt(body.minOut ?? 0, "minOut");
+    if (amountIn <= 0n) {
+      throw new SolanaTradeAuthorizationError("amountIn must be > 0.", {
+        code: "INVALID_AMOUNT",
+        httpStatus: 400,
+      });
+    }
+
+    const rpcUrl = requiredEnv("SOLANA_RPC_URL");
+    const programId = publicKeyString(requiredEnv("SOLANA_LAUNCHPAD_PROGRAM_ID"), "SOLANA_LAUNCHPAD_PROGRAM_ID");
+    const routeSecret = requiredEnv("SOLANA_ROUTE_SIGNER_SECRET_KEY");
+    const expectedRouteSigner = publicKeyString(
+      requiredEnv("SOLANA_ROUTE_SIGNER_PUBLIC_KEY"),
+      "SOLANA_ROUTE_SIGNER_PUBLIC_KEY",
+    );
+    const signer = createEd25519Signer(routeSecret);
+    if (!samePublicKey(signer.publicKeyBase58, expectedRouteSigner)) {
+      throw new SolanaTradeAuthorizationError("Route signer secret does not match SOLANA_ROUTE_SIGNER_PUBLIC_KEY.", {
+        code: "SOLANA_ROUTE_SIGNER_CONFIGURATION_MISMATCH",
+        httpStatus: 503,
+      });
+    }
+
+    const chainNow = await getChainUnixTime(rpcUrl);
+    const ttlSeconds = parsePositiveInteger(
+      process.env.SOLANA_TRADE_AUTH_TTL_SECONDS,
+      DEFAULT_AUTH_TTL_SECONDS,
+      MAX_AUTH_TTL_SECONDS,
+    );
+    const deadline = BigInt(chainNow + ttlSeconds);
+    const nonce = crypto.randomBytes(32);
+
+    let tokenVault = body.tokenVault ? publicKeyString(body.tokenVault, "tokenVault") : null;
+    let solVault = body.solVault ? publicKeyString(body.solVault, "solVault") : null;
+    const campaignId = parseCampaignId(body.campaignId);
+    if (campaignId) {
+      if (!tokenVault) {
+        tokenVault = findProgramAddressSync([TOKEN_VAULT_SEED, campaignId], programId).publicKey;
+      }
+      if (!solVault) {
+        solVault = findProgramAddressSync([SOL_VAULT_SEED, campaignId], programId).publicKey;
+      }
+    }
+
+    const tradeAuth = findProgramAddressSync(
+      [TRADE_AUTH_SEED, publicKeyBytes(traderAddress), nonce],
+      programId,
+    );
+    const traderAta = body.traderTokenAccount
+      ? publicKeyString(body.traderTokenAccount, "traderTokenAccount")
+      : findAssociatedTokenAddress(traderAddress, mintAddress).publicKey;
+
+    const digest = buildTradeAuthorizationDigest({
+      programId,
+      campaign: campaignAddress,
+      mint: mintAddress,
+      trader: traderAddress,
+      side,
+      amountIn,
+      minOut,
+      deadline,
+      nonce,
+    });
+    const signature = signer.sign(digest);
+
+    return json(res, 200, {
+      schemaVersion: TRADE_AUTH_SCHEMA_VERSION,
+      side: sideRaw,
+      sideCode: side,
+      chainId,
+      programId,
+      chainNow,
+      createArgs: {
+        amountIn: amountIn.toString(),
+        minOut: minOut.toString(),
+        deadline: deadline.toString(),
+        nonce: Array.from(nonce),
+      },
+      accounts: {
+        trader: traderAddress,
+        globalConfig: findProgramAddressSync([Buffer.from("global", "utf8")], programId).publicKey,
+        campaign: campaignAddress,
+        mint: mintAddress,
+        tokenVault,
+        solVault,
+        traderTokenAccount: traderAta,
+        riskProfile: findProgramAddressSync(
+          [Buffer.from("risk", "utf8"), publicKeyBytes(traderAddress)],
+          programId,
+        ).publicKey,
+        tradeAuthorization: tradeAuth.publicKey,
+        instructions: SYSVAR_INSTRUCTIONS_ID,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SYSTEM_PROGRAM_ID,
+      },
+      authorization: {
+        signedMessageMode: "sha256_canonical_payload",
+        digestHex: digest.toString("hex"),
+        digestBase64: digest.toString("base64"),
+        signatureBase64: signature.toString("base64"),
+        routeSigner: signer.publicKeyBase58,
+        deadline: deadline.toString(),
+        validUntil: new Date(Number(deadline) * 1000).toISOString(),
+        ed25519InstructionMustImmediatelyPrecedeTrade: true,
+      },
+      transactionPolicy:
+        "Trader wallet constructs Ed25519 verify + buy_tokens/sell_tokens. Railway signs only the 32-byte trade digest.",
+    });
+  } catch (error) {
+    if (error instanceof SolanaTradeAuthorizationError) {
+      return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+    }
+    console.error("[solana-trade-v1] authorization failed", error);
+    return json(res, 500, {
+      error: "Solana trade authorization failed.",
+      code: "SOLANA_TRADE_AUTHORIZATION_INTERNAL_ERROR",
+    });
+  }
+}

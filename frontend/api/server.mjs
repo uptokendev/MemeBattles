@@ -43,6 +43,7 @@ import votesIngest from "./votes-ingest.js";
 import voteCounts from "./vote_counts.js";
 import { withAdminOrOps, withInternalAuth, getAuthEnforceSnapshot } from "./lib/apiAuth.js";
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
+import { solanaTradeAuthorizationV1 } from "./dev-fix/solana-trade-authorization-v1.js";
 import {
   followedDrafts,
   signedDraftCommentReaction,
@@ -391,6 +392,7 @@ router.all("/drafts/:draftId/promotion", wrap(draftPromotion));
 router.all("/drafts/:draftId/ticker-reservation", wrap(tickerReservationManagement));
 router.all("/drafts/:draftId/archive", wrap(draftArchive));
 router.all("/drafts/:draftId/deploy", wrap(draftDeploy));
+router.all("/solana/trade-authorize", wrap(solanaTradeAuthorizationV1));
 router.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 router.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscription));
 router.all("/drafts/:draftId/comments/:commentId/reactions", wrap(signedDraftCommentReaction));
