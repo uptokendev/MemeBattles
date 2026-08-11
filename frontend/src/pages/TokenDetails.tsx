@@ -543,9 +543,26 @@ const TokenDetails = () => {
     return raw.toLowerCase();
   }, [campaign?.campaign, campaignAddress]);
   // Pinned/featured/default EVM chain — NOT wallet network (see getEvmReadChainIdForTokenPage).
-  const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => getEvmReadChainIdForTokenPage());
+  // Solana token routes force 101 in the load effect.
+  const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => {
+    try {
+      const param = String(campaignAddress || "").trim();
+      if (param && !param.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(param)) {
+        return SOLANA_CHAIN_ID;
+      }
+      const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
+      if (q === SOLANA_CHAIN_ID) return SOLANA_CHAIN_ID;
+    } catch {
+      /* ignore */
+    }
+    return getEvmReadChainIdForTokenPage();
+  });
   const chainIdForStorage = pageChainId;
-  const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
+  const isSolanaPage = isSolanaChainId(chainIdForStorage);
+  const readProvider = useMemo(
+    () => (isSolanaPage ? null : getReadProvider(chainIdForStorage)),
+    [chainIdForStorage, isSolanaPage],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -801,7 +818,10 @@ const TokenDetails = () => {
 
           setCampaign(match);
           setError(null);
-          // Solana bonding metrics/trades are P1 — do not call EVM metric loaders.
+          setOnChainLaunched(false);
+          setOnChainPair("");
+          // Solana bonding is still P1. launched/finalized MUST stay false —
+          // TokenDetails treats metrics.launched === true as "graduated / Topaz".
           setMetrics({
             sold: 0n,
             curveSupply: 0n,
@@ -814,7 +834,7 @@ const TokenDetails = () => {
             liquidityBps: 0n,
             protocolFeeBps: 0n,
             currentPrice: 0n,
-            launched: true,
+            launched: false,
             finalizedAt: 0n,
           } as CampaignMetrics);
           setLoading(false);
@@ -1185,10 +1205,10 @@ const resolvedCampaignAddress = useMemo(() => {
 const hasValidCampaignAddress = Boolean(resolvedCampaignAddress);
 
 const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(
-  hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+  hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
   {
     chainId: chainIdForStorage,
-    enabled: hasValidCampaignAddress,
+    enabled: hasValidCampaignAddress && !isSolanaPage,
   },
 );
   const liveCurvePointsSafe = useMemo<CurveTradePoint[]>(
@@ -1300,20 +1320,21 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
   }, [localTopazTrades, resolvedCampaignAddress, chainIdForStorage]);
 
   const unifiedMarket = useUnifiedMarket({
-    campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+    campaignAddress: hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
     chainId: chainIdForStorage,
     resolution: marketResolution,
-    enabled: hasValidCampaignAddress,
+    enabled: hasValidCampaignAddress && !isSolanaPage,
   });
 
   // On-chain launched() — independent of metrics/CMS so WIC-class graduated tokens
   // still open Topaz even when market-state is stuck on BONDING.
+  // Solana has no EVM LaunchCampaign — never call Contract reads on base58 addresses.
   const [onChainLaunched, setOnChainLaunched] = useState(false);
   const [onChainPair, setOnChainPair] = useState<string>("");
   useEffect(() => {
     let cancelled = false;
     const addr = resolvedCampaignAddress;
-    if (!hasValidCampaignAddress || !addr) {
+    if (!hasValidCampaignAddress || !addr || isSolanaPage) {
       setOnChainLaunched(false);
       setOnChainPair("");
       return;
@@ -1340,10 +1361,12 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return () => {
       cancelled = true;
     };
-  }, [hasValidCampaignAddress, resolvedCampaignAddress, chainIdForStorage]);
+  }, [hasValidCampaignAddress, resolvedCampaignAddress, chainIdForStorage, isSolanaPage]);
 
   // Early graduation flag so Topaz market data can load before the full stage UI block.
+  // Solana P1 shell is always bonding — never treat as graduated.
   const contractGraduatedEarly = useMemo(() => {
+    if (isSolanaPage) return false;
     if (onChainLaunched) return true;
     const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
     return hasLaunchFlag
@@ -1352,15 +1375,15 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
             ? (metrics as any).finalizedAt > 0n
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
-  }, [metrics, onChainLaunched]);
+  }, [metrics, onChainLaunched, isSolanaPage]);
 
   // Topaz pair scan only after graduation. Running it on pure bonding campaigns
   // can resolve a wrong/empty route and poison price/mcap/chart streams.
   const topazMarket = useTopazMarket({
-    campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+    campaignAddress: hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
     tokenAddress: campaign?.token,
     chainId: chainIdForStorage,
-    enabled: hasValidCampaignAddress && contractGraduatedEarly,
+    enabled: hasValidCampaignAddress && contractGraduatedEarly && !isSolanaPage,
     pollMs: 8_000,
   });
 
@@ -2026,21 +2049,24 @@ const bnbUsd = useMemo(() => {
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
-  const contractGraduated = contractGraduatedEarly;
-  const verifiedMarketStage = unifiedMarket.state?.marketStage;
+  // Solana campaigns stay in Bonding until Solana graduation/P1 trading exists.
+  const contractGraduated = isSolanaPage ? false : contractGraduatedEarly;
+  const verifiedMarketStage = isSolanaPage ? null : unifiedMarket.state?.marketStage;
   // Do NOT treat TOPAZ_PENDING alone as DEX UI — that broke bonding metrics when
   // handoff rows existed without a live pair. Require on-chain graduation or ACTIVE.
-  const isDexStage =
-    contractGraduated ||
-    verifiedMarketStage === "TOPAZ_ACTIVE" ||
-    (verifiedMarketStage === "TOPAZ_DEGRADED" && contractGraduated);
+  const isDexStage = isSolanaPage
+    ? false
+    : contractGraduated ||
+      verifiedMarketStage === "TOPAZ_ACTIVE" ||
+      (verifiedMarketStage === "TOPAZ_DEGRADED" && contractGraduated);
   // Allow Topaz when on-chain graduated even if market-state is a soft BONDING skeleton
   // (common after cleanup / CMS lag). Soft BONDING must not block WIC-style trades.
-  const isTopazTradingActive =
-    onChainLaunched ||
-    contractGraduated ||
-    (verifiedMarketStage === "TOPAZ_ACTIVE" &&
-      (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
+  const isTopazTradingActive = isSolanaPage
+    ? false
+    : onChainLaunched ||
+      contractGraduated ||
+      (verifiedMarketStage === "TOPAZ_ACTIVE" &&
+        (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
 
 
 
@@ -2157,7 +2183,13 @@ const bnbUsd = useMemo(() => {
 ;
 
 
-  const stagePill = isTopazTradingActive ? "Graduated · Topaz" : isDexStage ? "Graduating" : "Bonding";
+  const stagePill = isSolanaPage
+    ? "Bonding · Solana (P1)"
+    : isTopazTradingActive
+      ? "Graduated · Topaz"
+      : isDexStage
+        ? "Graduating"
+        : "Bonding";
 
   // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
   useEffect(() => {
