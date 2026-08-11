@@ -548,10 +548,15 @@ function validateDeploymentEvidence(generation) {
   const programBinarySha256 = hashEnv("SOLANA_LAUNCHPAD_PROGRAM_SHA256");
   const expectedManifest = String(process.env[GENERATION_MANIFEST_ENV] || "").trim();
   if (expectedManifest && !sameBytes32(expectedManifest, generation.manifestHash)) {
-    throw new SolanaCreateAuthorizationError("Active generation manifest hash does not match Railway configuration.", {
-      code: "SOLANA_GENERATION_MANIFEST_MISMATCH",
-      httpStatus: 503,
-    });
+    const onChain = hex32(generation.manifestHash);
+    const configured = String(expectedManifest || "").replace(/^0x/i, "").toLowerCase();
+    throw new SolanaCreateAuthorizationError(
+      `Active generation manifest hash does not match Railway configuration. Set SOLANA_GENERATION_MANIFEST_HASH=${onChain} (Railway has ${configured.slice(0, 12)}…). After changing generation on-chain, Railway must be updated.`,
+      {
+        code: "SOLANA_GENERATION_MANIFEST_MISMATCH",
+        httpStatus: 503,
+      },
+    );
   }
   return {
     idlSha256,

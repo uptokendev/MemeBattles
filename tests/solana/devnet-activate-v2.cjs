@@ -26,8 +26,9 @@ const IDL_PATH = path.join(ROOT, "target/idl/memewarzone_solana.json");
 function loadKeypair(p) {
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(p, "utf8"))));
 }
-function hash32(s) {
-  return crypto.createHash("sha256").update(String(s)).digest();
+function hash32(value) {
+  // Match bootstrap / Railway: sha256 over bytes (Buffer or string).
+  return crypto.createHash("sha256").update(value).digest();
 }
 function fixed32(buf) {
   const b = Buffer.from(buf);
@@ -38,8 +39,11 @@ function derivePda(programId, ...parts) {
   const seeds = parts.map((p) => (typeof p === "string" ? Buffer.from(p) : Buffer.from(p)));
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
 }
-function canonicalJson(obj) {
-  return JSON.stringify(obj);
+/** Must stay stable: same as tests/solana/devnet-protocol-state.cjs */
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 
 async function main() {

@@ -10,7 +10,8 @@
     "devnet:check": "node --check devnet-protocol-state.cjs",
     "devnet:trade-ops": "node devnet-trade-ops.cjs",
     "devnet:trade-status": "node devnet-trade-ops.cjs status",
-    "devnet:trade-checklist": "node devnet-trade-ops.cjs checklist"
+    "devnet:trade-checklist": "node devnet-trade-ops.cjs checklist",
+    "print:railway-create-auth": "node print-railway-create-auth-env.cjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.30.1",
