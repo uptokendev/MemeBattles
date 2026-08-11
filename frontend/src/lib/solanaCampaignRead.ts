@@ -15,6 +15,7 @@ export type SolanaCampaignCurveState = {
   campaignIdHex: string;
   launchAt: number;
   graduationTargetUsdMicros: bigint;
+  economicsVersion: number;
   curveKind: number;
   tokenTotalSupply: bigint;
   curveTokenSupply: bigint;
@@ -130,7 +131,7 @@ export function decodeSolanaCampaignAccount(
   const launchAt = takeI64();
   const graduationTargetUsdMicros = takeU64();
   takeU8(); // cluster_kind
-  takeU16(); // economics_version
+  const economicsVersion = takeU16();
   const curveKind = takeU8();
   const tokenTotalSupply = takeU64();
   const curveTokenSupply = takeU64();
@@ -178,6 +179,7 @@ export function decodeSolanaCampaignAccount(
     campaignIdHex,
     launchAt,
     graduationTargetUsdMicros,
+    economicsVersion,
     curveKind,
     tokenTotalSupply,
     curveTokenSupply,

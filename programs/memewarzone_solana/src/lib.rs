@@ -33,6 +33,8 @@ pub const GRADUATION_TARGET_30K_USD_MICROS: u64 = 30_000_000_000;
 pub const GRADUATION_TARGET_50K_USD_MICROS: u64 = 50_000_000_000;
 
 pub const ECONOMICS_VERSION_V1: u16 = 1;
+/// BNB-parity linear curve: base/slope priced per whole token (÷ 10^decimals), like LaunchCampaign WAD.
+pub const ECONOMICS_VERSION_V2: u16 = 2;
 pub const CURVE_KIND_LINEAR_V1: u8 = 1;
 pub const MAX_TOKEN_DECIMALS: u8 = 9;
 pub const BPS_DENOMINATOR: u16 = 10_000;
@@ -884,7 +886,8 @@ fn validate_generation_cluster_and_tiers(cluster_kind: u8, tier_mask: u8) -> Res
 
 fn validate_generation_economics(settings: &GenerationSettings) -> Result<()> {
     require!(
-        settings.economics_version == ECONOMICS_VERSION_V1,
+        settings.economics_version == ECONOMICS_VERSION_V1
+            || settings.economics_version == ECONOMICS_VERSION_V2,
         LaunchpadError::InvalidGenerationEconomics
     );
     require!(

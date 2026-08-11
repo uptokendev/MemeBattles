@@ -25,7 +25,7 @@ use crate::{
         Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
     },
     GlobalConfig, LaunchpadError, RiskProfile, BPS_DENOMINATOR, CURVE_KIND_LINEAR_V1,
-    GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
+    ECONOMICS_VERSION_V1, ECONOMICS_VERSION_V2, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
 };
 
 pub const TRADE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_TRADE_V1";
@@ -98,7 +98,15 @@ pub struct TokensSold {
     pub net_raised_after: u64,
 }
 
-// ── Curve math (linear v1) ──────────────────────────────────────────────────
+// ── Curve math ──────────────────────────────────────────────────────────────
+//
+// economics_version V1 (legacy): cost = n*base + slope*(sold*n + n*(n-1)/2)
+//   base is lamports **per raw token unit** (made early buys tiny for 6-dec mints).
+//
+// economics_version V2 (BNB parity): LaunchCampaign-style area scaling
+//   area(x) = x*base/scale + slope*x^2/(2*scale^2), scale = 10^decimals
+//   base/slope are priced **per whole token** (same intent as BNB basePrice=1e9, WAD=1e18).
+//   With base=1, decimals=6, 0.01 SOL buys ~10M tokens — meme bonding like BNB/competitors.
 
 pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
     let fee = u128::from(amount)
@@ -110,8 +118,15 @@ pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
     Ok(fee as u64)
 }
 
-/// Cost in lamports to buy `token_amount` starting at `start_supply` sold.
-pub fn checked_linear_curve_cost(
+fn token_scale(decimals: u8) -> Result<u128> {
+    require!(decimals <= 18, LaunchpadError::InvalidGenerationEconomics);
+    10u128
+        .checked_pow(u32::from(decimals))
+        .ok_or_else(|| error!(LaunchpadError::MathOverflow))
+}
+
+/// Legacy V1 cost (per raw unit).
+pub fn checked_linear_curve_cost_v1(
     base_price_lamports: u64,
     price_slope_lamports: u64,
     start_supply: u64,
@@ -149,13 +164,88 @@ pub fn checked_linear_curve_cost(
     Ok(total as u64)
 }
 
+/// BNB-parity V2 cost: base/slope per whole token, amounts in raw units.
+pub fn checked_linear_curve_cost_v2(
+    base_price_lamports: u64,
+    price_slope_lamports: u64,
+    start_supply: u64,
+    token_amount: u64,
+    token_decimals: u8,
+) -> Result<u64> {
+    if token_amount == 0 {
+        return Ok(0);
+    }
+    let scale = token_scale(token_decimals)?;
+    let a = u128::from(token_amount);
+    let s = u128::from(start_supply);
+    let base = u128::from(base_price_lamports);
+    let slope = u128::from(price_slope_lamports);
+
+    // linear = a * base / scale  (BNB: x * basePrice / WAD)
+    let linear = a
+        .checked_mul(base)
+        .ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(scale)
+        .ok_or(LaunchpadError::MathOverflow)?;
+
+    // slope_term = slope * (2*s*a + a*a) / (2 * scale^2)  (BNB area difference)
+    let two_sa = s
+        .checked_mul(a)
+        .ok_or(LaunchpadError::MathOverflow)?
+        .checked_mul(2)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let a2 = a.checked_mul(a).ok_or(LaunchpadError::MathOverflow)?;
+    let numer = two_sa.checked_add(a2).ok_or(LaunchpadError::MathOverflow)?;
+    let scale2 = scale.checked_mul(scale).ok_or(LaunchpadError::MathOverflow)?;
+    let denom = scale2.checked_mul(2).ok_or(LaunchpadError::MathOverflow)?;
+    let slope_term = slope
+        .checked_mul(numer)
+        .ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(denom)
+        .ok_or(LaunchpadError::MathOverflow)?;
+
+    let total = linear
+        .checked_add(slope_term)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(total <= u128::from(u64::MAX), LaunchpadError::MathOverflow);
+    Ok(total as u64)
+}
+
+pub fn checked_linear_curve_cost(
+    economics_version: u16,
+    base_price_lamports: u64,
+    price_slope_lamports: u64,
+    start_supply: u64,
+    token_amount: u64,
+    token_decimals: u8,
+) -> Result<u64> {
+    if economics_version >= ECONOMICS_VERSION_V2 {
+        checked_linear_curve_cost_v2(
+            base_price_lamports,
+            price_slope_lamports,
+            start_supply,
+            token_amount,
+            token_decimals,
+        )
+    } else {
+        checked_linear_curve_cost_v1(
+            base_price_lamports,
+            price_slope_lamports,
+            start_supply,
+            token_amount,
+        )
+    }
+}
+
 /// Max tokens purchasable with `net_lamports` (exact SOL-in quote).
 pub fn quote_buy_tokens(
+    economics_version: u16,
     base_price_lamports: u64,
     price_slope_lamports: u64,
     sold_tokens: u64,
     curve_token_supply: u64,
     net_lamports: u64,
+    token_decimals: u8,
 ) -> Result<u64> {
     require!(net_lamports > 0, LaunchpadError::InvalidTradeAmount);
     require!(base_price_lamports > 0, LaunchpadError::InvalidTradeAmount);
@@ -167,9 +257,22 @@ pub fn quote_buy_tokens(
     let remaining = curve_token_supply
         .checked_sub(sold_tokens)
         .ok_or(LaunchpadError::MathOverflow)?;
-    let max_by_base = net_lamports
-        .checked_div(base_price_lamports)
-        .ok_or(LaunchpadError::MathOverflow)?;
+
+    // Upper bound for binary search.
+    let max_by_base = if economics_version >= ECONOMICS_VERSION_V2 {
+        let scale = token_scale(token_decimals)?;
+        // n * base / scale <= net  →  n <= net * scale / base
+        let n = u128::from(net_lamports)
+            .checked_mul(scale)
+            .ok_or(LaunchpadError::MathOverflow)?
+            .checked_div(u128::from(base_price_lamports))
+            .ok_or(LaunchpadError::MathOverflow)?;
+        u64::try_from(n.min(u128::from(u64::MAX))).unwrap_or(u64::MAX)
+    } else {
+        net_lamports
+            .checked_div(base_price_lamports)
+            .ok_or(LaunchpadError::MathOverflow)?
+    };
     require!(max_by_base > 0, LaunchpadError::InvalidTradeAmount);
     let mut high = max_by_base.min(remaining);
     let mut low = 0u64;
@@ -186,10 +289,12 @@ pub fn quote_buy_tokens(
             )
             .ok_or(LaunchpadError::MathOverflow)?;
         match checked_linear_curve_cost(
+            economics_version,
             base_price_lamports,
             price_slope_lamports,
             sold_tokens,
             mid,
+            token_decimals,
         ) {
             Ok(cost) if cost <= net_lamports => low = mid,
             _ => {
@@ -203,10 +308,12 @@ pub fn quote_buy_tokens(
 
 /// Gross SOL refund for selling `token_amount` (exact tokens-in quote, pre-fee).
 pub fn quote_sell_refund(
+    economics_version: u16,
     base_price_lamports: u64,
     price_slope_lamports: u64,
     sold_tokens: u64,
     token_amount: u64,
+    token_decimals: u8,
 ) -> Result<u64> {
     require!(token_amount > 0, LaunchpadError::InvalidTradeAmount);
     require!(
@@ -217,10 +324,12 @@ pub fn quote_sell_refund(
         .checked_sub(token_amount)
         .ok_or(LaunchpadError::MathOverflow)?;
     checked_linear_curve_cost(
+        economics_version,
         base_price_lamports,
         price_slope_lamports,
         post_sell,
         token_amount,
+        token_decimals,
     )
 }
 
@@ -394,11 +503,13 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
         require!(net > 0, LaunchpadError::InvalidTradeAmount);
 
         let tokens_out = quote_buy_tokens(
+            campaign.economics_version,
             campaign.base_price_lamports,
             campaign.price_slope_lamports,
             campaign.sold_tokens,
             campaign.curve_token_supply,
             net,
+            campaign.token_decimals,
         )?;
         require!(
             tokens_out >= args.min_tokens_out,
@@ -600,10 +711,12 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
         }
 
         let gross = quote_sell_refund(
+            campaign.economics_version,
             campaign.base_price_lamports,
             campaign.price_slope_lamports,
             campaign.sold_tokens,
             args.tokens_in,
+            campaign.token_decimals,
         )?;
         let fee = calculate_fee(gross, campaign.sell_fee_bps)?;
         let lamports_out = gross
@@ -930,34 +1043,74 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linear_cost_base_only() {
-        // 10 tokens at base 1000, slope 0, supply 0 → 10_000
-        let cost = checked_linear_curve_cost(1000, 0, 0, 10).unwrap();
+    fn linear_cost_base_only_v1() {
+        // V1: 10 raw units at base 1000, slope 0 → 10_000 lamports
+        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V1, 1000, 0, 0, 10, 6).unwrap();
         assert_eq!(cost, 10_000);
     }
 
     #[test]
-    fn quote_buy_roundtrip() {
+    fn linear_cost_v2_bnb_parity_first_token() {
+        // V2: base=1 lamport per whole token, 6 decimals → 1 full token costs 1 lamport
+        let one_token = 1_000_000u64;
+        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V2, 1, 1, 0, one_token, 6).unwrap();
+        assert_eq!(cost, 1);
+    }
+
+    #[test]
+    fn quote_buy_v2_point_zero_one_sol() {
+        // 0.01 SOL net ≈ 9_800_000 after 2% fee on 10M; here use net directly.
+        let net = 9_800_000u64;
+        let supply = 800_000_000_000_000u64; // 800M tokens @ 6 dec
+        let tokens =
+            quote_buy_tokens(ECONOMICS_VERSION_V2, 1, 1, 0, supply, net, 6).unwrap();
+        // ~net * 1e6 / base = 9.8e12 raw ≈ 9.8e6 whole tokens
+        assert!(tokens > 1_000_000_000_000); // > 1M whole tokens
+        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V2, 1, 1, 0, tokens, 6).unwrap();
+        assert!(cost <= net);
+    }
+
+    #[test]
+    fn quote_buy_roundtrip_v1() {
         let base = 1000u64;
         let slope = 10u64;
         let sold = 0u64;
         let net = 50_000u64;
-        let tokens = quote_buy_tokens(base, slope, sold, 1_000_000, net).unwrap();
-        let cost = checked_linear_curve_cost(base, slope, sold, tokens).unwrap();
+        let tokens =
+            quote_buy_tokens(ECONOMICS_VERSION_V1, base, slope, sold, 1_000_000, net, 6).unwrap();
+        let cost =
+            checked_linear_curve_cost(ECONOMICS_VERSION_V1, base, slope, sold, tokens, 6).unwrap();
         assert!(cost <= net);
         if tokens + 1 <= 1_000_000 {
-            let over = checked_linear_curve_cost(base, slope, sold, tokens + 1).unwrap();
+            let over = checked_linear_curve_cost(
+                ECONOMICS_VERSION_V1,
+                base,
+                slope,
+                sold,
+                tokens + 1,
+                6,
+            )
+            .unwrap();
             assert!(over > net);
         }
     }
 
     #[test]
-    fn sell_is_reverse_of_buy_path() {
+    fn sell_is_reverse_of_buy_path_v1() {
         let base = 1000u64;
         let slope = 10u64;
         let buy_tokens = 100u64;
-        let cost = checked_linear_curve_cost(base, slope, 0, buy_tokens).unwrap();
-        let refund = quote_sell_refund(base, slope, buy_tokens, buy_tokens).unwrap();
+        let cost =
+            checked_linear_curve_cost(ECONOMICS_VERSION_V1, base, slope, 0, buy_tokens, 6).unwrap();
+        let refund = quote_sell_refund(
+            ECONOMICS_VERSION_V1,
+            base,
+            slope,
+            buy_tokens,
+            buy_tokens,
+            6,
+        )
+        .unwrap();
         assert_eq!(cost, refund);
     }
 }

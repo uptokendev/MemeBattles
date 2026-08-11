@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
   "network": "solana-devnet",
-  "name": "memewarzone-solana-devnet-generation-v1",
-  "generationIdSeed": "memewarzone-solana-devnet-generation-v1",
+  "name": "memewarzone-solana-devnet-generation-v2-bnb-parity",
+  "generationIdSeed": "memewarzone-solana-devnet-generation-v2-bnb-parity",
   "riskClusterIdSeed": "memewarzone-solana-devnet-acceptance-cluster-v1",
   "settings": {
     "clusterKind": 1,
     "allowedGraduationTierMask": 1,
-    "economicsVersion": 1,
+    "economicsVersion": 2,
     "curveKind": 1,
     "tokenTotalSupply": "1000000000000000",
     "tokenDecimals": 6,
-    "curveSupplyBps": 8000,
-    "liquidityTokenBps": 1000,
+    "curveSupplyBps": 8400,
+    "liquidityTokenBps": 1400,
     "basePriceLamports": "1",
-    "priceSlopeLamports": "1",
+    "priceSlopeLamports": "850",
     "buyFeeBps": 200,
     "sellFeeBps": 200,
     "finalizeFeeBps": 200,
@@ -43,5 +43,9 @@
     "sellPaused": true,
     "graduationPaused": true,
     "claimsPaused": true
+  },
+  "notes": {
+    "economics": "V2 BNB parity: 1B tokens @ 6 dec, base=1 lamport/whole token (WAD-style), slope=850 like LaunchFactory. 0.01 SOL ≈ millions of tokens early. Old V1 campaigns keep per-raw-unit pricing.",
+    "activate": "Program upgrade with ECONOMICS_VERSION_V2 + initialize_generation_config for this seed; set active; unpause-trade. Do not re-bootstrap mid trade window without re-unpause."
   }
 }

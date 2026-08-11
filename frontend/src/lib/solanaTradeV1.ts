@@ -117,18 +117,32 @@ function buildEd25519Ix(web3: SolanaWeb3Module, publicKey: string, message: Uint
   throw new Error("Ed25519Program helper unavailable in bundled web3.");
 }
 
-/** Linear curve quote helpers (mirror on-chain authorized_trade.rs). */
+/**
+ * Linear curve quote helpers (mirror programs/memewarzone_solana authorized_trade.rs).
+ * economicsVersion: 1 = legacy per-raw-unit, 2 = BNB-parity whole-token WAD scale.
+ */
 export function checkedLinearCurveCost(
   basePrice: bigint,
   slope: bigint,
   startSupply: bigint,
   tokenAmount: bigint,
+  economicsVersion = 2,
+  tokenDecimals = 6,
 ): bigint {
   if (tokenAmount <= 0n) return 0n;
-  const baseCost = tokenAmount * basePrice;
-  const supplyCost = tokenAmount * startSupply;
-  const stepSum = (tokenAmount * (tokenAmount - 1n)) / 2n;
-  return baseCost + slope * (supplyCost + stepSum);
+  if (economicsVersion < 2) {
+    const baseCost = tokenAmount * basePrice;
+    const supplyCost = tokenAmount * startSupply;
+    const stepSum = (tokenAmount * (tokenAmount - 1n)) / 2n;
+    return baseCost + slope * (supplyCost + stepSum);
+  }
+  // V2: area(x) = x*base/scale + slope*x^2/(2*scale^2); cost = area(s+a)-area(s)
+  const scale = 10n ** BigInt(Math.max(0, Math.min(18, tokenDecimals)));
+  const a = tokenAmount;
+  const s = startSupply;
+  const linear = (a * basePrice) / scale;
+  const slopeTerm = (slope * (2n * s * a + a * a)) / (2n * scale * scale);
+  return linear + slopeTerm;
 }
 
 export function quoteBuyTokens(
@@ -137,16 +151,20 @@ export function quoteBuyTokens(
   sold: bigint,
   curveSupply: bigint,
   netLamports: bigint,
+  economicsVersion = 2,
+  tokenDecimals = 6,
 ): bigint {
   if (netLamports <= 0n || basePrice <= 0n || sold >= curveSupply) return 0n;
   const remaining = curveSupply - sold;
-  let high = netLamports / basePrice;
+  const scale = 10n ** BigInt(Math.max(0, Math.min(18, tokenDecimals)));
+  let high =
+    economicsVersion >= 2 ? (netLamports * scale) / basePrice : netLamports / basePrice;
   if (high > remaining) high = remaining;
   if (high <= 0n) return 0n;
   let low = 0n;
   while (low < high) {
     const mid = low + (high - low + 1n) / 2n;
-    const cost = checkedLinearCurveCost(basePrice, slope, sold, mid);
+    const cost = checkedLinearCurveCost(basePrice, slope, sold, mid, economicsVersion, tokenDecimals);
     if (cost <= netLamports) low = mid;
     else high = mid - 1n;
   }
@@ -158,9 +176,18 @@ export function quoteSellRefund(
   slope: bigint,
   sold: bigint,
   tokenAmount: bigint,
+  economicsVersion = 2,
+  tokenDecimals = 6,
 ): bigint {
   if (tokenAmount <= 0n || sold < tokenAmount) return 0n;
-  return checkedLinearCurveCost(basePrice, slope, sold - tokenAmount, tokenAmount);
+  return checkedLinearCurveCost(
+    basePrice,
+    slope,
+    sold - tokenAmount,
+    tokenAmount,
+    economicsVersion,
+    tokenDecimals,
+  );
 }
 
 export function calculateFee(amount: bigint, feeBps: number): bigint {
@@ -175,6 +202,8 @@ export function quoteBuyExactSolIn(input: {
   sold: bigint;
   curveSupply: bigint;
   buyFeeBps: number;
+  economicsVersion?: number;
+  tokenDecimals?: number;
 }): { feeLamports: bigint; netLamports: bigint; tokensOut: bigint } {
   const feeLamports = calculateFee(input.lamportsIn, input.buyFeeBps);
   const netLamports = input.lamportsIn > feeLamports ? input.lamportsIn - feeLamports : 0n;
@@ -184,6 +213,8 @@ export function quoteBuyExactSolIn(input: {
     input.sold,
     input.curveSupply,
     netLamports,
+    input.economicsVersion ?? 2,
+    input.tokenDecimals ?? 6,
   );
   return { feeLamports, netLamports, tokensOut };
 }
@@ -195,8 +226,17 @@ export function quoteSellExactTokensIn(input: {
   slope: bigint;
   sold: bigint;
   sellFeeBps: number;
+  economicsVersion?: number;
+  tokenDecimals?: number;
 }): { grossLamports: bigint; feeLamports: bigint; lamportsOut: bigint } {
-  const grossLamports = quoteSellRefund(input.basePrice, input.slope, input.sold, input.tokensIn);
+  const grossLamports = quoteSellRefund(
+    input.basePrice,
+    input.slope,
+    input.sold,
+    input.tokensIn,
+    input.economicsVersion ?? 2,
+    input.tokenDecimals ?? 6,
+  );
   const feeLamports = calculateFee(grossLamports, input.sellFeeBps);
   const lamportsOut = grossLamports > feeLamports ? grossLamports - feeLamports : 0n;
   return { grossLamports, feeLamports, lamportsOut };

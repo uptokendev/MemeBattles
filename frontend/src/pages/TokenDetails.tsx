@@ -2462,11 +2462,12 @@ const bnbUsd = useMemo(() => {
           } = await import("@/lib/solanaTradeV1");
 
           const dec = Number(curve?.tokenDecimals ?? 6);
-          // Fall back to generation defaults used on devnet when curve not loaded yet.
-          const basePrice = curve?.basePriceLamports ?? 1000n;
-          const slope = curve?.priceSlopeLamports ?? 10n;
+          // BNB-parity V2 defaults (1B supply, base=1 lamport/whole token). Live curve overrides.
+          const econ = Number(curve?.economicsVersion ?? 2);
+          const basePrice = curve?.basePriceLamports ?? 1n;
+          const slope = curve?.priceSlopeLamports ?? 1n;
           const sold = curve?.soldTokens ?? 0n;
-          const supply = curve?.curveTokenSupply ?? 800_000_000_000_000n; // 800M * 1e6 if 1B total * 80%
+          const supply = curve?.curveTokenSupply ?? 800_000_000_000_000n; // 800M @ 6 dec
           const buyFeeBps = curve?.buyFeeBps ?? 200;
           const sellFeeBps = curve?.sellFeeBps ?? 200;
 
@@ -2489,6 +2490,8 @@ const bnbUsd = useMemo(() => {
                 sold,
                 curveSupply: supply,
                 buyFeeBps,
+                economicsVersion: econ,
+                tokenDecimals: dec,
               });
               if (!cancelled) {
                 setEffectiveBnbWei(lamportsIn);
@@ -2508,7 +2511,14 @@ const bnbUsd = useMemo(() => {
               }
               // Invert roughly: cost for tokens + fee top-up.
               const { checkedLinearCurveCost, calculateFee } = await import("@/lib/solanaTradeV1");
-              const grossCost = checkedLinearCurveCost(basePrice, slope, sold, tokensWanted);
+              const grossCost = checkedLinearCurveCost(
+                basePrice,
+                slope,
+                sold,
+                tokensWanted,
+                econ,
+                dec,
+              );
               // net = gross * (1 - fee) ≈ grossCost → lamportsIn ≈ grossCost / (1 - fee)
               const feeBps = BigInt(buyFeeBps);
               const lamportsIn =
@@ -2543,6 +2553,8 @@ const bnbUsd = useMemo(() => {
               slope,
               sold,
               sellFeeBps,
+              economicsVersion: econ,
+              tokenDecimals: dec,
             });
             if (!cancelled) {
               setEffectiveTokenWei(tokensIn);

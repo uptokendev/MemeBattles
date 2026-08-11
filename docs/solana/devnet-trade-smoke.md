@@ -170,31 +170,40 @@ Optionally set `SOLANA_TRADE_AUTH_ENABLED=false` on Railway.
 
 ---
 
-## Curve economics (BNB parity)
+## Curve economics (BNB parity) — economics v2
 
-### BNB factory defaults
-- `totalSupply` = **1e9 tokens** (1B × 1e18 wei)
-- `basePrice` = `1e9` wei (with WAD curve math)
-- Graduation $ target → native via oracle
+### BNB factory (source of truth)
+- `totalSupply` = **1B tokens**
+- `basePrice` / `priceSlope` with **WAD** area math (`LaunchCampaign._area`)
+- Early 0.01 BNB buys **millions** of tokens; progress bar moves
 
-### Live Solana TESTSOL (old generation — locked at create)
-| Field | On-chain |
-|-------|----------|
-| total supply | **1e12 raw @ 6 dec = 1M tokens** (1000× too small vs BNB 1B) |
-| curve supply | 800k tokens (80%) |
-| base_price_lamports | **1000** per raw unit (≈1 SOL per whole token) |
-| 0.1 SOL buy | ~0.0045 tokens → **~0.000001%** of curve |
+### Solana bug (v1) — what went wrong
+V1 priced **per raw unit** (`cost = n * base`). With 6 decimals and `base=1000`, one whole token ≈ **1 SOL**. Competitors and BNB never work that way.
 
-FE progress was also broken (metrics zeroed for Solana shell). Progress now reads Campaign `sold` / `curve` / `net_raised` and converts $ graduation → SOL via SOL/USD.
+### Solana fix (v2) — BNB-style
+Program `ECONOMICS_VERSION_V2`: same area formula as BNB with `scale = 10^decimals`.
 
-### New generation (manifest) for BNB-like feel
-`config/solana/devnet-generation-v1.json`:
+| Param | Value |
+|-------|--------|
+| economicsVersion | **2** |
+| tokenTotalSupply | **1e15** (1B @ 6 dec) |
+| curveSupplyBps | **8400** (match BNB 84%) |
+| basePriceLamports | **1** (1 lamport per whole token at start) |
+| priceSlopeLamports | **850** (BNB factory slope) |
 
-- `tokenTotalSupply`: `1000000000000000` (**1B** tokens @ 6 decimals)
-- `basePriceLamports`: `1`
-- `priceSlopeLamports`: `1`
+Expected: **0.01 SOL → ~millions of tokens**, sold % visible on the bar.
 
-**Ops:** existing mints keep old economics. Activate a new generation on-chain (`initialize_generation_config` + set active) before Direct-deploying a fresh coin.
+Manifest: `config/solana/devnet-generation-v1.json` (v2-bnb-parity seed).
+
+### Ops activate (required for new creates)
+1. Upgrade program (buy/sell use v1|v2 branch by `campaign.economics_version`)
+2. `initialize_generation_config` for generation seed `memewarzone-solana-devnet-generation-v2-bnb-parity`
+3. Set generation active / support
+4. `unpause-trade` (do **not** re-bootstrap mid-smoke without re-unpause)
+5. Direct-deploy a **new** mint — old TESTSOL stays v1 museum piece
+
+### FE
+Quotes + progress use `economicsVersion` + live Campaign fields.
 
 ## BNB isolation check
 
