@@ -180,15 +180,19 @@ const Create = () => {
     wallet.signer,
   ]);
   const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
-  // Direct BNB deploy: flag + contracts wired. Do not block the whole route on wallet
-  // network alone (safety panel still shows switch-network). Solana creators use Draft → Push Live.
-  const bnbDirectDeployEnabled = !isSolanaCreator && readFlag(import.meta.env.VITE_ENABLE_DIRECT_BNB_DEPLOY, false);
+  // Direct deploy:
+  //  - BNB: flag + contracts + correct wallet network
+  //  - Solana: wallet connected → creates draft, auto-publishes promotion, opens Push Live
+  //    (on-chain create still needs reservation + V4 authorize; Push Live finishes that)
+  const bnbDirectDeployEnabled = readFlag(import.meta.env.VITE_ENABLE_DIRECT_BNB_DEPLOY, false);
   const bnbContractsConfigured =
     bnbContractReadiness.ready && Boolean(bnbAddresses.launchFactory);
   const walletOkForBnbDeploy =
     !wallet.account || Number(wallet.chainId) === Number(configuredBnbChainId);
-  const directDeployRouteReady =
-    bnbDirectDeployEnabled && bnbContractsConfigured && walletOkForBnbDeploy;
+  const solanaDirectDeployReady = Boolean(isSolanaCreator && solanaWallet.solanaAccount);
+  const bnbDirectDeployReady =
+    !isSolanaCreator && bnbDirectDeployEnabled && bnbContractsConfigured && walletOkForBnbDeploy;
+  const directDeployRouteReady = solanaDirectDeployReady || bnbDirectDeployReady;
   const tickerConfirmedAvailable = Boolean(
     normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available,
   );
@@ -462,10 +466,76 @@ const Create = () => {
   };
 
   const handleDeployNow = async () => {
-    if (isSolanaProtocolPending) {
-      toast.error("Solana launch protocol is pending. Save a signed Solana draft for now.");
+    if (!validateCoreForm()) return;
+
+    // ── Solana Direct deploy: draft + auto-publish promotion → Push Live ──
+    // Full on-chain create still runs on Push Live (reservation + V4 authorize).
+    if (isSolanaCreator) {
+      if (!solanaWallet.solanaAccount) {
+        toast.error("Connect your Solana wallet first.");
+        return;
+      }
+      setIsDeploying(true);
+      try {
+        const logoUrl = await uploadLogo();
+        const createAuth = await createDraftAuth();
+        const draft = await createCampaignDraft({
+          auth: createAuth,
+          chainId: SOLANA_CHAIN_ID,
+          creatorWallet,
+          name: formData.name,
+          ticker: normalizedTicker,
+          description: formData.description || null,
+          category: formData.category || "meme",
+          logoUrl,
+          websiteUrl: formData.website || null,
+          xUrl: formData.twitter || null,
+          telegramUrl: formData.telegram || null,
+          discordUrl: formData.discord || null,
+          docs: formData.otherLink ? [formData.otherLink] : [],
+          otherUrl: formData.otherLink || null,
+          graduationTargetWei: graduationTargetWei.toString(),
+          visibility: "public",
+          cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-devnet"),
+        });
+        cacheDraftLogo(draft.id, logoUrl);
+
+        // Auto-publish a minimal promotion so Push Live can run without an extra page.
+        const { saveDraftPromotion } = await import("@/lib/draftApi");
+        const publishAuth = await signSolanaDraftAction({
+          walletAddress: creatorWallet,
+          chainId: SOLANA_CHAIN_ID,
+          action: "publish_promotion",
+          draftId: draft.id,
+        });
+        await saveDraftPromotion(draft.id, {
+          auth: publishAuth,
+          missionStatement: formData.description || `${formData.name} is preparing for war on MemeWarzone.`,
+          roadmap: [],
+          launchStrategy: "",
+          telegramUrl: formData.telegram || "",
+          discordUrl: formData.discord || "",
+          xUrl: formData.twitter || "",
+          websiteUrl: formData.website || "",
+          docs: formData.otherLink ? [formData.otherLink] : [],
+          creatorNote: "",
+          bannerUrl: "",
+          shareMessage: `${formData.name} ($${normalizedTicker}) is live-prepping on MemeWarzone.`,
+          visibility: "public",
+          publish: true,
+        });
+
+        toast.success("Draft ready — opening Push Live to deploy on Solana.");
+        navigate(`/drafts/${draft.id}/push-live`);
+      } catch (error: any) {
+        console.error(error);
+        toast.error(error?.message || "Solana direct deploy prep failed");
+      } finally {
+        setIsDeploying(false);
+      }
       return;
     }
+
     if (!bnbDirectDeployEnabled) {
       toast.error("Direct BNB deploy is disabled for this environment. Save a draft instead.");
       return;
@@ -478,7 +548,6 @@ const Create = () => {
       toast.error("Connect your BNB wallet first.");
       return;
     }
-    if (!validateCoreForm()) return;
     setIsDeploying(true);
 
     let latestEligibility = creatorEligibility;
@@ -715,9 +784,11 @@ const Create = () => {
                       </div>
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                         {directDeployRouteReady
-                          ? "Wallet + gas. Live bonding campaign as soon as the tx confirms."
+                          ? isSolanaCreator
+                            ? "Signs draft + promotion, then opens Push Live for Solana on-chain create."
+                            : "Wallet + gas. Live bonding campaign as soon as the tx confirms."
                           : isSolanaCreator
-                            ? "Solana uses Draft → publish promotion → Push Live (not this Direct deploy path)."
+                            ? "Connect a Solana wallet to enable Direct deploy."
                             : !bnbDirectDeployEnabled
                               ? "Locked in this environment — pick Draft, or enable VITE_ENABLE_DIRECT_BNB_DEPLOY."
                               : !bnbContractsConfigured
@@ -982,7 +1053,7 @@ const Create = () => {
                       {mode === "deploy" && !directDeployRouteReady ? (
                         <p className="pt-1 text-xs text-orange-300">
                           {isSolanaCreator
-                            ? "Solana: go back and choose Draft, then Push Live after promotion setup."
+                            ? "Connect Solana wallet to Direct deploy (draft → Push Live)."
                             : !bnbDirectDeployEnabled
                               ? "Direct BNB deploy is disabled in this build — choose Draft."
                               : !bnbContractsConfigured

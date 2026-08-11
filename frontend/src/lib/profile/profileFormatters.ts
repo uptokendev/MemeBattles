@@ -1,6 +1,8 @@
 import type { CampaignSummary } from "@/lib/launchpadClient";
 
 export function getExplorerBase(chainId?: number): string {
+  // Solana
+  if (chainId === 101 || chainId === 102) return "https://explorer.solana.com";
   // BSC
   if (chainId === 97) return "https://testnet.bscscan.com";
   if (chainId === 56) return "https://bscscan.com";

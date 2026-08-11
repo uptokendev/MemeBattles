@@ -5,7 +5,10 @@ import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import type { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaAddress, normalizeAddress } from "@/lib/address";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import { formatWeiToBnb } from "@/lib/rewardsApi";
@@ -40,15 +43,22 @@ import { useProfileRewards } from "@/hooks/profile/useProfileRewards";
 const Profile = () => {
   const navigate = useNavigate();
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
 
   const anyWallet: any = wallet as any;
 
-  const isConnected: boolean = Boolean(
-    anyWallet?.isConnected ?? anyWallet?.connected ?? wallet.account
-  );
+  const solanaAccount = solanaWallet.solanaAccount || null;
+  const evmAccount = wallet.account ?? null;
+  // Prefer Solana when only Solana is connected; prefer EVM when both (BNB profile path).
+  const isSolanaProfile = Boolean(solanaAccount && !evmAccount);
+  const isConnected: boolean = Boolean(evmAccount || solanaAccount);
 
-  const account: string | null = isConnected ? wallet.account ?? null : null;
+  const account: string | null = isConnected
+    ? isSolanaProfile
+      ? solanaAccount
+      : evmAccount || solanaAccount
+    : null;
 
   const {
     addressParam,
@@ -59,18 +69,34 @@ const Profile = () => {
     handleTabChange,
   } = useProfileTabs();
 
-  const viewedAddress: string | null = addressParam ? addressParam : account;
+  // Route param may arrive lowercased; restore connected Solana casing when possible.
+  const viewedAddress: string | null = useMemo(() => {
+    const param = addressParam ? String(addressParam).trim() : "";
+    if (!param) return account;
+    if (
+      solanaAccount &&
+      isSolanaAddress(param) &&
+      param.toLowerCase() === solanaAccount.toLowerCase()
+    ) {
+      return solanaAccount;
+    }
+    if (isSolanaAddress(param)) return param;
+    return normalizeAddress(param);
+  }, [addressParam, account, solanaAccount]);
 
   const isOwnProfile = Boolean(
     account &&
       viewedAddress &&
-      account.toLowerCase() === viewedAddress.toLowerCase()
+      (account === viewedAddress || account.toLowerCase() === viewedAddress.toLowerCase()),
   );
 
-  // Map to the active app chain so signed messages (profile upsert, rewards
-  // claim) and chain-keyed API calls never carry an unsupported chainId.
+  // Solana wallets must hit chainId=101 — never lowercased base58 with chain 97.
   const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-  const chainId: number | undefined = walletChainId ? getActiveChainId(walletChainId) : undefined;
+  const chainId: number | undefined = useMemo(() => {
+    if (isSolanaProfile || isSolanaAddress(viewedAddress)) return SOLANA_CHAIN_ID;
+    if (walletChainId) return getActiveChainId(walletChainId);
+    return undefined;
+  }, [isSolanaProfile, viewedAddress, walletChainId]);
 const [profileDrafts, setProfileDrafts] = useState<CampaignDraft[]>([]);
 const [loadingDrafts, setLoadingDrafts] = useState(false);
 const [draftsError, setDraftsError] = useState<string | null>(null);
@@ -183,6 +209,9 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
   const explorerUrl = useMemo(() => {
     if (!viewedAddress) return "#";
     const base = getExplorerBase(chainId);
+    if (chainId === SOLANA_CHAIN_ID || isSolanaAddress(viewedAddress)) {
+      return `${base}/address/${viewedAddress}?cluster=devnet`;
+    }
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);
 
@@ -201,21 +230,25 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
     setDraftsError(null);
 
     try {
-      const normalizedViewedAddress = viewedAddress.toLowerCase();
+      // Preserve Solana base58 case for owner queries; case-fold only for loose equality.
+      const ownerKey = normalizeAddress(viewedAddress);
+      const draftChainId = isSolanaAddress(viewedAddress) ? SOLANA_CHAIN_ID : chainId;
 
       const drafts = isOwnProfile
-        ? await fetchOwnerCampaignDrafts(normalizedViewedAddress, {
-            chainId,
+        ? await fetchOwnerCampaignDrafts(ownerKey, {
+            chainId: draftChainId,
             limit: 50,
           })
         : (await fetchPublicCampaignDrafts({
-            chainId,
+            chainId: draftChainId,
             limit: 100,
-          })).filter(
-            (draft) =>
-              String(draft.creatorWallet || "").toLowerCase() ===
-              normalizedViewedAddress
-          );
+          })).filter((draft) => {
+            const creator = String(draft.creatorWallet || "").trim();
+            return (
+              creator === ownerKey ||
+              creator.toLowerCase() === ownerKey.toLowerCase()
+            );
+          });
 
       if (cancelled) return;
 
@@ -589,7 +622,18 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                   <div
                     key={`${t.tokenAddress}-${t.campaignAddress}`}
                     className="flex items-center justify-between p-3 md:p-4 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/token/${String(t.tokenAddress || t.campaignAddress).toLowerCase()}`)}
+                    onClick={() =>
+                      navigate(
+                        tokenDetailsPath(
+                          {
+                            tokenAddress: t.tokenAddress,
+                            campaignAddress: t.campaignAddress,
+                            chainId,
+                          },
+                          { chainId },
+                        ),
+                      )
+                    }
                     title="Open token page"
                   >
                     <div className="flex items-center gap-3 md:gap-4 min-w-0">
@@ -636,7 +680,18 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                   <div
                     key={coin.id}
                     className="flex items-center justify-between p-3 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/token/${String(coin.tokenAddress || coin.campaignAddress).toLowerCase()}`)}
+                    onClick={() =>
+                      navigate(
+                        tokenDetailsPath(
+                          {
+                            tokenAddress: coin.tokenAddress,
+                            campaignAddress: coin.campaignAddress,
+                            chainId: coin.chainId ?? chainId,
+                          },
+                          { chainId: coin.chainId ?? chainId },
+                        ),
+                      )
+                    }
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <img
@@ -650,6 +705,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                         </div>
                         <div className="font-retro text-muted-foreground text-xs">
                           {coin.ticker}
+                          {coin.chainId === SOLANA_CHAIN_ID || isSolanaChainId(chainId) ? " · SOL" : ""}
                         </div>
                       </div>
                     </div>
@@ -856,7 +912,18 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                 <div
                   key={`${t.tokenAddress}-${t.campaignAddress}-coins`}
                   className="p-4 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/token/${String(t.tokenAddress || t.campaignAddress).toLowerCase()}`)}
+                  onClick={() =>
+                    navigate(
+                      tokenDetailsPath(
+                        {
+                          tokenAddress: t.tokenAddress,
+                          campaignAddress: t.campaignAddress,
+                          chainId,
+                        },
+                        { chainId },
+                      ),
+                    )
+                  }
                 >
                   <div className="flex items-center gap-3">
                     <img
@@ -1263,7 +1330,14 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                     const href =
                       campaign.href ||
                       (campaign.tokenAddress || campaign.campaignAddress
-                        ? `/token/${String(campaign.tokenAddress || campaign.campaignAddress).toLowerCase()}`
+                        ? tokenDetailsPath(
+                            {
+                              tokenAddress: campaign.tokenAddress,
+                              campaignAddress: campaign.campaignAddress,
+                              chainId: campaign.chainId ?? chainId,
+                            },
+                            { chainId: campaign.chainId ?? chainId },
+                          )
                         : "");
 
                     const isDraft = campaign.kind === "draft";
@@ -1309,7 +1383,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                           <div className="text-xs text-muted-foreground truncate">
                             {isDraft
                               ? campaign.status || "Prepare Mode"
-                              : String(campaign.campaignAddress || "").toLowerCase()}
+                              : String(campaign.campaignAddress || "")}
                           </div>
                         </div>
 
