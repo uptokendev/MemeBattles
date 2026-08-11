@@ -96,9 +96,32 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:8888",
 ]);
 
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+
+  if (process.env.CORS_ALLOWED_ORIGINS) {
+    const extra = String(process.env.CORS_ALLOWED_ORIGINS).split(",").map(s => s.trim());
+    if (extra.includes(origin)) return true;
+  }
+
+  try {
+    const u = new URL(origin);
+    const host = u.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+    if (host.endsWith(".memewar.zone")) return true;
+    if (host.endsWith(".netlify.app")) return true;
+    if (host.endsWith(".vercel.app")) return true;
+    if (host.endsWith(".sslip.io")) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
-  if (ALLOWED_ORIGINS.has(origin)) {
+  if (isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
