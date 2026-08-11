@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Clock, RefreshCw, Route, ShieldAlert, Shie
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import type { LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
 import { useLaunchpadAdapter } from "@/features/launchpad/useLaunchpadAdapter";
 
@@ -50,6 +51,7 @@ function uniq(values: string[]) {
 
 export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: TokenSafetyPanelProps) {
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const adapter = useLaunchpadAdapter({ chainId });
   const [status, setStatus] = useState<LaunchpadAdapterStatus | null>(null);
   const [buyPreflight, setBuyPreflight] = useState<LaunchpadTradePreflight | null>(null);
@@ -57,7 +59,10 @@ export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: 
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const connectedWallet = String(wallet.account || "").trim();
+  const isSolanaChain = Number(chainId) === 101 || Number(chainId) === 102;
+  const connectedWallet = String(
+    isSolanaChain ? solanaWallet.solanaAccount || wallet.account || "" : wallet.account || "",
+  ).trim();
   const campaign = String(campaignAddress || "").trim();
 
   const refreshSafety = async () => {

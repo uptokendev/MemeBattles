@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck, X, XCircle } from 
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import type { LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
 import { useLaunchpadAdapter } from "@/features/launchpad/useLaunchpadAdapter";
 
@@ -64,6 +65,7 @@ function safetySummary(state: "ok" | "warning" | "blocked" | "checking", walletA
 
 export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafetyStatusButtonProps) {
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const adapter = useLaunchpadAdapter({ chainId });
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const refreshInFlightRef = useRef(false);
@@ -74,7 +76,11 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   const [buyPreflight, setBuyPreflight] = useState<LaunchpadTradePreflight | null>(null);
   const [sellPreflight, setSellPreflight] = useState<LaunchpadTradePreflight | null>(null);
 
-  const walletAddress = String(wallet.account || "").trim();
+  // Solana safety must use Solana wallet, not EVM account.
+  const isSolanaChain = Number(chainId) === 101 || Number(chainId) === 102;
+  const walletAddress = String(
+    isSolanaChain ? solanaWallet.solanaAccount || wallet.account || "" : wallet.account || "",
+  ).trim();
   const campaign = String(campaignAddress || "").trim();
 
   const updateAnchor = useCallback(() => {

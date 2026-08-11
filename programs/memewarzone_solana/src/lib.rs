@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG");
+declare_id!("3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt");
 
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global";
 pub const GENERATION_CONFIG_SEED: &[u8] = b"generation";
@@ -60,6 +60,9 @@ pub const TIER_3_CREATOR_LOCK_SECONDS: u32 = 3_600;
 
 pub mod authorized_create;
 pub use authorized_create::*;
+
+pub mod authorized_trade;
+pub use authorized_trade::*;
 
 #[program]
 pub mod memewarzone_solana {
@@ -333,6 +336,16 @@ pub mod memewarzone_solana {
             restricted: cluster_profile.restricted,
         });
         Ok(())
+    }
+
+    /// Exact SOL in (gross) → tokens out from vault. Fee taken from gross; net buys on curve.
+    pub fn buy_tokens(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {
+        buy_tokens_handler(ctx, args)
+    }
+
+    /// Exact tokens in → SOL out from sol vault. Gross refund from curve; fee retained in vault.
+    pub fn sell_tokens(ctx: Context<SellTokens>, args: SellTokensArgs) -> Result<()> {
+        sell_tokens_handler(ctx, args)
     }
 }
 
@@ -1459,4 +1472,30 @@ pub enum LaunchpadError {
     ClusterRestricted,
     #[msg("Arithmetic overflow while updating Solana launchpad state.")]
     MathOverflow,
+    #[msg("Solana bonding buys are paused.")]
+    BuysPaused,
+    #[msg("Solana bonding sells are paused.")]
+    SellsPaused,
+    #[msg("Campaign trading has not opened yet (launch_at).")]
+    TradingNotOpen,
+    #[msg("Campaign has already graduated.")]
+    AlreadyGraduated,
+    #[msg("Trade amount is invalid.")]
+    InvalidTradeAmount,
+    #[msg("Curve supply is exhausted for further buys.")]
+    CurveSupplyExhausted,
+    #[msg("Not enough sold tokens to support this sell.")]
+    InsufficientSoldTokens,
+    #[msg("Slippage limit exceeded for this trade.")]
+    SlippageExceeded,
+    #[msg("Insufficient net raised / vault balance for this sell.")]
+    InsufficientVaultBalance,
+    #[msg("Creator buy lock is still active.")]
+    CreatorBuyLocked,
+    #[msg("Creator buy cap would be exceeded.")]
+    CreatorBuyCap,
+    #[msg("Trade authorization is missing, expired, replayed, or malformed.")]
+    InvalidTradeAuthorization,
+    #[msg("Trade authorization deadline has expired.")]
+    TradeAuthorizationExpired,
 }

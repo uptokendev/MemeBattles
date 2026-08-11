@@ -10,7 +10,8 @@ function resolveLaunchpadChain(input?: { chain?: LaunchpadChain | string | null;
   if (explicit === "bnb" || explicit === "bsc") return "bnb";
 
   const chainId = Number(input?.chainId ?? 0);
-  if (chainId === 101 || chainId === 103) return "solana";
+  // Product Solana chain id is 101 (102 reserved/test aliases only if ever used).
+  if (chainId === 101 || chainId === 102) return "solana";
   return "bnb";
 }
 

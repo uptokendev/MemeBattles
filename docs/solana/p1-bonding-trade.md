@@ -1,7 +1,9 @@
 # P1 — Solana bonding buy/sell (V4)
 
-**Status:** Next eng phase after P0 create is live on local-validator / devnet  
+**Status:** Program ixs landed (`buy_tokens` / `sell_tokens` in `authorized_trade.rs`).  
+Needs: program upgrade deploy, GlobalConfig unpause buy/sell, Railway trade auth, FE trade wire.  
 **Product:** Pre-grad trade only. Post-grad = **Meteora DAMM v2 only** (see parity plan P2).  
+**UX:** exact SOL in for buy; exact tokens in for sell.  
 **Branch:** `devpostgrad`
 
 ## Exit criteria

@@ -4,9 +4,20 @@ import { useParams } from "react-router-dom";
 
 import { TokenSafetyStatusButton } from "@/components/token/TokenSafetyStatusButton";
 import { useWallet } from "@/contexts/WalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
 
 const SAFETY_STATE_MAX_AGE_MS = 15_000;
+
+function sameCampaignAddress(a?: string | null, b?: string | null) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  // Recovery for lowercased Solana URLs from older grid builds.
+  return left.toLowerCase() === right.toLowerCase();
+}
 
 function findTokenHeaderActionRow(): HTMLElement | null {
   if (typeof document === "undefined") return null;
@@ -44,7 +55,19 @@ function blockAndOpenSafety(event: MouseEvent) {
 export function TokenSafetyRouteOverlay() {
   const { campaignAddress = "" } = useParams();
   const wallet = useWallet();
-  const chainId = getActiveChainId(wallet.chainId);
+  const solanaWallet = useSolanaWallet();
+  // Prefer route chain (Solana base58 / ?chainId=101) over EVM wallet chain.
+  const chainId = (() => {
+    try {
+      const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
+      if (isSolanaChainId(q)) return SOLANA_CHAIN_ID;
+    } catch {
+      /* ignore */
+    }
+    if (isSolanaAddress(campaignAddress)) return SOLANA_CHAIN_ID;
+    if (solanaWallet.isSolanaConnected) return SOLANA_CHAIN_ID;
+    return getActiveChainId(wallet.chainId);
+  })();
   const [headerRow, setHeaderRow] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -71,11 +94,11 @@ export function TokenSafetyRouteOverlay() {
 
       const text = String(button.textContent || "").trim().toLowerCase();
       const safety = window.__mwzTokenSafetyState;
-      const safetyCampaign = String(safety?.campaignAddress || "").toLowerCase();
-      const routeCampaign = String(campaignAddress || "").toLowerCase();
+      const safetyCampaign = String(safety?.campaignAddress || "").trim();
+      const routeCampaign = String(campaignAddress || "").trim();
       const stale = !safety?.updatedAt || Date.now() - Number(safety.updatedAt) > SAFETY_STATE_MAX_AGE_MS;
 
-      if (!safety || safetyCampaign !== routeCampaign || stale) {
+      if (!safety || !sameCampaignAddress(safetyCampaign, routeCampaign) || stale) {
         blockAndOpenSafety(event);
         return;
       }
