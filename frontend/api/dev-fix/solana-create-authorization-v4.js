@@ -411,10 +411,19 @@ function validateOnchainState({
   if (creatorProfile.lastLaunchTimestamp > 0n) {
     const nextAllowed = creatorProfile.lastLaunchTimestamp + BigInt(creatorProfile.cooldownSeconds);
     if (BigInt(chainNow) < nextAllowed) {
-      throw new SolanaCreateAuthorizationError("Creator Solana launch cooldown is still active.", {
-        code: "SOLANA_CREATOR_COOLDOWN",
-        httpStatus: 403,
-      });
+      const remainingSec = Number(nextAllowed - BigInt(chainNow));
+      const hours = Math.floor(remainingSec / 3600);
+      const mins = Math.floor((remainingSec % 3600) / 60);
+      const nextIso = new Date(Number(nextAllowed) * 1000).toISOString();
+      throw new SolanaCreateAuthorizationError(
+        `Creator Solana launch cooldown is still active (${hours}h ${mins}m left; next allowed ${nextIso}). ` +
+          `A previous createCampaign may have already landed on-chain even if the draft was not marked deployed. ` +
+          `On devnet, reset CreatorProfile (liveBondingCount/lastLaunchTimestamp) via sync_creator_profile before re-testing.`,
+        {
+          code: "SOLANA_CREATOR_COOLDOWN",
+          httpStatus: 403,
+        },
+      );
     }
   }
   if (!samePublicKey(riskProfile.wallet, creator) || riskProfile.clusterId.equals(Buffer.alloc(32))) {

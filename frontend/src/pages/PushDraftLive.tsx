@@ -288,6 +288,7 @@ export default function PushDraftLive() {
 
       // Reuse the same owner-session credential (nonce already consumed on first use;
       // subsequent calls hit draft_owner_sessions, not auth_nonces).
+      let marked = false;
       try {
         await markDraftDeployment({
           draftId: draft.id,
@@ -297,21 +298,36 @@ export default function PushDraftLive() {
           deployTxHash: created.signature,
           scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
         });
+        marked = true;
       } catch (markErr: any) {
         const msg = String(markErr?.message || markErr || "");
         if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
           // On-chain create already succeeded — only re-auth finalize, do not re-create.
-          await refreshDeployAuth();
-          await markDraftDeployment({
-            draftId: draft.id,
-            auth: deployAuth,
-            campaignAddress: created.campaignAddress,
-            tokenAddress: created.mintAddress,
-            deployTxHash: created.signature,
-            scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
-          });
-        } else {
-          throw markErr;
+          try {
+            await refreshDeployAuth();
+            await markDraftDeployment({
+              draftId: draft.id,
+              auth: deployAuth,
+              campaignAddress: created.campaignAddress,
+              tokenAddress: created.mintAddress,
+              deployTxHash: created.signature,
+              scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+            });
+            marked = true;
+          } catch {
+            // fall through to partial-success UX below
+          }
+        }
+        if (!marked) {
+          // Never leave the user thinking create failed when the chain campaign exists —
+          // that used to arm cooldown/live-count and block re-deploy forever.
+          console.error("[PushDraftLive] mark-deploy failed after Solana create", markErr);
+          toast.success(
+            `Solana campaign created on-chain, but draft finalize failed. Campaign: ${created.campaignAddress.slice(0, 8)}… Tx: ${created.signature.slice(0, 12)}… Retry Push Live or contact ops to link the draft.`,
+            { duration: 20_000 },
+          );
+          navigate(`/prepare/${draft.slug}`);
+          return;
         }
       }
 
