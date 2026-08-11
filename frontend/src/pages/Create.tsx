@@ -20,7 +20,14 @@ import { checkTickerAvailability, createCampaignDraft, type TickerAvailability }
 import { signDraftAction } from "@/lib/draftAuth";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { apiFetch } from "@/lib/apiBase";
-import { BNB_CHAIN_ID, getActiveChainId, getChainLabel, getDefaultChainId, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import {
+  BNB_TESTNET_CHAIN_ID,
+  getActiveChainId,
+  getChainLabel,
+  getDefaultChainId,
+  isEvmChainId,
+  SOLANA_CHAIN_ID,
+} from "@/lib/chainConfig";
 import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import {
@@ -123,10 +130,16 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
-  const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(() => getDefaultGraduationTargetWei(BNB_CHAIN_ID));
+  // Prefer env default (usually 97 testnet). Never seed from mainnet-only BNB_CHAIN_ID (56) —
+  // that hides $6 test graduation and leaves the selector stuck on $30K.
+  const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(() =>
+    getDefaultGraduationTargetWei(getDefaultChainId()),
+  );
   const [creatorEligibility, setCreatorEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
   const [creatorEligibilityError, setCreatorEligibilityError] = useState<string | null>(null);
   const armDialogShownForWallet = useRef<string | null>(null);
+  /** Once the user picks a graduation tier, stop auto-resetting on chain switches. */
+  const graduationTouchedRef = useRef(false);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
@@ -136,24 +149,46 @@ const Create = () => {
   const graduationOptions: GraduationTier[] = useMemo(() => getGraduationTiers(chainId), [chainId]);
   const configuredBnbChainId = useMemo(() => {
     const configured = getDefaultChainId();
-    return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
+    return isEvmChainId(configured) ? configured : BNB_TESTNET_CHAIN_ID;
   }, []);
+  const bnbContractReadiness = useMemo(
+    () => getBnbContractReadiness(configuredBnbChainId),
+    [configuredBnbChainId],
+  );
+  const bnbAddresses = useMemo(
+    () => getBnbContractAddresses(configuredBnbChainId),
+    [configuredBnbChainId],
+  );
   const launchpadSafetyStatus = useMemo(() => {
     if (isSolanaCreator) return launchpad.getSafetyStatus();
-    const contractReadiness = getBnbContractReadiness(configuredBnbChainId);
-    const addresses = getBnbContractAddresses(configuredBnbChainId);
     return getBnbLaunchpadSafetyStatus({
       chainId: configuredBnbChainId,
-      factoryAddress: addresses.launchFactory,
+      factoryAddress: bnbAddresses.launchFactory,
       hasSigner: Boolean(wallet.signer),
       hasAccount: Boolean(wallet.account),
       walletChainId: wallet.chainId,
-      contractReadiness,
+      contractReadiness: bnbContractReadiness,
     });
-  }, [configuredBnbChainId, isSolanaCreator, launchpad, wallet.account, wallet.chainId, wallet.signer]);
+  }, [
+    bnbAddresses.launchFactory,
+    bnbContractReadiness,
+    configuredBnbChainId,
+    isSolanaCreator,
+    launchpad,
+    wallet.account,
+    wallet.chainId,
+    wallet.signer,
+  ]);
   const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
+  // Direct BNB deploy: flag + contracts wired. Do not block the whole route on wallet
+  // network alone (safety panel still shows switch-network). Solana creators use Draft → Push Live.
   const bnbDirectDeployEnabled = !isSolanaCreator && readFlag(import.meta.env.VITE_ENABLE_DIRECT_BNB_DEPLOY, false);
-  const directDeployRouteReady = bnbDirectDeployEnabled && launchpadSafetyStatus.protocolStatus === "ready";
+  const bnbContractsConfigured =
+    bnbContractReadiness.ready && Boolean(bnbAddresses.launchFactory);
+  const walletOkForBnbDeploy =
+    !wallet.account || Number(wallet.chainId) === Number(configuredBnbChainId);
+  const directDeployRouteReady =
+    bnbDirectDeployEnabled && bnbContractsConfigured && walletOkForBnbDeploy;
   const tickerConfirmedAvailable = Boolean(
     normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available,
   );
@@ -192,7 +227,17 @@ const Create = () => {
 
   useEffect(() => {
     const selectedStillAvailable = graduationOptions.some((option) => option.targetWei === graduationTargetWei);
-    if (!selectedStillAvailable) setGraduationTargetWei(getDefaultGraduationTargetWei(chainId));
+    if (!selectedStillAvailable) {
+      setGraduationTargetWei(getDefaultGraduationTargetWei(chainId));
+      return;
+    }
+    // First time we land on a test chain (97/101), prefer $6 unless the user already picked a tier.
+    if (!graduationTouchedRef.current) {
+      const preferred = getDefaultGraduationTargetWei(chainId);
+      if (preferred !== graduationTargetWei && graduationOptions.some((o) => o.targetWei === preferred)) {
+        setGraduationTargetWei(preferred);
+      }
+    }
   }, [graduationOptions, graduationTargetWei, chainId]);
 
   useEffect(() => {
@@ -671,11 +716,15 @@ const Create = () => {
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                         {directDeployRouteReady
                           ? "Wallet + gas. Live bonding campaign as soon as the tx confirms."
-                          : isSolanaCreator || isSolanaProtocolPending
-                            ? "Solana on-chain deploy is not open here yet — use Draft mode."
-                            : bnbDirectDeployEnabled
-                              ? "Contracts still wiring up — you can pick this, but deploy may be locked on the last step."
-                              : "Locked in Prepare Mode for this environment — pick Draft for now."}
+                          : isSolanaCreator
+                            ? "Solana uses Draft → publish promotion → Push Live (not this Direct deploy path)."
+                            : !bnbDirectDeployEnabled
+                              ? "Locked in this environment — pick Draft, or enable VITE_ENABLE_DIRECT_BNB_DEPLOY."
+                              : !bnbContractsConfigured
+                                ? "BNB contracts still incomplete in env — pick Draft or finish factory/Topaz wiring."
+                                : !walletOkForBnbDeploy
+                                  ? `Switch wallet to chain ${configuredBnbChainId} (${getChainLabel(configuredBnbChainId)}) for Direct deploy.`
+                                  : "Direct deploy is not ready — pick Draft for now."}
                       </p>
                     </button>
 
@@ -849,7 +898,10 @@ const Create = () => {
                           <button
                             key={option.id}
                             type="button"
-                            onClick={() => setGraduationTargetWei(option.targetWei)}
+                            onClick={() => {
+                              graduationTouchedRef.current = true;
+                              setGraduationTargetWei(option.targetWei);
+                            }}
                             className={cn(
                               "rounded-lg border px-2.5 py-2 text-left transition",
                               isTest && "col-span-2 border-dashed",
@@ -929,7 +981,15 @@ const Create = () => {
                       ) : null}
                       {mode === "deploy" && !directDeployRouteReady ? (
                         <p className="pt-1 text-xs text-orange-300">
-                          Direct deploy is not ready here — go back and choose Draft, or try later.
+                          {isSolanaCreator
+                            ? "Solana: go back and choose Draft, then Push Live after promotion setup."
+                            : !bnbDirectDeployEnabled
+                              ? "Direct BNB deploy is disabled in this build — choose Draft."
+                              : !bnbContractsConfigured
+                                ? "BNB launch contracts are incomplete — choose Draft or fix env wiring."
+                                : !walletOkForBnbDeploy
+                                  ? `Switch wallet to ${getChainLabel(configuredBnbChainId)} (chain ${configuredBnbChainId}).`
+                                  : "Direct deploy is not ready — go back and choose Draft."}
                         </p>
                       ) : null}
                       {creatorEligibilityError ? (
