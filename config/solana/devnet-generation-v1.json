@@ -14,7 +14,7 @@
     "curveSupplyBps": 8400,
     "liquidityTokenBps": 1400,
     "basePriceLamports": "1",
-    "priceSlopeLamports": "850",
+    "priceSlopeLamports": "0",
     "buyFeeBps": 200,
     "sellFeeBps": 200,
     "finalizeFeeBps": 200,

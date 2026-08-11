@@ -918,9 +918,17 @@ fn validate_generation_economics(settings: &GenerationSettings) -> Result<()> {
         LaunchpadError::InvalidGenerationEconomics
     );
     require!(
-        settings.base_price_lamports > 0 && settings.price_slope_lamports > 0,
+        settings.base_price_lamports > 0,
         LaunchpadError::InvalidGenerationEconomics
     );
+    // V1 required slope > 0 (legacy). V2 allows slope = 0 for flat early bonding
+    // (BNB-like: base dominates; slope optional for later steepness).
+    if settings.economics_version < ECONOMICS_VERSION_V2 {
+        require!(
+            settings.price_slope_lamports > 0,
+            LaunchpadError::InvalidGenerationEconomics
+        );
+    }
     require!(
         settings.buy_fee_bps == LOCKED_BUY_FEE_BPS,
         LaunchpadError::InvalidGenerationEconomics
