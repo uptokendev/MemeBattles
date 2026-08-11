@@ -13,12 +13,17 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
+import { getActiveChainId, getVoteTreasuryAddress, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getBnbContractAddresses } from "@/lib/bnbContracts";
 import { apiFetch } from "@/lib/apiBase";
+import { getPublicRpcUrl } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
+import { getSolanaProvider } from "@/lib/solanaWallet";
+import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
-/** Fixed UP Vote price in USD. On-chain amount = oracle nativeTargetForUsd($3). */
+/** Fixed UP Vote price in USD. Same product on BNB and Solana. */
 const UPVOTE_USD_TARGET = 3;
 
 const UPVOTE_ABI = [
@@ -34,15 +39,28 @@ function safeLowerHex(s?: string | null): string {
   return v ? v.toLowerCase() : "";
 }
 
-/** Full BNB amount for display (trim trailing zeros, keep real precision). */
-function formatBnbAmount(wei: bigint): string {
+function formatNativeAmount(weiOrLamports: bigint, decimals: number): string {
   try {
-    const raw = ethers.formatEther(wei);
+    const raw = ethers.formatUnits(weiOrLamports, decimals);
     if (!raw.includes(".")) return raw;
     const trimmed = raw.replace(/\.?0+$/, "");
     return trimmed || "0";
   } catch {
     return "—";
+  }
+}
+
+async function fetchSolUsd(): Promise<number | null> {
+  try {
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      { cache: "no-store" },
+    );
+    const json = await res.json();
+    const p = Number(json?.solana?.usd);
+    return Number.isFinite(p) && p > 0 ? p : null;
+  } catch {
+    return null;
   }
 }
 
@@ -55,9 +73,11 @@ type Props = {
 };
 
 /**
- * UP Vote dialog (BNB-only)
- * - Fixed price: $3 via graduation oracle (fallback: spot BNB/USD)
- * - One payable tx = one vote (no custom amount form)
+ * UP Vote dialog — same UX on BNB and Solana:
+ * - Fixed $3 per vote
+ * - One wallet transaction = one vote
+ * - BNB: UPVoteTreasury.voteWithBNB
+ * - Solana: native SOL transfer to vote treasury + /api/solana/vote-ingest
  */
 export function UpvoteDialog({
   campaignAddress,
@@ -68,19 +88,37 @@ export function UpvoteDialog({
 }: Props) {
   const { toast } = useToast();
   const wallet = useWallet();
-  const { price: priceUsd } = useBnbUsdPrice();
+  const solanaWallet = useSolanaWallet();
+  const { price: bnbUsdPrice } = useBnbUsdPrice();
 
-  const chainId = getActiveChainId(chainIdOverride ?? wallet.chainId);
-  const treasuryAddress = useMemo(() => safeLowerHex(getVoteTreasuryAddress(chainId)), [chainId]);
+  const isSolanaCampaign =
+    isSolanaChainId(Number(chainIdOverride)) ||
+    Number(chainIdOverride) === 102 ||
+    isSolanaAddress(campaignAddress);
+
+  const chainId = isSolanaCampaign
+    ? SOLANA_CHAIN_ID
+    : getActiveChainId(chainIdOverride ?? wallet.chainId);
+
+  const treasuryAddress = useMemo(() => {
+    const raw = getVoteTreasuryAddress(chainId as any);
+    if (isSolanaCampaign) return String(raw || "").trim();
+    return safeLowerHex(raw);
+  }, [chainId, isSolanaCampaign]);
+
+  const nativeUnit = isSolanaCampaign ? "SOL" : "BNB";
+  const nativeDecimals = isSolanaCampaign ? 9 : 18;
+
   const oracleAddress = useMemo(
-    () => safeLowerHex(getBnbContractAddresses(chainId).graduationOracle),
-    [chainId],
+    () => (isSolanaCampaign ? "" : safeLowerHex(getBnbContractAddresses(chainId as any).graduationOracle)),
+    [chainId, isSolanaCampaign],
   );
 
   const [open, setOpen] = useState(false);
   const [loadingCfg, setLoadingCfg] = useState(false);
   const [minAmountWei, setMinAmountWei] = useState<bigint | null>(null);
   const [oracleTargetWei, setOracleTargetWei] = useState<bigint | null>(null);
+  const [solUsd, setSolUsd] = useState<number | null>(null);
   const [enabled, setEnabled] = useState<boolean>(true);
   const [hasContractCode, setHasContractCode] = useState<boolean | null>(null);
   const [balanceWei, setBalanceWei] = useState<bigint | null>(null);
@@ -89,59 +127,134 @@ export function UpvoteDialog({
   const [submitting, setSubmitting] = useState(false);
 
   const lockDialog = submitting;
+  const priceUsd = isSolanaCampaign ? solUsd : bnbUsdPrice;
 
   const fallbackUsdTargetWei = useMemo(() => {
     const p = Number(priceUsd ?? 0);
     if (!Number.isFinite(p) || p <= 0) return 0n;
-    const bnb = UPVOTE_USD_TARGET / p;
-    if (!Number.isFinite(bnb) || bnb <= 0) return 0n;
+    const native = UPVOTE_USD_TARGET / p;
+    if (!Number.isFinite(native) || native <= 0) return 0n;
     try {
-      return ethers.parseEther(bnb.toFixed(18));
+      return ethers.parseUnits(native.toFixed(nativeDecimals), nativeDecimals);
     } catch {
       return 0n;
     }
-  }, [priceUsd]);
+  }, [priceUsd, nativeDecimals]);
 
-  /** Exact wei we will send: max(on-chain min, oracle/spot $3). */
+  /** Exact native amount we will send: max(on-chain min, $3 target). */
   const voteWei = useMemo(() => {
     let m = minAmountWei ?? 0n;
     const usdTarget = oracleTargetWei ?? fallbackUsdTargetWei;
     if (usdTarget > m) m = usdTarget;
+    // Solana floor so dust transfers never count as a vote
+    if (isSolanaCampaign && m < 1_000_000n) m = 1_000_000n;
     return m;
-  }, [minAmountWei, oracleTargetWei, fallbackUsdTargetWei]);
+  }, [minAmountWei, oracleTargetWei, fallbackUsdTargetWei, isSolanaCampaign]);
 
   const priceReady = voteWei > 0n && !loadingCfg;
-
-  const humanBnb = useMemo(() => (voteWei > 0n ? formatBnbAmount(voteWei) : "—"), [voteWei]);
+  const humanNative = useMemo(
+    () => (voteWei > 0n ? formatNativeAmount(voteWei, nativeDecimals) : "—"),
+    [voteWei, nativeDecimals],
+  );
 
   const usdLabel = useMemo(() => {
     const p = Number(priceUsd ?? 0);
     if (!Number.isFinite(p) || p <= 0 || voteWei <= 0n) return `$${UPVOTE_USD_TARGET.toFixed(2)}`;
     try {
-      const bnb = Number(ethers.formatEther(voteWei));
-      if (!Number.isFinite(bnb) || bnb <= 0) return `$${UPVOTE_USD_TARGET.toFixed(2)}`;
-      const usd = bnb * p;
-      if (!Number.isFinite(usd) || usd <= 0) return `$${UPVOTE_USD_TARGET.toFixed(2)}`;
-      // Prefer the contract's $3 target label when we're within a few cents.
-      if (Math.abs(usd - UPVOTE_USD_TARGET) < 0.15) return `$${UPVOTE_USD_TARGET.toFixed(2)}`;
+      const native = Number(ethers.formatUnits(voteWei, nativeDecimals));
+      const usd = native * p;
       return `$${usd.toFixed(2)}`;
     } catch {
       return `$${UPVOTE_USD_TARGET.toFixed(2)}`;
     }
-  }, [priceUsd, voteWei]);
+  }, [priceUsd, voteWei, nativeDecimals]);
 
-  // Wallet balance when dialog opens
+  // Load SOL/USD when dialog opens on Solana
   useEffect(() => {
-    if (!open) return;
-    if (!wallet.provider) return;
-    if (!wallet.account) {
-      setBalanceWei(null);
+    if (!open || !isSolanaCampaign) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingCfg(true);
+      const p = await fetchSolUsd();
+      if (!cancelled) {
+        setSolUsd(p);
+        setLoadingCfg(false);
+        setHasContractCode(true);
+        setEnabled(true);
+        setMinAmountWei(1_000_000n);
+        setOracleTargetWei(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isSolanaCampaign]);
+
+  // BNB treasury config (EVM only)
+  useEffect(() => {
+    if (!open || isSolanaCampaign) return;
+    if (!treasuryAddress || !wallet.provider) {
+      setHasContractCode(null);
+      setEnabled(true);
+      setMinAmountWei(null);
       return;
     }
     let cancelled = false;
     (async () => {
+      setLoadingCfg(true);
       try {
-        const bal = await wallet.provider!.getBalance(wallet.account!);
+        const code = await wallet.provider!.getCode(treasuryAddress);
+        if (cancelled) return;
+        if (!code || code === "0x") {
+          setHasContractCode(false);
+          setEnabled(false);
+          setMinAmountWei(null);
+          return;
+        }
+        setHasContractCode(true);
+        const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.provider);
+        const cfg = await c.assetConfig(ethers.ZeroAddress);
+        if (cancelled) return;
+        setEnabled(Boolean(cfg?.enabled ?? cfg?.[0]));
+        setMinAmountWei(BigInt(cfg?.minAmount ?? cfg?.[1] ?? 0n));
+      } catch {
+        if (!cancelled) {
+          setHasContractCode(null);
+          setEnabled(true);
+          setMinAmountWei(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingCfg(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, treasuryAddress, wallet.provider, isSolanaCampaign]);
+
+  // Balances
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (isSolanaCampaign) {
+          const owner = solanaWallet.solanaAccount;
+          if (!owner) {
+            setBalanceWei(null);
+            return;
+          }
+          const web3 = await loadSolanaWeb3();
+          const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+          const lamports = await connection.getBalance(new web3.PublicKey(owner));
+          if (!cancelled) setBalanceWei(BigInt(lamports));
+          return;
+        }
+        if (!wallet.provider || !wallet.account) {
+          setBalanceWei(null);
+          return;
+        }
+        const bal = await wallet.provider.getBalance(wallet.account);
         if (!cancelled) setBalanceWei(BigInt(bal));
       } catch {
         if (!cancelled) setBalanceWei(null);
@@ -150,74 +263,23 @@ export function UpvoteDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, wallet.provider, wallet.account, chainId]);
+  }, [open, isSolanaCampaign, solanaWallet.solanaAccount, wallet.provider, wallet.account]);
 
-  // Treasury min + enabled
+  // Oracle $3 → native (BNB only)
   useEffect(() => {
-    if (!open) return;
-    if (!treasuryAddress) {
-      setMinAmountWei(null);
-      setEnabled(false);
-      setHasContractCode(null);
-      return;
-    }
-    if (!wallet.provider) return;
-
-    let cancelled = false;
-    setLoadingCfg(true);
-    (async () => {
-      try {
-        const code = await wallet.provider!.getCode(treasuryAddress);
-        const hasCode = code != null && code !== "0x";
-        if (cancelled) return;
-        setHasContractCode(hasCode);
-        if (!hasCode) {
-          setEnabled(false);
-          setMinAmountWei(null);
-          return;
-        }
-
-        const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.provider);
-        const res = await c.assetConfig(ethers.ZeroAddress);
-        const isEnabled = Boolean(res?.enabled ?? res?.[0]);
-        const min = BigInt(res?.minAmount ?? res?.[1] ?? 0);
-        if (cancelled) return;
-        setEnabled(isEnabled);
-        setMinAmountWei(min);
-      } catch {
-        if (cancelled) return;
-        setEnabled(false);
-        setMinAmountWei(null);
-        setHasContractCode(false);
-      } finally {
-        if (!cancelled) setLoadingCfg(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, treasuryAddress, wallet.provider]);
-
-  // Oracle $3 → native wei
-  useEffect(() => {
-    if (!open) return;
-    if (!wallet.provider) return;
-    if (!oracleAddress) {
+    if (!open || isSolanaCampaign) return;
+    if (!wallet.provider || !oracleAddress) {
       setOracleTargetWei(null);
       return;
     }
-
     let cancelled = false;
     (async () => {
       try {
         const code = await wallet.provider!.getCode(oracleAddress);
-        if (cancelled) return;
-        if (!code || code === "0x") {
-          setOracleTargetWei(null);
+        if (cancelled || !code || code === "0x") {
+          if (!cancelled) setOracleTargetWei(null);
           return;
         }
-
         const oracle = new ethers.Contract(oracleAddress, GRADUATION_ORACLE_ABI, wallet.provider);
         const target = await oracle.nativeTargetForUsd(ethers.parseEther(String(UPVOTE_USD_TARGET)));
         if (!cancelled) setOracleTargetWei(BigInt(target));
@@ -225,63 +287,68 @@ export function UpvoteDialog({
         if (!cancelled) setOracleTargetWei(null);
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [open, wallet.provider, oracleAddress]);
+  }, [open, wallet.provider, oracleAddress, isSolanaCampaign]);
 
-  // Estimate value + gas; flag insufficient balance
+  // Estimate total + insufficient
   useEffect(() => {
     if (!open) return;
-    if (!wallet.provider || !wallet.account || !treasuryAddress) return;
-    if (hasContractCode === false || !enabled) return;
     if (voteWei <= 0n) {
       setEstTotalWei(null);
       setInsufficient(false);
       return;
     }
+    if (isSolanaCampaign) {
+      // ~5k lamports fee buffer
+      const total = voteWei + 10_000n;
+      setEstTotalWei(total);
+      setInsufficient(balanceWei != null && balanceWei < total);
+      return;
+    }
+    if (!wallet.provider || !wallet.account || !treasuryAddress) return;
+    if (hasContractCode === false || !enabled) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const provider = wallet.provider!;
-        const fee = await provider.getFeeData();
+        const fee = await wallet.provider!.getFeeData();
         const gasPrice = BigInt(fee.gasPrice ?? 0n);
-
         if (gasPrice === 0n) {
           if (cancelled) return;
           setEstTotalWei(voteWei);
           if (balanceWei != null) setInsufficient(balanceWei < voteWei);
           return;
         }
-
-        const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, provider);
+        const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.provider);
         const meta = ethers.keccak256(ethers.toUtf8Bytes("user"));
         let gasLimit: bigint;
         try {
-          gasLimit = BigInt(await c.voteWithBNB.estimateGas(campaignAddress, meta, { value: voteWei }));
+          gasLimit = BigInt(
+            await c.voteWithBNB.estimateGas(campaignAddress, meta, { value: voteWei }),
+          );
         } catch {
           gasLimit = 150000n;
         }
-
         const bufferedGas = (gasLimit * 120n) / 100n;
         const total = voteWei + bufferedGas * gasPrice;
         if (cancelled) return;
         setEstTotalWei(total);
         if (balanceWei != null) setInsufficient(balanceWei < total);
       } catch {
-        if (cancelled) return;
-        setEstTotalWei(null);
-        setInsufficient(false);
+        if (!cancelled) {
+          setEstTotalWei(null);
+          setInsufficient(false);
+        }
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [
     open,
+    isSolanaCampaign,
     wallet.provider,
     wallet.account,
     treasuryAddress,
@@ -294,130 +361,211 @@ export function UpvoteDialog({
 
   const canUpvote = Boolean(
     treasuryAddress &&
-      hasContractCode !== false &&
-      enabled &&
       campaignAddress &&
-      wallet.provider &&
       priceReady &&
-      !insufficient,
+      !insufficient &&
+      (isSolanaCampaign
+        ? Boolean(solanaWallet.solanaAccount)
+        : hasContractCode !== false && enabled && wallet.provider),
   );
+
+  const handleSolanaUpvote = async () => {
+    const ABORT = "__UPVOTE_ABORT__";
+    const fail = (title: string, description: string) => {
+      toast({ title, description });
+      throw new Error(ABORT);
+    };
+
+    if (!treasuryAddress) fail("UP Vote is not configured", "Missing Solana vote treasury address.");
+    if (!solanaWallet.solanaAccount) {
+      window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+      return;
+    }
+    if (voteWei <= 0n) fail("Price unavailable", "Could not resolve the $3 UP Vote amount in SOL.");
+    if (balanceWei != null && balanceWei < (estTotalWei ?? voteWei)) {
+      fail("Insufficient SOL", "You don't have enough SOL to cover the vote fee (and fees).");
+    }
+    if (!isSolanaAddress(campaignAddress)) {
+      fail("Invalid campaign", "This page is not a valid Solana campaign address.");
+    }
+
+    const provider = getSolanaProvider();
+    if (!provider?.publicKey || typeof provider.signAndSendTransaction !== "function" && typeof provider.signTransaction !== "function") {
+      fail("Wallet unavailable", "Connect Phantom / Solflare to vote on Solana.");
+    }
+
+    const web3 = await loadSolanaWeb3();
+    const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+    const from = new web3.PublicKey(solanaWallet.solanaAccount);
+    const to = new web3.PublicKey(treasuryAddress);
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+    const tx = new web3.Transaction({
+      feePayer: from,
+      blockhash,
+      lastValidBlockHeight,
+    }).add(
+      web3.SystemProgram.transfer({
+        fromPubkey: from,
+        toPubkey: to,
+        lamports: Number(voteWei),
+      }),
+    );
+
+    toast({ title: "Confirm UP Vote", description: `Pay ~$${UPVOTE_USD_TARGET} in SOL…` });
+
+    let signature = "";
+    if (typeof provider.signAndSendTransaction === "function") {
+      const result = await provider.signAndSendTransaction(tx);
+      signature = typeof result === "string" ? result : String(result?.signature || "");
+    } else {
+      const signed = await provider.signTransaction!(tx);
+      signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+    }
+    if (!signature) fail("Upvote failed", "Wallet did not return a transaction signature.");
+
+    toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+
+    let ingest: { votes24h?: number; votesAllTime?: number; campaignAddress?: string } | null = null;
+    try {
+      const res = await apiFetch("/api/solana/vote-ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chainId: SOLANA_CHAIN_ID,
+          signature,
+          campaignAddress,
+          voterAddress: solanaWallet.solanaAccount,
+        }),
+      });
+      const body = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(body?.items) && body.items[0]) {
+        ingest = body.items[0];
+      } else {
+        console.warn("[UpvoteDialog] solana vote ingest failed", res.status, body);
+        fail(
+          "Vote paid but not recorded",
+          String(body?.error || `Ingest failed (${res.status}). Contact support with tx ${signature.slice(0, 12)}…`),
+        );
+      }
+    } catch (e: any) {
+      if (String(e?.message || "").includes(ABORT)) throw e;
+      console.warn("[UpvoteDialog] solana vote ingest error", e);
+      fail("Vote paid but not recorded", String(e?.message || e));
+    }
+
+    toast({ title: "Upvoted", description: "Your vote has been recorded." });
+    setOpen(false);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("memewarzone:upvoteConfirmed", {
+          detail: {
+            chainId: SOLANA_CHAIN_ID,
+            campaignAddress: ingest?.campaignAddress || campaignAddress,
+            txHash: signature,
+            votes24h: ingest?.votes24h != null ? Number(ingest.votes24h) : undefined,
+            votesAllTime: ingest?.votesAllTime != null ? Number(ingest.votesAllTime) : undefined,
+          },
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleBnbUpvote = async () => {
+    const ABORT = "__UPVOTE_ABORT__";
+    const fail = (title: string, description: string) => {
+      toast({ title, description });
+      throw new Error(ABORT);
+    };
+
+    if (!treasuryAddress) fail("UP Vote is not configured", "Missing vote treasury address for this chain.");
+    if (hasContractCode === false) {
+      fail(
+        "UP Vote contract not deployed",
+        "The configured vote treasury address has no contract code on this network.",
+      );
+    }
+    if (!wallet.signer) {
+      window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+      return;
+    }
+    if (voteWei <= 0n) fail("Price unavailable", "Could not resolve the $3 UP Vote amount.");
+    if (balanceWei != null && balanceWei < (estTotalWei ?? voteWei)) {
+      fail("Insufficient BNB", "You don't have enough BNB to cover the vote fee (and gas).");
+    }
+
+    const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.signer);
+    const meta = ethers.keccak256(ethers.toUtf8Bytes("user"));
+    let gasPrice: bigint | undefined;
+    try {
+      const gpHex = await wallet.provider!.send("eth_gasPrice", []);
+      gasPrice = gpHex ? BigInt(gpHex) : undefined;
+    } catch {
+      try {
+        const fee = await wallet.provider!.getFeeData();
+        gasPrice = fee.gasPrice != null ? BigInt(fee.gasPrice) : undefined;
+      } catch {
+        gasPrice = undefined;
+      }
+    }
+
+    const overrides: { value: bigint; gasPrice?: bigint; type?: number } = { value: voteWei };
+    if (gasPrice && gasPrice > 0n) {
+      overrides.gasPrice = gasPrice;
+      overrides.type = 0;
+    }
+
+    const tx = await c.voteWithBNB(campaignAddress, meta, overrides);
+    const txHash = String(tx?.hash || "");
+    toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
+    await tx.wait();
+
+    let ingest: { votes24h?: number; votesAllTime?: number; campaignAddress?: string } | null = null;
+    if (txHash) {
+      try {
+        const res = await apiFetch("/api/vote-ingest", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chainId, txHash }),
+        });
+        const body = await res.json().catch(() => null);
+        if (res.ok && Array.isArray(body?.items) && body.items[0]) ingest = body.items[0];
+      } catch (ingestErr) {
+        console.warn("[UpvoteDialog] vote ingest error", ingestErr);
+      }
+    }
+
+    toast({ title: "Upvoted", description: "Your vote has been recorded." });
+    setOpen(false);
+    try {
+      const addr = safeLowerHex(ingest?.campaignAddress || campaignAddress);
+      window.dispatchEvent(
+        new CustomEvent("memewarzone:upvoteConfirmed", {
+          detail: {
+            chainId,
+            campaignAddress: addr,
+            txHash,
+            votes24h: ingest?.votes24h != null ? Number(ingest.votes24h) : undefined,
+            votesAllTime: ingest?.votesAllTime != null ? Number(ingest.votesAllTime) : undefined,
+          },
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  };
 
   const handleUpvote = async () => {
     try {
-      const ABORT = "__UPVOTE_ABORT__";
-      const fail = (title: string, description: string) => {
-        toast({ title, description });
-        throw new Error(ABORT);
-      };
-
       setSubmitting(true);
-
-      if (!treasuryAddress) {
-        fail("UP Vote is not configured", "Missing vote treasury address for this chain.");
-      }
-      if (hasContractCode === false) {
-        fail(
-          "UP Vote contract not deployed",
-          "The configured vote treasury address has no contract code on this network. Switch networks or update the contract address.",
-        );
-      }
-      if (!wallet.signer) {
-        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
-        return;
-      }
-      if (voteWei <= 0n) {
-        fail("Price unavailable", "Could not resolve the $3 UP Vote amount. Try again in a moment.");
-      }
-
-      if (balanceWei != null) {
-        const needed = estTotalWei ?? voteWei;
-        if (balanceWei < needed) {
-          fail("Insufficient BNB", "You don't have enough BNB to cover the vote fee (and gas).");
-        }
-      }
-
-      const c = new ethers.Contract(treasuryAddress!, UPVOTE_ABI, wallet.signer);
-      const meta = ethers.keccak256(ethers.toUtf8Bytes("user"));
-      // BSC is legacy gas; force type=0 when gasPrice is available.
-      let gasPrice: bigint | undefined;
-      try {
-        const gpHex = await wallet.provider!.send("eth_gasPrice", []);
-        gasPrice = gpHex ? BigInt(gpHex) : undefined;
-      } catch {
-        try {
-          const fee = await wallet.provider!.getFeeData();
-          gasPrice = fee.gasPrice != null ? BigInt(fee.gasPrice) : undefined;
-        } catch {
-          gasPrice = undefined;
-        }
-      }
-
-      const overrides: { value: bigint; gasPrice?: bigint; type?: number } = { value: voteWei };
-      if (gasPrice && gasPrice > 0n) {
-        overrides.gasPrice = gasPrice;
-        overrides.type = 0;
-      }
-
-      const tx = await c.voteWithBNB(campaignAddress, meta, overrides);
-      const txHash = String(tx?.hash || "");
-
-      toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
-      await tx.wait();
-
-      // Write votes + vote_aggregates from the receipt so Featured does not wait on indexer getLogs.
-      let ingest: {
-        votes24h?: number;
-        votesAllTime?: number;
-        campaignAddress?: string;
-      } | null = null;
-      if (txHash) {
-        try {
-          // Prefer /api/vote-ingest — /api/votes/* may be proxied to the indexer.
-          const res = await apiFetch("/api/vote-ingest", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ chainId, txHash }),
-          });
-          const body = await res.json().catch(() => null);
-          if (res.ok && Array.isArray(body?.items) && body.items[0]) {
-            ingest = body.items[0];
-          } else {
-            console.warn("[UpvoteDialog] vote ingest failed", res.status, body);
-          }
-        } catch (ingestErr) {
-          console.warn("[UpvoteDialog] vote ingest error", ingestErr);
-        }
-      }
-
-      toast({ title: "Upvoted", description: "Your vote has been recorded." });
-      setOpen(false);
-
-      try {
-        const addr = safeLowerHex(ingest?.campaignAddress || campaignAddress);
-        window.dispatchEvent(
-          new CustomEvent("memewarzone:upvoteConfirmed", {
-            detail: {
-              chainId,
-              campaignAddress: addr,
-              txHash,
-              votes24h: ingest?.votes24h != null ? Number(ingest.votes24h) : undefined,
-              votesAllTime: ingest?.votesAllTime != null ? Number(ingest.votesAllTime) : undefined,
-            },
-          }),
-        );
-        window.dispatchEvent(
-          new CustomEvent("memewarzone:txConfirmed", {
-            detail: {
-              kind: "upvote",
-              chainId,
-              campaignAddress: addr,
-              txHash,
-            },
-          }),
-        );
-      } catch {
-        // ignore
-      }
+      if (isSolanaCampaign) await handleSolanaUpvote();
+      else await handleBnbUpvote();
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       const msg = String(err?.shortMessage || err?.message || "Transaction failed");
@@ -461,7 +609,8 @@ export function UpvoteDialog({
         <DialogHeader>
           <DialogTitle>UP Vote</DialogTitle>
           <DialogDescription>
-            Fixed price: ${UPVOTE_USD_TARGET} per vote. One transaction = one vote.
+            Fixed price: ${UPVOTE_USD_TARGET} per vote. One transaction = one vote
+            {isSolanaCampaign ? " (paid in SOL)." : " (paid in BNB)."}
           </DialogDescription>
         </DialogHeader>
 
@@ -472,7 +621,7 @@ export function UpvoteDialog({
             <div className="text-sm text-muted-foreground">
               UP Vote treasury is not configured for this chain.
             </div>
-          ) : hasContractCode === false || !enabled ? (
+          ) : !isSolanaCampaign && (hasContractCode === false || !enabled) ? (
             <div className="text-sm text-muted-foreground">
               UP Vote is currently disabled on this chain.
             </div>
@@ -484,15 +633,19 @@ export function UpvoteDialog({
               <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <span className="text-2xl font-semibold text-foreground">{usdLabel}</span>
                 <span className="text-sm text-muted-foreground">
-                  {priceReady ? `${humanBnb} BNB` : "— BNB"}
+                  {priceReady ? `${humanNative} ${nativeUnit}` : `— ${nativeUnit}`}
                 </span>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {oracleTargetWei != null
-                  ? "Converted via on-chain oracle"
-                  : priceUsd
-                    ? "Converted via live BNB/USD (oracle unavailable)"
-                    : "Waiting for price…"}
+                {isSolanaCampaign
+                  ? priceUsd
+                    ? "Converted via live SOL/USD"
+                    : "Waiting for SOL price…"
+                  : oracleTargetWei != null
+                    ? "Converted via on-chain oracle"
+                    : priceUsd
+                      ? "Converted via live BNB/USD (oracle unavailable)"
+                      : "Waiting for price…"}
               </div>
             </div>
           )}
@@ -500,10 +653,12 @@ export function UpvoteDialog({
           <div className="text-xs text-muted-foreground">
             Balance:{" "}
             <span className="text-foreground">
-              {balanceWei != null ? `${formatBnbAmount(balanceWei)} BNB` : "—"}
+              {balanceWei != null ? `${formatNativeAmount(balanceWei, nativeDecimals)} ${nativeUnit}` : "—"}
             </span>
             {insufficient ? (
-              <span className="ml-2 text-destructive">Insufficient for this vote + gas.</span>
+              <span className="ml-2 text-destructive">
+                Insufficient for this vote{isSolanaCampaign ? " + fees." : " + gas."}
+              </span>
             ) : null}
           </div>
 
@@ -517,7 +672,7 @@ export function UpvoteDialog({
             Cancel
           </Button>
           <Button onClick={handleUpvote} disabled={!canUpvote || submitting || loadingCfg}>
-            {submitting ? "Upvoting…" : "Confirm Upvote"}
+            {submitting ? "Voting…" : `UP Vote (${nativeUnit})`}
           </Button>
         </DialogFooter>
       </DialogContent>

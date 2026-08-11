@@ -473,7 +473,8 @@ const TokenDetails = () => {
   const { toast } = useToast();
   const [tradeAmount, setTradeAmount] = useState("0");
 
-  // Default buy input to BNB — "0.005" as tokens on a ~1e-9 spot curve is almost always a UX mistake.
+  // Default buy input to native (BNB/SOL) — "0.005" as tokens on a ~1e-9 spot curve is almost always a UX mistake.
+  // State key stays "BNB" meaning "native coin" for the trade engine; labels use nativeUnit (SOL on Solana).
   const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("BNB");
   const toggleTradeInputDenom = () => {
     setTradeAmount("0");
@@ -566,6 +567,8 @@ const TokenDetails = () => {
   });
   const chainIdForStorage = pageChainId;
   const isSolanaPage = isSolanaChainId(chainIdForStorage);
+  /** Native unit for bonding quotes/UI: SOL on Solana, BNB on EVM. Never show BNB on Solana pages. */
+  const nativeUnit = isSolanaPage ? "SOL" : "BNB";
   const readProvider = useMemo(
     () => (isSolanaPage ? null : getReadProvider(chainIdForStorage)),
     [chainIdForStorage, isSolanaPage],
@@ -1036,20 +1039,30 @@ const TokenDetails = () => {
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
     try {
-      if (wei === 0n) return "0 BNB";
+      // Solana uses 9-dec lamports; EVM bonding uses 18-dec wei. Prefer unit label over fake precision on Solana shell.
+      if (isSolanaPage) {
+        if (wei === 0n) return `0 ${nativeUnit}`;
+        const raw = ethers.formatUnits(wei, 9);
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return `${raw} ${nativeUnit}`;
+        if (n >= 1) return `${n.toFixed(4)} ${nativeUnit}`;
+        if (n >= 0.01) return `${n.toFixed(6)} ${nativeUnit}`;
+        return `${n.toPrecision(4)} ${nativeUnit}`;
+      }
+      if (wei === 0n) return `0 ${nativeUnit}`;
       const raw = ethers.formatUnits(wei, 18);
       const n = Number(raw);
-      if (!Number.isFinite(n)) return `${raw} BNB`;
-      // Bonding spot prices are often far below 1e-6 BNB — keep significant digits.
-      if (n >= 1) return `${n.toFixed(2)} BNB`;
-      if (n >= 0.01) return `${n.toFixed(6)} BNB`;
-      if (n >= 1e-6) return `${n.toFixed(8)} BNB`;
-      if (n > 0 && n < 1e-12) return "<0.000000000001 BNB";
+      if (!Number.isFinite(n)) return `${raw} ${nativeUnit}`;
+      // Bonding spot prices are often far below 1e-6 native — keep significant digits.
+      if (n >= 1) return `${n.toFixed(2)} ${nativeUnit}`;
+      if (n >= 0.01) return `${n.toFixed(6)} ${nativeUnit}`;
+      if (n >= 1e-6) return `${n.toFixed(8)} ${nativeUnit}`;
+      if (n > 0 && n < 1e-12) return `<0.000000000001 ${nativeUnit}`;
       const fraction = raw.split(".")[1] || "";
       const firstNonZero = fraction.search(/[1-9]/);
       const decimals = Math.min(18, Math.max(8, (firstNonZero >= 0 ? firstNonZero : 7) + 4));
       const pretty = n.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
-      return `${pretty} BNB`;
+      return `${pretty} ${nativeUnit}`;
     } catch {
       return "—";
     }
@@ -1058,19 +1071,29 @@ const TokenDetails = () => {
   const formatBnbFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
     try {
-      if (wei === 0n) return "0 BNB";
+      if (isSolanaPage) {
+        if (wei === 0n) return `0 ${nativeUnit}`;
+        const raw = ethers.formatUnits(wei, 9);
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return `${raw} ${nativeUnit}`;
+        if (n > 0 && n < 1e-9) return `<0.000000001 ${nativeUnit}`;
+        if (n >= 1) return `${n.toFixed(4)} ${nativeUnit}`;
+        if (n >= 0.01) return `${n.toFixed(6)} ${nativeUnit}`;
+        return `${n.toPrecision(4)} ${nativeUnit}`;
+      }
+      if (wei === 0n) return `0 ${nativeUnit}`;
       const raw = ethers.formatEther(wei);
       const n = Number(raw);
-      if (!Number.isFinite(n)) return `${raw} BNB`;
-      if (n > 0 && n < 1e-12) return "<0.000000000001 BNB";
-      if (n >= 1) return `${n.toFixed(2)} BNB`;
-      if (n >= 0.01) return `${n.toFixed(4)} BNB`;
+      if (!Number.isFinite(n)) return `${raw} ${nativeUnit}`;
+      if (n > 0 && n < 1e-12) return `<0.000000000001 ${nativeUnit}`;
+      if (n >= 1) return `${n.toFixed(2)} ${nativeUnit}`;
+      if (n >= 0.01) return `${n.toFixed(4)} ${nativeUnit}`;
 
       const fraction = raw.split(".")[1] || "";
       const firstNonZero = fraction.search(/[1-9]/);
       const decimals = Math.min(12, Math.max(6, (firstNonZero >= 0 ? firstNonZero : 5) + 4));
       const pretty = n.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
-      return `${pretty} BNB`;
+      return `${pretty} ${nativeUnit}`;
     } catch {
       return "—";
     }
@@ -1164,20 +1187,20 @@ const TokenDetails = () => {
 
   const formatPriceBnb = (p?: number | null): string => {
     if (p == null || !Number.isFinite(p) || p < 0) return "—";
-    if (p === 0) return "0 BNB";
-    if (p >= 1) return `${p.toFixed(2)} BNB`;
-    if (p >= 0.01) return `${p.toFixed(6)} BNB`;
-    if (p >= 1e-6) return `${p.toFixed(8)} BNB`;
-    if (p > 0 && p < 1e-12) return "<0.000000000001 BNB";
+    if (p === 0) return `0 ${nativeUnit}`;
+    if (p >= 1) return `${p.toFixed(2)} ${nativeUnit}`;
+    if (p >= 0.01) return `${p.toFixed(6)} ${nativeUnit}`;
+    if (p >= 1e-6) return `${p.toFixed(8)} ${nativeUnit}`;
+    if (p > 0 && p < 1e-12) return `<0.000000000001 ${nativeUnit}`;
     // Preserve scientific-scale micro prices without truncating to zero.
-    return `${p.toPrecision(4)} BNB`;
+    return `${p.toPrecision(4)} ${nativeUnit}`;
   };
 
-  // Format a BNB amount (number) consistently across the UI.
+  // Format a native amount (BNB or SOL) consistently across the UI.
   const formatBnb = (n?: number | null): string => {
     if (n == null || !Number.isFinite(n)) return "—";
     const pretty = n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6);
-    return `${pretty} BNB`;
+    return `${pretty} ${nativeUnit}`;
   };
 
   const shorten = (addr?: string): string => {
@@ -1687,13 +1710,13 @@ const toSeconds = (ts: number): number => {
       // Graduated: Topaz spot. Bonding: on-chain mcap first, then summary, then realtime.
       marketCap:
         topazMarketCap != null && Number.isFinite(topazMarketCap) && topazMarketCap > 0
-          ? `${formatCompact(topazMarketCap)} BNB`
+          ? `${formatCompact(topazMarketCap)} ${nativeUnit}`
           : !contractGraduatedEarly && bondingMcapLabel
             ? bondingMcapLabel
             : statsMcap
               ? statsMcap
               : rtMarketCap != null && Number.isFinite(rtMarketCap)
-                ? `${formatCompact(rtMarketCap)} BNB`
+                ? `${formatCompact(rtMarketCap)} ${nativeUnit}`
                 : "—",
       volume: window24h && window24h !== "—" ? window24h : stats?.volume ?? "—",
       holders: stats?.holders ?? "—",
@@ -1707,13 +1730,13 @@ const toSeconds = (ts: number): number => {
               : formatPriceFromWei(metrics?.currentPrice ?? null),
       liquidity:
         topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
-          ? `${formatCompact(topazLiquidity)} BNB`
+          ? `${formatCompact(topazLiquidity)} ${nativeUnit}`
           : formatBnbFromWei(curveReserveWei),
 
-      // Timeframe analytics (BNB volume + price change)
+      // Timeframe analytics (native volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, contractGraduatedEarly, curveReserveWei, metrics, summary, timeframeTiles, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, metrics, summary, timeframeTiles, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb, nativeUnit]);
   // Keep USD reference price available for UI conversions and ATH tracking.
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
@@ -1833,11 +1856,11 @@ const bnbUsd = useMemo(() => {
   const formatBnbOrUsd = useMemo(() => {
     return (bnb: number | null | undefined): string => {
       if (bnb == null || !Number.isFinite(bnb)) return "—";
-      if (displayDenom === "BNB") return `${formatCompact(bnb)} BNB`;
+      if (displayDenom === "BNB") return `${formatCompact(bnb)} ${nativeUnit}`;
       if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
       return formatCompactUsd(bnb * bnbUsdPrice);
     };
-  }, [displayDenom, bnbUsdPrice, bnbUsdLoading]);
+  }, [displayDenom, bnbUsdPrice, bnbUsdLoading, nativeUnit]);
 
   const flywheel = useMemo(() => {
     const buyVolBnb = activity ? Number(ethers.formatEther(activity.buyVolumeWei)) : null;
@@ -1978,7 +2001,40 @@ const bnbUsd = useMemo(() => {
 
     const loadBalances = async () => {
       try {
-        if (!wallet.account || !readProvider || isSolanaPage) {
+        // Solana: load SOL balance (lamports) for position + trade panel labels.
+        if (isSolanaPage) {
+          try {
+            const { getSolanaProvider } = await import("@/lib/solanaWallet");
+            const { loadSolanaWeb3 } = await import("@/lib/solanaWeb3");
+            const { getPublicRpcUrl } = await import("@/lib/chainConfig");
+            const provider = getSolanaProvider();
+            const pubkey = String(provider?.publicKey?.toString?.() || "").trim();
+            if (!pubkey) {
+              if (!cancelled) {
+                setBnbBalanceWei(null);
+                setTokenBalanceWei(null);
+              }
+              return;
+            }
+            const web3 = await loadSolanaWeb3();
+            const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+            const lamports = BigInt(await connection.getBalance(new web3.PublicKey(pubkey)));
+            // Token balance on Solana requires mint ATA; leave null until trade path fills it.
+            if (!cancelled) {
+              setBnbBalanceWei(lamports);
+              setTokenBalanceWei(null);
+            }
+          } catch (e) {
+            console.warn("[TokenDetails] Failed to load Solana balances", e);
+            if (!cancelled) {
+              setBnbBalanceWei(null);
+              setTokenBalanceWei(null);
+            }
+          }
+          return;
+        }
+
+        if (!wallet.account || !readProvider) {
           setBnbBalanceWei(null);
           setTokenBalanceWei(null);
           return;
@@ -2040,7 +2096,7 @@ const bnbUsd = useMemo(() => {
       .map((p: any) => {
         const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
         const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
-        const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
+        const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} ${nativeUnit}` : "—";
 
         const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
         const priceStr = formatPriceBnb(priceNum);
@@ -2180,7 +2236,7 @@ const bnbUsd = useMemo(() => {
     if (!isDexStage) return tokenData.liquidity;
     // On-chain Topaz pool liquidity only (2 × WBNB reserve). No external DEX APIs.
     if (topazMarket.liquidityBnb != null && Number.isFinite(topazMarket.liquidityBnb) && topazMarket.liquidityBnb > 0) {
-      return `${formatCompact(topazMarket.liquidityBnb)} BNB`;
+      return `${formatCompact(topazMarket.liquidityBnb)} ${nativeUnit}`;
     }
     if (tokenData.liquidity && tokenData.liquidity !== "—") return tokenData.liquidity;
     return "—";
@@ -2468,7 +2524,7 @@ const bnbUsd = useMemo(() => {
         const decimals = 6; // V4 devnet generation uses 6
         const scale = 10n ** BigInt(decimals);
 
-        // Buy: tradeAmount is SOL (BNB denom UI label still shows BNB — force SOL parse).
+        // Buy: tradeAmount is SOL (tradeInputDenom "BNB" means native unit; labels use nativeUnit).
         // Sell: tradeAmount is tokens.
         let amountIn: bigint;
         let minOut: bigint;
@@ -2559,8 +2615,8 @@ const bnbUsd = useMemo(() => {
         let optimistic: CurveTradePoint | null = null;
         if (tradeTab === "buy") {
           const nativeAmountInRaw = tradeInputDenom === "BNB" ? parseBnbAmountWei(tradeAmount) : effectiveBnbWei;
-          if (nativeAmountInRaw <= 0n) throw new Error("Enter a valid BNB or token amount.");
-          if (bnbBalanceWei != null && nativeAmountInRaw > bnbBalanceWei) throw new Error("Insufficient BNB balance.");
+          if (nativeAmountInRaw <= 0n) throw new Error(`Enter a valid ${nativeUnit} or token amount.`);
+          if (bnbBalanceWei != null && nativeAmountInRaw > bnbBalanceWei) throw new Error(`Insufficient ${nativeUnit} balance.`);
           const quote = await quoteTopazBuy({
             provider: readProvider,
             resolved,
@@ -2596,7 +2652,7 @@ const bnbUsd = useMemo(() => {
           };
         } else {
           const tokenAmountInRaw = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountWei(tradeAmount);
-          if (tokenAmountInRaw <= 0n) throw new Error("Enter a valid token or BNB amount.");
+          if (tokenAmountInRaw <= 0n) throw new Error(`Enter a valid token or ${nativeUnit} amount.`);
           if (tokenBalanceWei != null && tokenAmountInRaw > tokenBalanceWei) {
             throw new Error(`Insufficient ${tokenData.ticker} balance.`);
           }
@@ -2704,7 +2760,7 @@ const bnbUsd = useMemo(() => {
     if (amountWei <= 0n) {
       toast({
         title: "Invalid amount",
-        description: tradeInputDenom === "BNB" ? "Enter a BNB amount greater than 0." : `Enter a ${tokenData.ticker} amount greater than 0.`,
+        description: tradeInputDenom === "BNB" ? `Enter a ${nativeUnit} amount greater than 0.` : `Enter a ${tokenData.ticker} amount greater than 0.`,
         variant: "destructive",
       });
       return;
@@ -2727,7 +2783,7 @@ const bnbUsd = useMemo(() => {
           const maxCostWei = (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
           if (maxCostWei > bnbBalanceWei) {
             toast({
-              title: "Insufficient BNB",
+              title: `Insufficient ${nativeUnit}`,
               description: `You need ~${formatBnbFromWei(maxCostWei)} to place this buy.`,
               variant: "destructive",
             });
@@ -3106,16 +3162,14 @@ const bnbUsd = useMemo(() => {
                       />
                     </Button>
 
-                    {/* UP Vote is BNB-only (EVM treasury). Never show on Solana. */}
-                    {!isSolanaPage ? (
-                      <UpvoteDialog
-                        campaignAddress={campaignAddr}
-                        chainId={chainIdForStorage}
-                        buttonVariant="secondary"
-                        buttonSize="sm"
-                        className="h-8 px-3 text-xs flex-shrink-0"
-                      />
-                    ) : null}
+                    {/* UP Vote: same product on BNB (treasury) and Solana (SOL + vote-ingest). */}
+                    <UpvoteDialog
+                      campaignAddress={campaignAddr}
+                      chainId={chainIdForStorage}
+                      buttonVariant="secondary"
+                      buttonSize="sm"
+                      className="h-8 px-3 text-xs flex-shrink-0"
+                    />
 
                     {/* CrypticPump badge / list CTA sits to the right of upvote */}
                     {crypticPumpListing?.listingUrl ? (
@@ -3259,7 +3313,7 @@ const bnbUsd = useMemo(() => {
                       className="h-6 px-2.5 text-[10px] md:text-[11px]"
                       onClick={() => setDisplayDenom("BNB")}
                     >
-                      BNB
+                      {nativeUnit}
                     </Button>
                   </div>
                 </div>
@@ -3502,7 +3556,7 @@ const bnbUsd = useMemo(() => {
                       <tr>
                         <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
                         <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">{nativeUnit}</th>
                         <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
                         <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
                         <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
@@ -3608,8 +3662,8 @@ const bnbUsd = useMemo(() => {
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-snug mb-2">
                   Graduates when <span className="text-foreground/80">tokens sold</span> hit the curve
-                  supply <span className="text-foreground/80">or</span> BNB raised hits the target
-                  (testnet target can be tiny, so BNB % can look large).
+                  supply <span className="text-foreground/80">or</span> {nativeUnit} raised hits the target
+                  (testnet target can be tiny, so {nativeUnit} % can look large).
                 </p>
 
                 <div className="mt-3 h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
@@ -3625,7 +3679,7 @@ const bnbUsd = useMemo(() => {
                     <p className="mt-1 font-mono text-foreground">{curveProgress.soldPct.toFixed(2)}%</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-muted-foreground">BNB raised</p>
+                    <p className="text-muted-foreground">{nativeUnit} raised</p>
                     <p className="mt-1 font-mono text-foreground">{curveProgress.raisedPct.toFixed(2)}%</p>
                   </div>
                   <div>
@@ -3633,7 +3687,7 @@ const bnbUsd = useMemo(() => {
                     <p className="mt-1 font-mono text-foreground">{formatBnbFromWei(curveProgress.reserveWei ?? undefined)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-muted-foreground">BNB to target</p>
+                    <p className="text-muted-foreground">{nativeUnit} to target</p>
                     <p className="mt-1 font-mono text-foreground">{remainingCurveLabel.primary}</p>
                   </div>
                 </div>
@@ -3646,7 +3700,7 @@ const bnbUsd = useMemo(() => {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <p className="text-muted-foreground">BNB balance</p>
+                    <p className="text-muted-foreground">{nativeUnit} balance</p>
                     <p className="mt-1 font-mono text-foreground break-words">{formatBnbFromWei(bnbBalanceWei)}</p>
                   </div>
                   <div>
@@ -3672,7 +3726,7 @@ const bnbUsd = useMemo(() => {
                           className="h-6 px-2 text-[10px] text-muted-foreground hover:bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
                           onClick={toggleTradeInputDenom}
                         >
-                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
+                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
                         </Button>
                       </div>
                       <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
@@ -3686,7 +3740,7 @@ const bnbUsd = useMemo(() => {
                         placeholder="0"
                       />
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
+                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? nativeUnit : tokenData.ticker}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between mt-2">
@@ -3731,7 +3785,7 @@ const bnbUsd = useMemo(() => {
                         {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
                       </p>
                     ) : (
-                      <p>Enter a BNB amount to buy (switch to {tokenData.ticker || "TOKEN"} only for exact token size).</p>
+                      <p>Enter a {nativeUnit} amount to buy (switch to {tokenData.ticker || "TOKEN"} only for exact token size).</p>
                     )}
                   </div>
 
@@ -3756,14 +3810,14 @@ const bnbUsd = useMemo(() => {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker})</span>
+                        <span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? nativeUnit : tokenData.ticker})</span>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
                           onClick={toggleTradeInputDenom}
                         >
-                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
+                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
                         </Button>
                       </div>
                       <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
@@ -3777,7 +3831,7 @@ const bnbUsd = useMemo(() => {
                         placeholder="0"
                       />
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
+                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? nativeUnit : tokenData.ticker}</span>
                       </div>
                     </div>
 
