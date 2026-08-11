@@ -52,7 +52,23 @@ export default defineConfig(({ mode }) => {
           find: "@",
           replacement: path.resolve(__dirname, "./src"),
         },
+        // @solana/web3.js browser builds `import { Buffer } from 'buffer'`
+        {
+          find: "buffer",
+          replacement: path.resolve(__dirname, "./node_modules/buffer/"),
+        },
       ],
+    },
+    optimizeDeps: {
+      include: ["buffer", "@solana/web3.js", "@solana/spl-token"],
+      esbuildOptions: {
+        define: {
+          global: "globalThis",
+        },
+      },
+    },
+    define: {
+      global: "globalThis",
     },
   };
 });

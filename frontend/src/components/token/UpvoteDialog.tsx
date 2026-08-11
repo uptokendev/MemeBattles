@@ -390,45 +390,73 @@ export function UpvoteDialog({
     }
 
     const provider = getSolanaProvider();
-    if (!provider?.publicKey || typeof provider.signAndSendTransaction !== "function" && typeof provider.signTransaction !== "function") {
+    if (!provider?.publicKey || typeof provider.signTransaction !== "function") {
       fail("Wallet unavailable", "Connect Phantom / Solflare to vote on Solana.");
     }
 
+    // Ensure Buffer exists before web3 Transaction.serialize (Vite browser gap).
+    try {
+      await import("@/polyfills");
+    } catch {
+      // polyfills already loaded from main entry
+    }
+
     const web3 = await loadSolanaWeb3();
-    const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+    const rpc =
+      String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
+      getPublicRpcUrl(SOLANA_CHAIN_ID) ||
+      "https://api.devnet.solana.com";
+    const connection = new web3.Connection(rpc, "confirmed");
     const from = new web3.PublicKey(solanaWallet.solanaAccount);
     const to = new web3.PublicKey(treasuryAddress);
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    const latest = await connection.getLatestBlockhash("confirmed");
 
-    const tx = new web3.Transaction({
-      feePayer: from,
-      blockhash,
-      lastValidBlockHeight,
-    }).add(
+    // Same construction pattern as V4 create submit (legacy Transaction + feePayer).
+    const lamports = voteWei > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(voteWei);
+    if (!Number.isFinite(lamports) || lamports <= 0) {
+      fail("Price unavailable", "Resolved vote amount was invalid.");
+    }
+
+    const tx = new web3.Transaction();
+    tx.feePayer = from;
+    tx.recentBlockhash = latest.blockhash;
+    tx.add(
       web3.SystemProgram.transfer({
         fromPubkey: from,
         toPubkey: to,
-        lamports: Number(voteWei),
+        lamports,
       }),
     );
 
     toast({ title: "Confirm UP Vote", description: `Pay ~$${UPVOTE_USD_TARGET} in SOL…` });
 
+    // Prefer signTransaction + sendRaw (matches createCampaign). signAndSendTransaction
+    // can throw opaque "buffer is not defined" on some Phantom/Vite combos.
     let signature = "";
-    if (typeof provider.signAndSendTransaction === "function") {
-      const result = await provider.signAndSendTransaction(tx);
-      signature = typeof result === "string" ? result : String(result?.signature || "");
-    } else {
+    try {
       const signed = await provider.signTransaction!(tx);
-      signature = await connection.sendRawTransaction(signed.serialize(), {
+      const raw =
+        typeof signed?.serialize === "function"
+          ? signed.serialize()
+          : tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+      signature = await connection.sendRawTransaction(raw, {
         skipPreflight: false,
         preflightCommitment: "confirmed",
       });
+    } catch (signErr: unknown) {
+      const msg = String((signErr as { message?: string })?.message || signErr || "");
+      if (/buffer is not defined|Buffer is not defined/i.test(msg)) {
+        fail(
+          "Wallet/browser crypto missing Buffer",
+          "Hard-refresh the app (Buffer polyfill). If it persists after deploy, report this error.",
+        );
+      }
+      throw signErr;
     }
     if (!signature) fail("Upvote failed", "Wallet did not return a transaction signature.");
 
     toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+    await connection.confirmTransaction({ signature, ...latest }, "confirmed");
 
     let ingest: { votes24h?: number; votesAllTime?: number; campaignAddress?: string } | null = null;
     try {
