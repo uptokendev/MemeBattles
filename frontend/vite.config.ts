@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
@@ -45,14 +46,24 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      // @solana/web3.js + wallet serialize need Node Buffer in the browser.
+      nodePolyfills({
+        include: ["buffer", "process"],
+        globals: {
+          Buffer: true,
+          global: true,
+          process: true,
+        },
+      }),
+    ],
     resolve: {
       alias: [
         {
           find: "@",
           replacement: path.resolve(__dirname, "./src"),
         },
-        // @solana/web3.js browser builds `import { Buffer } from 'buffer'`
         {
           find: "buffer",
           replacement: path.resolve(__dirname, "./node_modules/buffer/"),

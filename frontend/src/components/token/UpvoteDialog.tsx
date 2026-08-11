@@ -1,3 +1,4 @@
+import "@/polyfills";
 import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 

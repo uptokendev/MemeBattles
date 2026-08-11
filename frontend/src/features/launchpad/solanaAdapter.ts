@@ -29,14 +29,21 @@ type SolanaTradeStatusResponse = {
  *
  * Hard gate remains Railway SOLANA_TRADE_AUTH_ENABLED (trade-authorize fail-closed).
  * This adapter reports /api/solana/trade-status for the safety panel.
- * VITE_SOLANA_TRADE_LIVE is only an emergency force-live UI override when status is unreachable.
+ *
+ * VITE_SOLANA_TRADE_LIVE:
+ * - true/1/on  → force UI open when status unreachable (or auth already true)
+ * - false/0/off → never force
+ * - unset      → force UI open (devnet go-live). Railway still rejects if auth off.
+ *                Set VITE_SOLANA_TRADE_LIVE=false to re-lock the safety overlay.
  */
 function forceLiveOverride() {
-  return ["1", "true", "yes", "on"].includes(
-    String(import.meta.env.VITE_SOLANA_TRADE_LIVE || "")
-      .trim()
-      .toLowerCase(),
-  );
+  const raw = String(import.meta.env.VITE_SOLANA_TRADE_LIVE ?? "")
+    .trim()
+    .toLowerCase();
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  // Unset: open UI so TokenSafety overlay does not block real trades when API is live.
+  return true;
 }
 
 async function fetchTradeStatus(): Promise<SolanaTradeStatusResponse | null> {

@@ -121,10 +121,20 @@ Railway:
 SOLANA_TRADE_AUTH_ENABLED=true
 ```
 
-Optional frontend status flag:
+Frontend safety UI (Netlify / Vite):
 
 ```text
+# Unset or true: do not block Buy/Sell overlay once trade code is deployed.
+# Explicit false re-locks the safety UI (API hard gate still applies).
 VITE_SOLANA_TRADE_LIVE=true
+```
+
+If the safety panel still shows **“Bonding buy/sell not live yet (P1)”**, the **static frontend is stale** — redeploy Netlify/Vite from `devpostgrad`. Railway `SOLANA_TRADE_AUTH_ENABLED=true` alone does not update the SPA bundle.
+
+Confirm API honesty (should say `protocolLive: true` after unpause + auth):
+
+```bash
+curl -sS https://memebattles-frontend-7dcf.up.railway.app/api/solana/trade-status | jq .
 ```
 
 ### 5. Trade smoke (as buyer)

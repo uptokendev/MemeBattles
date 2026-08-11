@@ -91,6 +91,9 @@ const FRONTEND_API_PREFIXES = [
   // Vote receipt → vote_aggregates (must not hit indexer /api/votes proxy).
   "/api/vote-ingest",
   "/api/votes/ingest",
+  // Solana V4 create/trade/vote — must hit frontend-api, never indexer.
+  "/api/solana",
+  "/api/drafts",
   // Same-origin Netlify proxy → frontend-api for these product surfaces.
   "/api/featured",
   "/api/campaigns",
