@@ -124,14 +124,20 @@ const allowedOrigins = new Set(
   )
 );
 
+const CORS_RELAXED = /^(1|true|yes|on)$/i.test(String(process.env.CORS_RELAXED || "").trim());
+
 function isAllowedOrigin(origin) {
   if (!origin) return true;
+  if (CORS_RELAXED) return true;
   if (allowedOrigins.has(origin)) return true;
   try {
     const { hostname } = new URL(origin);
     const host = hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
     if (host.endsWith(".netlify.app") && host.includes("memewar")) return true;
+    // Coolify temporary public hostnames (sslip/nip)
+    if (host.endsWith(".sslip.io") || host.endsWith(".nip.io")) return true;
   } catch {}
   return false;
 }

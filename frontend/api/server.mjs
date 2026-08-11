@@ -173,16 +173,35 @@ const DEV_ALLOWED_IPS = new Set(
     .filter(Boolean)
 );
 
+/** When true, any browser Origin is reflected (migration / self-host debugging only). */
+const CORS_RELAXED = /^(1|true|yes|on)$/i.test(String(process.env.CORS_RELAXED || "").trim());
+
 console.log(`[api/server] DEV_ALLOWED_IPS for full dev access: ${Array.from(DEV_ALLOWED_IPS).join(", ") || "(none)"}`);
+console.log(`[api/server] CORS_RELAXED=${CORS_RELAXED} extraOrigins=${Array.from(allowedOrigins).filter((o) => !DEFAULT_ALLOWED_ORIGINS.includes(o)).join(",") || "(none)"}`);
+
+function isCoolifyOrSelfHostPreview(host) {
+  // Coolify / Traefik temporary public hostnames (sslip/nip map DNS → server IP).
+  if (host.endsWith(".sslip.io") || host.endsWith(".nip.io")) return true;
+  // Optional Coolify app FQDN suffix, e.g. ".apps.example.com"
+  const coolifySuffix = String(process.env.CORS_COOLIFY_HOST_SUFFIX || "").trim().toLowerCase();
+  if (coolifySuffix) {
+    const suffix = coolifySuffix.startsWith(".") ? coolifySuffix : `.${coolifySuffix}`;
+    if (host === coolifySuffix.replace(/^\./, "") || host.endsWith(suffix)) return true;
+  }
+  return false;
+}
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
+  if (CORS_RELAXED) return true;
   if (allowedOrigins.has(origin)) return true;
   try {
     const { hostname } = new URL(origin);
     const host = hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
     if (host.endsWith(".netlify.app")) return true;
+    if (isCoolifyOrSelfHostPreview(host)) return true;
   } catch {}
   return false;
 }

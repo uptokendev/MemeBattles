@@ -273,8 +273,21 @@ const allowedOrigins = new Set(
 );
 
 
+const CORS_RELAXED = /^(1|true|yes|on)$/i.test(String(process.env.CORS_RELAXED || "").trim());
+
+function isCoolifyOrSelfHostPreview(host: string) {
+  if (host.endsWith(".sslip.io") || host.endsWith(".nip.io")) return true;
+  const coolifySuffix = String(process.env.CORS_COOLIFY_HOST_SUFFIX || "").trim().toLowerCase();
+  if (coolifySuffix) {
+    const suffix = coolifySuffix.startsWith(".") ? coolifySuffix : `.${coolifySuffix}`;
+    if (host === coolifySuffix.replace(/^\./, "") || host.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
 function isAllowedOrigin(origin?: string) {
   if (!origin) return true; // allow non-browser (curl, server-to-server)
+  if (CORS_RELAXED) return true;
   if (allowedOrigins.has(origin)) return true;
 
   try {
@@ -293,6 +306,11 @@ function isAllowedOrigin(origin?: string) {
 
     // Netlify deploy previews / branch deploys
     if (host.endsWith(".netlify.app")) {
+      return true;
+    }
+
+    // Coolify / self-host temporary public hostnames
+    if (isCoolifyOrSelfHostPreview(host)) {
       return true;
     }
 
