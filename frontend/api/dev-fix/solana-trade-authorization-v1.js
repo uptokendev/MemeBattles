@@ -277,6 +277,90 @@ function buildTradeAuthorizationDigest({
 }
 
 /**
+ * GET /api/solana/trade-status
+ * Read-only honesty probe for FE safety (no secrets, no signature).
+ * Reports Railway auth gate + optional GlobalConfig pause flags.
+ */
+export async function solanaTradeStatus(req, res) {
+  if (!methodAllowed(req, res, ["GET", "POST"])) return;
+
+  try {
+    const tradeAuthEnabled = isTruthy(process.env.SOLANA_TRADE_AUTH_ENABLED);
+    const programIdRaw = String(process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || "").trim();
+    const rpcUrl = String(process.env.SOLANA_RPC_URL || "").trim();
+    let programId = null;
+    try {
+      programId = programIdRaw ? publicKeyString(programIdRaw, "programId") : null;
+    } catch {
+      programId = null;
+    }
+
+    let pauses = null;
+    let rpcOk = false;
+    let rpcError = null;
+    if (rpcUrl && programId) {
+      try {
+        const globalPda = findProgramAddressSync([Buffer.from("global", "utf8")], programId).publicKey;
+        const info = await rpcCall(rpcUrl, "getAccountInfo", [
+          globalPda,
+          { encoding: "base64", commitment: "confirmed" },
+        ]);
+        const b64 = info?.value?.data?.[0];
+        if (b64) {
+          const { decodeGlobalConfig } = await import("./solana-v4-primitives.js");
+          const decoded = decodeGlobalConfig(Buffer.from(b64, "base64"));
+          pauses = {
+            paused: Boolean(decoded.paused),
+            createPaused: Boolean(decoded.createPaused),
+            buyPaused: Boolean(decoded.buyPaused),
+            sellPaused: Boolean(decoded.sellPaused),
+            graduationPaused: Boolean(decoded.graduationPaused),
+            claimsPaused: Boolean(decoded.claimsPaused),
+            authorizedTradingRequired: Boolean(decoded.authorizedTradingRequired),
+          };
+          rpcOk = true;
+        } else {
+          rpcError = "GlobalConfig account missing on RPC";
+        }
+      } catch (e) {
+        rpcError = String(e?.message || e);
+      }
+    } else {
+      rpcError = !rpcUrl ? "SOLANA_RPC_URL not set" : "SOLANA_LAUNCHPAD_PROGRAM_ID not set";
+    }
+
+    const buyOpen = tradeAuthEnabled && pauses && !pauses.paused && !pauses.buyPaused;
+    const sellOpen = tradeAuthEnabled && pauses && !pauses.paused && !pauses.sellPaused;
+    const protocolLive = Boolean(buyOpen || sellOpen);
+
+    return json(res, 200, {
+      chainId: 101,
+      tradeAuthEnabled,
+      protocolLive,
+      buyOpen: Boolean(buyOpen),
+      sellOpen: Boolean(sellOpen),
+      programId,
+      pauses,
+      rpcOk,
+      rpcError,
+      message: !tradeAuthEnabled
+        ? "Railway SOLANA_TRADE_AUTH_ENABLED is false — trade authorize is fail-closed."
+        : !rpcOk
+          ? `Trade auth is on; could not read on-chain pauses (${rpcError || "rpc"}).`
+          : pauses?.buyPaused || pauses?.sellPaused
+            ? "Trade auth is on but buy/sell still paused on GlobalConfig — run unpause-trade."
+            : "Solana bonding trade window is open (auth + unpaused).",
+    });
+  } catch (error) {
+    console.error("[solana-trade-status]", error);
+    return json(res, 500, {
+      error: "Solana trade status failed.",
+      code: "SOLANA_TRADE_STATUS_ERROR",
+    });
+  }
+}
+
+/**
  * POST /api/solana/trade-authorize
  */
 export async function solanaTradeAuthorizationV1(req, res) {

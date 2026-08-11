@@ -5,19 +5,33 @@ import type {
   TradeSide,
 } from "@/features/launchpad/adapters";
 import { isSolanaAddress } from "@/lib/address";
+import { apiFetch } from "@/lib/apiBase";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 
+type SolanaTradeStatusResponse = {
+  tradeAuthEnabled?: boolean;
+  protocolLive?: boolean;
+  buyOpen?: boolean;
+  sellOpen?: boolean;
+  pauses?: {
+    paused?: boolean;
+    buyPaused?: boolean;
+    sellPaused?: boolean;
+    createPaused?: boolean;
+  } | null;
+  message?: string;
+  rpcOk?: boolean;
+  rpcError?: string | null;
+};
+
 /**
- * Solana safety adapter.
+ * Solana safety adapter — BNB-like honesty.
  *
- * Bonding buy/sell land in P1 (V4 program ixs exist when deployed). Until
- * SOLANA_TRADE_AUTH_ENABLED + unpaused GlobalConfig + upgraded program binary
- * are confirmed live, preflight stays fail-closed but messaging is honest.
- *
- * Set VITE_SOLANA_TRADE_LIVE=true only after ops has unpaused buy/sell and
- * Railway trade authorization is live.
+ * Hard gate remains Railway SOLANA_TRADE_AUTH_ENABLED (trade-authorize fail-closed).
+ * This adapter reports /api/solana/trade-status for the safety panel.
+ * VITE_SOLANA_TRADE_LIVE is only an emergency force-live UI override when status is unreachable.
  */
-function tradeLiveFlag() {
+function forceLiveOverride() {
   return ["1", "true", "yes", "on"].includes(
     String(import.meta.env.VITE_SOLANA_TRADE_LIVE || "")
       .trim()
@@ -25,34 +39,63 @@ function tradeLiveFlag() {
   );
 }
 
-export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
-  const live = tradeLiveFlag();
+async function fetchTradeStatus(): Promise<SolanaTradeStatusResponse | null> {
+  try {
+    const res = await apiFetch("/api/solana/trade-status", { method: "GET", cache: "no-store" });
+    const body = (await res.json().catch(() => null)) as SolanaTradeStatusResponse | null;
+    if (!res.ok || !body) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
 
+export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
   return {
     chain: "solana",
 
     async getStatus(): Promise<LaunchpadAdapterStatus> {
-      if (!live) {
+      const status = await fetchTradeStatus();
+      const force = forceLiveOverride();
+
+      if (!status) {
+        if (force) {
+          return {
+            chain: "solana",
+            protocolLive: true,
+            label: "Solana bonding (override)",
+            message:
+              "Could not reach trade-status; VITE_SOLANA_TRADE_LIVE override is on. Program still enforces pauses/auth.",
+            routeAuthorizationReady: true,
+            warnings: ["Trade-status API unreachable — using FE override."],
+          };
+        }
         return {
           chain: "solana",
           protocolLive: false,
-          label: "Solana bonding (P1)",
-          message:
-            "Create/deploy works. Bonding buy/sell require the V4 trade instructions on the deployed program, buy/sell unpaused on GlobalConfig, and Railway trade authorization.",
+          label: "Solana bonding",
+          message: "Could not load Solana trade status from API.",
           routeAuthorizationReady: false,
-          warnings: [
-            "Bonding buy/sell not live yet (P1).",
-            "Safety is intentionally fail-closed until trade is enabled.",
-          ],
+          warnings: ["Trade-status API unreachable. Safety is fail-closed."],
         };
       }
+
+      const live = Boolean(status.protocolLive) || (force && Boolean(status.tradeAuthEnabled));
       return {
         chain: "solana",
-        protocolLive: true,
-        label: "Solana bonding trade",
-        message: "Solana V4 bonding trade path is enabled for this build.",
-        routeAuthorizationReady: true,
-        warnings: [],
+        protocolLive: live,
+        label: live ? "Solana bonding trade" : "Solana bonding",
+        message: status.message || (live ? "Trade window open." : "Trade not live yet."),
+        routeAuthorizationReady: Boolean(status.tradeAuthEnabled),
+        warnings: [
+          !status.tradeAuthEnabled
+            ? "Railway SOLANA_TRADE_AUTH_ENABLED is false."
+            : "",
+          status.pauses?.buyPaused ? "On-chain buys are paused." : "",
+          status.pauses?.sellPaused ? "On-chain sells are paused." : "",
+          status.rpcOk === false ? `RPC pause probe failed: ${status.rpcError || "unknown"}` : "",
+          force && !status.protocolLive ? "VITE_SOLANA_TRADE_LIVE override active." : "",
+        ].filter(Boolean),
       };
     },
 
@@ -60,29 +103,8 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
       const sideLabel: TradeSide = side === "sell" ? "sell" : "buy";
       const campaign = String(campaignAddress || "").trim();
       const wallet = String(walletAddress || "").trim();
-
-      if (!live) {
-        return {
-          allowed: false,
-          chain: "solana",
-          side: sideLabel,
-          reasons: ["Solana bonding buy/sell is not live yet (P1)."],
-          warnings: [
-            wallet && !isSolanaAddress(wallet)
-              ? "Connect a Solana wallet (not EVM) for Solana campaigns."
-              : "When trade goes live, use a Solana wallet with SOL + token ATA.",
-          ].filter(Boolean),
-          schemaReady: true,
-          campaign: campaign
-            ? {
-                campaignAddress: campaign,
-                paused: false,
-                buyPaused: sideLabel === "buy",
-                sellPaused: sideLabel === "sell",
-              }
-            : null,
-        };
-      }
+      const status = await fetchTradeStatus();
+      const force = forceLiveOverride();
 
       if (!campaign || !isSolanaAddress(campaign)) {
         return {
@@ -96,7 +118,6 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
       }
 
       if (!wallet) {
-        // Soft visitor pass matching BNB: status only, no hard dual-block for guests.
         return {
           allowed: false,
           chain: "solana",
@@ -120,20 +141,104 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
         };
       }
 
-      // Live path: allow at adapter level; program still enforces pause/auth/risk.
+      if (!status) {
+        if (force) {
+          return {
+            allowed: true,
+            chain: "solana",
+            side: sideLabel,
+            reasons: [],
+            warnings: ["Trade-status unreachable; override allows UI. On-chain still enforces."],
+            schemaReady: true,
+            campaign: { campaignAddress: campaign },
+            walletRisk: { walletAddress: wallet, restricted: false },
+          };
+        }
+        return {
+          allowed: false,
+          chain: "solana",
+          side: sideLabel,
+          reasons: ["Could not load Solana trade status — fail-closed."],
+          warnings: [],
+          schemaReady: true,
+          campaign: { campaignAddress: campaign },
+        };
+      }
+
+      if (!status.tradeAuthEnabled) {
+        return {
+          allowed: false,
+          chain: "solana",
+          side: sideLabel,
+          reasons: ["Solana trade authorization is disabled on Railway (SOLANA_TRADE_AUTH_ENABLED)."],
+          warnings: ["When trade goes live, use a Solana wallet with SOL + token ATA."],
+          schemaReady: true,
+          campaign: {
+            campaignAddress: campaign,
+            buyPaused: true,
+            sellPaused: true,
+          },
+          walletRisk: { walletAddress: wallet, restricted: false },
+        };
+      }
+
+      const sideOpen = sideLabel === "buy" ? status.buyOpen : status.sellOpen;
+      const pausedSide =
+        sideLabel === "buy" ? Boolean(status.pauses?.buyPaused) : Boolean(status.pauses?.sellPaused);
+
+      if (status.pauses?.paused) {
+        return {
+          allowed: false,
+          chain: "solana",
+          side: sideLabel,
+          reasons: ["Launchpad is globally paused on-chain."],
+          warnings: [],
+          schemaReady: true,
+          campaign: {
+            campaignAddress: campaign,
+            paused: true,
+            buyPaused: true,
+            sellPaused: true,
+          },
+          walletRisk: { walletAddress: wallet, restricted: false },
+        };
+      }
+
+      if (!sideOpen && !force) {
+        return {
+          allowed: false,
+          chain: "solana",
+          side: sideLabel,
+          reasons: [
+            pausedSide
+              ? `On-chain ${sideLabel}s are paused (run unpause-trade).`
+              : `Solana ${sideLabel} is not open yet.`,
+          ],
+          warnings: [status.message || ""].filter(Boolean),
+          schemaReady: true,
+          campaign: {
+            campaignAddress: campaign,
+            buyPaused: Boolean(status.pauses?.buyPaused),
+            sellPaused: Boolean(status.pauses?.sellPaused),
+          },
+          walletRisk: { walletAddress: wallet, restricted: false },
+        };
+      }
+
       return {
         allowed: true,
         chain: "solana",
         side: sideLabel,
         reasons: [],
         warnings: [
-          "Program enforces launch_at, pause flags, risk profile, and route authorization on-chain.",
-        ],
+          "Program enforces launch_at, pause flags, risk profile, creator lock, and route authorization on-chain.",
+          force && !status.protocolLive ? "VITE_SOLANA_TRADE_LIVE override active." : "",
+        ].filter(Boolean),
         schemaReady: true,
         campaign: {
           campaignAddress: campaign,
-          buyPaused: false,
-          sellPaused: false,
+          buyPaused: Boolean(status.pauses?.buyPaused),
+          sellPaused: Boolean(status.pauses?.sellPaused),
         },
         walletRisk: {
           walletAddress: wallet,

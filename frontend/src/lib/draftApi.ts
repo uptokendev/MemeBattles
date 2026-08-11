@@ -1050,12 +1050,33 @@ export async function archiveCampaignDraft(draftId: string, auth: DraftActionAut
 
 export async function markDraftDeployed(
   draftId: string,
-  input: { auth: DraftActionAuth; campaignAddress: string; tokenAddress?: string | null; deployTxHash?: string | null }
+  input: {
+    auth: DraftActionAuth;
+    campaignAddress: string;
+    tokenAddress?: string | null;
+    deployTxHash?: string | null;
+    /** Solana V4: persist vaults + campaignId into campaigns.meta.solana */
+    tokenVault?: string | null;
+    solVault?: string | null;
+    campaignId?: number[] | string | null;
+    factoryAddress?: string | null;
+    scheduledLaunchAt?: number | null;
+  }
 ): Promise<CampaignDraft> {
   const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/deploy`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      auth: input.auth,
+      campaignAddress: input.campaignAddress,
+      tokenAddress: input.tokenAddress || null,
+      deployTxHash: input.deployTxHash || null,
+      scheduledLaunchAt: input.scheduledLaunchAt || null,
+      tokenVault: input.tokenVault || null,
+      solVault: input.solVault || null,
+      campaignId: input.campaignId || null,
+      factoryAddress: input.factoryAddress || null,
+    }),
   });
   const json = await parseJson(res);
   return {

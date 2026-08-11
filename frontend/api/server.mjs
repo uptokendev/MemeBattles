@@ -43,7 +43,7 @@ import votesIngest from "./votes-ingest.js";
 import voteCounts from "./vote_counts.js";
 import { withAdminOrOps, withInternalAuth, getAuthEnforceSnapshot } from "./lib/apiAuth.js";
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
-import { solanaTradeAuthorizationV1 } from "./dev-fix/solana-trade-authorization-v1.js";
+import { solanaTradeAuthorizationV1, solanaTradeStatus } from "./dev-fix/solana-trade-authorization-v1.js";
 import { solanaVoteIngest } from "./dev-fix/solana-vote-ingest.js";
 import {
   followedDrafts,
@@ -413,6 +413,7 @@ router.all("/drafts/:draftId/ticker-reservation", wrap(tickerReservationManageme
 router.all("/drafts/:draftId/archive", wrap(draftArchive));
 router.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 router.all("/solana/trade-authorize", wrap(solanaTradeAuthorizationV1));
+router.all("/solana/trade-status", wrap(solanaTradeStatus));
 router.all("/solana/vote-ingest", wrap(solanaVoteIngest));
 router.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 router.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscription));

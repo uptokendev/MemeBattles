@@ -670,6 +670,11 @@ const TokenDetails = () => {
   const [approvePending, setApprovePending] = useState(false);
   const [bnbBalanceWei, setBnbBalanceWei] = useState<bigint | null>(null);
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
+  /** Solana V4 campaign curve snapshot (quotes / vaults / lock). */
+  const [solanaCurve, setSolanaCurve] = useState<import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null>(null);
+  const [solanaBalanceTick, setSolanaBalanceTick] = useState(0);
+  /** V4 tokens use on-chain decimals (default 6); EVM launchpad tokens use 18. */
+  const tokenDecimals = isSolanaPage ? Number(solanaCurve?.tokenDecimals ?? 6) : TOKEN_DECIMALS;
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
   /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
@@ -1102,7 +1107,7 @@ const TokenDetails = () => {
   const formatTokenFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
     try {
-      const raw = ethers.formatUnits(wei, TOKEN_DECIMALS);
+      const raw = ethers.formatUnits(wei, tokenDecimals);
       const n = Number(raw);
       if (!Number.isFinite(n)) return raw;
       const pretty = n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(6) : n.toFixed(8);
@@ -1995,18 +2000,52 @@ const bnbUsd = useMemo(() => {
     };
   }, [campaign?.campaign, fetchCampaignActivity]);
 
+  // Solana: load campaign curve snapshot (quotes, vaults, lock, reserve).
+  useEffect(() => {
+    if (!isSolanaPage || !campaign?.campaign) {
+      setSolanaCurve(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
+        const preferred =
+          (campaign as { campaignPda?: string }).campaignPda ||
+          (campaign.campaign !== campaign.token ? campaign.campaign : null);
+        const state = await resolveSolanaCampaignCurve(
+          String(campaign.campaign),
+          preferred ? String(preferred) : null,
+        );
+        if (!cancelled) {
+          setSolanaCurve(state);
+          if (state?.netRaisedLamports != null) {
+            setCurveReserveWei(state.netRaisedLamports);
+          }
+        }
+      } catch (e) {
+        console.warn("[TokenDetails] Solana curve load failed", e);
+        if (!cancelled) setSolanaCurve(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSolanaPage, campaign?.campaign, campaign?.token, solanaBalanceTick]);
+
   // Wallet balances (for the trading panel)
   useEffect(() => {
     let cancelled = false;
 
     const loadBalances = async () => {
       try {
-        // Solana: load SOL balance (lamports) for position + trade panel labels.
+        // Solana: load SOL + token ATA balances for position + trade panel.
         if (isSolanaPage) {
           try {
             const { getSolanaProvider } = await import("@/lib/solanaWallet");
             const { loadSolanaWeb3 } = await import("@/lib/solanaWeb3");
             const { getPublicRpcUrl } = await import("@/lib/chainConfig");
+            const { getSolanaTokenBalanceRaw } = await import("@/lib/solanaTradeV1");
             const provider = getSolanaProvider();
             const pubkey = String(provider?.publicKey?.toString?.() || "").trim();
             if (!pubkey) {
@@ -2017,12 +2056,19 @@ const bnbUsd = useMemo(() => {
               return;
             }
             const web3 = await loadSolanaWeb3();
-            const connection = new web3.Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+            const connection = new web3.Connection(
+              String(import.meta.env.VITE_SOLANA_RPC || "").trim() || getPublicRpcUrl(SOLANA_CHAIN_ID),
+              "confirmed",
+            );
             const lamports = BigInt(await connection.getBalance(new web3.PublicKey(pubkey)));
-            // Token balance on Solana requires mint ATA; leave null until trade path fills it.
+            const mint = String(campaign?.token || campaign?.campaign || "").trim();
+            let tokenRaw = 0n;
+            if (mint) {
+              tokenRaw = await getSolanaTokenBalanceRaw({ mint, owner: pubkey });
+            }
             if (!cancelled) {
               setBnbBalanceWei(lamports);
-              setTokenBalanceWei(null);
+              setTokenBalanceWei(tokenRaw);
             }
           } catch (e) {
             console.warn("[TokenDetails] Failed to load Solana balances", e);
@@ -2071,7 +2117,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [readProvider, wallet.account, campaign?.token, isSolanaPage]);
+  }, [readProvider, wallet.account, campaign?.token, campaign?.campaign, isSolanaPage, solanaBalanceTick]);
 
   // Build transactions table rows from continuous market trade stream.
   useEffect(() => {
@@ -2258,7 +2304,9 @@ const bnbUsd = useMemo(() => {
 
 
   const stagePill = isSolanaPage
-    ? "Bonding · Solana (P1)"
+    ? solanaCurve?.graduated
+      ? "Graduated · Solana"
+      : "Bonding · Solana"
     : isTopazTradingActive
       ? "Graduated · Topaz"
       : isDexStage
@@ -2272,6 +2320,139 @@ const bnbUsd = useMemo(() => {
     const loadQuote = async () => {
       try {
         setQuoteError(null);
+
+        // ── Solana bonding quotes (exact SOL-in buy / exact tokens-in sell) ──
+        if (isSolanaPage) {
+          const solStr = String(tradeAmount || "").trim();
+          if (!solStr || solStr === "0") {
+            setEffectiveTokenWei(0n);
+            setEffectiveBnbWei(0n);
+            setQuoteWei(null);
+            setQuoteError(null);
+            setQuoteLoading(false);
+            return;
+          }
+          setQuoteLoading(true);
+
+          const parseSolLamports = (s: string): bigint => {
+            const parts = s.split(".");
+            const whole = BigInt(parts[0] || "0");
+            const frac = (parts[1] || "").slice(0, 9).padEnd(9, "0");
+            return whole * 1_000_000_000n + BigInt(frac || "0");
+          };
+          const parseTok = (s: string, dec: number): bigint => {
+            const parts = s.split(".");
+            const whole = BigInt(parts[0] || "0");
+            const frac = (parts[1] || "").slice(0, dec).padEnd(dec, "0");
+            return whole * 10n ** BigInt(dec) + BigInt(frac || "0");
+          };
+
+          let curve = solanaCurve;
+          if (!curve && campaign?.campaign) {
+            const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
+            curve = await resolveSolanaCampaignCurve(String(campaign.campaign));
+            if (!cancelled && curve) setSolanaCurve(curve);
+          }
+
+          const {
+            quoteBuyExactSolIn,
+            quoteSellExactTokensIn,
+          } = await import("@/lib/solanaTradeV1");
+
+          const dec = Number(curve?.tokenDecimals ?? 6);
+          // Fall back to generation defaults used on devnet when curve not loaded yet.
+          const basePrice = curve?.basePriceLamports ?? 1000n;
+          const slope = curve?.priceSlopeLamports ?? 10n;
+          const sold = curve?.soldTokens ?? 0n;
+          const supply = curve?.curveTokenSupply ?? 800_000_000_000_000n; // 800M * 1e6 if 1B total * 80%
+          const buyFeeBps = curve?.buyFeeBps ?? 200;
+          const sellFeeBps = curve?.sellFeeBps ?? 200;
+
+          if (tradeTab === "buy") {
+            // Native denom: exact SOL in. Token denom: approximate SOL for exact tokens (cost + fee).
+            if (tradeInputDenom === "BNB") {
+              const lamportsIn = parseSolLamports(solStr);
+              if (lamportsIn <= 0n) {
+                if (!cancelled) {
+                  setEffectiveBnbWei(0n);
+                  setEffectiveTokenWei(0n);
+                  setQuoteWei(null);
+                }
+                return;
+              }
+              const q = quoteBuyExactSolIn({
+                lamportsIn,
+                basePrice,
+                slope,
+                sold,
+                curveSupply: supply,
+                buyFeeBps,
+              });
+              if (!cancelled) {
+                setEffectiveBnbWei(lamportsIn);
+                setEffectiveTokenWei(q.tokensOut);
+                setQuoteWei(lamportsIn);
+                setQuoteError(q.tokensOut <= 0n ? "Amount too small for curve quote." : null);
+              }
+            } else {
+              const tokensWanted = parseTok(solStr, dec);
+              if (tokensWanted <= 0n) {
+                if (!cancelled) {
+                  setEffectiveBnbWei(0n);
+                  setEffectiveTokenWei(0n);
+                  setQuoteWei(null);
+                }
+                return;
+              }
+              // Invert roughly: cost for tokens + fee top-up.
+              const { checkedLinearCurveCost, calculateFee } = await import("@/lib/solanaTradeV1");
+              const grossCost = checkedLinearCurveCost(basePrice, slope, sold, tokensWanted);
+              // net = gross * (1 - fee) ≈ grossCost → lamportsIn ≈ grossCost / (1 - fee)
+              const feeBps = BigInt(buyFeeBps);
+              const lamportsIn =
+                feeBps >= 10_000n
+                  ? grossCost
+                  : (grossCost * 10_000n + (10_000n - feeBps - 1n)) / (10_000n - feeBps);
+              void calculateFee;
+              if (!cancelled) {
+                setEffectiveTokenWei(tokensWanted);
+                setEffectiveBnbWei(lamportsIn);
+                setQuoteWei(lamportsIn);
+                setQuoteError(null);
+              }
+            }
+          } else {
+            // Sell: prefer token amount; native denom inverts poorly — treat as tokens if TOKEN.
+            const tokensIn =
+              tradeInputDenom === "TOKEN"
+                ? parseTok(solStr, dec)
+                : parseTok(solStr, dec); // UI still uses amount field
+            if (tokensIn <= 0n) {
+              if (!cancelled) {
+                setEffectiveTokenWei(0n);
+                setEffectiveBnbWei(0n);
+                setQuoteWei(null);
+              }
+              return;
+            }
+            const q = quoteSellExactTokensIn({
+              tokensIn,
+              basePrice,
+              slope,
+              sold,
+              sellFeeBps,
+            });
+            if (!cancelled) {
+              setEffectiveTokenWei(tokensIn);
+              setEffectiveBnbWei(q.lamportsOut);
+              setQuoteWei(q.lamportsOut);
+              setQuoteError(
+                sold < tokensIn ? "Cannot sell more than the curve has sold." : q.lamportsOut <= 0n ? "Sell quote is zero." : null,
+              );
+            }
+          }
+          return;
+        }
 
         if (isDexStage) {
           if (!campaign?.campaign || !campaign?.token) {
@@ -2492,7 +2673,7 @@ const bnbUsd = useMemo(() => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb]);
+  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb, isSolanaPage, solanaCurve]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
@@ -2506,7 +2687,7 @@ const bnbUsd = useMemo(() => {
           requestSolanaTradeAuthorization,
           submitSolanaTradeV1,
           ensureTraderAta,
-          calculateFee,
+          applySlippageMinOut,
         } = await import("@/lib/solanaTradeV1");
 
         const provider = getSolanaProvider();
@@ -2520,28 +2701,43 @@ const bnbUsd = useMemo(() => {
           return;
         }
 
-        const mint = String(campaign.token || campaign.campaign);
-        const decimals = 6; // V4 devnet generation uses 6
-        const scale = 10n ** BigInt(decimals);
+        if (solanaCurve?.creator && trader === solanaCurve.creator) {
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (tradeTab === "buy" && solanaCurve.creatorBuyLockUntil > nowSec) {
+            throw new Error(
+              `Creator buy lock active until ${new Date(solanaCurve.creatorBuyLockUntil * 1000).toLocaleString()}. Use a different buyer wallet.`,
+            );
+          }
+        }
 
-        // Buy: tradeAmount is SOL (tradeInputDenom "BNB" means native unit; labels use nativeUnit).
+        const mint = String(solanaCurve?.mint || campaign.token || campaign.campaign);
+        const decimals = Number(solanaCurve?.tokenDecimals ?? 6);
+        const scale = 10n ** BigInt(decimals);
+        const campaignPda = String(
+          solanaCurve?.campaignAddress || campaign.campaign || "",
+        );
+
+        // Buy: tradeAmount is SOL (tradeInputDenom "BNB" means native unit).
         // Sell: tradeAmount is tokens.
         let amountIn: bigint;
         let minOut: bigint;
         if (tradeTab === "buy") {
-          // Parse as SOL with up to 9 decimals (lamports)
           const solStr = String(tradeAmount || "0").trim();
-          const solParts = solStr.split(".");
-          const whole = BigInt(solParts[0] || "0");
-          const frac = (solParts[1] || "").slice(0, 9).padEnd(9, "0");
-          amountIn = whole * 1_000_000_000n + BigInt(frac || "0");
+          if (tradeInputDenom === "BNB") {
+            const solParts = solStr.split(".");
+            const whole = BigInt(solParts[0] || "0");
+            const frac = (solParts[1] || "").slice(0, 9).padEnd(9, "0");
+            amountIn = whole * 1_000_000_000n + BigInt(frac || "0");
+          } else {
+            // Token-exact buy: use inverted quote as amountIn (SOL).
+            amountIn = effectiveBnbWei > 0n ? effectiveBnbWei : 0n;
+          }
           if (amountIn <= 0n) throw new Error("Enter a SOL amount to buy.");
-          // Without live curve snapshot, minOut=0 (program still validates economics).
-          minOut = 0n;
-          void calculateFee;
+          const estTokens = effectiveTokenWei > 0n ? effectiveTokenWei : 0n;
+          minOut = applySlippageMinOut(estTokens, SLIPPAGE_PCT);
           toast({
             title: "Submitting Solana buy",
-            description: `Exact ${solStr} SOL in → tokens out (fee from gross on-chain).`,
+            description: `Exact ${ethers.formatUnits(amountIn, 9)} SOL in → min ${formatTokenFromWei(minOut)} tokens.`,
           });
         } else {
           const tokStr = String(tradeAmount || "0").trim();
@@ -2550,26 +2746,26 @@ const bnbUsd = useMemo(() => {
           const frac = (parts[1] || "").slice(0, decimals).padEnd(decimals, "0");
           amountIn = whole * scale + BigInt(frac || "0");
           if (amountIn <= 0n) throw new Error("Enter a token amount to sell.");
-          minOut = 0n;
+          const estSol = quoteWei != null && quoteWei > 0n ? quoteWei : effectiveBnbWei;
+          minOut = applySlippageMinOut(estSol > 0n ? estSol : 0n, SLIPPAGE_PCT);
           toast({
             title: "Submitting Solana sell",
-            description: `Exact ${tokStr} tokens in → SOL out.`,
+            description: `Exact ${formatTokenFromWei(amountIn)} tokens in → min ${formatBnbFromWei(minOut)}.`,
           });
         }
 
         await ensureTraderAta({ mint, owner: trader });
 
-        // Prefer vaults from campaigns.meta; trade-authorize also falls back to RPC Campaign decode.
         const auth = await requestSolanaTradeAuthorization({
           side: tradeTab === "buy" ? "buy" : "sell",
-          campaignAddress: campaign.campaign,
+          campaignAddress: campaignPda,
           mintAddress: mint,
           traderAddress: trader,
           amountIn,
           minOut,
-          tokenVault: campaign.tokenVault || null,
-          solVault: campaign.solVault || null,
-          campaignId: campaign.campaignIdHex || null,
+          tokenVault: solanaCurve?.tokenVault || campaign.tokenVault || null,
+          solVault: solanaCurve?.solVault || campaign.solVault || null,
+          campaignId: solanaCurve?.campaignIdHex || campaign.campaignIdHex || null,
           chainId: SOLANA_CHAIN_ID,
         });
         const result = await submitSolanaTradeV1(auth, { traderAddress: trader });
@@ -2577,11 +2773,13 @@ const bnbUsd = useMemo(() => {
           title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
           description: `Tx: ${result.signature.slice(0, 12)}…`,
         });
+        setSolanaBalanceTick((n) => n + 1);
       } catch (e: any) {
         console.error("[TokenDetails] Solana trade failed", e);
+        const { mapSolanaTradeError } = await import("@/lib/solanaTradeV1");
         toast({
           title: "Solana trade failed",
-          description: String(e?.message || e || "Unknown error"),
+          description: mapSolanaTradeError(e),
           variant: "destructive",
         });
       } finally {
@@ -3795,10 +3993,12 @@ const bnbUsd = useMemo(() => {
                       tradePending ||
                       approvePending ||
                       quoteLoading ||
-                      (isDexStage && !isTopazTradingActive) ||
-                      (tradeInputDenom === "BNB"
-                        ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
-                        : parseTokenAmountWei(tradeAmount) <= 0n)
+                      (isSolanaPage
+                        ? effectiveBnbWei <= 0n
+                        : (isDexStage && !isTopazTradingActive) ||
+                          (tradeInputDenom === "BNB"
+                            ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
+                            : parseTokenAmountWei(tradeAmount) <= 0n))
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
@@ -3843,7 +4043,7 @@ const bnbUsd = useMemo(() => {
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
                           const amt = (tokenBalanceWei * 25n) / 100n;
-                          setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                          setTradeAmount(ethers.formatUnits(amt, tokenDecimals));
                         }}
                       >
                         25%
@@ -3855,7 +4055,7 @@ const bnbUsd = useMemo(() => {
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
                           const amt = (tokenBalanceWei * 50n) / 100n;
-                          setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                          setTradeAmount(ethers.formatUnits(amt, tokenDecimals));
                         }}
                       >
                         50%
@@ -3866,7 +4066,7 @@ const bnbUsd = useMemo(() => {
                         className="flex-1 text-xs h-7"
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
-                          setTradeAmount(ethers.formatUnits(tokenBalanceWei, TOKEN_DECIMALS));
+                          setTradeAmount(ethers.formatUnits(tokenBalanceWei, tokenDecimals));
                         }}
                       >
                         100%
@@ -3923,10 +4123,12 @@ const bnbUsd = useMemo(() => {
                       tradePending ||
                       approvePending ||
                       quoteLoading ||
-                      (isDexStage && !isTopazTradingActive) ||
-                      (tradeInputDenom === "BNB"
-                        ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
-                        : parseTokenAmountWei(tradeAmount) <= 0n)
+                      (isSolanaPage
+                        ? effectiveTokenWei <= 0n
+                        : (isDexStage && !isTopazTradingActive) ||
+                          (tradeInputDenom === "BNB"
+                            ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
+                            : parseTokenAmountWei(tradeAmount) <= 0n))
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >

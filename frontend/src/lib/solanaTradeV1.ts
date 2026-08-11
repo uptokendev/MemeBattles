@@ -167,6 +167,103 @@ export function calculateFee(amount: bigint, feeBps: number): bigint {
   return (amount * BigInt(feeBps)) / 10_000n;
 }
 
+/** Buy: exact SOL in (lamports) → est. tokens out after buy fee. */
+export function quoteBuyExactSolIn(input: {
+  lamportsIn: bigint;
+  basePrice: bigint;
+  slope: bigint;
+  sold: bigint;
+  curveSupply: bigint;
+  buyFeeBps: number;
+}): { feeLamports: bigint; netLamports: bigint; tokensOut: bigint } {
+  const feeLamports = calculateFee(input.lamportsIn, input.buyFeeBps);
+  const netLamports = input.lamportsIn > feeLamports ? input.lamportsIn - feeLamports : 0n;
+  const tokensOut = quoteBuyTokens(
+    input.basePrice,
+    input.slope,
+    input.sold,
+    input.curveSupply,
+    netLamports,
+  );
+  return { feeLamports, netLamports, tokensOut };
+}
+
+/** Sell: exact tokens in → est. SOL out after sell fee. */
+export function quoteSellExactTokensIn(input: {
+  tokensIn: bigint;
+  basePrice: bigint;
+  slope: bigint;
+  sold: bigint;
+  sellFeeBps: number;
+}): { grossLamports: bigint; feeLamports: bigint; lamportsOut: bigint } {
+  const grossLamports = quoteSellRefund(input.basePrice, input.slope, input.sold, input.tokensIn);
+  const feeLamports = calculateFee(grossLamports, input.sellFeeBps);
+  const lamportsOut = grossLamports > feeLamports ? grossLamports - feeLamports : 0n;
+  return { grossLamports, feeLamports, lamportsOut };
+}
+
+export function applySlippageMinOut(amount: bigint, slippagePct: number): bigint {
+  if (amount <= 0n) return 0n;
+  const pct = Math.max(0, Math.min(50, Math.trunc(slippagePct)));
+  return (amount * BigInt(100 - pct)) / 100n;
+}
+
+/** Map common program / API errors to user-facing copy. */
+export function mapSolanaTradeError(err: unknown): string {
+  const msg = String((err as { message?: string })?.message || err || "Unknown error");
+  if (/SOLANA_TRADE_AUTH_DISABLED|trade authorization is disabled/i.test(msg)) {
+    return "Trade auth is off on the API. Set Railway SOLANA_TRADE_AUTH_ENABLED=true after unpause.";
+  }
+  if (/CreatorBuyLocked|creator buy lock/i.test(msg)) {
+    return "Creator buy lock (~24h after create). Use a different buyer wallet.";
+  }
+  if (/BuysPaused|SellsPaused|buy.?paused|sell.?paused/i.test(msg)) {
+    return "Buys/sells are paused on-chain. Operator must run unpause-trade.";
+  }
+  if (/InvalidRiskProfile|RiskProfile|WalletRestricted/i.test(msg)) {
+    return "Buyer RiskProfile missing or restricted. Operator: sync-risk <BUYER_WALLET>.";
+  }
+  if (/SOLANA_TRADE_VAULTS_UNRESOLVED|tokenVault|solVault/i.test(msg)) {
+    return "Vaults unresolved — re-Push Live / Direct deploy so mark-deploy persists vaults.";
+  }
+  if (/TradingNotOpen|launch_at/i.test(msg)) {
+    return "Trading is not open yet (launch timer).";
+  }
+  if (/SlippageExceeded/i.test(msg)) {
+    return "Slippage exceeded — retry with a higher slippage or smaller size.";
+  }
+  if (/buffer is not defined|Buffer is not defined/i.test(msg)) {
+    return "Browser crypto missing Buffer — hard-refresh after the latest frontend deploy.";
+  }
+  return msg;
+}
+
+/** SPL token balance (raw base units) for owner ATA. */
+export async function getSolanaTokenBalanceRaw(input: {
+  mint: string;
+  owner: string;
+}): Promise<bigint> {
+  const web3 = await loadSolanaWeb3();
+  const { Connection, PublicKey } = web3;
+  const rpc =
+    String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
+    getPublicRpcUrl(SOLANA_CHAIN_ID) ||
+    "https://api.devnet.solana.com";
+  const connection = new Connection(rpc, "confirmed");
+  const mint = new PublicKey(input.mint);
+  const owner = new PublicKey(input.owner);
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), new PublicKey(TOKEN_PROGRAM).toBuffer(), mint.toBuffer()],
+    new PublicKey(ASSOCIATED_TOKEN_PROGRAM),
+  );
+  try {
+    const bal = await connection.getTokenAccountBalance(ata, "confirmed");
+    return BigInt(bal?.value?.amount || "0");
+  } catch {
+    return 0n;
+  }
+}
+
 export async function requestSolanaTradeAuthorization(input: {
   side: SolanaTradeSide;
   campaignAddress: string;

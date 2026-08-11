@@ -586,11 +586,18 @@ const Create = () => {
         }
 
         try {
+          // Same vault persistence as Push Live — trade-auth + meta.solana need these.
           await markDraftDeployed(draft.id, {
             auth: deployAuth,
             campaignAddress,
             tokenAddress: mintAddress || null,
             deployTxHash,
+            tokenVault: authorization.accounts?.tokenVault || null,
+            solVault: authorization.accounts?.solVault || null,
+            campaignId:
+              authorization.createArgs?.campaignId ||
+              (authorization.existingDeployment as { campaignIdHex?: string } | undefined)?.campaignIdHex ||
+              null,
           });
         } catch (markErr: any) {
           console.warn("[Create] mark-deploy after Solana create", markErr);

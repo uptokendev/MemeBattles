@@ -1,0 +1,235 @@
+/**
+ * Read V4 Campaign account fields for TokenDetails quotes/metrics.
+ * Layout mirrors programs/memewarzone_solana Campaign (Anchor account).
+ * Does not touch BNB paths.
+ */
+import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
+
+export type SolanaCampaignCurveState = {
+  campaignAddress: string;
+  creator: string;
+  mint: string;
+  tokenVault: string;
+  solVault: string;
+  campaignIdHex: string;
+  launchAt: number;
+  graduationTargetUsdMicros: bigint;
+  curveKind: number;
+  tokenTotalSupply: bigint;
+  curveTokenSupply: bigint;
+  tokenDecimals: number;
+  basePriceLamports: bigint;
+  priceSlopeLamports: bigint;
+  buyFeeBps: number;
+  sellFeeBps: number;
+  creatorBuyLockUntil: number;
+  soldTokens: bigint;
+  netRaisedLamports: bigint;
+  totalBuyVolumeLamports: bigint;
+  totalSellVolumeLamports: bigint;
+  graduated: boolean;
+};
+
+function readU64LE(view: DataView, offset: number): bigint {
+  const lo = BigInt(view.getUint32(offset, true));
+  const hi = BigInt(view.getUint32(offset + 4, true));
+  return lo + (hi << 32n);
+}
+
+function readI64LE(view: DataView, offset: number): number {
+  const n = readU64LE(view, offset);
+  // timestamps fit in safe int range
+  if (n > 0x7fffffffffffffffn) {
+    return Number(n - 0x10000000000000000n);
+  }
+  return Number(n);
+}
+
+function encodeBase58(bytes: Uint8Array): string {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let leading = 0;
+  while (leading < bytes.length && bytes[leading] === 0) leading += 1;
+  // big-endian base conversion
+  const digits: number[] = [0];
+  for (let i = leading; i < bytes.length; i += 1) {
+    let carry = bytes[i];
+    for (let j = 0; j < digits.length; j += 1) {
+      const x = digits[j] * 256 + carry;
+      digits[j] = x % 58;
+      carry = Math.floor(x / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  let out = "1".repeat(leading);
+  for (let i = digits.length - 1; i >= 0; i -= 1) out += ALPHABET[digits[i]];
+  return out || "1";
+}
+
+/**
+ * Decode full curve-relevant Campaign fields.
+ * offset 0: 8-byte Anchor discriminator.
+ */
+export function decodeSolanaCampaignAccount(
+  data: Uint8Array,
+  campaignAddress: string,
+): SolanaCampaignCurveState {
+  if (data.length < 8 + 400) {
+    throw new Error(`Campaign account too short (${data.length})`);
+  }
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let o = 8; // skip discriminator
+
+  const takePk = () => {
+    const slice = data.subarray(o, o + 32);
+    o += 32;
+    return encodeBase58(slice);
+  };
+  const take32 = () => {
+    const slice = data.subarray(o, o + 32);
+    o += 32;
+    return slice;
+  };
+  const takeU64 = () => {
+    const v = readU64LE(view, o);
+    o += 8;
+    return v;
+  };
+  const takeI64 = () => {
+    const v = readI64LE(view, o);
+    o += 8;
+    return v;
+  };
+  const takeU16 = () => {
+    const v = view.getUint16(o, true);
+    o += 2;
+    return v;
+  };
+  const takeU8 = () => {
+    const v = view.getUint8(o);
+    o += 1;
+    return v;
+  };
+
+  const campaignId = take32();
+  take32(); // generation_id
+  takePk(); // generation_config
+  take32(); // generation_manifest_hash
+  const creator = takePk();
+  const mint = takePk();
+  const tokenVault = takePk();
+  const solVault = takePk();
+  take32(); // metadata_hash
+  take32(); // cluster_hash
+  take32(); // ticker_hash
+  take32(); // reservation_id_hash
+  takeU64(); // reservation_version
+  const launchAt = takeI64();
+  const graduationTargetUsdMicros = takeU64();
+  takeU8(); // cluster_kind
+  takeU16(); // economics_version
+  const curveKind = takeU8();
+  const tokenTotalSupply = takeU64();
+  const curveTokenSupply = takeU64();
+  takeU64(); // liquidity_token_supply
+  takeU64(); // reserve_token_supply
+  const tokenDecimals = takeU8();
+  takeU16(); // curve_supply_bps
+  takeU16(); // liquidity_token_bps
+  const basePriceLamports = takeU64();
+  const priceSlopeLamports = takeU64();
+  const buyFeeBps = takeU16();
+  const sellFeeBps = takeU16();
+  takeU16(); // finalize_fee_bps
+  takeU16(); // creator_post_finalize_bps
+  takeU16(); // liquidity_post_finalize_bps
+  takeU8(); // dex_adapter
+  take32(); // trade_route_profile
+  take32(); // finalize_route_profile
+  take32(); // treasury_profile
+  take32(); // dex_profile
+  take32(); // oracle_profile
+  const creatorBuyLockUntil = takeI64();
+  takeU16(); // creator_buy_cap_bps
+  takeI64(); // created_at
+  const soldTokens = takeU64();
+  const netRaisedLamports = takeU64();
+  const totalBuyVolumeLamports = takeU64();
+  const totalSellVolumeLamports = takeU64();
+  takeU64(); // buyer_count
+  takeU64(); // creator_bought_tokens
+  takeU16(); // asset_initialization_version
+  takeU8(); // mint_authority_revoked
+  const graduated = takeU8() !== 0;
+
+  const campaignIdHex = Array.from(campaignId)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  return {
+    campaignAddress,
+    creator,
+    mint,
+    tokenVault,
+    solVault,
+    campaignIdHex,
+    launchAt,
+    graduationTargetUsdMicros,
+    curveKind,
+    tokenTotalSupply,
+    curveTokenSupply,
+    tokenDecimals,
+    basePriceLamports,
+    priceSlopeLamports,
+    buyFeeBps,
+    sellFeeBps,
+    creatorBuyLockUntil,
+    soldTokens,
+    netRaisedLamports,
+    totalBuyVolumeLamports,
+    totalSellVolumeLamports,
+    graduated,
+  };
+}
+
+function rpcUrl(): string {
+  return (
+    String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
+    getPublicRpcUrl(SOLANA_CHAIN_ID) ||
+    "https://api.devnet.solana.com"
+  );
+}
+
+export async function fetchSolanaCampaignCurveState(
+  campaignAddress: string,
+): Promise<SolanaCampaignCurveState | null> {
+  const addr = String(campaignAddress || "").trim();
+  if (!addr) return null;
+  try {
+    const web3 = await loadSolanaWeb3();
+    const connection = new web3.Connection(rpcUrl(), "confirmed");
+    const info = await connection.getAccountInfo(new web3.PublicKey(addr), "confirmed");
+    if (!info?.data) return null;
+    const data = info.data instanceof Uint8Array ? info.data : new Uint8Array(info.data);
+    return decodeSolanaCampaignAccount(data, addr);
+  } catch (e) {
+    console.warn("[solanaCampaignRead] fetch failed", addr, e);
+    return null;
+  }
+}
+
+/** Prefer campaign PDA; if mint is passed, caller should resolve via trade-auth vaultResolution. */
+export async function resolveSolanaCampaignCurve(
+  campaignOrMint: string,
+  preferredCampaign?: string | null,
+): Promise<SolanaCampaignCurveState | null> {
+  const preferred = String(preferredCampaign || "").trim();
+  if (preferred) {
+    const s = await fetchSolanaCampaignCurveState(preferred);
+    if (s) return s;
+  }
+  return fetchSolanaCampaignCurveState(campaignOrMint);
+}
