@@ -472,20 +472,42 @@ const Create = () => {
   const handleDeployNow = async () => {
     if (!validateCoreForm()) return;
 
-    // ── Solana Direct deploy: one-button path ends on TokenDetails ─────────
-    // Server still needs a draft + reservation under the hood, but the user
-    // never visits promotion / Push Live UI. Flow: logo → draft → publish →
-    // authorize → wallet createCampaign → mark-deploy → /token/mint?chainId=101
+    // ── Solana Direct deploy ───────────────────────────────────────────────
+    // Product rule: Direct ≠ Draft. User never lands on Prepare/Push Live.
+    // Today create-auth + ticker reservation are still draft-keyed on the server
+    // (campaignId = hash(draftId,…)). We use an ephemeral create-rail only:
+    //   - On any failure BEFORE on-chain success → archive the rail (no leftover draft)
+    //   - On success → mark deployed + registry (logo/vaults) → TokenDetails (campaign PDA)
+    // True draftless authorize (no draft row at all) is a separate backend redesign.
     if (isSolanaCreator) {
       if (!solanaWallet.solanaAccount) {
         toast.error("Connect your Solana wallet first.");
         return;
       }
       setIsDeploying(true);
+      let ephemeralDraftId: string | null = null;
+      let onChainSucceeded = false;
+      let lastDeployAuth: Awaited<ReturnType<typeof signSolanaDraftAction>> | null = null;
+
+      const abandonEphemeralRail = async () => {
+        if (!ephemeralDraftId || onChainSucceeded) return;
+        try {
+          const { archiveCampaignDraft } = await import("@/lib/draftApi");
+          const archiveAuth = await signSolanaDraftAction({
+            walletAddress: creatorWallet,
+            chainId: SOLANA_CHAIN_ID,
+            action: "archive_draft",
+            draftId: ephemeralDraftId,
+          });
+          await archiveCampaignDraft(ephemeralDraftId, archiveAuth);
+        } catch (cleanupErr) {
+          console.warn("[Create] Direct: could not archive ephemeral create-rail", cleanupErr);
+        }
+      };
+
       try {
         const logoUrl = await uploadLogo();
         if (!logoUrl || logoUrl.startsWith("data:")) {
-          // data: URLs mean Supabase wasn't configured — warn but continue only if real URL
           if (!logoUrl) throw new Error("Logo upload returned no URL. Check Railway Supabase upload env.");
         }
         const createAuth = await createDraftAuth();
@@ -505,9 +527,11 @@ const Create = () => {
           docs: formData.otherLink ? [formData.otherLink] : [],
           otherUrl: formData.otherLink || null,
           graduationTargetWei: graduationTargetWei.toString(),
-          visibility: "public",
+          // Internal create-rail — not a Prepare Mode public draft
+          visibility: "private",
           cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-devnet"),
         });
+        ephemeralDraftId = draft.id;
         cacheDraftLogo(draft.id, logoUrl);
 
         const { saveDraftPromotion, markDraftDeployed } = await import("@/lib/draftApi");
@@ -528,16 +552,15 @@ const Create = () => {
           xUrl: formData.twitter || "",
           websiteUrl: formData.website || "",
           docs: formData.otherLink ? [formData.otherLink] : [],
-          creatorNote: "",
+          creatorNote: "direct_deploy",
           bannerUrl: "",
           shareMessage: `${formData.name} ($${normalizedTicker}) is live on MemeWarzone.`,
-          visibility: "public",
+          visibility: "private",
           publish: true,
         });
 
-        // Preflight: clear profile-missing / auth errors before wallet pays gas
         toast.message("Authorizing Solana create…");
-        let deployAuth = await signSolanaDraftAction({
+        lastDeployAuth = await signSolanaDraftAction({
           walletAddress: creatorWallet,
           chainId: SOLANA_CHAIN_ID,
           action: "deploy_draft",
@@ -548,7 +571,7 @@ const Create = () => {
         try {
           authorization = await requestSolanaCreateAuthorizationV4({
             draftId: draft.id,
-            auth: deployAuth,
+            auth: lastDeployAuth,
             graduationTargetUsdMicros,
             launchAt: "0",
           });
@@ -557,6 +580,11 @@ const Create = () => {
           if (/profile|RiskProfile|CreatorProfile|sync-creator|sync-risk/i.test(msg)) {
             throw new Error(
               `${msg} Operator must run: npm --prefix tests/solana run devnet:trade-ops -- sync-creator ${creatorWallet}`,
+            );
+          }
+          if (/MANIFEST_MISMATCH|manifest hash/i.test(msg)) {
+            throw new Error(
+              `${msg} Update Railway SOLANA_GENERATION_MANIFEST_HASH via: npm --prefix tests/solana run print:railway-create-auth`,
             );
           }
           if (/DRAFT_PUSH_LIVE|locked|403/i.test(msg)) {
@@ -584,11 +612,12 @@ const Create = () => {
           mintAddress = created.mintAddress;
           deployTxHash = created.signature;
         }
+        onChainSucceeded = Boolean(campaignAddress || mintAddress);
 
+        // Registry + vaults (required for logo + /api/campaigns + trade-auth).
         try {
-          // Same vault persistence as Push Live — trade-auth + meta.solana need these.
           await markDraftDeployed(draft.id, {
-            auth: deployAuth,
+            auth: lastDeployAuth,
             campaignAddress,
             tokenAddress: mintAddress || null,
             deployTxHash,
@@ -598,13 +627,17 @@ const Create = () => {
               authorization.createArgs?.campaignId ||
               (authorization.existingDeployment as { campaignIdHex?: string } | undefined)?.campaignIdHex ||
               null,
+            factoryAddress: authorization.programId || null,
           });
         } catch (markErr: any) {
-          console.warn("[Create] mark-deploy after Solana create", markErr);
-          // On-chain success still counts — open token page
+          console.error("[Create] mark-deploy after Solana create failed", markErr);
+          toast.error(
+            `On-chain create ok, but registry failed: ${String(markErr?.message || markErr)}. Token page may miss logo until re-synced.`,
+          );
         }
 
         toast.success("Solana campaign deployed.");
+        // Prefer campaign PDA in URL (curve account), mint as ?mint=
         navigate(
           tokenDetailsPath(
             { tokenAddress: mintAddress, campaignAddress, chainId: SOLANA_CHAIN_ID },
@@ -613,6 +646,7 @@ const Create = () => {
         );
       } catch (error: any) {
         console.error(error);
+        await abandonEphemeralRail();
         toast.error(error?.message || "Solana direct deploy failed");
       } finally {
         setIsDeploying(false);

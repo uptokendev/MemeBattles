@@ -216,6 +216,10 @@ export async function fetchSolanaCampaignCurveState(
     const info = await connection.getAccountInfo(new web3.PublicKey(addr), "confirmed");
     if (!info?.data) return null;
     const data = info.data instanceof Uint8Array ? info.data : new Uint8Array(info.data);
+    // SPL mint account is 82 bytes — never a V4 Campaign PDA (~718 bytes).
+    if (data.length < 200) {
+      return null;
+    }
     return decodeSolanaCampaignAccount(data, addr);
   } catch (e) {
     console.warn("[solanaCampaignRead] fetch failed", addr, e);

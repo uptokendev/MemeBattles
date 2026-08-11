@@ -83,7 +83,9 @@ export function tokenDetailsPath(
 
   const token = pick(tokenOrCampaign.tokenAddress, tokenOrCampaign.token);
   const campaign = pick(tokenOrCampaign.campaignAddress, tokenOrCampaign.campaign);
-  const id = token || campaign;
+  // Solana: prefer campaign PDA in the path (bonding curve account). Mint is 82-byte
+  // SPL data and cannot be decoded as Campaign — still pass mint as ?mint= for display.
+  const id = isSolana ? campaign || token : token || campaign;
   if (!id) return "/";
 
   const params = new URLSearchParams();
@@ -98,6 +100,9 @@ export function tokenDetailsPath(
 
   if (resolvedChain === 101 || resolvedChain === 102) {
     params.set("chainId", String(resolvedChain));
+    if (token && campaign && token !== campaign) {
+      params.set("mint", token);
+    }
   } else if (resolvedChain > 0 && (options?.chainId != null || tokenOrCampaign.chainId != null)) {
     params.set("chainId", String(resolvedChain));
   }

@@ -815,19 +815,25 @@ const TokenDetails = () => {
               campaignIdHex: hit.campaignIdHex ? String(hit.campaignIdHex) : null,
             } as CampaignInfo;
             resolvedCampaignFromIndexer = match.campaign;
-            // Always rewrite URL to canonical registry casing + chainId=101.
-            const preferred = canonicalToken || canonicalCampaign;
-            const desired = `/token/${encodeURIComponent(preferred)}?chainId=${SOLANA_CHAIN_ID}`;
+            // Prefer campaign PDA in the path (mint is only for display / ATA).
+            const preferred = canonicalCampaign || canonicalToken;
+            const qs = new URLSearchParams({ chainId: String(SOLANA_CHAIN_ID) });
+            if (canonicalToken && canonicalCampaign && canonicalToken !== canonicalCampaign) {
+              qs.set("mint", canonicalToken);
+            }
+            const desired = `/token/${encodeURIComponent(preferred)}?${qs.toString()}`;
             const current = `${location.pathname}${location.search || ""}`;
             if (preferred && current !== desired) {
               navigate(desired, { replace: true });
             }
           } else {
-            // Always paint a shell — never "Token not found" for Solana-shaped ids.
+            // Mint-only URL (82-byte SPL) with no registry row yet — shell until mark-deploy upserts.
+            const mintHint = new URLSearchParams(location.search || "").get("mint") || param;
             match = {
               id: 0,
-              campaign: isSolanaAddressParam ? param : param, // damaged: keep until hit found later
-              token: isSolanaAddressParam ? param : param,
+              // Do not treat mint as campaign PDA — curve decode needs the real campaign account.
+              campaign: param,
+              token: mintHint,
               creator: "",
               name: "Solana campaign",
               symbol: "",
@@ -839,7 +845,7 @@ const TokenDetails = () => {
             } as CampaignInfo;
             resolvedCampaignFromIndexer = param;
             console.warn(
-              "[TokenDetails] Solana address not found in /api/campaigns — showing provisional shell.",
+              "[TokenDetails] Solana address not in /api/campaigns yet (registry lag or Direct mark-deploy failed).",
               param,
             );
           }
