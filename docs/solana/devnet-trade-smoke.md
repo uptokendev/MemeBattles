@@ -170,28 +170,31 @@ Optionally set `SOLANA_TRADE_AUTH_ENABLED=false` on Railway.
 
 ---
 
-## Curve economics (why 0.01 SOL buys a tiny amount)
+## Curve economics (BNB parity)
 
-Live devnet generation v1 originally used `basePriceLamports=1000` with 6 decimals.
-That means **price is per raw token unit**, so 1 whole token ≈ 1 SOL at the start of the curve.
+### BNB factory defaults
+- `totalSupply` = **1e9 tokens** (1B × 1e18 wei)
+- `basePrice` = `1e9` wei (with WAD curve math)
+- Graduation $ target → native via oracle
 
-Verified against TESTSOL on-chain:
+### Live Solana TESTSOL (old generation — locked at create)
+| Field | On-chain |
+|-------|----------|
+| total supply | **1e12 raw @ 6 dec = 1M tokens** (1000× too small vs BNB 1B) |
+| curve supply | 800k tokens (80%) |
+| base_price_lamports | **1000** per raw unit (≈1 SOL per whole token) |
+| 0.1 SOL buy | ~0.0045 tokens → **~0.000001%** of curve |
 
-| Field | Value |
-|-------|--------|
-| base_price_lamports | 1000 |
-| price_slope_lamports | 10 |
-| 0.01 SOL buy | **exactly** 0.001304 tokens (buyer ATA matched FE quote) |
+FE progress was also broken (metrics zeroed for Solana shell). Progress now reads Campaign `sold` / `curve` / `net_raised` and converts $ graduation → SOL via SOL/USD.
 
-The FE quote is correct for that generation. It is not a decimal bug.
+### New generation (manifest) for BNB-like feel
+`config/solana/devnet-generation-v1.json`:
 
-**For new campaigns with meme-scale fills**, initialize a new generation with (see `config/solana/devnet-generation-v1.json`):
-
-- `tokenTotalSupply`: `1000000000000000` (1B tokens @ 6 decimals)
+- `tokenTotalSupply`: `1000000000000000` (**1B** tokens @ 6 decimals)
 - `basePriceLamports`: `1`
 - `priceSlopeLamports`: `1`
 
-Existing campaigns **lock** economics at create — they keep their old curve until a new generation is active and a new mint is created.
+**Ops:** existing mints keep old economics. Activate a new generation on-chain (`initialize_generation_config` + set active) before Direct-deploying a fresh coin.
 
 ## BNB isolation check
 
