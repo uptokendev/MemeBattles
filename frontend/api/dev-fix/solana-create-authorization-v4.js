@@ -11,6 +11,7 @@ import {
   refreshExpiredTickerReservations,
   withTickerReservationTransaction,
 } from "./ticker-reservation-service.js";
+import { upsertCampaignFromDraft } from "./campaign-registry.js";
 import {
   CREATE_AUTH_SCHEMA_VERSION,
   SYSVAR_INSTRUCTIONS_ID,
@@ -690,6 +691,16 @@ async function finalizeExistingOnChainDeployment({
       );
       tickerReservation = await loadTickerReservationByDraft(db, draftId).catch(() => reservation || null);
     }
+    await upsertCampaignFromDraft(db, {
+      chainId: Number(draft.chain_id),
+      campaignAddress,
+      tokenAddress: mintAddress || null,
+      creatorWallet: draft.creator_wallet,
+      name: draft.name,
+      symbol: draft.ticker,
+      logoUrl: draft.logo_url,
+      deployTxHash: "already-on-chain",
+    });
     return { draftRow: updated.rows[0] || null, tickerReservation };
   });
 

@@ -154,7 +154,15 @@ async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<Ca
       progressPct: null,
       etaSec: null,
     }))
-    .filter((item) => /^0x[a-f0-9]{40}$/.test(item.campaignAddress))
+    .filter((item) => {
+      const addr = String(item.campaignAddress || "").trim();
+      if (!addr) return false;
+      // EVM campaign addresses
+      if (/^0x[a-f0-9]{40}$/i.test(addr)) return true;
+      // Solana campaign / mint PDAs (base58)
+      if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return true;
+      return false;
+    })
     .filter((item) => matchesSearch(item, params.search));
 
   const items = mapped.slice(0, limit);

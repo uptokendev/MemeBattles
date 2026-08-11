@@ -14,6 +14,7 @@ import {
   promoteTickerReservation,
   withTickerReservationTransaction,
 } from "./ticker-reservation-service.js";
+import { upsertCampaignFromDraft } from "./campaign-registry.js";
 
 const MIN_SCHEDULE_SECONDS = 5 * 60;
 const MAX_SCHEDULE_SECONDS = 30 * 24 * 60 * 60;
@@ -392,7 +393,18 @@ export async function draftDeploy(req, res) {
         } catch (err) {
           if (!(err instanceof TickerReservationError)) throw err;
         }
-        return { draft: mapDraftRow(updated.rows[0]), tickerReservation };
+        const draft = mapDraftRow(updated.rows[0]);
+        await upsertCampaignFromDraft(db, {
+          chainId: Number(row.chain_id),
+          campaignAddress: existingCampaign,
+          tokenAddress: tokenAddress || draft?.tokenAddress || null,
+          creatorWallet: row.creator_wallet,
+          name: row.name || draft?.name,
+          symbol: row.ticker || draft?.ticker,
+          logoUrl: row.logo_url || draft?.logoUrl,
+          deployTxHash: deployTxHash || "already-on-chain",
+        });
+        return { draft, tickerReservation };
       });
       return json(res, 200, {
         ok: true,
@@ -435,6 +447,16 @@ export async function draftDeploy(req, res) {
         scheduledLaunchAt: isScheduled ? scheduledLaunchAt : null,
         programId: String(body.factoryAddress || "").trim() || null,
         generationId: body.generationId == null ? null : String(body.generationId),
+      });
+      await upsertCampaignFromDraft(db, {
+        chainId: Number(row.chain_id),
+        campaignAddress,
+        tokenAddress: tokenAddress || draft?.tokenAddress || null,
+        creatorWallet: row.creator_wallet,
+        name: row.name || draft?.name,
+        symbol: row.ticker || draft?.ticker,
+        logoUrl: row.logo_url || draft?.logoUrl,
+        deployTxHash,
       });
       return { draft, tickerReservation };
     });

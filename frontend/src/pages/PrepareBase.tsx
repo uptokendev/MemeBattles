@@ -854,6 +854,8 @@ export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
+  // Private Solana drafts must authenticate with the Solana owner key, not EVM.
+  const viewerWallet = solanaWallet.solanaAccount || wallet.account || null;
 
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -869,7 +871,7 @@ export default function Prepare() {
 
     setLoading(true);
 
-    void fetchPrepareDraft(slug, wallet.account)
+    void fetchPrepareDraft(slug, viewerWallet)
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
@@ -889,14 +891,14 @@ export default function Prepare() {
     return () => {
       cancelled = true;
     };
-  }, [slug, wallet.account]);
+  }, [slug, viewerWallet]);
 
   const draft = bundle?.draft;
   const promo = bundle?.promotion;
   const pop = bundle?.popularity;
 
   const refreshPrepareBundle = async () => {
-    const data = await fetchPrepareDraft(slug, wallet.account);
+    const data = await fetchPrepareDraft(slug, viewerWallet);
     setBundle(data);
     setFollowCount(data.popularity.follows);
     return data;
@@ -905,7 +907,7 @@ export default function Prepare() {
   const handleArmNotification = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!viewerWallet) {
       toast.error("Connect wallet to arm notifications.");
       return;
     }
@@ -913,7 +915,7 @@ export default function Prepare() {
     setArmingNotification(true);
 
     try {
-      await armDraftNotifications(draft.id, wallet.account);
+      await armDraftNotifications(draft.id, viewerWallet);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
       setHasArmed(true);
@@ -928,7 +930,7 @@ export default function Prepare() {
   const handleFollow = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!viewerWallet) {
       toast.error("Connect wallet to follow this draft.");
       return;
     }
@@ -936,7 +938,7 @@ export default function Prepare() {
     setFollowingDraft(true);
 
     try {
-      const result = await followDraft(draft.id, wallet.account);
+      const result = await followDraft(draft.id, viewerWallet);
       setFollowCount(result.followCount);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));

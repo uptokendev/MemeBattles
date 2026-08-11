@@ -6,7 +6,9 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, fetchPublicPortfolioMetrics, type UserProfile } from "@/lib/profileApi";
-import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { fetchOwnerCampaignDrafts, fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { isSolanaAddress } from "@/lib/address";
+import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
 import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
 import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
@@ -115,7 +117,19 @@ function isDraftVisibleOnPublicProfile(draft: CampaignDraft) {
 }
 
 function draftHref(draft: CampaignDraft) {
+  // Deployed drafts should open the token page when we have on-chain ids.
+  if (draft.status === "deployed" && (draft.tokenAddress || draft.campaignAddress)) {
+    return `/token/${draft.tokenAddress || draft.campaignAddress}`;
+  }
   return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
+}
+
+function walletsEqual(a?: string | null, b?: string | null) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  if (isSolanaAddress(left) && isSolanaAddress(right)) return left === right;
+  return left.toLowerCase() === right.toLowerCase();
 }
 
 function tradeFromApiItem(item: any): ActivityTradeRow {
@@ -382,13 +396,25 @@ export default function PublicProfile({
       setLoadingDrafts(true);
       setDraftsError(null);
       try {
-        const drafts = await fetchPublicCampaignDrafts({ chainId: activeChainId, limit: 100 });
+        const profileIsSolana = isSolanaAddress(profileWallet);
+        const preferredChainId = profileIsSolana ? SOLANA_CHAIN_ID : activeChainId;
+
+        // Own profile: show ALL owner drafts (including private / deployed).
+        // Public profile: only public discoverable drafts.
+        const drafts = isOwnProfile
+          ? await fetchOwnerCampaignDrafts(profileWallet, {
+              chainId: preferredChainId,
+              limit: 100,
+            })
+          : await fetchPublicCampaignDrafts({ chainId: preferredChainId, limit: 100 });
+
         if (cancelled) return;
 
+        const mine = drafts.filter((draft) => walletsEqual(draft.creatorWallet, profileWallet));
         setVisibleDrafts(
-          drafts
-            .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === profileWallet.toLowerCase())
-            .filter(isDraftVisibleOnPublicProfile)
+          isOwnProfile
+            ? mine.filter((draft) => draft.status !== "archived")
+            : mine.filter(isDraftVisibleOnPublicProfile),
         );
       } catch (e: any) {
         console.warn("Failed to load public profile drafts", e);
@@ -405,7 +431,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, profileWallet]);
+  }, [activeChainId, profileWallet, isOwnProfile]);
 
   useEffect(() => {
     let cancelled = false;

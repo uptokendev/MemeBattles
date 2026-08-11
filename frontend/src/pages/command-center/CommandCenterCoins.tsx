@@ -40,6 +40,9 @@ function formatDate(value?: string | null) {
 }
 
 function draftHref(draft: CampaignDraft) {
+  if (draft.status === "deployed" && (draft.tokenAddress || draft.campaignAddress)) {
+    return `/token/${draft.tokenAddress || draft.campaignAddress}`;
+  }
   return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
 }
 

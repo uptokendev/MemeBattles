@@ -30,8 +30,17 @@ function query(params: Record<string, string | number | null | undefined>) {
   return out ? `?${out}` : "";
 }
 
+function isSolanaWalletAddress(value: string) {
+  const raw = String(value || "").trim();
+  return raw.length >= 32 && raw.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(raw) && !raw.startsWith("0x");
+}
+
+/** EVM → lowercase; Solana base58 → preserve case. */
 function normalizeWallet(value: string) {
-  return String(value || "").trim().toLowerCase();
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isSolanaWalletAddress(raw)) return raw;
+  return raw.toLowerCase();
 }
 
 function buildDraftAuthMessage(input: {
@@ -396,6 +405,18 @@ async function signDraftActionWithKnownChain(input: {
 
   const chainId = Number(input.chainId);
   if (!Number.isFinite(chainId) || chainId <= 0) throw new Error("Invalid draft chain id. Refresh and try again.");
+
+  // Solana drafts must use Ed25519 signing — personal_sign always fails / mismatches.
+  if (isSolanaWalletAddress(walletAddress) || chainId === 101 || chainId === 102) {
+    const { signSolanaDraftAction } = await import("@/lib/solanaWallet");
+    return signSolanaDraftAction({
+      walletAddress,
+      chainId,
+      action: input.action,
+      draftId: input.draftId,
+      forceNewOwnerSession: Boolean(input.forceNewOwnerSession),
+    });
+  }
 
   if (input.useOwnerSession) {
     const cacheInput = { walletAddress, chainId, draftId: input.draftId };

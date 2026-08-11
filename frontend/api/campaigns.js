@@ -20,7 +20,11 @@ function matchesSearch(row, search) {
 }
 
 function lifecycleKey(chainId, campaignAddress) {
-  return `${Number(chainId)}:${String(campaignAddress || "").toLowerCase()}`;
+  const chain = Number(chainId);
+  const addr = String(campaignAddress || "").trim();
+  // Preserve Solana case in the map key.
+  if (chain === 101 || chain === 102) return `${chain}:${addr}`;
+  return `${chain}:${addr.toLowerCase()}`;
 }
 
 function applyLifecycle(item, row) {
@@ -39,15 +43,24 @@ function applyLifecycle(item, row) {
   };
 }
 
+function normalizeFeedAddress(value, chainId) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  // Solana base58 must keep case; EVM is case-insensitive.
+  if (Number(chainId) === 101 || Number(chainId) === 102) return raw;
+  return raw.toLowerCase();
+}
+
 function itemFromDraft(row) {
   const scheduledLaunchAt = iso(row.scheduled_launch_at);
   const contractDeployedAt = iso(row.deployed_at);
   const tradingLaunchAt = scheduledLaunchAt || contractDeployedAt;
+  const chainId = Number(row.chain_id);
   return {
-    chainId: Number(row.chain_id),
-    campaignAddress: String(row.campaign_address || "").toLowerCase(),
-    tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
-    creatorAddress: row.creator_wallet ? String(row.creator_wallet).toLowerCase() : null,
+    chainId,
+    campaignAddress: normalizeFeedAddress(row.campaign_address, chainId) || "",
+    tokenAddress: normalizeFeedAddress(row.token_address, chainId),
+    creatorAddress: normalizeFeedAddress(row.creator_wallet, chainId),
     name: row.name ?? null,
     symbol: row.ticker ?? null,
     logoUri: row.logo_url ?? null,
@@ -80,23 +93,46 @@ function itemFromDraft(row) {
 }
 
 async function loadLifecycleRows(chainId, campaignAddresses) {
-  const addresses = Array.from(new Set((campaignAddresses || []).map((value) => String(value || "").toLowerCase()).filter(Boolean)));
+  const chain = Number(chainId);
+  const isSolana = chain === 101 || chain === 102;
+  const addresses = Array.from(
+    new Set(
+      (campaignAddresses || [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((value) => (isSolana ? value : value.toLowerCase())),
+    ),
+  );
+  // Also surface deployed Solana drafts that are not yet in the campaigns indexer.
   const result = await pool.query(
-    `select *
-       from public.campaign_drafts
-      where chain_id = $1
-        and campaign_address is not null
-        and (
-          lower(campaign_address) = any($2::text[])
-          or (
-            scheduled_launch_at is not null
-            and scheduled_launch_at <= now()
-            and status = 'deployed'
-            and visibility = 'public'
-          )
-        )
-      order by updated_at desc`,
-    [Number(chainId), addresses],
+    isSolana
+      ? `select *
+           from public.campaign_drafts
+          where chain_id = $1
+            and campaign_address is not null
+            and (
+              campaign_address = any($2::text[])
+              or (
+                status = 'deployed'
+                and visibility = 'public'
+              )
+            )
+          order by updated_at desc`
+      : `select *
+           from public.campaign_drafts
+          where chain_id = $1
+            and campaign_address is not null
+            and (
+              lower(campaign_address) = any($2::text[])
+              or (
+                scheduled_launch_at is not null
+                and scheduled_launch_at <= now()
+                and status = 'deployed'
+                and visibility = 'public'
+              )
+            )
+          order by updated_at desc`,
+    [chain, addresses],
   );
 
   const byCampaign = new Map();
@@ -138,7 +174,16 @@ export default async function handler(req, res) {
     const canAddLiveFallback = tab !== "dex" && status !== "graduated" && status !== "ended";
     if (canAddLiveFallback) {
       for (const row of rows) {
-        if (!row.scheduled_launch_at || new Date(row.scheduled_launch_at).getTime() > now) continue;
+        const scheduledMs = row?.scheduled_launch_at ? new Date(row.scheduled_launch_at).getTime() : NaN;
+        const isFutureSchedule = Number.isFinite(scheduledMs) && scheduledMs > now;
+        if (isFutureSchedule) continue;
+        // Include immediately deployed drafts (Solana) and past-schedule arms.
+        const isDeployedLive =
+          String(row.status) === "deployed" &&
+          String(row.visibility) === "public" &&
+          Boolean(row.campaign_address);
+        const isPastSchedule = Number.isFinite(scheduledMs) && scheduledMs <= now;
+        if (!isDeployedLive && !isPastSchedule) continue;
         if (!matchesSearch(row, query.search)) continue;
         const key = lifecycleKey(row.chain_id, row.campaign_address);
         if (seen.has(key)) continue;

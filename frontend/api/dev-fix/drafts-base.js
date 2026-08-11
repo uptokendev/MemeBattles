@@ -23,6 +23,8 @@ const PUBLIC_DISCOVERY_STATUSES = new Set([
   "promotion_published",
   "ready_to_launch",
   "scheduled",
+  // Keep deployed drafts discoverable until campaigns registry is populated.
+  "deployed",
 ]);
 const VISIBILITIES = new Set(["public", "unlisted", "private"]);
 const ZERO = { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0 };
@@ -368,12 +370,34 @@ export async function drafts(req, res) {
   if (req.method === "GET") {
     const q = getQuery(req);
     const ownerChain = q.chainId ? Number(q.chainId) : null;
-    const owner = normalizeAddress(q.owner, ownerChain);
+    // Prefer chain-aware normalize; also accept raw Solana base58 when chainId omitted.
+    let owner = normalizeAddress(q.owner, ownerChain);
+    if (!owner && String(q.owner || "").trim()) {
+      const rawOwner = String(q.owner).trim();
+      // Solana base58 is case-sensitive — never lowercase for owner match.
+      if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(rawOwner)) owner = rawOwner;
+      else if (/^0x[a-fA-F0-9]{40}$/.test(rawOwner)) owner = rawOwner.toLowerCase();
+    }
     const pool = await getPool();
 
     if (pool) {
       if (owner) {
-        const result = await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner]);
+        const isSolanaOwner = !owner.startsWith("0x");
+        const result = isSolanaOwner
+          ? await pool.query(
+              `select * from campaign_drafts
+                where creator_wallet = $1
+                order by created_at desc
+                limit 100`,
+              [owner],
+            )
+          : await pool.query(
+              `select * from campaign_drafts
+                where lower(creator_wallet) = lower($1)
+                order by created_at desc
+                limit 100`,
+              [owner],
+            );
         return json(res, 200, { items: result.rows.map(mapDraftRow) });
       }
       const chainId = q.chainId ? Number(q.chainId) : null;

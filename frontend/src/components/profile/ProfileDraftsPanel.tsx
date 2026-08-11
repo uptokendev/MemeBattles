@@ -4,9 +4,11 @@ import { Archive, Copy, Eye, FileText, Pencil, ShieldCheck } from "lucide-react"
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { resolveImageUri } from "@/lib/media";
 import { signDraftAction } from "@/lib/draftAuth";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
 import {
   archiveCampaignDraft,
   fetchOwnerCampaignDrafts,
@@ -64,16 +66,31 @@ export function ProfileDraftsPanel({
   isOwnProfile: boolean;
 }) {
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const [items, setItems] = useState<CampaignDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyDraftId, setBusyDraftId] = useState<string | null>(null);
 
-  const chainId = getActiveChainId(wallet.chainId);
+  const viewedIsSolana = isSolanaAddress(viewedAddress || "");
+  const chainId = viewedIsSolana
+    ? SOLANA_CHAIN_ID
+    : getActiveChainId(wallet.chainId);
 
-  const normalizedViewedAddress = useMemo(
-    () => String(viewedAddress || "").trim().toLowerCase(),
-    [viewedAddress]
-  );
+  // Never lowercase Solana base58 — case is part of the address.
+  const normalizedViewedAddress = useMemo(() => {
+    const raw = String(viewedAddress || "").trim();
+    if (!raw) return "";
+    if (isSolanaAddress(raw)) return raw;
+    return raw.toLowerCase();
+  }, [viewedAddress]);
+
+  const walletsMatch = (a?: string | null, b?: string | null) => {
+    const left = String(a || "").trim();
+    const right = String(b || "").trim();
+    if (!left || !right) return false;
+    if (isSolanaAddress(left) && isSolanaAddress(right)) return left === right;
+    return left.toLowerCase() === right.toLowerCase();
+  };
 
   const loadDrafts = async () => {
     if (!normalizedViewedAddress) {
@@ -92,8 +109,14 @@ export function ProfileDraftsPanel({
 
         setItems(
           drafts
-            .filter((draft) => Number(draft.chainId) === Number(chainId))
-            .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+            // Show all chains for owner; prefer matching active/Solana chain first only as soft order.
+            .filter((draft) => draft.status !== "archived")
+            .sort((a, b) => {
+              const aMatch = Number(a.chainId) === Number(chainId) ? 0 : 1;
+              const bMatch = Number(b.chainId) === Number(chainId) ? 0 : 1;
+              if (aMatch !== bMatch) return aMatch - bMatch;
+              return String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt));
+            })
         );
         return;
       }
@@ -105,10 +128,10 @@ export function ProfileDraftsPanel({
 
       setItems(
         publicDrafts
-          .filter((draft) => Number(draft.chainId) === Number(chainId))
+          .filter((draft) => Number(draft.chainId) === Number(chainId) || !chainId)
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => PUBLIC_PROFILE_DRAFT_STATUSES.has(String(draft.status)))
-          .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === normalizedViewedAddress)
+          .filter((draft) => walletsMatch(draft.creatorWallet, normalizedViewedAddress))
           .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
       );
     } catch (err: any) {
@@ -122,7 +145,7 @@ export function ProfileDraftsPanel({
   useEffect(() => {
     void loadDrafts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedViewedAddress, isOwnProfile, chainId]);
+  }, [normalizedViewedAddress, isOwnProfile, chainId, solanaWallet.solanaAccount]);
 
   const copyPrepareLink = async (draft: CampaignDraft) => {
     const url = `${window.location.origin}/prepare/${draft.slug}`;
@@ -233,7 +256,14 @@ export function ProfileDraftsPanel({
         <div className="grid justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(172px,220px))]">
           {items.map((draft) => {
             const logo = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
-            const canOpenPrepare = draft.status !== "archived" && draft.visibility !== "private";
+            // Owners can always open their private drafts; public/unlisted anyone can open.
+            const canOpenPrepare =
+              draft.status !== "archived" &&
+              (draft.visibility !== "private" || isOwnProfile);
+            const prepareHref =
+              draft.status === "deployed" && (draft.tokenAddress || draft.campaignAddress)
+                ? `/token/${draft.tokenAddress || draft.campaignAddress}`
+                : `/prepare/${draft.slug}`;
             const canArchive = isOwnProfile && draft.status === "draft";
             const isBusy = busyDraftId === draft.id;
 
@@ -311,9 +341,9 @@ export function ProfileDraftsPanel({
 
                     {canOpenPrepare ? (
                       <Button asChild variant="outline" className="mwz-button h-8 justify-center px-2 font-retro text-[10px]">
-                        <Link to={`/prepare/${draft.slug}`}>
+                        <Link to={prepareHref}>
                           <Eye className="mr-1 h-3.5 w-3.5" />
-                          Prepare
+                          {draft.status === "deployed" ? "Open" : "Prepare"}
                         </Link>
                       </Button>
                     ) : (
