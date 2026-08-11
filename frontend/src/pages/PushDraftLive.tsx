@@ -285,6 +285,9 @@ export default function PushDraftLive() {
       const created = await submitSolanaV4CreateFromAuthorization(authorization, {
         creatorAddress: solanaWallet.solanaAccount,
       });
+      if (created.recovered) {
+        toast.message("Existing Solana campaign found for this draft — finalizing without a new create.");
+      }
 
       // Reuse the same owner-session credential (nonce already consumed on first use;
       // subsequent calls hit draft_owner_sessions, not auth_nonces).

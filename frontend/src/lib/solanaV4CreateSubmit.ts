@@ -162,7 +162,8 @@ export type SolanaV4CreateSubmitResult = {
   campaignAddress: string;
   mintAddress: string;
   programId: string;
-  plan: SolanaV4GeneratedIdlInvocationPlan;
+  plan: SolanaV4GeneratedIdlInvocationPlan | null;
+  recovered?: boolean;
 };
 
 /**
@@ -172,6 +173,21 @@ export async function submitSolanaV4CreateFromAuthorization(
   authorization: SolanaV4CreateAuthorizationResponse,
   opts?: { creatorAddress?: string },
 ): Promise<SolanaV4CreateSubmitResult> {
+  // Recovery: campaign PDA already exists for this draft (create succeeded earlier).
+  if (authorization.alreadyOnChain || authorization.existingDeployment) {
+    const campaignAddress =
+      authorization.existingDeployment?.campaignAddress || authorization.accounts.campaign;
+    const mintAddress = authorization.existingDeployment?.mintAddress || authorization.accounts.mint;
+    return {
+      signature: "already-on-chain",
+      campaignAddress,
+      mintAddress,
+      programId: authorization.programId,
+      plan: null as unknown as SolanaV4GeneratedIdlInvocationPlan,
+      recovered: true,
+    };
+  }
+
   const plan = buildSolanaCreateCampaignV4Plan(authorization);
   return submitSolanaV4CreatePlan(plan, opts);
 }
@@ -204,6 +220,24 @@ export async function submitSolanaV4CreatePlan(
     "https://api.devnet.solana.com";
   const connection = new Connection(rpc, "confirmed");
 
+  const campaignPk = new PublicKey(plan.createCampaign.accounts.campaign);
+  const mintPk = new PublicKey(plan.createCampaign.accounts.mint);
+  const programPk = new PublicKey(plan.programId);
+
+  // Preflight: deterministic PDAs may already exist from a prior successful create
+  // that failed to mark the draft (would otherwise sim-fail with InvalidCampaign).
+  const existing = await connection.getMultipleAccountsInfo([campaignPk, mintPk], "confirmed");
+  if (existing[0] && existing[0].owner.equals(programPk)) {
+    return {
+      signature: "already-on-chain",
+      campaignAddress: plan.createCampaign.accounts.campaign,
+      mintAddress: plan.createCampaign.accounts.mint,
+      programId: plan.programId,
+      plan,
+      recovered: true,
+    };
+  }
+
   const ed25519Ix = buildEd25519VerifyIx(web3, plan);
   const createIx = buildCreateCampaignIx(web3, plan);
 
@@ -221,6 +255,16 @@ export async function submitSolanaV4CreatePlan(
   tx.feePayer = new PublicKey(creatorPk);
   tx.recentBlockhash = latest.blockhash;
 
+  // Soft size guard (Solana max ~1232 bytes).
+  try {
+    const estimated = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
+    if (estimated > 1200) {
+      console.warn("[solanaV4CreateSubmit] large transaction", estimated);
+    }
+  } catch {
+    // ignore estimate failures
+  }
+
   const signed = await provider.signTransaction(tx);
   let signature: string;
   try {
@@ -230,7 +274,22 @@ export async function submitSolanaV4CreatePlan(
     });
     await connection.confirmTransaction({ signature, ...latest }, "confirmed");
   } catch (error: unknown) {
-    throw new Error(formatSolanaSendError(error));
+    // Race: another tab/create landed between preflight and send.
+    const msg = formatSolanaSendError(error);
+    if (/InvalidCampaign|already in use|account.*exist/i.test(msg)) {
+      const again = await connection.getAccountInfo(campaignPk, "confirmed");
+      if (again && again.owner.equals(programPk)) {
+        return {
+          signature: "already-on-chain",
+          campaignAddress: plan.createCampaign.accounts.campaign,
+          mintAddress: plan.createCampaign.accounts.mint,
+          programId: plan.programId,
+          plan,
+          recovered: true,
+        };
+      }
+    }
+    throw new Error(msg);
   }
 
   return {
@@ -257,6 +316,24 @@ function formatSolanaSendError(error: unknown): string {
     const code = anchorLine.match(/Error Code:\s*([A-Za-z0-9_]+)/i)?.[1];
     const msg = anchorLine.match(/Error Message:\s*([^.]+)/i)?.[1];
     const account = anchorLine.match(/account:\s*([A-Za-z0-9_]+)/i)?.[1];
+    if (code === "InvalidCampaign" || /Campaign data is invalid/i.test(anchorLine)) {
+      return (
+        "Solana create failed (InvalidCampaign): campaign/mint PDAs may already exist from a prior create. " +
+        "Retry Push Live — recovery should link the existing on-chain campaign to this draft."
+      );
+    }
+    if (code === "InvalidCreateAuthorization") {
+      return (
+        "Solana create failed (InvalidCreateAuthorization): route digest mismatch or wallet/tx instruction order. " +
+        "Ensure Ed25519 verify is immediately before createCampaign and retry."
+      );
+    }
+    if (code === "CreatorCooldownActive") {
+      return (
+        "Solana create failed: creator launch cooldown is active on-chain. " +
+        "If a prior create already landed, use recovery/retry rather than a fresh create."
+      );
+    }
     const parts = ["Solana create simulation failed"];
     if (code) parts.push(code);
     if (account) parts.push(`account ${account}`);

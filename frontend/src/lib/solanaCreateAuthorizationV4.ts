@@ -86,9 +86,11 @@ export type SolanaV4CreateAuthorizationResponse = {
   mode: SolanaCreateMode;
   cluster: string;
   programId: string;
-  createArgs: SolanaV4CreateArgs;
+  /** Null when alreadyOnChain recovery — no create tx to build. */
+  createArgs: SolanaV4CreateArgs | null;
   accounts: SolanaV4CreateAccounts;
-  authorization: SolanaV4CreateAuthorization;
+  /** Null when alreadyOnChain recovery. */
+  authorization: SolanaV4CreateAuthorization | null;
   generation: SolanaV4Generation;
   deploymentEvidence: {
     idlSha256: string;
@@ -103,6 +105,13 @@ export type SolanaV4CreateAuthorizationResponse = {
   preflight: Record<string, unknown>;
   transaction: null;
   transactionPolicy: string;
+  /** Set when deterministic campaign PDA already exists from a prior create. */
+  alreadyOnChain?: boolean;
+  existingDeployment?: {
+    campaignAddress: string;
+    mintAddress: string;
+    recovered: boolean;
+  };
 };
 
 export type SolanaV4AuthorizationRequest = {
@@ -204,6 +213,13 @@ export async function requestSolanaCreateAuthorizationV4(
     err.code = code || undefined;
     err.status = response.status;
     throw err;
+  }
+  // Recovery responses skip createArgs/authorization — assert only when creating.
+  if (payload?.alreadyOnChain || payload?.existingDeployment) {
+    if (!payload?.accounts?.campaign || !payload?.accounts?.mint) {
+      throw new Error("Solana recovery response is missing campaign/mint accounts.");
+    }
+    return payload as SolanaV4CreateAuthorizationResponse;
   }
   assertSolanaV4AuthorizationResponse(payload);
   return payload;

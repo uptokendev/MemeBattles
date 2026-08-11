@@ -330,6 +330,38 @@ function validateProgramConfiguration(programId) {
   return canonical;
 }
 
+function enforceCreatorLaunchLimits(creatorProfile, chainNow) {
+  if (creatorProfile.restricted || creatorProfile.manualReviewRequired) {
+    throw new SolanaCreateAuthorizationError("Creator is restricted or requires manual review on Solana.", {
+      code: "SOLANA_CREATOR_RESTRICTED",
+      httpStatus: 403,
+    });
+  }
+  if (creatorProfile.liveBondingCount >= creatorProfile.maxLiveBondingCount) {
+    throw new SolanaCreateAuthorizationError("Creator has reached the active Solana campaign limit.", {
+      code: "SOLANA_CREATOR_LAUNCH_LIMIT",
+      httpStatus: 403,
+    });
+  }
+  if (creatorProfile.lastLaunchTimestamp > 0n) {
+    const nextAllowed = creatorProfile.lastLaunchTimestamp + BigInt(creatorProfile.cooldownSeconds);
+    if (BigInt(chainNow) < nextAllowed) {
+      const remainingSec = Number(nextAllowed - BigInt(chainNow));
+      const hours = Math.floor(remainingSec / 3600);
+      const mins = Math.floor((remainingSec % 3600) / 60);
+      const nextIso = new Date(Number(nextAllowed) * 1000).toISOString();
+      throw new SolanaCreateAuthorizationError(
+        `Creator Solana launch cooldown is still active (${hours}h ${mins}m left; next allowed ${nextIso}). ` +
+          `If a previous create already landed on-chain for this draft, use recovery (alreadyOnChain) instead of creating again.`,
+        {
+          code: "SOLANA_CREATOR_COOLDOWN",
+          httpStatus: 403,
+        },
+      );
+    }
+  }
+}
+
 function validateOnchainState({
   global,
   generation,
@@ -342,6 +374,7 @@ function validateOnchainState({
   cluster,
   signer,
   chainNow,
+  skipCreatorLaunchLimits = false,
 }) {
   if (global.paused || global.createPaused) {
     throw new SolanaCreateAuthorizationError("Solana campaign creation is paused on-chain.", {
@@ -396,35 +429,10 @@ function validateOnchainState({
       code: "SOLANA_CREATOR_PROFILE_INVALID",
     });
   }
-  if (creatorProfile.restricted || creatorProfile.manualReviewRequired) {
-    throw new SolanaCreateAuthorizationError("Creator is restricted or requires manual review on Solana.", {
-      code: "SOLANA_CREATOR_RESTRICTED",
-      httpStatus: 403,
-    });
-  }
-  if (creatorProfile.liveBondingCount >= creatorProfile.maxLiveBondingCount) {
-    throw new SolanaCreateAuthorizationError("Creator has reached the active Solana campaign limit.", {
-      code: "SOLANA_CREATOR_LAUNCH_LIMIT",
-      httpStatus: 403,
-    });
-  }
-  if (creatorProfile.lastLaunchTimestamp > 0n) {
-    const nextAllowed = creatorProfile.lastLaunchTimestamp + BigInt(creatorProfile.cooldownSeconds);
-    if (BigInt(chainNow) < nextAllowed) {
-      const remainingSec = Number(nextAllowed - BigInt(chainNow));
-      const hours = Math.floor(remainingSec / 3600);
-      const mins = Math.floor((remainingSec % 3600) / 60);
-      const nextIso = new Date(Number(nextAllowed) * 1000).toISOString();
-      throw new SolanaCreateAuthorizationError(
-        `Creator Solana launch cooldown is still active (${hours}h ${mins}m left; next allowed ${nextIso}). ` +
-          `A previous createCampaign may have already landed on-chain even if the draft was not marked deployed. ` +
-          `On devnet, reset CreatorProfile (liveBondingCount/lastLaunchTimestamp) via sync_creator_profile before re-testing.`,
-        {
-          code: "SOLANA_CREATOR_COOLDOWN",
-          httpStatus: 403,
-        },
-      );
-    }
+  // Launch limits (cooldown / live count) are enforced later, after we know whether this
+  // draft's deterministic campaign PDA already exists (recovery path skips them).
+  if (!skipCreatorLaunchLimits) {
+    enforceCreatorLaunchLimits(creatorProfile, chainNow);
   }
   if (!samePublicKey(riskProfile.wallet, creator) || riskProfile.clusterId.equals(Buffer.alloc(32))) {
     throw new SolanaCreateAuthorizationError("Creator RiskProfile is invalid or has no cluster.", {
@@ -446,7 +454,7 @@ function validateOnchainState({
   }
 }
 
-async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer }) {
+async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, skipCreatorLaunchLimits = false }) {
   const globalConfigPda = findProgramAddressSync([Buffer.from("global", "utf8")], programId);
   const [globalInfo] = await getMultipleAccounts(rpcUrl, [globalConfigPda.publicKey]);
   const global = decodeOwnedAccount(globalInfo, globalConfigPda.publicKey, programId, decodeGlobalConfig, "GlobalConfig");
@@ -513,6 +521,7 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer }
     cluster,
     signer,
     chainNow,
+    skipCreatorLaunchLimits,
   });
 
   return {
@@ -791,12 +800,15 @@ export async function solanaCreateAuthorizationV4(req, res) {
       });
     }
 
+    // Skip launch limits until we know whether this draft already has an on-chain campaign.
+    // Deterministic campaign PDA means re-create after a successful create + failed mark is impossible.
     const onchain = await loadOnchainPolicy({
       rpcUrl,
       programId,
       creator: draft.creator_wallet,
       cluster,
       signer,
+      skipCreatorLaunchLimits: true,
     });
     const deploymentEvidence = validateDeploymentEvidence(onchain.generation);
     const graduationTarget = toBigInt(body.graduationTargetUsdMicros, "graduationTargetUsdMicros");
@@ -837,6 +849,68 @@ export async function solanaCreateAuthorizationV4(req, res) {
           [Buffer.from("create-auth", "utf8"), publicKeyBytes(draft.creator_wallet), nonce],
           programId,
         );
+
+        // Recovery: deterministic campaign already exists from a prior successful create.
+        const [campaignInfo, mintInfo] = await getMultipleAccounts(rpcUrl, [
+          campaign.publicKey,
+          mint.publicKey,
+        ]);
+        if (campaignInfo && samePublicKey(campaignInfo.owner, programId)) {
+          const mintAddress =
+            mintInfo && samePublicKey(mintInfo.owner, TOKEN_PROGRAM_ID)
+              ? mint.publicKey
+              : mint.publicKey;
+          return {
+            auditMetadata: {
+              schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
+              recovery: true,
+              programId,
+              cluster,
+              campaign: campaign.publicKey,
+              mint: mintAddress,
+              reservationVersion: reservation.reservationVersion,
+            },
+            response: {
+              schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
+              mode: launchAt === 0n ? "draft_deploy_now" : "countdown",
+              alreadyOnChain: true,
+              cluster,
+              programId,
+              createArgs: null,
+              accounts: {
+                creator: publicKeyString(draft.creator_wallet),
+                globalConfig: onchain.accounts.globalConfig,
+                generationConfig: onchain.accounts.generationConfig,
+                creatorProfile: onchain.accounts.creatorProfile,
+                riskProfile: onchain.accounts.riskProfile,
+                clusterProfile: onchain.accounts.clusterProfile,
+                campaign: campaign.publicKey,
+                mint: mintAddress,
+                tokenVault: tokenVault.publicKey,
+                solVault: solVault.publicKey,
+                createAuthorization: createAuthorization.publicKey,
+                instructions: SYSVAR_INSTRUCTIONS_ID,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SYSTEM_PROGRAM_ID,
+              },
+              authorization: null,
+              generation: publicGeneration(onchain.generation),
+              deploymentEvidence,
+              metadata: {
+                canonical: metadata,
+                canonicalJsonSha256: sha256Hex(Buffer.from(canonicalJson(metadata), "utf8")),
+              },
+              existingDeployment: {
+                campaignAddress: campaign.publicKey,
+                mintAddress,
+                recovered: true,
+              },
+            },
+          };
+        }
+
+        // Fresh create: enforce cooldown / live-count now that we know PDAs are free.
+        enforceCreatorLaunchLimits(onchain.creatorProfile, onchain.chainNow);
         const args = {
           campaignId,
           metadataHash,
