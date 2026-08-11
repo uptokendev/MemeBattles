@@ -124,6 +124,30 @@ function matchesChain(item, chainId) {
   return itemChain === Number(chainId);
 }
 
+let settingsTableEnsured = false;
+
+async function ensureSponsorshipSettingsTable() {
+  if (settingsTableEnsured || !pool) return;
+  try {
+    await pool.query(`
+      create table if not exists public.sponsorship_settings (
+        key text primary key,
+        value jsonb not null default '{}'::jsonb,
+        updated_at timestamptz not null default now()
+      )
+    `);
+    await pool.query(
+      `insert into public.sponsorship_settings (key, value)
+       values ($1, jsonb_build_object('enabled', true))
+       on conflict (key) do nothing`,
+      [HOUSE_SETTING_KEY],
+    );
+    settingsTableEnsured = true;
+  } catch (error) {
+    console.warn("[api/sponsored] ensure sponsorship_settings failed", error?.message || error);
+  }
+}
+
 /**
  * House ad enablement:
  * 1) Env FEATURED_HOUSE_AD_ENABLED forces on/off when set
@@ -136,6 +160,7 @@ async function isFeaturedHouseAdEnabled() {
   }
 
   try {
+    await ensureSponsorshipSettingsTable();
     const result = await pool.query(
       `select value
          from public.sponsorship_settings

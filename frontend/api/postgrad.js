@@ -6,6 +6,7 @@ import arenaWarPools from "./arenaWarPools.js";
 import sponsored from "./sponsored.js";
 import sponsorshipApplications from "./sponsorship-applications.js";
 import sponsorshipPackages from "./sponsorship-packages.js";
+import sponsorshipSettings from "./sponsorship-settings.js";
 import warRoom from "./warRoom.js";
 
 const ROUTES = [
@@ -18,6 +19,7 @@ const ROUTES = [
   { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored, alwaysOn: true },
   { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications, alwaysOn: true },
   { pattern: /^\/sponsorship-packages$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipPackages, alwaysOn: true },
+  { pattern: /^\/sponsorship-settings$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipSettings, alwaysOn: true },
   {
     pattern: /^\/war-room(?:\/.*)?$/,
     flag: "WAR_ROOM_ENABLED",
