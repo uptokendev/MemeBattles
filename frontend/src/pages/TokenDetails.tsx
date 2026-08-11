@@ -1110,8 +1110,14 @@ const TokenDetails = () => {
       const raw = ethers.formatUnits(wei, tokenDecimals);
       const n = Number(raw);
       if (!Number.isFinite(n)) return raw;
-      const pretty = n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(6) : n.toFixed(8);
-      return pretty;
+      // Keep significant digits for micro meme amounts without trailing zero noise.
+      let pretty: string;
+      if (n >= 1) pretty = n.toFixed(4);
+      else if (n >= 0.01) pretty = n.toFixed(6);
+      else if (n >= 1e-6) pretty = n.toFixed(8);
+      else if (n > 0) pretty = n.toPrecision(4);
+      else pretty = "0";
+      return pretty.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
     } catch {
       return "—";
     }
@@ -3978,10 +3984,18 @@ const bnbUsd = useMemo(() => {
                         <p>Topaz market verification is in progress. Bonding history remains available.</p>
                       )
                     ) : quoteWei != null && effectiveTokenWei > 0n ? (
-                      <p>
-                        Pay ~{formatBnbFromWei(quoteWei)} → get {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}
-                        {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
-                      </p>
+                      isSolanaPage ? (
+                        <p>
+                          Pay {formatBnbFromWei(tradeInputDenom === "BNB" ? effectiveBnbWei || quoteWei : quoteWei)} exact
+                          {" "}→ ~{formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}
+                          {" "}(min {formatTokenFromWei((effectiveTokenWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)} @ {SLIPPAGE_PCT}% slip)
+                        </p>
+                      ) : (
+                        <p>
+                          Pay ~{formatBnbFromWei(quoteWei)} → get {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}
+                          {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                        </p>
+                      )
                     ) : (
                       <p>Enter a {nativeUnit} amount to buy (switch to {tokenData.ticker || "TOKEN"} only for exact token size).</p>
                     )}

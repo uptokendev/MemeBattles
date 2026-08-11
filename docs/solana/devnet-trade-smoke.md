@@ -170,6 +170,29 @@ Optionally set `SOLANA_TRADE_AUTH_ENABLED=false` on Railway.
 
 ---
 
+## Curve economics (why 0.01 SOL buys a tiny amount)
+
+Live devnet generation v1 originally used `basePriceLamports=1000` with 6 decimals.
+That means **price is per raw token unit**, so 1 whole token ≈ 1 SOL at the start of the curve.
+
+Verified against TESTSOL on-chain:
+
+| Field | Value |
+|-------|--------|
+| base_price_lamports | 1000 |
+| price_slope_lamports | 10 |
+| 0.01 SOL buy | **exactly** 0.001304 tokens (buyer ATA matched FE quote) |
+
+The FE quote is correct for that generation. It is not a decimal bug.
+
+**For new campaigns with meme-scale fills**, initialize a new generation with (see `config/solana/devnet-generation-v1.json`):
+
+- `tokenTotalSupply`: `1000000000000000` (1B tokens @ 6 decimals)
+- `basePriceLamports`: `1`
+- `priceSlopeLamports`: `1`
+
+Existing campaigns **lock** economics at create — they keep their old curve until a new generation is active and a new mint is created.
+
 ## BNB isolation check
 
 After Solana smoke:

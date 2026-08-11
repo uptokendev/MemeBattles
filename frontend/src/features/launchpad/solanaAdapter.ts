@@ -236,11 +236,11 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
         allowed: true,
         chain: "solana",
         side: sideLabel,
+        // No warnings when clear — keeps safety pill green (on-chain still enforces).
         reasons: [],
-        warnings: [
-          "Program enforces launch_at, pause flags, risk profile, creator lock, and route authorization on-chain.",
-          force && !status.protocolLive ? "VITE_SOLANA_TRADE_LIVE override active." : "",
-        ].filter(Boolean),
+        warnings: force && !status.protocolLive
+          ? ["VITE_SOLANA_TRADE_LIVE override active (status reported not fully open)."]
+          : [],
         schemaReady: true,
         campaign: {
           campaignAddress: campaign,
