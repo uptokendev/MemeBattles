@@ -90,6 +90,20 @@
   function = "prepare-og"
   path = "/prepare/*"
 
+# Never SPA-fallback hashed Vite assets. After a redeploy, old tabs request
+# deleted chunk names; returning index.html as text/html breaks dynamic import
+# with "Expected a JavaScript module but got text/html".
+[[redirects]]
+  from = "/assets/*"
+  to = "/404.html"
+  status = 404
+
+# index.html must revalidate so clients pick up new asset hashes after deploy.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

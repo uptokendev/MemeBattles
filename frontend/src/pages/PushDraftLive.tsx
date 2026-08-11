@@ -30,6 +30,9 @@ import {
   type ScheduledCreatorLaunchEligibility,
 } from "@/lib/scheduledLaunchClientV2";
 import { getScheduledFactoryAddress } from "@/lib/scheduledFactoryConfig";
+import { requestSolanaCreateAuthorizationV4 } from "@/lib/solanaCreateAuthorizationV4";
+import { submitSolanaV4CreateFromAuthorization } from "@/lib/solanaV4CreateSubmit";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
@@ -236,10 +239,6 @@ export default function PushDraftLive() {
 
     setSubmitting(true);
     try {
-      const { signSolanaDraftAction } = await import("@/lib/solanaWallet");
-      const { requestSolanaCreateAuthorizationV4 } = await import("@/lib/solanaCreateAuthorizationV4");
-      const { submitSolanaV4CreateFromAuthorization } = await import("@/lib/solanaV4CreateSubmit");
-
       const graduationTargetUsdMicros = graduationTargetToUsdMicros(graduationTargetWei);
 
       let launchAt: string | number = "0";

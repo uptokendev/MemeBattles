@@ -19,6 +19,9 @@ import { getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContr
 import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { requestSolanaCreateAuthorizationV4 } from "@/lib/solanaCreateAuthorizationV4";
+import { submitSolanaV4CreateFromAuthorization } from "@/lib/solanaV4CreateSubmit";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { apiFetch } from "@/lib/apiBase";
 import {
   BNB_TESTNET_CHAIN_ID,
@@ -33,6 +36,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import {
   getDefaultGraduationTargetWei,
   getGraduationTiers,
+  graduationTargetToUsdMicros,
   type GraduationTier,
 } from "@/lib/graduationTiers";
 import {
@@ -507,10 +511,6 @@ const Create = () => {
         cacheDraftLogo(draft.id, logoUrl);
 
         const { saveDraftPromotion, markDraftDeployed } = await import("@/lib/draftApi");
-        const { graduationTargetToUsdMicros } = await import("@/lib/graduationTiers");
-        const { requestSolanaCreateAuthorizationV4 } = await import("@/lib/solanaCreateAuthorizationV4");
-        const { submitSolanaV4CreateFromAuthorization } = await import("@/lib/solanaV4CreateSubmit");
-        const { tokenDetailsPath } = await import("@/lib/tokenDetailsPath");
 
         const publishAuth = await signSolanaDraftAction({
           walletAddress: creatorWallet,
