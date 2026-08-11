@@ -484,15 +484,17 @@ async function loadFeaturedSponsorSlot(chainId: number): Promise<FeaturedSponsor
     const res = await apiFetch(`/api/sponsored?${qs.toString()}`, { cache: "no-store" });
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
+    const houseEnabled = json?.houseAdEnabled !== false;
     const item = Array.isArray(json?.items) ? json.items[0] : null;
-    if (!item) return { ...FEATURED_HOUSE_AD };
+    // Empty inventory + house disabled: leave the sponsor cell blank (no forced CTA).
+    if (!item) return houseEnabled ? { ...FEATURED_HOUSE_AD } : null;
     const imageUrl = item.imageUrl || item.logoUri || item.logoURI || item.image_url || null;
     const name = String(item.name || item.projectName || "").trim();
     const isHouse =
       Boolean(item.isHouseAd) ||
       String(item.id || "") === "house-advertise-featured" ||
       String(item.placementType || "") === "house";
-    if (!name && !imageUrl) return { ...FEATURED_HOUSE_AD };
+    if (!name && !imageUrl) return houseEnabled ? { ...FEATURED_HOUSE_AD } : null;
     return {
       id: item.id != null ? String(item.id) : null,
       name: name || (isHouse ? "Advertise here" : "Sponsored"),
@@ -506,6 +508,7 @@ async function loadFeaturedSponsorSlot(chainId: number): Promise<FeaturedSponsor
       isHouseAd: isHouse,
     };
   } catch {
+    // Network failure: keep house CTA as a soft fallback so the board still has a cell.
     return { ...FEATURED_HOUSE_AD };
   }
 }
@@ -515,7 +518,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   const [chainId] = useSelectedFeedChainId();
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<FeaturedItem[]>([]);
-  const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(() => ({ ...FEATURED_HOUSE_AD }));
+  const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(null);
   const [applyOpen, setApplyOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const softPollInFlight = useRef(false);
@@ -731,22 +734,28 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       <div className="grid grid-flow-col grid-rows-2 auto-cols-[340px] gap-3 overflow-x-auto pb-1 pr-2 sm:auto-cols-[370px] lg:auto-cols-[392px]" style={{ scrollbarWidth: "none" }}>
         {loading && !cards.length ? (
           <>
-            <SponsoredFeaturedSlotCard
-              placement={sponsor || FEATURED_HOUSE_AD}
-              onHouseAdClick={() => setApplyOpen(true)}
-            />
+            {sponsor ? (
+              <SponsoredFeaturedSlotCard
+                placement={sponsor}
+                onHouseAdClick={() => setApplyOpen(true)}
+              />
+            ) : (
+              <div className="mwz-card h-[150px] animate-pulse border border-amber-400/20" />
+            )}
             {Array.from({ length: 7 }).map((_, index) => (
               <div key={index} className="mwz-card h-[150px] animate-pulse" />
             ))}
           </>
         ) : (
           <>
-            {/* Fixed top-left: paid rotation + always-on house "Advertise here". */}
-            <SponsoredFeaturedSlotCard
-              key={`sponsor-${sponsor?.id || "house"}`}
-              placement={sponsor || FEATURED_HOUSE_AD}
-              onHouseAdClick={() => setApplyOpen(true)}
-            />
+            {/* Fixed top-left: live paid/partner placement; house "Advertise here" only when enabled & empty. */}
+            {sponsor ? (
+              <SponsoredFeaturedSlotCard
+                key={`sponsor-${sponsor?.id || "house"}`}
+                placement={sponsor}
+                onHouseAdClick={() => setApplyOpen(true)}
+              />
+            ) : null}
             {!cards.length ? (
               <div className="mwz-muted flex h-[150px] items-center px-4 text-sm">No live featured campaigns yet — organic ranks appear after UpVotes.</div>
             ) : null}

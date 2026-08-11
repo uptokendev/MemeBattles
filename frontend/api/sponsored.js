@@ -12,11 +12,18 @@ import { badMethod, getQuery, json } from "../server/http.js";
  *   GET /api/sponsored?chainId=97&slot=featured-top-left&select=one&strategy=weighted
  *   → single weighted-random pick from that slot pool (page-load rotation)
  *
+ * House "Advertise here" for Featured:
+ *   - Only injected when house inventory is enabled (DB setting or env)
+ *   - Never competes with live paid/partner inventory (paid ads always win exclusivity)
+ *   - When house is disabled and inventory is empty, returns empty items
+ *
  * Battle/postgrad rails continue to call without select=one.
  */
 
 const FEATURED_SLOT = "featured-top-left";
 const RAIL_SLOT = "homepage-sponsored-rail";
+const HOUSE_SETTING_KEY = "featured_house_ad";
+const LIVE_PAYMENT_STATUSES = ["paid", "verified", "waived"];
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -58,7 +65,16 @@ function pickWeighted(items) {
   return items[items.length - 1];
 }
 
-/** Always-on house inventory so Featured never has an empty sponsor cell. */
+function envBool(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === "") return fallback;
+  const v = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return fallback;
+}
+
+/** Always-on house inventory so Featured can fill an empty sponsor cell when enabled. */
 function featuredHouseAd(chainId) {
   const weight = Math.max(1, Number(process.env.FEATURED_HOUSE_AD_WEIGHT || 1000) || 1000);
   return {
@@ -82,10 +98,78 @@ function featuredHouseAd(chainId) {
   };
 }
 
-function withFeaturedHouseAd(items, chainId, slotFilter) {
+function isHouseItem(item) {
+  return (
+    Boolean(item?.isHouseAd) ||
+    String(item?.id || "") === "house-advertise-featured" ||
+    String(item?.placementType || "") === "house"
+  );
+}
+
+function isChainAgnosticPlacement(item) {
+  const type = String(item?.placementType || item?.project_type || "").toLowerCase();
+  if (["external", "partner", "featured"].includes(type)) return true;
+  // Website-backed / synthetic campaign keys are not on-chain campaign addresses.
+  const campaign = String(item?.campaignAddress || "").trim().toLowerCase();
+  if (!campaign) return true;
+  if (campaign.startsWith("http://") || campaign.startsWith("https://")) return true;
+  if (campaign.startsWith("sponsored-placement-")) return true;
+  return false;
+}
+
+function matchesChain(item, chainId) {
+  if (isChainAgnosticPlacement(item)) return true;
+  const itemChain = Number(item.chainId ?? item.chain_id);
+  if (!Number.isFinite(itemChain)) return true;
+  return itemChain === Number(chainId);
+}
+
+/**
+ * House ad enablement:
+ * 1) Env FEATURED_HOUSE_AD_ENABLED forces on/off when set
+ * 2) Else DB sponsorship_settings.featured_house_ad.enabled
+ * 3) Else default true (empty inventory can still show Advertise here)
+ */
+async function isFeaturedHouseAdEnabled() {
+  if (Object.prototype.hasOwnProperty.call(process.env, "FEATURED_HOUSE_AD_ENABLED")) {
+    return envBool("FEATURED_HOUSE_AD_ENABLED", true);
+  }
+
+  try {
+    const result = await pool.query(
+      `select value
+         from public.sponsorship_settings
+        where key = $1
+        limit 1`,
+      [HOUSE_SETTING_KEY],
+    );
+    const value = result.rows[0]?.value;
+    if (value && typeof value === "object" && value.enabled != null) {
+      return Boolean(value.enabled);
+    }
+    if (typeof value === "boolean") return value;
+  } catch (error) {
+    // Table may not exist until migration is applied — fall through to default.
+    if (String(error?.code || "") !== "42P01") {
+      console.warn("[api/sponsored] sponsorship_settings read failed", error?.message || error);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Inject house ad only for featured-top-left when:
+ * - house inventory is enabled, AND
+ * - there are no live paid/partner placements in the pool.
+ * Paid inventory is exclusive: house never steals rotation from real ads.
+ */
+function withFeaturedHouseAd(items, chainId, slotFilter, houseEnabled) {
   if (slotFilter !== FEATURED_SLOT) return items;
-  const withoutDup = items.filter((item) => String(item.id || "") !== "house-advertise-featured");
-  return [...withoutDup, featuredHouseAd(chainId)];
+  const paid = (items || []).filter((item) => !isHouseItem(item));
+  if (paid.length > 0) return paid;
+  if (!houseEnabled) return [];
+  return [featuredHouseAd(chainId)];
 }
 
 function externalPlacements(chainId, slotFilter) {
@@ -95,7 +179,7 @@ function externalPlacements(chainId, slotFilter) {
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : [];
     return items
-      .filter((item) => item && (item.chainId == null || Number(item.chainId) === Number(chainId)))
+      .filter((item) => item && (item.chainId == null || Number(item.chainId) === Number(chainId) || isChainAgnosticPlacement(item)))
       .map((item, index) => {
         const slotCode = String(item.slotCode || item.slot_code || item.slot || RAIL_SLOT).trim();
         return {
@@ -115,7 +199,7 @@ function externalPlacements(chainId, slotFilter) {
           raisedTotalBnb: Number(item.raisedTotalBnb || 0),
           votes24h: Number(item.votes24h || 0),
           votesAllTime: Number(item.votesAllTime || 0),
-          placementType: "external",
+          placementType: String(item.placementType || item.project_type || "external"),
           placementLabel: String(item.placementLabel || item.slotLabel || "Sponsored"),
           placementPriority: Number(item.priority || 1000 + index),
           rotationWeight: Number(item.rotationWeight || item.priority || 1000 + index),
@@ -141,6 +225,8 @@ async function dbPlacements(limit, slotFilter) {
     params.push(slotFilter);
     slotClause = ` and lower(coalesce(sp.slot_code, sa.preferred_slot, '${RAIL_SLOT}')) = lower($${params.length})`;
   }
+
+  const paymentList = LIVE_PAYMENT_STATUSES.map((s) => `'${s}'`).join(", ");
 
   const result = await pool.query(
     `select
@@ -168,7 +254,7 @@ async function dbPlacements(limit, slotFilter) {
      from public.sponsored_placements sp
      left join public.sponsorship_applications sa on sa.id = sp.application_id
      where coalesce(sp.active, false) = true
-       and coalesce(sp.payment_status, 'pending') in ('paid', 'verified')
+       and coalesce(sp.payment_status, 'pending') in (${paymentList})
        and (sp.starts_at is null or sp.starts_at <= now())
        and (sp.ends_at is null or sp.ends_at >= now())
        ${slotClause}
@@ -192,15 +278,17 @@ export default async function handler(req, res) {
   if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
   try {
+    const houseEnabled = await isFeaturedHouseAdEnabled();
+
     // Fetch a wider pool when selecting one so rotation has candidates.
     const fetchLimit = selectOne ? Math.max(limit, 24) : limit;
     let placements = await dbPlacements(fetchLimit, slotFilter || null);
-    placements = placements.filter((item) => Number(item.chainId ?? chainId) === Number(chainId));
+    placements = placements.filter((item) => matchesChain(item, chainId));
     if (!placements.length) {
-      placements = externalPlacements(chainId, slotFilter || null);
+      placements = externalPlacements(chainId, slotFilter || null).filter((item) => matchesChain(item, chainId));
     }
-    // Featured slot: always include house "Advertise here" in the rotation pool.
-    placements = withFeaturedHouseAd(placements, chainId, slotFilter);
+    // Featured: house only if enabled and no live paid inventory.
+    placements = withFeaturedHouseAd(placements, chainId, slotFilter, houseEnabled);
 
     if (selectOne) {
       const poolItems = placements.slice(0, 24);
@@ -212,14 +300,17 @@ export default async function handler(req, res) {
       } else {
         chosen = pickWeighted(poolItems);
       }
-      // Never return empty for featured-top-left — house ad is always in pool.
-      if (!chosen && slotFilter === FEATURED_SLOT) chosen = featuredHouseAd(chainId);
+      // Empty is valid when house inventory is disabled and no paid ads are live.
+      if (!chosen && slotFilter === FEATURED_SLOT && houseEnabled) {
+        chosen = featuredHouseAd(chainId);
+      }
       return json(res, 200, {
         items: chosen ? [chosen] : [],
         candidates: poolItems.slice(0, 8),
         slot: slotFilter || null,
         strategy: strategy || "weighted",
         select: "one",
+        houseAdEnabled: houseEnabled,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -228,6 +319,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       items: placements.slice(0, limit),
       slot: slotFilter || null,
+      houseAdEnabled: houseEnabled,
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
