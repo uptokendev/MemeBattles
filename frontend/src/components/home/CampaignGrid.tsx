@@ -315,9 +315,14 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       const seen = new Set(prev.map((x) => String(x.campaignAddress ?? "").toLowerCase()).filter(Boolean));
       const additions: CampaignFeedItemApi[] = [];
       for (const it of created) {
-        const addr = String(it?.campaignAddress ?? "").toLowerCase();
-        if (!addr || seen.has(addr)) continue;
-        seen.add(addr);
+        const rawAddr = String(it?.campaignAddress ?? "").trim();
+        if (!rawAddr || seen.has(rawAddr.toLowerCase())) continue;
+        seen.add(rawAddr.toLowerCase());
+        const keepCase =
+          activeChainId === 101 ||
+          activeChainId === 102 ||
+          (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(rawAddr) && !rawAddr.startsWith("0x"));
+        const addr = keepCase ? rawAddr : rawAddr.toLowerCase();
         additions.push({
           chainId: activeChainId,
           campaignAddress: addr,
@@ -532,9 +537,16 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
     type InternalVm = CampaignCardVM & { _mcapUsd: number; _mcapBnb: number; _createdAt: number; _activity: number; _votes: number; _progress: number };
     const mapped: InternalVm[] = (items || []).map((it) => {
-      const addr = String(it.campaignAddress ?? "").toLowerCase();
-      const patch = patchByCampaign[addr];
-      const onChain = onChainByCampaign[addr];
+      // Preserve Solana base58 case — lowercasing breaks /token routes and registry match.
+      const rawAddr = String(it.campaignAddress ?? "").trim();
+      const isSolanaAddr =
+        Number(it.chainId) === 101 ||
+        Number(it.chainId) === 102 ||
+        (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(rawAddr) && !rawAddr.startsWith("0x"));
+      const addr = isSolanaAddr ? rawAddr : rawAddr.toLowerCase();
+      const lookupKey = rawAddr.toLowerCase();
+      const patch = patchByCampaign[lookupKey] || patchByCampaign[addr];
+      const onChain = onChainByCampaign[lookupKey] || onChainByCampaign[addr];
       const gradTarget = Number(it.gradTargetBnb ?? DEFAULT_GRAD_TARGET_BNB) || DEFAULT_GRAD_TARGET_BNB;
       const isDex = Boolean(it.isDexTrading || it.graduatedAtChain || onChain?.isDexTrading);
 
@@ -551,7 +563,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         ? formatCompactUsd(athUsd)
         : marketCapUsdLabel;
 
-      const rawLogo = it.logoUri || logoCache[addr] || null;
+      const rawLogo = it.logoUri || logoCache[lookupKey] || logoCache[addr] || null;
       const raised = Number(
         (patch?.raisedTotalBnb ?? onChain?.raisedTotalBnb ?? it.raisedTotalBnb) ?? NaN,
       );
@@ -570,9 +582,14 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
       const createdAt = safeUnixSeconds(it.createdAtChain ?? null) ?? 0;
       const votes24h = Number(patch?.votes24h ?? it.votes24h ?? 0);
+      const rawToken = it.tokenAddress ? String(it.tokenAddress).trim() : "";
       return {
         campaignAddress: addr,
-        tokenAddress: it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null,
+        tokenAddress: rawToken
+          ? isSolanaAddr
+            ? rawToken
+            : rawToken.toLowerCase()
+          : null,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
         logoURI: resolveImageUri(rawLogo) ?? undefined,

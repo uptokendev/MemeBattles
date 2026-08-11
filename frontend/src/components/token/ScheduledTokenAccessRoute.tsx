@@ -8,7 +8,13 @@ import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchPublicCampaignLifecycleDrafts, timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 
 function sameAddress(a?: string | null, b?: string | null) {
-  return Boolean(a && b && String(a).toLowerCase() === String(b).toLowerCase());
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  // Solana base58 is case-sensitive for identity, but lowercased URLs still appear;
+  // use case-insensitive compare only as a recovery for mangled routes.
+  if (left === right) return true;
+  return left.toLowerCase() === right.toLowerCase();
 }
 
 function countdownLabel(launchAt: number, nowMs: number) {
@@ -38,11 +44,13 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
     void fetchPublicCampaignLifecycleDrafts({ chainId, limit: 500 })
       .then((items) => {
         if (cancelled) return;
-        const needle = String(campaignAddress).toLowerCase();
-        setDraft(items.find((item) =>
-          String(item.campaignAddress || "").toLowerCase() === needle
-          || String(item.tokenAddress || "").toLowerCase() === needle
-        ) || null);
+        const needle = String(campaignAddress).trim();
+        const needleLower = needle.toLowerCase();
+        setDraft(items.find((item) => {
+          const c = String(item.campaignAddress || "").trim();
+          const t = String(item.tokenAddress || "").trim();
+          return c === needle || t === needle || c.toLowerCase() === needleLower || t.toLowerCase() === needleLower;
+        }) || null);
       })
       .catch(() => {
         if (!cancelled) setDraft(null);

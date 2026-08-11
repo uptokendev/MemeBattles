@@ -195,7 +195,7 @@ export function CampaignTickerBar({ className }: { className?: string }) {
         {loopItems.map((item, index) => (
           <Link
             key={`${item.campaignAddress}-${index}`}
-            to={`/token/${item.tokenAddress || item.campaignAddress}`}
+            to={`/token/${encodeURIComponent(item.tokenAddress || item.campaignAddress)}${Number(chainId) === 101 || Number(chainId) === 102 ? `?chainId=${chainId}` : ""}`}
             className="inline-flex shrink-0 items-center gap-2 border border-success/25 bg-black/45 px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-success/80 transition hover:border-orange-400/60 hover:text-orange-300"
           >
             <span className="font-retro text-success">${item.symbol}</span>

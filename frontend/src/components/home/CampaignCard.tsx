@@ -14,6 +14,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { Flame, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -73,6 +74,14 @@ export function CampaignCard({
   const [followed, setFollowed] = useState(false);
   const addr = String(vm.campaignAddress ?? "").trim();
   const publicTokenAddr = String(vm.tokenAddress || vm.campaignAddress || "").trim();
+  const openPath = tokenDetailsPath(
+    {
+      tokenAddress: vm.tokenAddress,
+      campaignAddress: vm.campaignAddress,
+      chainId: chainIdForStorage,
+    },
+    { chainId: chainIdForStorage },
+  );
   const creatorAddr = String(vm.creator ?? "").trim();
   const canOpenProfile = creatorAddr.length > 0;
   const progressRaw = Number(vm.progressPct);
@@ -202,7 +211,7 @@ export function CampaignCard({
         className
       )}
     >
-      <button className="block w-full text-left" onClick={() => navigate(`/token/${publicTokenAddr}`)} aria-label={`Open ${vm.name}`}>
+      <button className="block w-full text-left" onClick={() => navigate(openPath)} aria-label={`Open ${vm.name}`}>
         <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black">
           <div className="absolute inset-0 mwz-stat-grid opacity-30 z-10 pointer-events-none" />
           <img
@@ -229,7 +238,7 @@ export function CampaignCard({
       </button>
 
       <div className="flex flex-1 flex-col p-3 text-success">
-        <button className="min-w-0 text-left" onClick={() => navigate(`/token/${publicTokenAddr}`)}>
+        <button className="min-w-0 text-left" onClick={() => navigate(openPath)}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="mwz-section-title truncate text-lg leading-none">{vm.name}</div>

@@ -737,17 +737,26 @@ const TokenDetails = () => {
           );
           const json = await res.json().catch(() => ({}));
           const items = Array.isArray(json?.items) ? json.items : [];
+          // Case-insensitive match: home grid previously lowercased Solana addrs in the URL.
+          const paramLower = param.toLowerCase();
           const hit = items.find((item: any) => {
             const c = String(item?.campaignAddress || item?.campaign || "").trim();
             const t = String(item?.tokenAddress || item?.token || "").trim();
-            return c === param || t === param;
+            return (
+              c === param ||
+              t === param ||
+              c.toLowerCase() === paramLower ||
+              t.toLowerCase() === paramLower
+            );
           });
 
           if (hit) {
+            const canonicalCampaign = String(hit.campaignAddress || hit.campaign || param);
+            const canonicalToken = String(hit.tokenAddress || hit.token || param);
             match = {
               id: 0,
-              campaign: String(hit.campaignAddress || hit.campaign || param),
-              token: String(hit.tokenAddress || hit.token || param),
+              campaign: canonicalCampaign,
+              token: canonicalToken,
               creator: String(hit.creatorAddress || hit.creator || ""),
               name: String(hit.name || "Solana campaign"),
               symbol: String(hit.symbol || ""),
@@ -761,9 +770,15 @@ const TokenDetails = () => {
                 : undefined,
             } as CampaignInfo;
             resolvedCampaignFromIndexer = match.campaign;
+            // Canonicalize URL case + chainId so bookmarks work.
+            const preferred = canonicalToken || canonicalCampaign;
+            const desired = `/token/${encodeURIComponent(preferred)}?chainId=${SOLANA_CHAIN_ID}`;
+            const current = `${location.pathname}${location.search || ""}`;
+            if (preferred && current !== desired && preferred.toLowerCase() === paramLower) {
+              navigate(desired, { replace: true });
+            }
           } else {
-            // Fallback: draft may be linked but not yet in campaigns feed.
-            // Use param as both campaign + token so the page still paints.
+            // Always paint a shell — never "Token not found" for valid Solana base58.
             match = {
               id: 0,
               campaign: param,
@@ -779,11 +794,13 @@ const TokenDetails = () => {
             } as CampaignInfo;
             resolvedCampaignFromIndexer = param;
             console.warn(
-              "[TokenDetails] Solana address not found in /api/campaigns — showing provisional shell. Retry Push Live to upsert registry.",
+              "[TokenDetails] Solana address not found in /api/campaigns — showing provisional shell.",
+              param,
             );
           }
 
           setCampaign(match);
+          setError(null);
           // Solana bonding metrics/trades are P1 — do not call EVM metric loaders.
           setMetrics({
             sold: 0n,
