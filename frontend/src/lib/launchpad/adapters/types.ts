@@ -50,7 +50,10 @@ export type CampaignInfo = {
   telegram?: string;
   discord?: string;
   dexPairAddress?: string;
-
+  /** Solana V4 bonding vaults (from campaigns.meta.solana). */
+  tokenVault?: string | null;
+  solVault?: string | null;
+  campaignIdHex?: string | null;
 };
 
 export type CampaignMetrics = {

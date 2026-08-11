@@ -11,6 +11,80 @@ function normalizeRegistryAddress(value, chainId) {
   return raw.toLowerCase();
 }
 
+function normalizeSolanaPubkey(value) {
+  const raw = String(value || "").trim();
+  return raw || null;
+}
+
+/**
+ * Normalize campaignId from hex string, byte array, or Buffer → 64-char hex.
+ */
+export function normalizeCampaignIdHex(value) {
+  if (!value && value !== 0) return null;
+  if (Buffer.isBuffer(value) && value.length === 32) return value.toString("hex");
+  if (Array.isArray(value) && value.length === 32) {
+    try {
+      return Buffer.from(value).toString("hex");
+    } catch {
+      return null;
+    }
+  }
+  const raw = String(value).replace(/^0x/i, "").trim();
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) return raw.toLowerCase();
+  return null;
+}
+
+/**
+ * Build the `meta.solana` blob for vault / campaignId persistence.
+ * @returns {Record<string, unknown> | null}
+ */
+export function buildSolanaCampaignMeta(input = {}) {
+  const tokenVault = normalizeSolanaPubkey(input.tokenVault);
+  const solVault = normalizeSolanaPubkey(input.solVault);
+  const campaignIdHex = normalizeCampaignIdHex(input.campaignId ?? input.campaignIdHex);
+  const programId = normalizeSolanaPubkey(input.programId ?? input.factoryAddress);
+  if (!tokenVault && !solVault && !campaignIdHex) return null;
+  return {
+    ...(campaignIdHex ? { campaignIdHex } : {}),
+    ...(tokenVault ? { tokenVault } : {}),
+    ...(solVault ? { solVault } : {}),
+    ...(programId ? { programId } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Merge solana vault/campaignId into campaigns.meta without clobbering other keys.
+ */
+export async function mergeCampaignSolanaMeta(db, { chainId, campaignAddress, solana }) {
+  if (!solana || typeof solana !== "object") return { ok: false, skipped: true };
+  const chain = Number(chainId);
+  const addr = normalizeRegistryAddress(campaignAddress, chain);
+  if (!Number.isFinite(chain) || !addr) return { ok: false, error: "Missing chainId/campaignAddress for meta merge." };
+
+  try {
+    const result = await db.query(
+      `update public.campaigns
+          set meta = jsonb_set(
+                coalesce(meta, '{}'::jsonb),
+                '{solana}',
+                coalesce(meta -> 'solana', '{}'::jsonb) || $3::jsonb,
+                true
+              ),
+              updated_at = now()
+        where chain_id = $1
+          and campaign_address = $2
+        returning chain_id, campaign_address, meta`,
+      [chain, addr, JSON.stringify(solana)],
+    );
+    if (!result.rows[0]) return { ok: false, error: "Campaign row not found for meta merge." };
+    return { ok: true, row: result.rows[0] };
+  } catch (error) {
+    console.warn("[campaign-registry] meta merge failed", error?.message || error);
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
 /**
  * @param {import("pg").Pool | import("pg").PoolClient} db
  * @param {{
@@ -23,8 +97,13 @@ function normalizeRegistryAddress(value, chainId) {
  *   logoUrl?: string | null,
  *   deployTxHash?: string | null,
  *   factoryAddress?: string | null,
+ *   tokenVault?: string | null,
+ *   solVault?: string | null,
+ *   campaignId?: string | number[] | Buffer | null,
+ *   campaignIdHex?: string | null,
+ *   programId?: string | null,
  * }} input
- * @returns {Promise<{ ok: boolean, row?: any, error?: string, attempts?: string[] }>}
+ * @returns {Promise<{ ok: boolean, row?: any, error?: string, attempts?: string[], metaMerged?: boolean }>}
  */
 export async function upsertCampaignFromDraft(db, input) {
   const chainId = Number(input.chainId);
@@ -38,7 +117,16 @@ export async function upsertCampaignFromDraft(db, input) {
   const name = String(input.name || "").trim() || null;
   const symbol = String(input.symbol || "").trim().toUpperCase() || null;
   const logoUri = String(input.logoUrl || "").trim() || null;
-  const factoryAddress = String(input.factoryAddress || "").trim() || null;
+  const factoryAddress = String(input.factoryAddress || input.programId || "").trim() || null;
+  const solanaMeta = isSolanaChain(chainId)
+    ? buildSolanaCampaignMeta({
+        tokenVault: input.tokenVault,
+        solVault: input.solVault,
+        campaignId: input.campaignId,
+        campaignIdHex: input.campaignIdHex,
+        programId: input.programId || factoryAddress,
+      })
+    : null;
   const attempts = [];
 
   // Try progressively simpler inserts so partial schemas still register the campaign.
@@ -102,10 +190,11 @@ export async function upsertCampaignFromDraft(db, input) {
   ];
 
   let lastError = null;
+  let row = null;
   for (const strategy of strategies) {
     try {
       const result = await db.query(strategy.sql, strategy.params);
-      const row = result.rows[0] || null;
+      row = result.rows[0] || null;
       if (row) {
         attempts.push(`${strategy.label}:ok`);
         console.info("[campaign-registry] upsert ok", {
@@ -114,7 +203,7 @@ export async function upsertCampaignFromDraft(db, input) {
           campaignAddress,
           tokenAddress,
         });
-        return { ok: true, row, attempts };
+        break;
       }
       attempts.push(`${strategy.label}:empty`);
     } catch (error) {
@@ -124,11 +213,31 @@ export async function upsertCampaignFromDraft(db, input) {
     }
   }
 
-  return {
-    ok: false,
-    error: String(lastError?.message || lastError || "campaigns upsert failed"),
-    attempts,
-  };
+  if (!row) {
+    return {
+      ok: false,
+      error: String(lastError?.message || lastError || "campaigns upsert failed"),
+      attempts,
+    };
+  }
+
+  let metaMerged = false;
+  if (solanaMeta) {
+    const merged = await mergeCampaignSolanaMeta(db, {
+      chainId,
+      campaignAddress,
+      solana: solanaMeta,
+    });
+    metaMerged = Boolean(merged?.ok);
+    if (merged?.ok && merged.row) {
+      row = { ...row, meta: merged.row.meta };
+    } else if (!merged?.ok && !merged?.skipped) {
+      attempts.push(`meta:${merged?.error || "failed"}`);
+      console.warn("[campaign-registry] solana meta not stored", merged?.error);
+    }
+  }
+
+  return { ok: true, row, attempts, metaMerged };
 }
 
 /**
@@ -143,7 +252,7 @@ export async function resolveCampaignByAddress(db, { chainId, address }) {
   if (isSolana) {
     const camp = await db.query(
       `select chain_id, campaign_address, token_address, creator_address, name, symbol, logo_uri,
-              created_at_chain, created_at, is_active
+              created_at_chain, created_at, is_active, meta
          from public.campaigns
         where chain_id = $1
           and (campaign_address = $2 or token_address = $2)
@@ -152,6 +261,22 @@ export async function resolveCampaignByAddress(db, { chainId, address }) {
     );
     if (camp.rows[0]) {
       return { source: "campaigns", ...camp.rows[0] };
+    }
+    // Case-insensitive fallback for bookmarks that lowercased base58.
+    const campCi = await db.query(
+      `select chain_id, campaign_address, token_address, creator_address, name, symbol, logo_uri,
+              created_at_chain, created_at, is_active, meta
+         from public.campaigns
+        where chain_id = $1
+          and (
+            lower(campaign_address) = lower($2)
+            or lower(coalesce(token_address, '')) = lower($2)
+          )
+        limit 1`,
+      [chain, addr],
+    );
+    if (campCi.rows[0]) {
+      return { source: "campaigns", ...campCi.rows[0] };
     }
     const draft = await db.query(
       `select chain_id, campaign_address, token_address, creator_wallet as creator_address,
@@ -175,7 +300,7 @@ export async function resolveCampaignByAddress(db, { chainId, address }) {
   const lower = addr.toLowerCase();
   const camp = await db.query(
     `select chain_id, campaign_address, token_address, creator_address, name, symbol, logo_uri,
-            created_at_chain, created_at, is_active
+            created_at_chain, created_at, is_active, meta
        from public.campaigns
       where chain_id = $1
         and (lower(campaign_address) = $2 or lower(coalesce(token_address,'')) = $2)
@@ -183,4 +308,19 @@ export async function resolveCampaignByAddress(db, { chainId, address }) {
     [chain, lower],
   );
   return camp.rows[0] ? { source: "campaigns", ...camp.rows[0] } : null;
+}
+
+/**
+ * Extract solana vault fields from a campaigns.meta JSON blob.
+ */
+export function solanaMetaFromRow(row) {
+  const meta = row?.meta && typeof row.meta === "object" ? row.meta : null;
+  const solana = meta?.solana && typeof meta.solana === "object" ? meta.solana : null;
+  if (!solana) return null;
+  return {
+    campaignIdHex: normalizeCampaignIdHex(solana.campaignIdHex || solana.campaignId) || null,
+    tokenVault: normalizeSolanaPubkey(solana.tokenVault) || null,
+    solVault: normalizeSolanaPubkey(solana.solVault) || null,
+    programId: normalizeSolanaPubkey(solana.programId) || null,
+  };
 }

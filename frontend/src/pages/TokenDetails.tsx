@@ -785,6 +785,9 @@ const TokenDetails = () => {
               createdAt: hit.createdAtChain
                 ? Math.floor(new Date(hit.createdAtChain).getTime() / 1000)
                 : undefined,
+              tokenVault: hit.tokenVault ? String(hit.tokenVault) : null,
+              solVault: hit.solVault ? String(hit.solVault) : null,
+              campaignIdHex: hit.campaignIdHex ? String(hit.campaignIdHex) : null,
             } as CampaignInfo;
             resolvedCampaignFromIndexer = match.campaign;
             // Canonicalize URL case + chainId so bookmarks work.
@@ -2485,7 +2488,7 @@ const bnbUsd = useMemo(() => {
 
         await ensureTraderAta({ mint, owner: trader });
 
-        // Vaults optional — if campaign row doesn't have them, authorize may still work with campaignId later.
+        // Prefer vaults from campaigns.meta; trade-authorize also falls back to RPC Campaign decode.
         const auth = await requestSolanaTradeAuthorization({
           side: tradeTab === "buy" ? "buy" : "sell",
           campaignAddress: campaign.campaign,
@@ -2493,6 +2496,9 @@ const bnbUsd = useMemo(() => {
           traderAddress: trader,
           amountIn,
           minOut,
+          tokenVault: campaign.tokenVault || null,
+          solVault: campaign.solVault || null,
+          campaignId: campaign.campaignIdHex || null,
           chainId: SOLANA_CHAIN_ID,
         });
         const result = await submitSolanaTradeV1(auth, { traderAddress: trader });

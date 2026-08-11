@@ -6,15 +6,27 @@
  * Digest layout matches programs/memewarzone_solana/src/authorized_trade.rs:
  *   TRADE_AUTH_DOMAIN | u16 schema | program_id | campaign | mint | trader |
  *   u8 side | u64 amount_in | u64 min_out | i64 deadline | nonce[32]
+ *
+ * Vault resolution order:
+ *   1. Client-provided tokenVault / solVault / campaignId
+ *   2. campaigns.meta.solana (persisted at create/mark-deploy)
+ *   3. RPC decode of Campaign account → token_vault / sol_vault / campaign_id
  */
 import crypto from "node:crypto";
 
+import { pool } from "../../server/db.js";
 import { badMethod, isSolanaChain, json, readJson, isSolanaAddress } from "../../server/http.js";
+import {
+  resolveCampaignByAddress,
+  solanaMetaFromRow,
+  normalizeCampaignIdHex,
+} from "./campaign-registry.js";
 import {
   SYSVAR_INSTRUCTIONS_ID,
   SYSTEM_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createEd25519Signer,
+  decodeCampaignAccount,
   findProgramAddressSync,
   publicKeyBytes,
   publicKeyString,
@@ -125,6 +137,119 @@ function parseCampaignId(value) {
   return null;
 }
 
+function vaultsFromCampaignId(campaignId, programId) {
+  if (!campaignId) return { tokenVault: null, solVault: null };
+  return {
+    tokenVault: findProgramAddressSync([TOKEN_VAULT_SEED, campaignId], programId).publicKey,
+    solVault: findProgramAddressSync([SOL_VAULT_SEED, campaignId], programId).publicKey,
+  };
+}
+
+/**
+ * Resolve tokenVault/solVault for a trade:
+ * body → campaigns.meta.solana → RPC Campaign account decode (+ optional PDA derive).
+ * When the client passes a mint as campaignAddress, DB lookup recovers the campaign PDA.
+ */
+async function resolveTradeVaults({
+  body,
+  chainId,
+  campaignAddress,
+  mintAddress,
+  programId,
+  rpcUrl,
+}) {
+  let tokenVault = body.tokenVault ? publicKeyString(body.tokenVault, "tokenVault") : null;
+  let solVault = body.solVault ? publicKeyString(body.solVault, "solVault") : null;
+  let campaignId = parseCampaignId(body.campaignId ?? body.campaignIdHex);
+  let source = "client";
+  /** Prefer registry campaign PDA for RPC decode (URL may be mint). */
+  let rpcCampaignAddress = campaignAddress;
+
+  if (tokenVault && solVault) {
+    return {
+      tokenVault,
+      solVault,
+      campaignId,
+      campaignIdHex: campaignId ? campaignId.toString("hex") : null,
+      source,
+      rpcCampaignAddress,
+    };
+  }
+
+  // DB meta (persisted at create / mark-deploy).
+  if (!tokenVault || !solVault || !campaignId) {
+    try {
+      const row =
+        (await resolveCampaignByAddress(pool, { chainId, address: campaignAddress })) ||
+        (mintAddress && mintAddress !== campaignAddress
+          ? await resolveCampaignByAddress(pool, { chainId, address: mintAddress })
+          : null);
+      if (row?.campaign_address) {
+        rpcCampaignAddress = String(row.campaign_address).trim() || rpcCampaignAddress;
+      }
+      const meta = solanaMetaFromRow(row);
+      if (meta) {
+        if (!campaignId && meta.campaignIdHex) campaignId = parseCampaignId(meta.campaignIdHex);
+        if (!tokenVault && meta.tokenVault) tokenVault = publicKeyString(meta.tokenVault, "meta.tokenVault");
+        if (!solVault && meta.solVault) solVault = publicKeyString(meta.solVault, "meta.solVault");
+        if (tokenVault && solVault) source = "campaigns.meta";
+      }
+    } catch (error) {
+      console.warn("[solana-trade-v1] campaigns.meta vault lookup failed", error?.message || error);
+    }
+  }
+
+  if (campaignId && (!tokenVault || !solVault)) {
+    const derived = vaultsFromCampaignId(campaignId, programId);
+    if (!tokenVault) tokenVault = derived.tokenVault;
+    if (!solVault) solVault = derived.solVault;
+    if (tokenVault && solVault) source = source === "client" ? "campaignId+derive" : source;
+  }
+
+  // RPC Campaign account — authoritative for already-deployed campaigns without meta.
+  // Try registry campaign PDA first, then the client-supplied address (may already be campaign).
+  if (!tokenVault || !solVault || !campaignId) {
+    const candidates = [...new Set([rpcCampaignAddress, campaignAddress].filter(Boolean))];
+    for (const addr of candidates) {
+      try {
+        const info = await rpcCall(rpcUrl, "getAccountInfo", [
+          addr,
+          { encoding: "base64", commitment: "confirmed" },
+        ]);
+        const dataB64 = info?.value?.data?.[0];
+        if (!dataB64) continue;
+        const data = Buffer.from(dataB64, "base64");
+        const decoded = decodeCampaignAccount(data);
+        if (!campaignId) campaignId = Buffer.from(decoded.campaignId);
+        if (!tokenVault) tokenVault = decoded.tokenVault;
+        if (!solVault) solVault = decoded.solVault;
+        rpcCampaignAddress = addr;
+        source = "rpc.campaign";
+        break;
+      } catch (error) {
+        console.warn("[solana-trade-v1] RPC campaign decode failed", addr, error?.message || error);
+      }
+    }
+  }
+
+  // Final derive if we got campaignId from RPC/meta but vaults still missing.
+  if (campaignId && (!tokenVault || !solVault)) {
+    const derived = vaultsFromCampaignId(campaignId, programId);
+    if (!tokenVault) tokenVault = derived.tokenVault;
+    if (!solVault) solVault = derived.solVault;
+    if (source === "client") source = "campaignId+derive";
+  }
+
+  return {
+    tokenVault,
+    solVault,
+    campaignId,
+    campaignIdHex: campaignId ? campaignId.toString("hex") : normalizeCampaignIdHex(body.campaignId) || null,
+    source,
+    rpcCampaignAddress,
+  };
+}
+
 function buildTradeAuthorizationDigest({
   programId,
   campaign,
@@ -229,16 +354,25 @@ export async function solanaTradeAuthorizationV1(req, res) {
     const deadline = BigInt(chainNow + ttlSeconds);
     const nonce = crypto.randomBytes(32);
 
-    let tokenVault = body.tokenVault ? publicKeyString(body.tokenVault, "tokenVault") : null;
-    let solVault = body.solVault ? publicKeyString(body.solVault, "solVault") : null;
-    const campaignId = parseCampaignId(body.campaignId);
-    if (campaignId) {
-      if (!tokenVault) {
-        tokenVault = findProgramAddressSync([TOKEN_VAULT_SEED, campaignId], programId).publicKey;
-      }
-      if (!solVault) {
-        solVault = findProgramAddressSync([SOL_VAULT_SEED, campaignId], programId).publicKey;
-      }
+    const vaults = await resolveTradeVaults({
+      body,
+      chainId,
+      campaignAddress,
+      mintAddress,
+      programId,
+      rpcUrl,
+    });
+    const { tokenVault, solVault, campaignId } = vaults;
+    // Prefer registry/RPC campaign PDA over client address (may be mint from /token/:mint URL).
+    const resolvedCampaign = vaults.rpcCampaignAddress
+      ? publicKeyString(vaults.rpcCampaignAddress, "resolvedCampaign")
+      : campaignAddress;
+
+    if (!tokenVault || !solVault) {
+      throw new SolanaTradeAuthorizationError(
+        "Could not resolve tokenVault/solVault. Re-run Push Live (mark-deploy) to persist vaults, or pass tokenVault/solVault/campaignId.",
+        { code: "SOLANA_TRADE_VAULTS_UNRESOLVED", httpStatus: 409 },
+      );
     }
 
     const tradeAuth = findProgramAddressSync(
@@ -251,7 +385,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
 
     const digest = buildTradeAuthorizationDigest({
       programId,
-      campaign: campaignAddress,
+      campaign: resolvedCampaign,
       mint: mintAddress,
       trader: traderAddress,
       side,
@@ -269,6 +403,11 @@ export async function solanaTradeAuthorizationV1(req, res) {
       chainId,
       programId,
       chainNow,
+      vaultResolution: {
+        source: vaults.source,
+        campaignIdHex: vaults.campaignIdHex || (campaignId ? campaignId.toString("hex") : null),
+        resolvedCampaign,
+      },
       createArgs: {
         amountIn: amountIn.toString(),
         minOut: minOut.toString(),
@@ -278,7 +417,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
       accounts: {
         trader: traderAddress,
         globalConfig: findProgramAddressSync([Buffer.from("global", "utf8")], programId).publicKey,
-        campaign: campaignAddress,
+        campaign: resolvedCampaign,
         mint: mintAddress,
         tokenVault,
         solVault,

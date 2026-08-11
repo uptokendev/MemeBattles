@@ -270,7 +270,9 @@ function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | 
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
     timeAgo: String(item?.timeAgo ?? item?.time_ago ?? item?.ageLabel ?? item?.age_label ?? "").trim() || undefined,
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
-
+    tokenVault: item?.tokenVault ? String(item.tokenVault) : null,
+    solVault: item?.solVault ? String(item.solVault) : null,
+    campaignIdHex: item?.campaignIdHex ? String(item.campaignIdHex) : null,
   };
 }
 

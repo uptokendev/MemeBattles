@@ -339,6 +339,15 @@ export async function draftDeploy(req, res) {
   const deployTxHash = String(body.deployTxHash || "").trim().slice(0, 120) || null;
   const scheduledLaunchAt = body.scheduledLaunchAt ? Number(body.scheduledLaunchAt) : null;
   const isScheduled = Number.isInteger(scheduledLaunchAt) && scheduledLaunchAt > Math.floor(Date.now() / 1000);
+  // Solana V4 vaults / campaignId — optional; stored in campaigns.meta.solana for trade-authorize.
+  const solanaVaults = isSolanaChain(Number(row.chain_id))
+    ? {
+        tokenVault: body.tokenVault ? String(body.tokenVault).trim() : null,
+        solVault: body.solVault ? String(body.solVault).trim() : null,
+        campaignId: body.campaignId ?? body.campaignIdHex ?? null,
+        programId: String(body.factoryAddress || body.programId || "").trim() || null,
+      }
+    : null;
 
   if (!campaignAddress) return json(res, 400, { error: "Missing deployed campaign address." });
 
@@ -404,6 +413,7 @@ export async function draftDeploy(req, res) {
           logoUrl: row.logo_url || draft?.logoUrl,
           deployTxHash: deployTxHash || "already-on-chain",
           factoryAddress: String(body.factoryAddress || "").trim() || null,
+          ...(solanaVaults || {}),
         });
         return { draft, tickerReservation, registry };
       });
@@ -414,6 +424,7 @@ export async function draftDeploy(req, res) {
         tickerReservation: redeployed.tickerReservation,
         registryUpserted: Boolean(redeployed.registry?.ok),
         registryError: redeployed.registry?.ok ? null : redeployed.registry?.error || null,
+        registryMetaMerged: Boolean(redeployed.registry?.metaMerged),
       });
     } catch (error) {
       if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
@@ -461,6 +472,7 @@ export async function draftDeploy(req, res) {
         logoUrl: row.logo_url || draft?.logoUrl,
         deployTxHash,
         factoryAddress: String(body.factoryAddress || "").trim() || null,
+        ...(solanaVaults || {}),
       });
       return { draft, tickerReservation, registry };
     });
@@ -495,5 +507,6 @@ export async function draftDeploy(req, res) {
     tickerReservation: deployed.tickerReservation,
     registryUpserted: Boolean(deployed.registry?.ok),
     registryError: deployed.registry?.ok ? null : deployed.registry?.error || null,
+    registryMetaMerged: Boolean(deployed.registry?.metaMerged),
   });
 }

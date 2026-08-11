@@ -84,6 +84,11 @@ async function markDraftDeployment(input: {
   tokenAddress?: string;
   deployTxHash?: string;
   scheduledLaunchAt?: number;
+  /** Solana V4 vaults + campaignId for campaigns.meta.solana persistence. */
+  tokenVault?: string | null;
+  solVault?: string | null;
+  campaignId?: number[] | string | null;
+  factoryAddress?: string | null;
 }) {
   const res = await apiFetch(`/api/drafts/${encodeURIComponent(input.draftId)}/deploy`, {
     method: "POST",
@@ -94,6 +99,10 @@ async function markDraftDeployment(input: {
       tokenAddress: input.tokenAddress || null,
       deployTxHash: input.deployTxHash || null,
       scheduledLaunchAt: input.scheduledLaunchAt || null,
+      tokenVault: input.tokenVault || null,
+      solVault: input.solVault || null,
+      campaignId: input.campaignId || null,
+      factoryAddress: input.factoryAddress || null,
     }),
   });
   const json = await res.json().catch(() => ({}));
@@ -293,6 +302,21 @@ export default function PushDraftLive() {
           (authorization as any).tokenPath ||
           authorization.existingDeployment?.tokenPath ||
           `/token/${encodeURIComponent(mintAddress || campaignAddress)}?chainId=${chainId}`;
+        const recoveryVaults = {
+          tokenVault:
+            authorization.accounts?.tokenVault ||
+            (authorization.existingDeployment as any)?.tokenVault ||
+            null,
+          solVault:
+            authorization.accounts?.solVault ||
+            (authorization.existingDeployment as any)?.solVault ||
+            null,
+          campaignId:
+            authorization.createArgs?.campaignId ||
+            (authorization.existingDeployment as any)?.campaignIdHex ||
+            null,
+          factoryAddress: authorization.programId || null,
+        };
 
         // Always re-run mark-deploy so campaigns registry upsert is retried (idempotent).
         try {
@@ -303,6 +327,7 @@ export default function PushDraftLive() {
             tokenAddress: mintAddress,
             deployTxHash: "already-on-chain",
             scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+            ...recoveryVaults,
           });
         } catch (markErr: any) {
           console.warn("[PushDraftLive] recovery mark-deploy", markErr);
@@ -336,6 +361,12 @@ export default function PushDraftLive() {
 
       // Reuse the same owner-session credential (nonce already consumed on first use;
       // subsequent calls hit draft_owner_sessions, not auth_nonces).
+      const createVaults = {
+        tokenVault: authorization.accounts?.tokenVault || null,
+        solVault: authorization.accounts?.solVault || null,
+        campaignId: authorization.createArgs?.campaignId || null,
+        factoryAddress: authorization.programId || null,
+      };
       let marked = false;
       try {
         await markDraftDeployment({
@@ -345,6 +376,7 @@ export default function PushDraftLive() {
           tokenAddress: created.mintAddress,
           deployTxHash: created.signature,
           scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+          ...createVaults,
         });
         marked = true;
       } catch (markErr: any) {
@@ -366,6 +398,7 @@ export default function PushDraftLive() {
               tokenAddress: created.mintAddress,
               deployTxHash: created.signature,
               scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+              ...createVaults,
             });
             marked = true;
           } catch {

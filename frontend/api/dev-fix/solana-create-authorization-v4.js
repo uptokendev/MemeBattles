@@ -634,12 +634,36 @@ async function finalizeExistingOnChainDeployment({
   mintAddress,
   reservation,
   launchAt = 0n,
+  tokenVault: tokenVaultHint = null,
+  solVault: solVaultHint = null,
+  campaignId: campaignIdHint = null,
 }) {
   const draftId = String(draft.id);
   const scheduledLaunchAt =
     launchAt && launchAt !== 0n ? Number(launchAt) : null;
   const isScheduled =
     Number.isInteger(scheduledLaunchAt) && scheduledLaunchAt > Math.floor(Date.now() / 1000);
+
+  // Resolve vaults / campaignId before the DB transaction so we can persist them.
+  let resolvedCampaignId = campaignIdHint ? Buffer.from(bytes32(campaignIdHint)) : null;
+  let resolvedTokenVault = tokenVaultHint ? publicKeyString(tokenVaultHint) : null;
+  let resolvedSolVault = solVaultHint ? publicKeyString(solVaultHint) : null;
+  if (reservation?.reservationIdHash) {
+    try {
+      const pdas = deriveCampaignAccounts({
+        draftId,
+        reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
+        generationId: onchain.generation.generationId,
+        programId,
+        creator: draft.creator_wallet,
+      });
+      if (!resolvedCampaignId) resolvedCampaignId = Buffer.from(pdas.campaignId);
+      if (!resolvedTokenVault) resolvedTokenVault = pdas.tokenVault.publicKey;
+      if (!resolvedSolVault) resolvedSolVault = pdas.solVault.publicKey;
+    } catch {
+      // keep hints / fallbacks
+    }
+  }
 
   const finalized = await withTickerReservationTransaction(pool, async (db) => {
     const updated = await db.query(
@@ -701,6 +725,10 @@ async function finalizeExistingOnChainDeployment({
       logoUrl: draft.logo_url,
       deployTxHash: "already-on-chain",
       factoryAddress: programId,
+      programId,
+      tokenVault: resolvedTokenVault,
+      solVault: resolvedSolVault,
+      campaignId: resolvedCampaignId,
     });
     if (!registry?.ok) {
       console.error("[solana-v4-create] campaigns registry upsert failed during recovery", registry);
@@ -721,34 +749,8 @@ async function finalizeExistingOnChainDeployment({
     clusterProfile: onchain.accounts.clusterProfile,
     campaign: campaignAddress,
     mint: mintAddress,
-    tokenVault: reservation
-      ? findProgramAddressSync(
-          [
-            Buffer.from("token-vault", "utf8"),
-            deriveCampaignId({
-              draftId,
-              reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
-              generationId: onchain.generation.generationId,
-              programId,
-            }),
-          ],
-          programId,
-        ).publicKey
-      : campaignAddress,
-    solVault: reservation
-      ? findProgramAddressSync(
-          [
-            Buffer.from("sol-vault", "utf8"),
-            deriveCampaignId({
-              draftId,
-              reservationIdHash: nonZeroBytes32(reservation.reservationIdHash, "reservationIdHash"),
-              generationId: onchain.generation.generationId,
-              programId,
-            }),
-          ],
-          programId,
-        ).publicKey
-      : campaignAddress,
+    tokenVault: resolvedTokenVault || campaignAddress,
+    solVault: resolvedSolVault || campaignAddress,
     createAuthorization: onchain.accounts.creatorProfile,
     instructions: SYSVAR_INSTRUCTIONS_ID,
     tokenProgram: TOKEN_PROGRAM_ID,
@@ -770,6 +772,7 @@ async function finalizeExistingOnChainDeployment({
       accounts.createAuthorization = pdas.createAuthorization.publicKey;
       accounts.campaign = pdas.campaign.publicKey;
       accounts.mint = mintAddress || pdas.mint.publicKey;
+      if (!resolvedCampaignId) resolvedCampaignId = Buffer.from(pdas.campaignId);
     } catch {
       // keep fallbacks above
     }
@@ -779,6 +782,8 @@ async function finalizeExistingOnChainDeployment({
   const mint = mintAddress || accounts.mint;
   const registryOk = Boolean(finalized.registry?.ok);
   const tokenPath = `/token/${encodeURIComponent(mint || campaignAddress)}?chainId=${Number(draft.chain_id) || 101}`;
+  const campaignIdHex = resolvedCampaignId ? Buffer.from(resolvedCampaignId).toString("hex") : null;
+  const campaignIdBytes = resolvedCampaignId ? bufferArray(resolvedCampaignId) : null;
 
   return {
     schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
@@ -788,10 +793,16 @@ async function finalizeExistingOnChainDeployment({
     registryUpserted: registryOk,
     registryError: registryOk ? null : finalized.registry?.error || null,
     registryAttempts: finalized.registry?.attempts || null,
+    registryMetaMerged: Boolean(finalized.registry?.metaMerged),
     tokenPath,
     cluster,
     programId,
-    createArgs: null,
+    createArgs: campaignIdBytes
+      ? {
+          // Partial createArgs so clients can pass campaignId into mark-deploy / trade-auth.
+          campaignId: campaignIdBytes,
+        }
+      : null,
     accounts,
     authorization: null,
     generation: publicGeneration(onchain.generation),
@@ -807,6 +818,9 @@ async function finalizeExistingOnChainDeployment({
       draftStatus: finalized.draftRow?.status || "deployed",
       registryUpserted: registryOk,
       tokenPath,
+      tokenVault: accounts.tokenVault,
+      solVault: accounts.solVault,
+      campaignIdHex,
     },
     tickerReservation: finalized.tickerReservation,
     preflight: {
@@ -1138,6 +1152,9 @@ export async function solanaCreateAuthorizationV4(req, res) {
           mintAddress,
           reservation: peekReservation,
           launchAt,
+          tokenVault: candidate.pdas?.tokenVault?.publicKey || null,
+          solVault: candidate.pdas?.solVault?.publicKey || null,
+          campaignId: candidate.pdas?.campaignId || null,
         });
         return json(res, 200, recovery);
       }
@@ -1389,6 +1406,9 @@ export async function solanaCreateAuthorizationV4(req, res) {
           mintAddress,
           reservation: authorized.reservation || peekReservation,
           launchAt,
+          tokenVault: authorized.response?.accounts?.tokenVault || null,
+          solVault: authorized.response?.accounts?.solVault || null,
+          campaignId: authorized.response?.createArgs?.campaignId || null,
         });
         return json(res, 200, recovery);
       }

@@ -576,3 +576,60 @@ export function decodeClusterProfile(data) {
     bump: reader.u8("bump"),
   };
 }
+
+/**
+ * Decode the V4 Campaign account fields needed for trade vault resolution.
+ * Layout matches programs/memewarzone_solana Campaign (after 8-byte Anchor discriminator):
+ *   campaign_id[32], generation_id[32], generation_config, generation_manifest_hash,
+ *   creator, mint, token_vault, sol_vault, ...
+ *
+ * Falls back to raw offset read if the discriminator does not match (older IDL / rename).
+ */
+export function decodeCampaignAccount(data) {
+  const buf = Buffer.from(data);
+  const minLen = 8 + 32 * 8; // disc + campaign_id..sol_vault
+  if (buf.length < minLen) {
+    throw new RangeError(`Campaign account data too short (${buf.length} < ${minLen})`);
+  }
+
+  const readCore = (offset) => {
+    const campaignId = Buffer.from(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const generationId = Buffer.from(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const generationConfig = encodeBase58(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const generationManifestHash = Buffer.from(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const creator = encodeBase58(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const mint = encodeBase58(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const tokenVault = encodeBase58(buf.subarray(offset, offset + 32));
+    offset += 32;
+    const solVault = encodeBase58(buf.subarray(offset, offset + 32));
+    return {
+      campaignId,
+      campaignIdHex: campaignId.toString("hex"),
+      generationId,
+      generationConfig,
+      generationManifestHash,
+      creator,
+      mint,
+      tokenVault,
+      solVault,
+    };
+  };
+
+  try {
+    const expected = accountDiscriminator("Campaign");
+    if (buf.subarray(0, 8).equals(expected)) {
+      return readCore(8);
+    }
+  } catch {
+    // fall through
+  }
+
+  // Lenient path: assume standard Anchor 8-byte discriminator prefix.
+  return readCore(8);
+}

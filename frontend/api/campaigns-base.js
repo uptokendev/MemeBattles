@@ -54,10 +54,31 @@ function normalizeOutputAddress(value, chainId) {
   return SOLANA_CHAIN_IDS.has(Number(chainId)) ? raw : raw.toLowerCase();
 }
 
+function solanaFieldsFromMeta(meta, chainId) {
+  if (!SOLANA_CHAIN_IDS.has(Number(chainId))) return null;
+  const solana = meta && typeof meta === "object" ? meta.solana : null;
+  if (!solana || typeof solana !== "object") return null;
+  const tokenVault = String(solana.tokenVault || "").trim() || null;
+  const solVault = String(solana.solVault || "").trim() || null;
+  const campaignIdHex = String(solana.campaignIdHex || solana.campaignId || "")
+    .replace(/^0x/i, "")
+    .trim()
+    .toLowerCase();
+  const programId = String(solana.programId || "").trim() || null;
+  if (!tokenVault && !solVault && !campaignIdHex) return null;
+  return {
+    tokenVault,
+    solVault,
+    campaignIdHex: /^[0-9a-f]{64}$/.test(campaignIdHex) ? campaignIdHex : null,
+    programId,
+  };
+}
+
 function mapCampaignRow(row, gradTargetBnb) {
   const chainId = Number(row.chain_id);
   const campaignAddress = normalizeOutputAddress(row.campaign_address, chainId);
   const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
+  const solana = solanaFieldsFromMeta(row.meta, chainId);
 
   return {
     chainId,
@@ -95,6 +116,16 @@ function mapCampaignRow(row, gradTargetBnb) {
     progressPct: row.progress_pct != null ? Number(row.progress_pct) : null,
     etaSec: row.eta_sec != null ? Number(row.eta_sec) : null,
     gradTargetBnb,
+
+    // Solana V4 bonding vaults (from campaigns.meta.solana) — used by trade-authorize.
+    ...(solana
+      ? {
+          tokenVault: solana.tokenVault,
+          solVault: solana.solVault,
+          campaignIdHex: solana.campaignIdHex,
+          solanaProgramId: solana.programId,
+        }
+      : {}),
   };
 }
 
@@ -154,6 +185,7 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        c.graduated_block,
        c.graduated_at_chain,
        c.is_active,
+       c.meta,
        null::numeric as last_price_bnb,
        null::numeric as sold_tokens,
        null::numeric as marketcap_bnb,
@@ -278,6 +310,7 @@ export default async function handler(req, res) {
           c.graduated_block,
           c.graduated_at_chain,
           c.is_active,
+          c.meta,
           ts.last_price_bnb,
           ts.sold_tokens,
           ts.marketcap_bnb,
