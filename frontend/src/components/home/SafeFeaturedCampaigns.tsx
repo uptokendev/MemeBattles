@@ -508,8 +508,8 @@ async function loadFeaturedSponsorSlot(chainId: number): Promise<FeaturedSponsor
       isHouseAd: isHouse,
     };
   } catch {
-    // Network failure: keep house CTA as a soft fallback so the board still has a cell.
-    return { ...FEATURED_HOUSE_AD };
+    // Do not flash house inventory on transient errors — leave the cell empty/skeleton.
+    return null;
   }
 }
 
@@ -649,11 +649,12 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
 
   // Initial / chain-switch hard load (full hydrate once). Soft updates never remount the board.
   // Sponsor is loaded separately so organic soft-polls never drop the fixed top-left cell.
+  // Never pre-paint the house "Advertise here" banner — that flashes over live partners (e.g. Derpy Dave).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setItems([]);
-    setSponsor({ ...FEATURED_HOUSE_AD });
+    setSponsor(null);
     void (async () => {
       try {
         const [apiCandidates, publicDrafts, sponsorSlot] = await Promise.all([
@@ -661,7 +662,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           fetchPublicCampaignDrafts({ chainId, limit: 100 }).catch(() => []),
           loadFeaturedSponsorSlot(chainId),
         ]);
-        if (!cancelled) setSponsor(sponsorSlot || { ...FEATURED_HOUSE_AD });
+        if (!cancelled) setSponsor(sponsorSlot);
         const draftLogoByIdentity = new Map<string, string>();
         for (const draft of publicDrafts) {
           if (!usefulImage(draft.logoUrl)) continue;

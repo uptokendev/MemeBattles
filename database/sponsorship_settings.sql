@@ -18,6 +18,8 @@ VALUES (
 ON CONFLICT (key) DO NOTHING;
 
 GRANT SELECT, INSERT, UPDATE ON TABLE public.sponsorship_settings TO anon, authenticated;
+-- Dashboard "Remove ad" needs DELETE on placements.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.sponsored_placements TO anon, authenticated;
 ALTER TABLE public.sponsorship_settings DISABLE ROW LEVEL SECURITY;
 
 -- Align feed view: waived partner grants count as live-eligible.
