@@ -320,3 +320,31 @@ Stop immediately when:
 ## Next dependency after devnet create acceptance
 
 Recalculate the build order after deployment and initialization evidence is complete. The likely highest-value implementation is the wallet transaction builder plus real devnet Draft Deploy Now and Countdown Create acceptance because it validates the complete backend-to-wallet-to-program boundary before bonding logic is introduced.
+
+## P1 bonding trade smoke (after create acceptance)
+
+Create acceptance intentionally leaves **buy/sell paused**. Do not treat create success as trade-ready.
+
+Operator guide (plain language): [`docs/solana/devnet-trade-smoke.md`](./solana/devnet-trade-smoke.md)
+
+```bash
+export SOLANA_RPC_URL="https://api.devnet.solana.com"
+export SOLANA_LAUNCHPAD_PROGRAM_ID="<PROGRAM_ID>"
+export SOLANA_OPERATOR_KEYPAIR="$HOME/.config/memewarzone/solana-devnet/deployer.json"
+
+# Read pause flags + whether IDL includes buy_tokens/sell_tokens
+npm --prefix tests/solana run devnet:trade-ops -- status
+
+# Profiles
+npm --prefix tests/solana run devnet:trade-ops -- sync-creator <CREATOR>
+npm --prefix tests/solana run devnet:trade-ops -- sync-risk <BUYER>
+
+# After program upgrade with buy/sell: open trade window (grad/claims stay paused)
+npm --prefix tests/solana run devnet:trade-ops -- unpause-trade
+
+# Railway only after unpause: SOLANA_TRADE_AUTH_ENABLED=true
+# Then buyer smoke on TokenDetails; when done:
+npm --prefix tests/solana run devnet:trade-ops -- pause-trade
+```
+
+**Do not** re-run `devnet:bootstrap` while trading is unpaused — bootstrap re-applies canonical `buyPaused`/`sellPaused` from `config/solana/devnet-generation-v1.json`.

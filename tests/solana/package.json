@@ -7,7 +7,10 @@
     "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs",
     "devnet:bootstrap": "node devnet-protocol-state.cjs bootstrap",
     "devnet:verify": "node devnet-protocol-state.cjs verify",
-    "devnet:check": "node --check devnet-protocol-state.cjs"
+    "devnet:check": "node --check devnet-protocol-state.cjs",
+    "devnet:trade-ops": "node devnet-trade-ops.cjs",
+    "devnet:trade-status": "node devnet-trade-ops.cjs status",
+    "devnet:trade-checklist": "node devnet-trade-ops.cjs checklist"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.30.1",
