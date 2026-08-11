@@ -394,7 +394,7 @@ export async function draftDeploy(req, res) {
           if (!(err instanceof TickerReservationError)) throw err;
         }
         const draft = mapDraftRow(updated.rows[0]);
-        await upsertCampaignFromDraft(db, {
+        const registry = await upsertCampaignFromDraft(db, {
           chainId: Number(row.chain_id),
           campaignAddress: existingCampaign,
           tokenAddress: tokenAddress || draft?.tokenAddress || null,
@@ -403,14 +403,17 @@ export async function draftDeploy(req, res) {
           symbol: row.ticker || draft?.ticker,
           logoUrl: row.logo_url || draft?.logoUrl,
           deployTxHash: deployTxHash || "already-on-chain",
+          factoryAddress: String(body.factoryAddress || "").trim() || null,
         });
-        return { draft, tickerReservation };
+        return { draft, tickerReservation, registry };
       });
       return json(res, 200, {
         ok: true,
         alreadyDeployed: true,
         draft: redeployed.draft,
         tickerReservation: redeployed.tickerReservation,
+        registryUpserted: Boolean(redeployed.registry?.ok),
+        registryError: redeployed.registry?.ok ? null : redeployed.registry?.error || null,
       });
     } catch (error) {
       if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
@@ -448,7 +451,7 @@ export async function draftDeploy(req, res) {
         programId: String(body.factoryAddress || "").trim() || null,
         generationId: body.generationId == null ? null : String(body.generationId),
       });
-      await upsertCampaignFromDraft(db, {
+      const registry = await upsertCampaignFromDraft(db, {
         chainId: Number(row.chain_id),
         campaignAddress,
         tokenAddress: tokenAddress || draft?.tokenAddress || null,
@@ -457,8 +460,9 @@ export async function draftDeploy(req, res) {
         symbol: row.ticker || draft?.ticker,
         logoUrl: row.logo_url || draft?.logoUrl,
         deployTxHash,
+        factoryAddress: String(body.factoryAddress || "").trim() || null,
       });
-      return { draft, tickerReservation };
+      return { draft, tickerReservation, registry };
     });
   } catch (error) {
     if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
@@ -486,5 +490,10 @@ export async function draftDeploy(req, res) {
   await notifyDraftOwner(pool, draft, launchNotification);
   await notifyDraftSubscribers(pool, draft, launchNotification);
 
-  return json(res, 200, { draft, tickerReservation: deployed.tickerReservation });
+  return json(res, 200, {
+    draft,
+    tickerReservation: deployed.tickerReservation,
+    registryUpserted: Boolean(deployed.registry?.ok),
+    registryError: deployed.registry?.ok ? null : deployed.registry?.error || null,
+  });
 }

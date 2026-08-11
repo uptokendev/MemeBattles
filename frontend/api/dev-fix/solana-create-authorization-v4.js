@@ -691,7 +691,7 @@ async function finalizeExistingOnChainDeployment({
       );
       tickerReservation = await loadTickerReservationByDraft(db, draftId).catch(() => reservation || null);
     }
-    await upsertCampaignFromDraft(db, {
+    const registry = await upsertCampaignFromDraft(db, {
       chainId: Number(draft.chain_id),
       campaignAddress,
       tokenAddress: mintAddress || null,
@@ -700,8 +700,16 @@ async function finalizeExistingOnChainDeployment({
       symbol: draft.ticker,
       logoUrl: draft.logo_url,
       deployTxHash: "already-on-chain",
+      factoryAddress: programId,
     });
-    return { draftRow: updated.rows[0] || null, tickerReservation };
+    if (!registry?.ok) {
+      console.error("[solana-v4-create] campaigns registry upsert failed during recovery", registry);
+    }
+    return {
+      draftRow: updated.rows[0] || null,
+      tickerReservation,
+      registry,
+    };
   });
 
   const accounts = {
@@ -768,12 +776,19 @@ async function finalizeExistingOnChainDeployment({
   }
 
   const metadata = normalizeDraftMetadata(draft, reservation || { normalizedTicker: draft.ticker });
+  const mint = mintAddress || accounts.mint;
+  const registryOk = Boolean(finalized.registry?.ok);
+  const tokenPath = `/token/${encodeURIComponent(mint || campaignAddress)}?chainId=${Number(draft.chain_id) || 101}`;
 
   return {
     schemaVersion: CREATE_AUTH_SCHEMA_VERSION,
     mode: isScheduled ? "countdown" : "draft_deploy_now",
     alreadyOnChain: true,
     draftFinalized: true,
+    registryUpserted: registryOk,
+    registryError: registryOk ? null : finalized.registry?.error || null,
+    registryAttempts: finalized.registry?.attempts || null,
+    tokenPath,
     cluster,
     programId,
     createArgs: null,
@@ -787,15 +802,18 @@ async function finalizeExistingOnChainDeployment({
     },
     existingDeployment: {
       campaignAddress,
-      mintAddress: mintAddress || accounts.mint,
+      mintAddress: mint,
       recovered: true,
       draftStatus: finalized.draftRow?.status || "deployed",
+      registryUpserted: registryOk,
+      tokenPath,
     },
     tickerReservation: finalized.tickerReservation,
     preflight: {
       chainNow: onchain.chainNow,
       recovery: true,
       draftFinalized: true,
+      registryUpserted: registryOk,
       globalSecurityDefaultsLocked: onchain.global.securityDefaultsLocked,
       creatorTier: onchain.creatorProfile.tier,
       creatorLiveBondingCount: onchain.creatorProfile.liveBondingCount,
@@ -805,7 +823,7 @@ async function finalizeExistingOnChainDeployment({
     },
     transaction: null,
     transactionPolicy:
-      "Campaign already exists on-chain. Railway finalized the draft; no wallet create transaction is required.",
+      "Campaign already exists on-chain. Railway finalized the draft and registered it for the feed; open the token page.",
   };
 }
 

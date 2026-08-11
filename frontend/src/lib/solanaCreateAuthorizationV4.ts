@@ -109,11 +109,18 @@ export type SolanaV4CreateAuthorizationResponse = {
   alreadyOnChain?: boolean;
   /** Server already wrote campaign_address / reservation LIVE — client may skip mark-deploy. */
   draftFinalized?: boolean;
+  /** campaigns table upsert succeeded during recovery. */
+  registryUpserted?: boolean;
+  registryError?: string | null;
+  /** Preferred post-deploy route, e.g. /token/<mint>?chainId=101 */
+  tokenPath?: string;
   existingDeployment?: {
     campaignAddress: string;
     mintAddress: string;
     recovered: boolean;
     draftStatus?: string;
+    registryUpserted?: boolean;
+    tokenPath?: string;
   };
 };
 

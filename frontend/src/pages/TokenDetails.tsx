@@ -19,7 +19,9 @@ import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity }
 import {
   getActiveChainId,
   getEvmReadChainIdForTokenPage,
+  isSolanaChainId,
   pinTokenDetailsChainId,
+  SOLANA_CHAIN_ID,
   type SupportedChainId,
 } from "@/lib/chainConfig";
 import { resolveMarketIdentity, resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
@@ -534,10 +536,12 @@ const TokenDetails = () => {
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   // Must be declared BEFORE chainIdForStorage — using campaignAddr in a prior const
   // caused TDZ: "Cannot access 'Q' before initialization" and crashed TokenDetails.
-  const campaignAddr = useMemo(
-    () => String(campaign?.campaign ?? campaignAddress ?? "").trim().toLowerCase(),
-    [campaign?.campaign, campaignAddress],
-  );
+  const campaignAddr = useMemo(() => {
+    const raw = String(campaign?.campaign ?? campaignAddress ?? "").trim();
+    // Solana base58 is case-sensitive — never lowercase.
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) && !raw.startsWith("0x")) return raw;
+    return raw.toLowerCase();
+  }, [campaign?.campaign, campaignAddress]);
   // Pinned/featured/default EVM chain — NOT wallet network (see getEvmReadChainIdForTokenPage).
   const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => getEvmReadChainIdForTokenPage());
   const chainIdForStorage = pageChainId;
@@ -704,7 +708,12 @@ const TokenDetails = () => {
         setError(null);
 
         const param = campaignAddress.trim();
-        const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
+        const isEvmAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
+        const isSolanaAddressParam =
+          !isEvmAddress &&
+          param.length >= 32 &&
+          param.length <= 44 &&
+          /^[1-9A-HJ-NP-Za-km-z]+$/.test(param);
 
         // ── Fast path for /token/0x… ─────────────────────────────────────────
         // Avoid: full campaign feed, lifecycle×500, dual-chain resolve before paint,
@@ -713,7 +722,89 @@ const TokenDetails = () => {
         let resolvedCampaignFromIndexer = "";
         let match: CampaignInfo | null = null;
 
-        if (isAddress) {
+        // ── Solana base58 mint / campaign PDA ────────────────────────────────
+        // No EVM contract reads. Resolve from campaigns registry or draft link.
+        if (isSolanaAddressParam) {
+          loadChainId = SOLANA_CHAIN_ID;
+          if (pageChainId !== SOLANA_CHAIN_ID) {
+            pinTokenDetailsChainId(SOLANA_CHAIN_ID);
+            setPageChainId(SOLANA_CHAIN_ID);
+          }
+
+          const res = await apiFetch(
+            `/api/campaigns?chainId=${SOLANA_CHAIN_ID}&limit=500&tab=trending&sort=default&status=all`,
+            { cache: "no-store" },
+          );
+          const json = await res.json().catch(() => ({}));
+          const items = Array.isArray(json?.items) ? json.items : [];
+          const hit = items.find((item: any) => {
+            const c = String(item?.campaignAddress || item?.campaign || "").trim();
+            const t = String(item?.tokenAddress || item?.token || "").trim();
+            return c === param || t === param;
+          });
+
+          if (hit) {
+            match = {
+              id: 0,
+              campaign: String(hit.campaignAddress || hit.campaign || param),
+              token: String(hit.tokenAddress || hit.token || param),
+              creator: String(hit.creatorAddress || hit.creator || ""),
+              name: String(hit.name || "Solana campaign"),
+              symbol: String(hit.symbol || ""),
+              logoURI: String(hit.logoUri || hit.logoURI || hit.logo_url || "/placeholder.svg"),
+              metadataURI: undefined,
+              xAccount: String(hit.xAccount || ""),
+              website: String(hit.website || ""),
+              extraLink: String(hit.extraLink || ""),
+              createdAt: hit.createdAtChain
+                ? Math.floor(new Date(hit.createdAtChain).getTime() / 1000)
+                : undefined,
+            } as CampaignInfo;
+            resolvedCampaignFromIndexer = match.campaign;
+          } else {
+            // Fallback: draft may be linked but not yet in campaigns feed.
+            // Use param as both campaign + token so the page still paints.
+            match = {
+              id: 0,
+              campaign: param,
+              token: param,
+              creator: "",
+              name: "Solana campaign",
+              symbol: "",
+              logoURI: "/placeholder.svg",
+              metadataURI: undefined,
+              xAccount: "",
+              website: "",
+              extraLink: "",
+            } as CampaignInfo;
+            resolvedCampaignFromIndexer = param;
+            console.warn(
+              "[TokenDetails] Solana address not found in /api/campaigns — showing provisional shell. Retry Push Live to upsert registry.",
+            );
+          }
+
+          setCampaign(match);
+          // Solana bonding metrics/trades are P1 — do not call EVM metric loaders.
+          setMetrics({
+            sold: 0n,
+            curveSupply: 0n,
+            liquiditySupply: 0n,
+            creatorReserve: 0n,
+            basePrice: 0n,
+            priceSlope: 0n,
+            graduationTarget: 0n,
+            graduationNativeTarget: 0n,
+            liquidityBps: 0n,
+            protocolFeeBps: 0n,
+            currentPrice: 0n,
+            launched: true,
+            finalizedAt: 0n,
+          } as CampaignMetrics);
+          setLoading(false);
+          return;
+        }
+
+        if (isEvmAddress) {
           const loadProvider = getReadProvider(loadChainId);
 
           // Parallel: prefer page chain resolve + treat param as campaign contract.
@@ -873,7 +964,7 @@ const TokenDetails = () => {
         setMetrics(summaryResult.s.metrics ?? null);
 
         const canonicalTokenAddress = String(displayMatch.token ?? "").trim().toLowerCase();
-        if (isAddress && ethers.isAddress(canonicalTokenAddress) && param.toLowerCase() !== canonicalTokenAddress) {
+        if (isEvmAddress && ethers.isAddress(canonicalTokenAddress) && param.toLowerCase() !== canonicalTokenAddress) {
           navigate(`/token/${canonicalTokenAddress}${location.search || ""}`, { replace: true });
         }
       } catch (err) {

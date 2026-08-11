@@ -282,35 +282,48 @@ export default function PushDraftLive() {
         }
       }
 
-      // Server-side recovery: campaign already on-chain and draft was finalized in authorize.
+      // Server-side recovery: campaign already on-chain — finalize draft + open token page.
       if (authorization.alreadyOnChain || authorization.draftFinalized || authorization.existingDeployment) {
         const campaignAddress =
           authorization.existingDeployment?.campaignAddress || authorization.accounts?.campaign || "";
         const mintAddress =
           authorization.existingDeployment?.mintAddress || authorization.accounts?.mint || "";
+        const chainId = Number(draft.chainId) || 101;
+        const tokenPath =
+          (authorization as any).tokenPath ||
+          authorization.existingDeployment?.tokenPath ||
+          `/token/${encodeURIComponent(mintAddress || campaignAddress)}?chainId=${chainId}`;
 
-        if (!authorization.draftFinalized) {
-          // Older recovery response without server finalize — still mark once.
-          try {
-            await markDraftDeployment({
-              draftId: draft.id,
-              auth: deployAuth,
-              campaignAddress,
-              tokenAddress: mintAddress,
-              deployTxHash: "already-on-chain",
-              scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
-            });
-          } catch (markErr: any) {
-            console.warn("[PushDraftLive] recovery mark-deploy", markErr);
-            // authorize recovery may have partially linked; treat as success if campaign known
-          }
+        // Always re-run mark-deploy so campaigns registry upsert is retried (idempotent).
+        try {
+          await markDraftDeployment({
+            draftId: draft.id,
+            auth: deployAuth,
+            campaignAddress,
+            tokenAddress: mintAddress,
+            deployTxHash: "already-on-chain",
+            scheduledLaunchAt: mode === "scheduled" && launchAt !== "0" ? Number(launchAt) : null,
+          });
+        } catch (markErr: any) {
+          console.warn("[PushDraftLive] recovery mark-deploy", markErr);
         }
 
-        toast.success(
-          `Existing Solana campaign linked to this draft (${campaignAddress.slice(0, 8)}…). No new create was sent.`,
-          { duration: 12_000 },
-        );
-        navigate(`/prepare/${draft.slug}`);
+        const registryOk =
+          (authorization as any).registryUpserted !== false &&
+          !(authorization as any).registryError;
+
+        if (!registryOk && (authorization as any).registryError) {
+          toast.message(
+            `On-chain campaign linked, but feed registry upsert reported: ${String((authorization as any).registryError).slice(0, 120)}. Opening token page anyway.`,
+            { duration: 16_000 },
+          );
+        } else {
+          toast.success(
+            `Solana campaign is live. Opening token page (${(mintAddress || campaignAddress).slice(0, 8)}…). Bonding buy/sell lands in P1.`,
+            { duration: 12_000 },
+          );
+        }
+        navigate(tokenPath);
         return;
       }
 
@@ -375,12 +388,13 @@ export default function PushDraftLive() {
         }
       }
 
+      const livePath = `/token/${encodeURIComponent(created.mintAddress || created.campaignAddress)}?chainId=${Number(draft.chainId) || 101}`;
       toast.success(
         mode === "scheduled"
-          ? "Solana campaign deployed (V4). Trading opens at the scheduled time when buy is enabled (P1)."
-          : "Solana campaign deployed (V4). Bonding buy/sell lands in parity P1.",
+          ? "Solana campaign deployed (V4). Opening token page — trading opens at the scheduled time (P1)."
+          : "Solana campaign deployed (V4). Opening token page — bonding buy/sell lands in parity P1.",
       );
-      navigate(`/prepare/${draft.slug}`);
+      navigate(livePath);
     } catch (error: any) {
       const message = String(error?.message || error || "Solana deploy failed.");
       toast.error(message);
