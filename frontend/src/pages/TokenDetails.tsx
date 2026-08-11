@@ -673,6 +673,8 @@ const TokenDetails = () => {
   /** Solana V4 campaign curve snapshot (quotes / vaults / lock). */
   const [solanaCurve, setSolanaCurve] = useState<import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null>(null);
   const [solanaBalanceTick, setSolanaBalanceTick] = useState(0);
+  /** SOL/USD for graduation target conversion (USD micros → SOL lamports). */
+  const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
   /** V4 tokens use on-chain decimals (default 6); EVM launchpad tokens use 18. */
   const tokenDecimals = isSolanaPage ? Number(solanaCurve?.tokenDecimals ?? 6) : TOKEN_DECIMALS;
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
@@ -2006,7 +2008,32 @@ const bnbUsd = useMemo(() => {
     };
   }, [campaign?.campaign, fetchCampaignActivity]);
 
-  // Solana: load campaign curve snapshot (quotes, vaults, lock, reserve).
+  // Solana: SOL/USD for $ graduation → native remaining (mirrors BNB oracle target).
+  useEffect(() => {
+    if (!isSolanaPage) {
+      setSolUsdPrice(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+          { cache: "no-store" },
+        );
+        const json = await res.json();
+        const p = Number(json?.solana?.usd);
+        if (!cancelled && Number.isFinite(p) && p > 0) setSolUsdPrice(p);
+      } catch {
+        if (!cancelled) setSolUsdPrice(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSolanaPage]);
+
+  // Solana: load campaign curve snapshot and feed metrics (progress / quotes / reserve).
   useEffect(() => {
     if (!isSolanaPage || !campaign?.campaign) {
       setSolanaCurve(null);
@@ -2016,18 +2043,71 @@ const bnbUsd = useMemo(() => {
     (async () => {
       try {
         const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
-        const preferred =
-          (campaign as { campaignPda?: string }).campaignPda ||
-          (campaign.campaign !== campaign.token ? campaign.campaign : null);
-        const state = await resolveSolanaCampaignCurve(
-          String(campaign.campaign),
-          preferred ? String(preferred) : null,
-        );
-        if (!cancelled) {
-          setSolanaCurve(state);
-          if (state?.netRaisedLamports != null) {
-            setCurveReserveWei(state.netRaisedLamports);
-          }
+        // Prefer dedicated campaign PDA; URL may be mint-only.
+        const candidates = [
+          (campaign as { campaignPda?: string }).campaignPda,
+          campaign.campaign !== campaign.token ? campaign.campaign : null,
+          campaign.campaign,
+          campaign.token,
+        ]
+          .map((x) => String(x || "").trim())
+          .filter(Boolean);
+        let state: import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null = null;
+        for (const addr of candidates) {
+          state = await resolveSolanaCampaignCurve(addr);
+          if (state && state.curveTokenSupply > 0n) break;
+        }
+        if (cancelled) return;
+        setSolanaCurve(state);
+        if (!state) return;
+
+        setCurveReserveWei(state.netRaisedLamports);
+
+        // $ target (micros) → SOL lamports for raised % / remaining (BNB uses oracle native target).
+        let graduationNativeTarget = 0n;
+        if (solUsdPrice && solUsdPrice > 0 && state.graduationTargetUsdMicros > 0n) {
+          const priceScaled = BigInt(Math.max(1, Math.round(solUsdPrice * 1_000_000)));
+          // lamports = usd_micros / 1e6 / price * 1e9 = usd_micros * 1e3 / price
+          // with priceScaled = price * 1e6: lamports = usd_micros * 1e9 / priceScaled
+          graduationNativeTarget =
+            (state.graduationTargetUsdMicros * 1_000_000_000n) / priceScaled;
+        }
+
+        // Spot price (lamports per raw token) for display helpers.
+        const spot =
+          state.basePriceLamports +
+          (state.priceSlopeLamports * state.soldTokens); // linear approx at margin
+
+        setMetrics({
+          sold: state.soldTokens,
+          curveSupply: state.curveTokenSupply,
+          liquiditySupply: 0n,
+          creatorReserve: state.tokenTotalSupply > state.curveTokenSupply
+            ? state.tokenTotalSupply - state.curveTokenSupply
+            : 0n,
+          basePrice: state.basePriceLamports,
+          priceSlope: state.priceSlopeLamports,
+          graduationTarget: state.graduationTargetUsdMicros,
+          graduationNativeTarget,
+          liquidityBps: 0n,
+          protocolFeeBps: BigInt(state.buyFeeBps),
+          currentPrice: spot > 0n ? spot : state.basePriceLamports,
+          launched: false,
+          finalizedAt: 0n,
+        } as CampaignMetrics);
+
+        // Keep campaign.token = mint when we only had a mint URL.
+        if (state.mint && (!campaign.token || campaign.token === campaign.campaign)) {
+          setCampaign((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  campaign: state.campaignAddress || prev.campaign,
+                  token: state.mint,
+                  creator: state.creator || prev.creator,
+                }
+              : prev,
+          );
         }
       } catch (e) {
         console.warn("[TokenDetails] Solana curve load failed", e);
@@ -2037,7 +2117,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [isSolanaPage, campaign?.campaign, campaign?.token, solanaBalanceTick]);
+  }, [isSolanaPage, campaign?.campaign, campaign?.token, solanaBalanceTick, solUsdPrice]);
 
   // Wallet balances (for the trading panel)
   useEffect(() => {
@@ -2198,22 +2278,28 @@ const bnbUsd = useMemo(() => {
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:
-    // - metrics.sold is TOKEN wei sold on the bonding curve.
-    // - metrics.curveSupply is TOKEN wei available to sell on the curve.
-    // - metrics.graduationNativeTarget is the oracle-converted BNB reserve target.
-    // The contract graduates when either:
-    //   sold >= curveSupply   OR   reserve >= graduationTarget
+    // - metrics.sold is TOKEN base units sold on the bonding curve.
+    // - metrics.curveSupply is TOKEN base units available on the curve.
+    // - metrics.graduationNativeTarget is native reserve target (BNB wei or SOL lamports).
+    // Graduates when sold >= curveSupply OR reserve >= graduationTarget (chain-specific).
 
-    const sold = metrics?.sold ?? 0n;
-    const curveSupply = metrics?.curveSupply ?? 0n;
+    // Prefer live Solana curve snapshot when present (TokenDetails zeros EVM metrics on Solana shell).
+    const sold = isSolanaPage
+      ? (solanaCurve?.soldTokens ?? metrics?.sold ?? 0n)
+      : (metrics?.sold ?? 0n);
+    const curveSupply = isSolanaPage
+      ? (solanaCurve?.curveTokenSupply ?? metrics?.curveSupply ?? 0n)
+      : (metrics?.curveSupply ?? 0n);
     const targetWei = metrics?.graduationNativeTarget ?? 0n;
-    const reserveWei = curveReserveWei ?? 0n;
+    const reserveWei = isSolanaPage
+      ? (solanaCurve?.netRaisedLamports ?? curveReserveWei ?? 0n)
+      : (curveReserveWei ?? 0n);
 
+    // High-precision % for micro progress (expensive early curves show 0.00% at 2dp).
     const soldPct =
-      curveSupply > 0n ? Number(((sold * 10000n) / curveSupply)) / 100 : 0;
-
+      curveSupply > 0n ? Number(sold * 1_000_000n / curveSupply) / 10_000 : 0;
     const raisedPct =
-      targetWei > 0n ? Number(((reserveWei * 10000n) / targetWei)) / 100 : 0;
+      targetWei > 0n ? Number(reserveWei * 1_000_000n / targetWei) / 10_000 : 0;
 
     const reachedSold = curveSupply > 0n && sold >= curveSupply;
     const reachedRaised = targetWei > 0n && reserveWei >= targetWei;
@@ -2248,7 +2334,17 @@ const bnbUsd = useMemo(() => {
       soldPct: Math.max(0, Math.min(100, soldPct)),
       raisedPct: Math.max(0, Math.min(100, raisedPct)),
     };
-  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationNativeTarget, curveReserveWei]);
+  }, [
+    isDexStage,
+    isSolanaPage,
+    solanaCurve?.soldTokens,
+    solanaCurve?.curveTokenSupply,
+    solanaCurve?.netRaisedLamports,
+    metrics?.sold,
+    metrics?.curveSupply,
+    metrics?.graduationNativeTarget,
+    curveReserveWei,
+  ]);
 
     const remainingCurveWei = useMemo(() => {
     // Remaining BNB needed to reach the graduation target (reserve-based trigger).
@@ -3861,13 +3957,24 @@ const bnbUsd = useMemo(() => {
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <h3 className="text-sm font-semibold">Graduation progress</h3>
                   <span className="text-xs text-muted-foreground">
-                    {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
+                    {curveProgress.matured
+                      ? "Matured"
+                      : curveProgress.pct > 0 && curveProgress.pct < 0.01
+                        ? `${curveProgress.pct.toFixed(6)}%`
+                        : `${curveProgress.pct.toFixed(2)}%`}
                   </span>
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-snug mb-2">
                   Graduates when <span className="text-foreground/80">tokens sold</span> hit the curve
                   supply <span className="text-foreground/80">or</span> {nativeUnit} raised hits the target
-                  (testnet target can be tiny, so {nativeUnit} % can look large).
+                  (testnet ${isSolanaPage ? "6" : "target"} can be tiny, so {nativeUnit} % can look large).
+                  {isSolanaPage && solanaCurve ? (
+                    <>
+                      {" "}Curve: {formatTokenFromWei(solanaCurve.soldTokens)} /{" "}
+                      {formatTokenFromWei(solanaCurve.curveTokenSupply)} sold ·{" "}
+                      {formatBnbFromWei(solanaCurve.netRaisedLamports)} net raised.
+                    </>
+                  ) : null}
                 </p>
 
                 <div className="mt-3 h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
@@ -3880,11 +3987,19 @@ const bnbUsd = useMemo(() => {
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-muted-foreground">Tokens sold</p>
-                    <p className="mt-1 font-mono text-foreground">{curveProgress.soldPct.toFixed(2)}%</p>
+                    <p className="mt-1 font-mono text-foreground">
+                      {curveProgress.soldPct > 0 && curveProgress.soldPct < 0.01
+                        ? `${curveProgress.soldPct.toFixed(6)}%`
+                        : `${curveProgress.soldPct.toFixed(2)}%`}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-muted-foreground">{nativeUnit} raised</p>
-                    <p className="mt-1 font-mono text-foreground">{curveProgress.raisedPct.toFixed(2)}%</p>
+                    <p className="mt-1 font-mono text-foreground">
+                      {curveProgress.raisedPct > 0 && curveProgress.raisedPct < 0.01
+                        ? `${curveProgress.raisedPct.toFixed(6)}%`
+                        : `${curveProgress.raisedPct.toFixed(2)}%`}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">In curve</p>
