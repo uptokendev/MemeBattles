@@ -1508,8 +1508,36 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
   // Graduated: bonding history + Topaz scan + wallet reports + unified market API.
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
     // Always keep bonding curve history (including after graduation).
-    const bonding = mergeTradePoints(curvePointsForUi, confirmedCurvePoints);
+    // Include localTopazTrades on bonding too — Solana fills land here until indexer events exist.
+    const bonding = mergeTradePoints(curvePointsForUi, confirmedCurvePoints, localTopazTrades);
     if (!contractGraduatedEarly) {
+      // Solana: seed one anchor from sold/net_raised so chart is not blank before first local fill.
+      if (
+        isSolanaPage &&
+        bonding.length === 0 &&
+        solanaCurve &&
+        solanaCurve.soldTokens > 0n &&
+        solanaCurve.netRaisedLamports > 0n
+      ) {
+        const dec = Number(solanaCurve.tokenDecimals || 6);
+        const tokens = Number(ethers.formatUnits(solanaCurve.soldTokens, dec));
+        const sol = Number(ethers.formatUnits(solanaCurve.netRaisedLamports, 9));
+        const price = tokens > 0 ? sol / tokens : 0;
+        return [
+          {
+            type: "buy" as const,
+            from: solanaCurve.creator || "11111111111111111111111111111111",
+            to: solanaCurve.mint || "",
+            tokensWei: solanaCurve.soldTokens,
+            nativeWei: solanaCurve.netRaisedLamports,
+            pricePerToken: Number.isFinite(price) ? price : 0,
+            timestamp: Math.floor(Date.now() / 1000) - 600,
+            txHash: `solana-seed-${solanaCurve.campaignAddress.slice(0, 16)}`,
+            blockNumber: 1,
+            logIndex: SYNTHETIC_LOG_INDEX_MIN + 2,
+          },
+        ];
+      }
       return bonding;
     }
     const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
@@ -1581,9 +1609,11 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     confirmedCurvePoints,
     contractGraduatedEarly,
     curvePointsForUi,
+    isSolanaPage,
     metrics?.currentPrice,
     metrics?.sold,
     resolvedCampaignAddress,
+    solanaCurve,
     topazMarket.trades,
     localTopazTrades,
     unifiedMarket.trades,
@@ -2887,6 +2917,38 @@ const bnbUsd = useMemo(() => {
           title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
           description: `Tx: ${result.signature.slice(0, 12)}…`,
         });
+
+        // Optimistic trade point for chart + trades table (indexer Solana events later).
+        try {
+          const tokensOut =
+            tradeTab === "buy"
+              ? effectiveTokenWei > 0n
+                ? effectiveTokenWei
+                : 0n
+              : amountIn;
+          const nativeAmt = tradeTab === "buy" ? amountIn : quoteWei != null && quoteWei > 0n ? quoteWei : 0n;
+          const tokenHuman = Number(ethers.formatUnits(tokensOut > 0n ? tokensOut : 1n, decimals));
+          const solHuman = Number(ethers.formatUnits(nativeAmt > 0n ? nativeAmt : 0n, 9));
+          const pricePerToken = tokenHuman > 0 ? solHuman / tokenHuman : 0;
+          const point: CurveTradePoint = {
+            type: tradeTab === "buy" ? "buy" : "sell",
+            from: trader,
+            to: mint,
+            tokensWei: tokensOut,
+            nativeWei: nativeAmt,
+            pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+            timestamp: Math.floor(Date.now() / 1000),
+            txHash: result.signature,
+            blockNumber: 0,
+            logIndex: SYNTHETIC_LOG_INDEX_MIN + (localTopazTrades.length % 1000),
+          };
+          const storageKey = campaignPda || mint;
+          const next = appendLocalTopazTrade(chainIdForStorage, storageKey, point);
+          setLocalTopazTrades(next);
+        } catch (histErr) {
+          console.warn("[TokenDetails] solana local trade history", histErr);
+        }
+
         setSolanaBalanceTick((n) => n + 1);
       } catch (e: any) {
         console.error("[TokenDetails] Solana trade failed", e);

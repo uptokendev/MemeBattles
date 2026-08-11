@@ -1053,21 +1053,22 @@ mod tests {
     fn linear_cost_v2_bnb_parity_first_token() {
         // V2: base=1 lamport per whole token, 6 decimals → 1 full token costs 1 lamport
         let one_token = 1_000_000u64;
-        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V2, 1, 1, 0, one_token, 6).unwrap();
+        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V1, ECONOMICS_VERSION_V2, 1, 0, 0, one_token, 6).unwrap();
         assert_eq!(cost, 1);
     }
 
     #[test]
     fn quote_buy_v2_point_zero_one_sol() {
-        // 0.01 SOL net ≈ 9_800_000 after 2% fee on 10M; here use net directly.
+        // 0.01 SOL net; base=1 lamport/whole token, slope=0 → ~9.8M whole tokens.
         let net = 9_800_000u64;
-        let supply = 800_000_000_000_000u64; // 800M tokens @ 6 dec
+        let supply = 840_000_000_000_000u64; // 840M @ 6 dec (84% of 1B)
         let tokens =
-            quote_buy_tokens(ECONOMICS_VERSION_V2, 1, 1, 0, supply, net, 6).unwrap();
+            quote_buy_tokens(ECONOMICS_VERSION_V1, ECONOMICS_VERSION_V2, 1, 0, 0, supply, net, 6).unwrap();
         // ~net * 1e6 / base = 9.8e12 raw ≈ 9.8e6 whole tokens
         assert!(tokens > 1_000_000_000_000); // > 1M whole tokens
-        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V2, 1, 1, 0, tokens, 6).unwrap();
+        let cost = checked_linear_curve_cost(ECONOMICS_VERSION_V1, ECONOMICS_VERSION_V2, 1, 0, 0, tokens, 6).unwrap();
         assert!(cost <= net);
+        assert_eq!(tokens, 9_800_000_000_000);
     }
 
     #[test]
