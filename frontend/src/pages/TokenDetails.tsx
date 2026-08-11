@@ -547,11 +547,18 @@ const TokenDetails = () => {
   const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => {
     try {
       const param = String(campaignAddress || "").trim();
-      if (param && !param.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(param)) {
+      const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
+      if (q === SOLANA_CHAIN_ID || q === 102) return SOLANA_CHAIN_ID;
+      // Valid base58 OR damaged lowercased base58 (length 32–48, not 0x)
+      if (
+        param &&
+        !param.startsWith("0x") &&
+        param.length >= 32 &&
+        param.length <= 48 &&
+        (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(param) || /^[0-9A-Za-z]{32,48}$/.test(param))
+      ) {
         return SOLANA_CHAIN_ID;
       }
-      const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
-      if (q === SOLANA_CHAIN_ID) return SOLANA_CHAIN_ID;
     } catch {
       /* ignore */
     }
@@ -731,6 +738,13 @@ const TokenDetails = () => {
           param.length >= 32 &&
           param.length <= 44 &&
           /^[1-9A-HJ-NP-Za-km-z]+$/.test(param);
+        // Damaged base58 (e.g. .toLowerCase() turned L→l) must still take Solana path.
+        const isDamagedSolanaParam =
+          !isEvmAddress &&
+          !isSolanaAddressParam &&
+          param.length >= 32 &&
+          param.length <= 48 &&
+          /^[0-9A-Za-z]+$/.test(param);
 
         // ── Fast path for /token/0x… ─────────────────────────────────────────
         // Avoid: full campaign feed, lifecycle×500, dual-chain resolve before paint,
@@ -739,9 +753,9 @@ const TokenDetails = () => {
         let resolvedCampaignFromIndexer = "";
         let match: CampaignInfo | null = null;
 
-        // ── Solana base58 mint / campaign PDA ────────────────────────────────
+        // ── Solana base58 mint / campaign PDA (incl. case-damaged URLs) ──────
         // No EVM contract reads. Resolve from campaigns registry or draft link.
-        if (isSolanaAddressParam) {
+        if (isSolanaAddressParam || isDamagedSolanaParam) {
           loadChainId = SOLANA_CHAIN_ID;
           if (pageChainId !== SOLANA_CHAIN_ID) {
             pinTokenDetailsChainId(SOLANA_CHAIN_ID);
@@ -755,6 +769,7 @@ const TokenDetails = () => {
           const json = await res.json().catch(() => ({}));
           const items = Array.isArray(json?.items) ? json.items : [];
           // Case-insensitive match: home grid previously lowercased Solana addrs in the URL.
+          // NEVER keep the lowercased form in state — always prefer registry casing.
           const paramLower = param.toLowerCase();
           const hit = items.find((item: any) => {
             const c = String(item?.campaignAddress || item?.campaign || "").trim();
@@ -790,19 +805,19 @@ const TokenDetails = () => {
               campaignIdHex: hit.campaignIdHex ? String(hit.campaignIdHex) : null,
             } as CampaignInfo;
             resolvedCampaignFromIndexer = match.campaign;
-            // Canonicalize URL case + chainId so bookmarks work.
+            // Always rewrite URL to canonical registry casing + chainId=101.
             const preferred = canonicalToken || canonicalCampaign;
             const desired = `/token/${encodeURIComponent(preferred)}?chainId=${SOLANA_CHAIN_ID}`;
             const current = `${location.pathname}${location.search || ""}`;
-            if (preferred && current !== desired && preferred.toLowerCase() === paramLower) {
+            if (preferred && current !== desired) {
               navigate(desired, { replace: true });
             }
           } else {
-            // Always paint a shell — never "Token not found" for valid Solana base58.
+            // Always paint a shell — never "Token not found" for Solana-shaped ids.
             match = {
               id: 0,
-              campaign: param,
-              token: param,
+              campaign: isSolanaAddressParam ? param : param, // damaged: keep until hit found later
+              token: isSolanaAddressParam ? param : param,
               creator: "",
               name: "Solana campaign",
               symbol: "",
@@ -3091,13 +3106,16 @@ const bnbUsd = useMemo(() => {
                       />
                     </Button>
 
-                    <UpvoteDialog
-                      campaignAddress={campaignAddr}
-                      chainId={chainIdForStorage}
-                      buttonVariant="secondary"
-                      buttonSize="sm"
-                      className="h-8 px-3 text-xs flex-shrink-0"
-                    />
+                    {/* UP Vote is BNB-only (EVM treasury). Never show on Solana. */}
+                    {!isSolanaPage ? (
+                      <UpvoteDialog
+                        campaignAddress={campaignAddr}
+                        chainId={chainIdForStorage}
+                        buttonVariant="secondary"
+                        buttonSize="sm"
+                        className="h-8 px-3 text-xs flex-shrink-0"
+                      />
+                    ) : null}
 
                     {/* CrypticPump badge / list CTA sits to the right of upvote */}
                     {crypticPumpListing?.listingUrl ? (

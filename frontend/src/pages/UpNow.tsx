@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignMetrics, CampaignSummary } from "@/lib/launchpadClient";
 import type { Token } from "@/types/token";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 
 type Tab = "up" | "higher" | "moon";
 
@@ -25,8 +26,12 @@ const TokenCard = ({ token, className }: { token: Token; className?: string }) =
         className ?? ""
       }`}
       onClick={() => {
-        const target = String(token.tokenAddress || token.campaignAddress || "").toLowerCase();
-        if (target) navigate(`/token/${target}`);
+        const path = tokenDetailsPath({
+          tokenAddress: token.tokenAddress,
+          campaignAddress: token.campaignAddress,
+          chainId: (token as any).chainId,
+        });
+        if (path && path !== "/") navigate(path);
       }}
     >
       <div className="flex items-start gap-3">

@@ -17,6 +17,7 @@ import { apiFetch } from "@/lib/apiBase";
 import { getReadProvider } from "@/lib/readProvider";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
@@ -138,16 +139,30 @@ function resolveFeaturedImageUri(rawLogo?: string | null) {
   return resolved;
 }
 
+function preserveFeaturedAddress(value: unknown, chainId?: number): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  // Solana base58 is case-sensitive — never lowercase (L→l destroys the id).
+  if (Number(chainId) === 101 || Number(chainId) === 102 || (!raw.startsWith("0x") && raw.length >= 32)) {
+    return raw;
+  }
+  return raw.toLowerCase();
+}
+
 function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   if (!raw) return null;
   const src = raw.campaign && typeof raw.campaign === "object" ? { ...raw.campaign, ...raw } : raw;
-  const campaignAddress = String(src.campaignAddress ?? src.campaign_address ?? src.campaign ?? "").toLowerCase();
+  const chainId = Number(src.chainId ?? src.chain_id ?? 97);
+  const campaignAddress = preserveFeaturedAddress(
+    src.campaignAddress ?? src.campaign_address ?? src.campaign,
+    chainId,
+  );
   if (!campaignAddress) return null;
   return {
-    chainId: Number(src.chainId ?? src.chain_id ?? 97),
+    chainId,
     campaignAddress,
-    tokenAddress: src.tokenAddress ?? src.token_address ?? src.token ?? null,
-    creatorAddress: src.creatorAddress ?? src.creator_address ?? src.creator ?? null,
+    tokenAddress: preserveFeaturedAddress(src.tokenAddress ?? src.token_address ?? src.token, chainId) || null,
+    creatorAddress: preserveFeaturedAddress(src.creatorAddress ?? src.creator_address ?? src.creator, chainId) || null,
     creatorName: src.creatorName ?? src.creator_name ?? null,
     creatorUsername: src.creatorUsername ?? src.creator_username ?? null,
     username: src.username ?? null,
@@ -448,11 +463,13 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       const rawLogo = it.logoUri || logoCache[addr] || null;
       const resolved = resolveFeaturedImageUri(rawLogo);
       const chainId = Number(it.chainId ?? 0) || featuredChainId;
-      const tokenAddr = it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null;
+      const tokenAddr = it.tokenAddress
+        ? preserveFeaturedAddress(it.tokenAddress, chainId) || null
+        : null;
       return {
         idx: idx + 1,
         chainId,
-        addr,
+        addr: preserveFeaturedAddress(addr, chainId) || addr,
         tokenAddr,
         name: String(it.name || "Unknown"),
         symbol: String(it.symbol ?? ""),
@@ -552,8 +569,24 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                   className="mwz-hud-frame group flex h-[150px] w-full snap-start overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/token/${c.tokenAddr || c.addr}?chainId=${c.chainId}`)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.tokenAddr || c.addr}?chainId=${c.chainId}`); }}
+                  onClick={() =>
+                    navigate(
+                      tokenDetailsPath(
+                        { tokenAddress: c.tokenAddr, campaignAddress: c.addr, chainId: c.chainId },
+                        { chainId: c.chainId },
+                      ),
+                    )
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      navigate(
+                        tokenDetailsPath(
+                          { tokenAddress: c.tokenAddr, campaignAddress: c.addr, chainId: c.chainId },
+                          { chainId: c.chainId },
+                        ),
+                      );
+                    }
+                  }}
                 >
                   <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
                     <div className="absolute inset-0 mwz-stat-grid opacity-20 z-10 pointer-events-none" />

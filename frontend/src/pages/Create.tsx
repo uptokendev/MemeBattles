@@ -468,8 +468,10 @@ const Create = () => {
   const handleDeployNow = async () => {
     if (!validateCoreForm()) return;
 
-    // ── Solana Direct deploy: draft + auto-publish promotion → Push Live ──
-    // Full on-chain create still runs on Push Live (reservation + V4 authorize).
+    // ── Solana Direct deploy: one-button path ends on TokenDetails ─────────
+    // Server still needs a draft + reservation under the hood, but the user
+    // never visits promotion / Push Live UI. Flow: logo → draft → publish →
+    // authorize → wallet createCampaign → mark-deploy → /token/mint?chainId=101
     if (isSolanaCreator) {
       if (!solanaWallet.solanaAccount) {
         toast.error("Connect your Solana wallet first.");
@@ -478,6 +480,10 @@ const Create = () => {
       setIsDeploying(true);
       try {
         const logoUrl = await uploadLogo();
+        if (!logoUrl || logoUrl.startsWith("data:")) {
+          // data: URLs mean Supabase wasn't configured — warn but continue only if real URL
+          if (!logoUrl) throw new Error("Logo upload returned no URL. Check Railway Supabase upload env.");
+        }
         const createAuth = await createDraftAuth();
         const draft = await createCampaignDraft({
           auth: createAuth,
@@ -500,8 +506,12 @@ const Create = () => {
         });
         cacheDraftLogo(draft.id, logoUrl);
 
-        // Auto-publish a minimal promotion so Push Live can run without an extra page.
-        const { saveDraftPromotion } = await import("@/lib/draftApi");
+        const { saveDraftPromotion, markDraftDeployed } = await import("@/lib/draftApi");
+        const { graduationTargetToUsdMicros } = await import("@/lib/graduationTiers");
+        const { requestSolanaCreateAuthorizationV4 } = await import("@/lib/solanaCreateAuthorizationV4");
+        const { submitSolanaV4CreateFromAuthorization } = await import("@/lib/solanaV4CreateSubmit");
+        const { tokenDetailsPath } = await import("@/lib/tokenDetailsPath");
+
         const publishAuth = await signSolanaDraftAction({
           walletAddress: creatorWallet,
           chainId: SOLANA_CHAIN_ID,
@@ -520,16 +530,83 @@ const Create = () => {
           docs: formData.otherLink ? [formData.otherLink] : [],
           creatorNote: "",
           bannerUrl: "",
-          shareMessage: `${formData.name} ($${normalizedTicker}) is live-prepping on MemeWarzone.`,
+          shareMessage: `${formData.name} ($${normalizedTicker}) is live on MemeWarzone.`,
           visibility: "public",
           publish: true,
         });
 
-        toast.success("Draft ready — opening Push Live to deploy on Solana.");
-        navigate(`/drafts/${draft.id}/push-live`);
+        // Preflight: clear profile-missing / auth errors before wallet pays gas
+        toast.message("Authorizing Solana create…");
+        let deployAuth = await signSolanaDraftAction({
+          walletAddress: creatorWallet,
+          chainId: SOLANA_CHAIN_ID,
+          action: "deploy_draft",
+          draftId: draft.id,
+        });
+        const graduationTargetUsdMicros = graduationTargetToUsdMicros(graduationTargetWei);
+        let authorization;
+        try {
+          authorization = await requestSolanaCreateAuthorizationV4({
+            draftId: draft.id,
+            auth: deployAuth,
+            graduationTargetUsdMicros,
+            launchAt: "0",
+          });
+        } catch (authErr: any) {
+          const msg = String(authErr?.message || authErr || "");
+          if (/profile|RiskProfile|CreatorProfile|sync-creator|sync-risk/i.test(msg)) {
+            throw new Error(
+              `${msg} Operator must run: npm --prefix tests/solana run devnet:trade-ops -- sync-creator ${creatorWallet}`,
+            );
+          }
+          if (/DRAFT_PUSH_LIVE|locked|403/i.test(msg)) {
+            throw new Error(`${msg} Check Railway DRAFT_PUSH_LIVE_ENABLED and SOLANA_CREATE_AUTH_ENABLED.`);
+          }
+          throw authErr;
+        }
+
+        let mintAddress = "";
+        let campaignAddress = "";
+        let deployTxHash = "already-on-chain";
+
+        if (authorization.alreadyOnChain || authorization.existingDeployment) {
+          campaignAddress =
+            authorization.existingDeployment?.campaignAddress || authorization.accounts?.campaign || "";
+          mintAddress =
+            authorization.existingDeployment?.mintAddress || authorization.accounts?.mint || "";
+          toast.message("Campaign already on-chain — finalizing registry…");
+        } else {
+          toast.message("Confirm createCampaign in your Solana wallet…");
+          const created = await submitSolanaV4CreateFromAuthorization(authorization, {
+            creatorAddress: creatorWallet,
+          });
+          campaignAddress = created.campaignAddress;
+          mintAddress = created.mintAddress;
+          deployTxHash = created.signature;
+        }
+
+        try {
+          await markDraftDeployed(draft.id, {
+            auth: deployAuth,
+            campaignAddress,
+            tokenAddress: mintAddress || null,
+            deployTxHash,
+          });
+        } catch (markErr: any) {
+          console.warn("[Create] mark-deploy after Solana create", markErr);
+          // On-chain success still counts — open token page
+        }
+
+        toast.success("Solana campaign deployed.");
+        navigate(
+          tokenDetailsPath(
+            { tokenAddress: mintAddress, campaignAddress, chainId: SOLANA_CHAIN_ID },
+            { chainId: SOLANA_CHAIN_ID },
+          ),
+        );
       } catch (error: any) {
         console.error(error);
-        toast.error(error?.message || "Solana direct deploy prep failed");
+        toast.error(error?.message || "Solana direct deploy failed");
       } finally {
         setIsDeploying(false);
       }
@@ -785,7 +862,7 @@ const Create = () => {
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                         {directDeployRouteReady
                           ? isSolanaCreator
-                            ? "Signs draft + promotion, then opens Push Live for Solana on-chain create."
+                            ? "One flow: logo + wallet createCampaign → opens Token Details (no promotion page)."
                             : "Wallet + gas. Live bonding campaign as soon as the tx confirms."
                           : isSolanaCreator
                             ? "Connect a Solana wallet to enable Direct deploy."

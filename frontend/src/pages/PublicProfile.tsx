@@ -9,6 +9,7 @@ import { fetchUserProfile, fetchPublicPortfolioMetrics, type UserProfile } from 
 import { fetchOwnerCampaignDrafts, fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import { isSolanaAddress } from "@/lib/address";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
 import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
 import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
@@ -761,7 +762,15 @@ export default function PublicProfile({
               {createdCoins.map((coin) => (
                 <button
                   key={coin.campaignAddress}
-                  onClick={() => navigate(`/token/${coin.tokenAddress || coin.campaignAddress}`)}
+                  onClick={() =>
+                    navigate(
+                      tokenDetailsPath({
+                        tokenAddress: coin.tokenAddress,
+                        campaignAddress: coin.campaignAddress,
+                        chainId: (coin as any).chainId,
+                      }),
+                    )
+                  }
                   className="rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
                 >
                   <div className="flex items-center gap-3">
@@ -870,8 +879,12 @@ export default function PublicProfile({
                 <button
                   key={trade.id}
                   onClick={() => {
-                    const target = String(trade.tokenAddress || trade.campaignAddress || "").toLowerCase();
-                    if (target) navigate(`/token/${target}`);
+                    const path = tokenDetailsPath({
+                      tokenAddress: trade.tokenAddress,
+                      campaignAddress: trade.campaignAddress,
+                      chainId: (trade as any).chainId,
+                    });
+                    if (path && path !== "/") navigate(path);
                   }}
                   className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
                 >

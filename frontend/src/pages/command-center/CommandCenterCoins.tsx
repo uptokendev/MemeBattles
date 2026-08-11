@@ -9,6 +9,7 @@ import { useCommandCenterData } from "@/components/command-center/CommandCenterC
 import { CommandCenterCoinRow } from "@/components/postgrad/CommandCenterCoinRow";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { fetchOwnerCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   fetchLpFeePools,
@@ -41,7 +42,11 @@ function formatDate(value?: string | null) {
 
 function draftHref(draft: CampaignDraft) {
   if (draft.status === "deployed" && (draft.tokenAddress || draft.campaignAddress)) {
-    return `/token/${draft.tokenAddress || draft.campaignAddress}`;
+    return tokenDetailsPath({
+      tokenAddress: draft.tokenAddress,
+      campaignAddress: draft.campaignAddress,
+      chainId: Number((draft as any).chainId) || undefined,
+    });
   }
   return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
 }

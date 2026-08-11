@@ -1,6 +1,9 @@
 /**
  * Canonical public Token Details route uses token mint/address when known.
  * Bonding / market APIs still key by campaign internally — resolve first.
+ *
+ * CRITICAL: Solana base58 is case-sensitive. Never .toLowerCase() Solana ids.
+ * Lowercasing turns allowed base58 `L` into forbidden `l` and breaks TokenDetails.
  */
 
 export function normalizeEvmAddress(value: unknown): string {
@@ -13,12 +16,34 @@ export function isSolanaBase58Address(value: unknown): boolean {
   return raw.length >= 32 && raw.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(raw) && !raw.startsWith("0x");
 }
 
-/** Preserve Solana base58 case; lowercase EVM. */
+/**
+ * Detect addresses that look Solana-length but are invalid base58 —
+ * typically after a mistaken .toLowerCase() (L→l, O→o, I→i, 0).
+ */
+export function isMaybeDamagedSolanaAddress(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw.startsWith("0x")) return false;
+  if (raw.length < 32 || raw.length > 48) return false;
+  if (isSolanaBase58Address(raw)) return false;
+  return /^[0-9A-Za-z]+$/.test(raw);
+}
+
+/** True if this should use the Solana TokenDetails path (valid or damaged base58). */
+export function isSolanaTokenRouteId(value: unknown): boolean {
+  return isSolanaBase58Address(value) || isMaybeDamagedSolanaAddress(value);
+}
+
+/**
+ * Normalize for route storage / display:
+ * - Solana: preserve exact case (even if damaged — recovery happens on TokenDetails)
+ * - EVM: lowercase
+ */
 export function normalizeTokenRouteAddress(value: unknown, chainId?: number | null): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
-  if (Number(chainId) === 101 || Number(chainId) === 102 || isSolanaBase58Address(raw)) {
-    return isSolanaBase58Address(raw) ? raw : "";
+  if (Number(chainId) === 101 || Number(chainId) === 102 || isSolanaTokenRouteId(raw)) {
+    if (isSolanaBase58Address(raw) || isMaybeDamagedSolanaAddress(raw)) return raw;
+    return "";
   }
   return normalizeEvmAddress(raw);
 }
@@ -27,6 +52,8 @@ export function normalizeTokenRouteAddress(value: unknown, chainId?: number | nu
  * Build `/token/:tokenAddress` for navigation.
  * Prefer tokenAddress; fall back to campaign only when token is unknown.
  * Always attach chainId for Solana (101) so TokenDetails does not default to EVM.
+ *
+ * ALWAYS use this instead of `/token/${addr.toLowerCase()}`.
  */
 export function tokenDetailsPath(
   tokenOrCampaign: {
@@ -41,42 +68,37 @@ export function tokenDetailsPath(
   const chainId = Number(options?.chainId ?? tokenOrCampaign.chainId ?? 0);
   const isSolana = chainId === 101 || chainId === 102;
 
-  const token = isSolana
-    ? normalizeTokenRouteAddress(tokenOrCampaign.tokenAddress ?? tokenOrCampaign.token, chainId)
-    : normalizeEvmAddress(tokenOrCampaign.tokenAddress) || normalizeEvmAddress(tokenOrCampaign.token);
-  const campaign = isSolana
-    ? normalizeTokenRouteAddress(tokenOrCampaign.campaignAddress ?? tokenOrCampaign.campaign, chainId)
-    : normalizeEvmAddress(tokenOrCampaign.campaignAddress) || normalizeEvmAddress(tokenOrCampaign.campaign);
+  const pick = (a: unknown, b: unknown) => {
+    const primary = String(a ?? "").trim();
+    const secondary = String(b ?? "").trim();
+    if (isSolana || isSolanaTokenRouteId(primary) || isSolanaTokenRouteId(secondary)) {
+      return (
+        normalizeTokenRouteAddress(primary || secondary, 101) ||
+        (isSolanaTokenRouteId(primary) ? primary : "") ||
+        (isSolanaTokenRouteId(secondary) ? secondary : "")
+      );
+    }
+    return normalizeEvmAddress(primary) || normalizeEvmAddress(secondary);
+  };
 
-  // If chainId omitted but address is Solana base58, still build a Solana route.
-  const looseToken =
-    token ||
-    (isSolanaBase58Address(tokenOrCampaign.tokenAddress || tokenOrCampaign.token)
-      ? String(tokenOrCampaign.tokenAddress || tokenOrCampaign.token).trim()
-      : "");
-  const looseCampaign =
-    campaign ||
-    (isSolanaBase58Address(tokenOrCampaign.campaignAddress || tokenOrCampaign.campaign)
-      ? String(tokenOrCampaign.campaignAddress || tokenOrCampaign.campaign).trim()
-      : "");
-
-  const id = looseToken || looseCampaign;
+  const token = pick(tokenOrCampaign.tokenAddress, tokenOrCampaign.token);
+  const campaign = pick(tokenOrCampaign.campaignAddress, tokenOrCampaign.campaign);
+  const id = token || campaign;
   if (!id) return "/";
 
   const params = new URLSearchParams();
-  // Always pin Solana; for EVM only attach chainId when the caller provided one
-  // (preserves legacy `/token/0x…` links without forcing ?chainId=).
-  const resolvedChain = isSolana
-    ? chainId || 101
-    : isSolanaBase58Address(id)
-      ? 101
+  const resolvedChain =
+    isSolana || isSolanaTokenRouteId(id)
+      ? chainId === 102
+        ? 102
+        : 101
       : Number.isFinite(chainId) && chainId > 0
         ? chainId
         : 0;
+
   if (resolvedChain === 101 || resolvedChain === 102) {
     params.set("chainId", String(resolvedChain));
   } else if (resolvedChain > 0 && (options?.chainId != null || tokenOrCampaign.chainId != null)) {
-    // Explicit chain from caller (Create / Featured) — keep multi-chain BNB correct.
     params.set("chainId", String(resolvedChain));
   }
 
@@ -88,7 +110,6 @@ export function tokenDetailsPath(
     });
   }
 
-  // encodeURIComponent is a no-op for 0x hex; required for some base58 edge chars.
   const qs = params.toString();
   return qs ? `/token/${encodeURIComponent(id)}?${qs}` : `/token/${encodeURIComponent(id)}`;
 }

@@ -5,11 +5,12 @@ import { Globe, Users, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isSolanaChainId } from "@/lib/chainConfig";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { useWallet } from "@/contexts/WalletContext";
+import { isSolanaBase58Address, tokenDetailsPath } from "@/lib/tokenDetailsPath";
 
 // ---- Types ----
 type CarouselCard = {
@@ -683,17 +684,29 @@ const CardView = ({
 
   const wallet = useWallet();
 
-  const campaignAddr = String(card.campaignAddress ?? "").trim().toLowerCase();
-  const tokenAddr = String(card.tokenAddress ?? "").trim().toLowerCase();
-  const publicTokenAddr =
-    tokenAddr && isAddress(tokenAddr) && !isZeroAddress(tokenAddr) ? tokenAddr : campaignAddr;
-  const isDummy = !campaignAddr || !isAddress(campaignAddr) || isZeroAddress(campaignAddr);
+  const rawCampaign = String(card.campaignAddress ?? "").trim();
+  const rawToken = String(card.tokenAddress ?? "").trim();
+  const isSolanaCard =
+    isSolanaBase58Address(rawCampaign) ||
+    isSolanaBase58Address(rawToken) ||
+    isSolanaChainId(Number((card as any).chainId));
+  // NEVER lowercase Solana base58 (L→l invalidates the address).
+  const campaignAddr = isSolanaCard ? rawCampaign : rawCampaign.toLowerCase();
+  const tokenAddr = isSolanaCard ? rawToken : rawToken.toLowerCase();
+  const publicTokenAddr = isSolanaCard
+    ? tokenAddr || campaignAddr
+    : tokenAddr && isAddress(tokenAddr) && !isZeroAddress(tokenAddr)
+      ? tokenAddr
+      : campaignAddr;
+  const isDummy = isSolanaCard
+    ? !campaignAddr && !tokenAddr
+    : !campaignAddr || !isAddress(campaignAddr) || isZeroAddress(campaignAddr);
 
-  // Realtime stats from Railway/Ably (same hook TokenDetails uses)
+  // Realtime stats from Railway/Ably (same hook TokenDetails uses) — EVM only.
   const { stats: rtStats } = useTokenStatsRealtime(
     campaignAddr,
     wallet.chainId,
-    !isDummy
+    !isDummy && !isSolanaCard,
   );
 
   // Preferred: raw marketcapBnb -> USD (no parsing from rounded labels)
@@ -708,8 +721,16 @@ const CardView = ({
 
   const handleClick = () => {
     if (isCentered && !isDummy) {
-      // Public token pages prefer the ERC-20 address; campaign is only a fallback.
-      navigate(`/token/${publicTokenAddr}`);
+      navigate(
+        tokenDetailsPath(
+          {
+            tokenAddress: publicTokenAddr || tokenAddr,
+            campaignAddress: campaignAddr,
+            chainId: isSolanaCard ? 101 : undefined,
+          },
+          isSolanaCard ? { chainId: 101 } : undefined,
+        ),
+      );
       return;
     }
 

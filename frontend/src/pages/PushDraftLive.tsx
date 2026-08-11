@@ -42,7 +42,10 @@ function canPushLive(status?: string) {
 }
 
 function sameWallet(a?: string | null, b?: string | null) {
-  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+  if (!a || !b) return false;
+  // Solana: exact match preferred; allow case-fold only for recovery of mangled URLs
+  if (a.length >= 32 && !a.startsWith("0x")) return a === b || a.toLowerCase() === b.toLowerCase();
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 function toLocalInputValue(date: Date) {
@@ -215,11 +218,21 @@ export default function PushDraftLive() {
 
   const deploySolanaV4 = async () => {
     if (!draft) return;
-    if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Push Live is locked until the platform launch switch is enabled.");
+    if (!DRAFT_PUSH_LIVE_ENABLED) {
+      return toast.error(
+        "Push Live is locked (VITE_DRAFT_PUSH_LIVE_ENABLED). Also set Railway DRAFT_PUSH_LIVE_ENABLED=true.",
+      );
+    }
     if (!solanaWallet.solanaAccount) return toast.error("Connect the draft owner Solana wallet first.");
     if (!ownerConnected) return toast.error("Only the draft owner Solana wallet can deploy this draft.");
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
-    if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
+    if (!logoURI) {
+      return toast.error(
+        "Draft needs a saved logo URL. Re-upload a png/jpg/webp under 5MB on the promotion page.",
+      );
+    }
+    // Preflight before any SOL spend — surface the real blockers early.
+    toast.message("Preflight: authorizing create (no gas yet)…");
 
     setSubmitting(true);
     try {
@@ -278,6 +291,14 @@ export default function PushDraftLive() {
         });
       } catch (authErr: any) {
         const msg = String(authErr?.message || authErr || "");
+        if (/CreatorProfile|RiskProfile|sync-creator|sync-risk|profile is not initialized/i.test(msg)) {
+          throw new Error(
+            `${msg} — run: npm --prefix tests/solana run devnet:trade-ops -- sync-creator ${solanaWallet.solanaAccount}`,
+          );
+        }
+        if (/DRAFT_PUSH_LIVE|Push Live is locked/i.test(msg)) {
+          throw new Error(`${msg} — set Railway DRAFT_PUSH_LIVE_ENABLED=true and redeploy API.`);
+        }
         if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
           await refreshDeployAuth();
           authorization = await requestSolanaCreateAuthorizationV4({

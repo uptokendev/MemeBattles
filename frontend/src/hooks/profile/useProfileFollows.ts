@@ -17,6 +17,7 @@ import {
   type CampaignDraft,
 } from "@/lib/draftApi";
 import { formatTimeAgo } from "@/lib/profile/profileFormatters";
+import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 
 type FetchCampaigns = () => Promise<any[]>;
 type FetchCampaignSummary = (campaign: any) => Promise<CampaignSummary>;
@@ -171,7 +172,10 @@ useEffect(() => {
             name: s.campaign.name,
             ticker: s.campaign.symbol,
             campaignAddress: s.campaign.campaign,
-            href: `/token/${String(s.campaign.token || s.campaign.campaign).toLowerCase()}`,
+            href: tokenDetailsPath({
+              tokenAddress: s.campaign.token,
+              campaignAddress: s.campaign.campaign,
+            }),
             marketCap: s.stats.marketCap,
             timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
             buyersCount: (s.stats as any)?.buyersCount ?? undefined,
