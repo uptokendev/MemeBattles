@@ -308,7 +308,7 @@ router.all("/schedules/:id", wrap(contentPlannerSchedulesById));
 router.all("/content-campaigns/:id", wrap(contentPlannerCampaignById));
 router.all("/content-campaigns", wrap(contentPlannerCampaigns));
 router.all("/content-tags", wrap(contentPlannerTags));
-router.all(/^\/(?:arena\/ops\/health|arena\/battles(?:\/.*)?|arena\/events(?:\/.*)?|arena\/league(?:\/.*)?|arena\/war-pools(?:\/.*)?|sponsored|sponsorship-applications|war-room(?:\/.*)?)$/, wrap(postgrad));
+router.all(/^\/(?:arena\/ops\/health|arena\/battles(?:\/.*)?|arena\/events(?:\/.*)?|arena\/league(?:\/.*)?|arena\/war-pools(?:\/.*)?|sponsored|sponsorship-applications|sponsorship-settings|war-room(?:\/.*)?)$/, wrap(postgrad));
 router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
 router.all("/drafts/ticker-availability", wrap(tickerAvailability));

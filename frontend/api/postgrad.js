@@ -5,6 +5,7 @@ import arenaOps from "./arenaOps.js";
 import arenaWarPools from "./arenaWarPools.js";
 import sponsored from "./sponsored.js";
 import sponsorshipApplications from "./sponsorship-applications.js";
+import sponsorshipSettings from "./sponsorship-settings.js";
 import warRoom from "./warRoom.js";
 
 const ROUTES = [
@@ -13,8 +14,9 @@ const ROUTES = [
   { pattern: /^\/arena\/events(?:\/.*)?$/, flag: "POSTGRAD_EVENTS_ENABLED", handler: arenaEvents },
   { pattern: /^\/arena\/league(?:\/.*)?$/, flag: "POSTGRAD_LEAGUE_ENABLED", handler: arenaLeague },
   { pattern: /^\/arena\/war-pools(?:\/.*)?$/, flag: "POSTGRAD_WAR_POOLS_ENABLED", handler: arenaWarPools },
-  { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored },
-  { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications },
+  { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored, alwaysOn: true },
+  { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications, alwaysOn: true },
+  { pattern: /^\/sponsorship-settings$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipSettings, alwaysOn: true },
   { pattern: /^\/war-room(?:\/.*)?$/, flag: "POSTGRAD_WAR_ROOM_ENABLED", handler: warRoom },
 ];
 
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
   const route = ROUTES.find((candidate) => candidate.pattern.test(path));
   if (!route) return res.status(404).json({ error: `Unknown postgrad route: ${path}` });
 
-  if (!enabled(route.flag)) {
+  if (!route.alwaysOn && !enabled(route.flag)) {
     return res.status(503).json({
       ok: false,
       error: "Postgrad API route is disabled",
