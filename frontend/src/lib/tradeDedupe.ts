@@ -10,6 +10,20 @@ import type { CurveTradePoint } from "@/hooks/useCurveTrades";
  */
 export const SYNTHETIC_LOG_INDEX_MIN = 1_000_000;
 
+const EVM_TX_RE = /^0x[a-fA-F0-9]{64}$/;
+const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
+
+export function normalizeTradeTxHash(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (EVM_TX_RE.test(raw)) return raw.toLowerCase();
+  if (SOLANA_SIGNATURE_RE.test(raw)) return raw; // base58 is case-sensitive
+  return "";
+}
+
+export function isValidTradeTxHash(value: unknown): boolean {
+  return Boolean(normalizeTradeTxHash(value));
+}
+
 export function isSyntheticLogIndex(logIndex: unknown): boolean {
   const n = Number(logIndex);
   // 0 / missing / huge synthetic marker → not a trusted chain log index.
@@ -19,8 +33,8 @@ export function isSyntheticLogIndex(logIndex: unknown): boolean {
 }
 
 export function tradeDedupeKey(point: Pick<CurveTradePoint, "txHash" | "logIndex">): string {
-  const tx = String(point.txHash || "").toLowerCase();
-  if (!/^0x[a-f0-9]{64}$/.test(tx)) return "";
+  const tx = normalizeTradeTxHash(point.txHash);
+  if (!tx) return "";
   if (isSyntheticLogIndex(point.logIndex)) return `${tx}:synthetic`;
   return `${tx}:${Number(point.logIndex)}`;
 }
@@ -42,21 +56,18 @@ function tradeQuality(point: CurveTradePoint): number {
   return score;
 }
 
-/** Drop session/optimistic garbage that blows up charts (e.g. 510000 BNB rows). */
+/** Drop session/optimistic garbage that blows up charts. */
 export function isPlausibleBondingTrade(point: CurveTradePoint): boolean {
   try {
     if (point.tokensWei <= 0n) return false;
-    // Bonding fills are tiny on testnet (often << 1 BNB). Cap well above mainnet sanity.
     if (point.nativeWei < 0n) return false;
-    if (point.nativeWei > 10n ** 18n * 1000n) return false; // > 1000 BNB
-    const tokens = Number(point.tokensWei) / 1e18;
-    const bnb = Number(point.nativeWei) / 1e18;
-    if (!Number.isFinite(tokens) || !Number.isFinite(bnb)) return false;
-    if (tokens > 1e15) return false;
+
+    // Raw-unit ceiling is intentionally chain-neutral. 1000 native coins in
+    // either wei (1e18) or lamports (1e9) remains safely below this guard.
+    if (point.nativeWei > 10n ** 21n) return false;
+
     const price = Number(point.pricePerToken || 0);
-    if (price > 0 && (price > 1e6 || price < 0)) return false;
-    // Implied price from amounts when price field is set wrongly
-    if (tokens > 0 && bnb / tokens > 1e6) return false;
+    if (!Number.isFinite(price) || price < 0 || price > 1e6) return false;
     return true;
   } catch {
     return false;
@@ -64,9 +75,10 @@ export function isPlausibleBondingTrade(point: CurveTradePoint): boolean {
 }
 
 /**
- * Merge bonding + Topaz + wallet reports + optimistic local.
+ * Merge bonding + post-grad + wallet reports + optimistic local.
  * - Real chain logs: unique by txHash:logIndex (preserves bonding history).
  * - Synthetic / wallet reports: one per txHash, dropped when a real log exists.
+ * - EVM hashes normalize lowercase; Solana signatures preserve base58 case.
  */
 export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | undefined>): CurveTradePoint[] {
   const byKey = new Map<string, CurveTradePoint>();
@@ -74,23 +86,22 @@ export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | un
 
   for (const stream of streams) {
     for (const point of stream || []) {
-      const tx = String(point.txHash || "").toLowerCase();
-      if (!/^0x[a-f0-9]{64}$/.test(tx)) continue;
-      if (!isPlausibleBondingTrade(point) && isSyntheticLogIndex(point.logIndex)) continue;
+      const tx = normalizeTradeTxHash(point.txHash);
+      if (!tx) continue;
       if (!isPlausibleBondingTrade(point)) continue;
       if (!isSyntheticLogIndex(point.logIndex)) realTx.add(tx);
       const key = tradeDedupeKey(point);
       if (!key) continue;
       const prev = byKey.get(key);
       if (!prev || tradeQuality(point) >= tradeQuality(prev)) {
-        byKey.set(key, point);
+        byKey.set(key, { ...point, txHash: tx });
       }
     }
   }
 
   const out: CurveTradePoint[] = [];
   for (const point of byKey.values()) {
-    const tx = String(point.txHash || "").toLowerCase();
+    const tx = normalizeTradeTxHash(point.txHash);
     // Drop optimistic/wallet rows once the real chain log is present.
     if (isSyntheticLogIndex(point.logIndex) && realTx.has(tx)) continue;
     out.push(point);
