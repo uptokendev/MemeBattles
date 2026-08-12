@@ -286,11 +286,13 @@ function looksLikeCooldown(text: string, code: string) {
 function looksLikeLiveLimit(text: string, code: string) {
   return (
     text.includes("live campaign limit") ||
+    text.includes("active solana campaign limit") ||
     text.includes("live-limit") ||
     text.includes("maxlive") ||
     text.includes("live bonding") ||
     text.includes("live limit") ||
     code.includes("LIVE_LIMIT") ||
+    code.includes("LAUNCH_LIMIT") ||
     code.includes("CREATORLIVELIMIT")
   );
 }

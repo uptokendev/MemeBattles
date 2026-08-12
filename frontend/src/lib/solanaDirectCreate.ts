@@ -9,6 +9,9 @@ export type SolanaDirectPreflightResponse = {
   programId: string;
   preflight: {
     chainNow: number;
+    allowed: boolean;
+    cooldownActive: boolean;
+    liveLimitReached: boolean;
     creatorTier: number;
     creatorLiveBondingCount: number;
     creatorMaxLiveBondingCount: number;

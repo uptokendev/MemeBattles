@@ -719,7 +719,7 @@ const TokenDetails = () => {
       return;
     }
 
-    const chainIdNum = Number(wallet.chainId ?? 97);
+    const chainIdNum = Number(chainIdForStorage);
     let cancelled = false;
 
     (async () => {
@@ -736,7 +736,7 @@ const TokenDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [campaign?.creator, wallet.chainId]);
+  }, [campaign?.creator, chainIdForStorage]);
 
   // CrypticPump listing badge (public)
   useEffect(() => {
@@ -1284,6 +1284,13 @@ const resolvedCampaignAddress = useMemo(() => {
 }, [campaign?.campaign, campaignAddr]);
 
 const hasValidCampaignAddress = Boolean(resolvedCampaignAddress);
+const localTradeStorageAddress = useMemo(
+  () =>
+    isSolanaPage
+      ? String(campaign?.campaign || campaignAddr || "").trim()
+      : resolvedCampaignAddress,
+  [campaign?.campaign, campaignAddr, isSolanaPage, resolvedCampaignAddress],
+);
 
 const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(
   hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
@@ -1364,25 +1371,27 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
 
   // Restore/persist local Topaz fills + server-reported Topaz trades (wallet receipts).
   useEffect(() => {
-    if (!resolvedCampaignAddress) {
+    if (!localTradeStorageAddress) {
       setLocalTopazTrades([]);
       return;
     }
-    const cached = loadLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress);
+    const cached = loadLocalTopazTrades(chainIdForStorage, localTradeStorageAddress);
     setLocalTopazTrades(cached);
 
     let cancelled = false;
     void (async () => {
+      // Solana persistence is local until S3 indexes Anchor trade events. Never query the Topaz/EVM report route.
+      if (isSolanaPage) return;
       try {
         const remote = await fetchTopazTradeReports({
           chainId: chainIdForStorage,
-          campaignAddress: resolvedCampaignAddress,
+          campaignAddress: localTradeStorageAddress,
           limit: 100,
         });
         if (cancelled || !remote.length) return;
         setLocalTopazTrades((prev) => {
           const merged = mergeTradePoints(prev, remote);
-          saveLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress, merged);
+          saveLocalTopazTrades(chainIdForStorage, localTradeStorageAddress, merged);
           return merged;
         });
       } catch {
@@ -1393,12 +1402,12 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     return () => {
       cancelled = true;
     };
-  }, [resolvedCampaignAddress, chainIdForStorage]);
+  }, [localTradeStorageAddress, chainIdForStorage, isSolanaPage]);
 
   useEffect(() => {
-    if (!resolvedCampaignAddress) return;
-    saveLocalTopazTrades(chainIdForStorage, resolvedCampaignAddress, localTopazTrades);
-  }, [localTopazTrades, resolvedCampaignAddress, chainIdForStorage]);
+    if (!localTradeStorageAddress) return;
+    saveLocalTopazTrades(chainIdForStorage, localTradeStorageAddress, localTopazTrades);
+  }, [localTopazTrades, localTradeStorageAddress, chainIdForStorage]);
 
   const unifiedMarket = useUnifiedMarket({
     campaignAddress: hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
@@ -1598,7 +1607,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     // has sold/volume from view calls — seed a synthetic anchor so chart/trade tab
     // are not blank (same product path that worked when DB still had rows).
     if (merged.length === 0 && metrics?.sold != null && metrics.sold > 0n && metrics.currentPrice != null && metrics.currentPrice > 0n) {
-      const price = Number(ethers.formatUnits(metrics.currentPrice, 18));
+      const price = Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18));
       const tokens = Number(ethers.formatUnits(metrics.sold, 18));
       let nativeWei = 0n;
       try {
@@ -1672,7 +1681,7 @@ const toSeconds = (ts: number): number => {
       (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice != null && metrics.currentPrice > 0n
-        ? Number(ethers.formatUnits(metrics.currentPrice, 18))
+        ? Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18))
         : undefined);
 
     // Continuous stream: bonding + Topaz swap history for change/volume windows.
@@ -1756,7 +1765,7 @@ const toSeconds = (ts: number): number => {
     let bondingMcapLabel: string | null = null;
     if (!contractGraduatedEarly && metrics?.currentPrice != null && metrics?.sold != null) {
       try {
-        const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
+        const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** BigInt(isSolanaPage ? tokenDecimals : 18);
         bondingMcapLabel = formatBnbFromWei(mcWei);
       } catch {
         bondingMcapLabel = null;
@@ -1858,7 +1867,7 @@ const bnbUsd = useMemo(() => {
     // Prefer numeric spot sources first so micro prices never collapse via label truncation.
     const fromWei =
       metrics?.currentPrice != null && metrics.currentPrice > 0n
-        ? Number(ethers.formatUnits(metrics.currentPrice, 18))
+        ? Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18))
         : null;
     const fromTopaz =
       contractGraduatedEarly && topazMarket.priceBnb != null && Number.isFinite(topazMarket.priceBnb) && topazMarket.priceBnb > 0
@@ -1933,10 +1942,27 @@ const bnbUsd = useMemo(() => {
   }, [displayDenom, bnbUsdPrice, bnbUsdLoading, nativeUnit]);
 
   const flywheel = useMemo(() => {
+    if (isSolanaPage && solanaCurve) {
+      const buyVol = Number(ethers.formatUnits(solanaCurve.totalBuyVolumeLamports, 9));
+      const sellVol = Number(ethers.formatUnits(solanaCurve.totalSellVolumeLamports, 9));
+      const netFlow = Number(ethers.formatUnits(solanaCurve.netRaisedLamports, 9));
+      const fees =
+        buyVol * (Number(solanaCurve.buyFeeBps) / 10000) +
+        sellVol * (Number(solanaCurve.sellFeeBps) / 10000);
+      return {
+        buyVolume: formatBnbOrUsd(buyVol),
+        sellVolume: formatBnbOrUsd(sellVol),
+        netFlow: formatBnbOrUsd(netFlow),
+        feesEstimated: formatBnbOrUsd(fees),
+        buyers: String(solanaCurve.buyerCount),
+        feeRate: `${(Number(solanaCurve.buyFeeBps) / 100).toFixed(2)}%`,
+        lpRate: "—",
+      };
+    }
+
     const buyVolBnb = activity ? Number(ethers.formatEther(activity.buyVolumeWei)) : null;
     const sellVolBnb = activity ? Number(ethers.formatEther(activity.sellVolumeWei)) : null;
     const netFlowBnb = buyVolBnb != null && sellVolBnb != null ? buyVolBnb - sellVolBnb : null;
-
     const feeBps = metrics ? Number(metrics.protocolFeeBps) : 0;
     const feesBnb = buyVolBnb != null && sellVolBnb != null ? (buyVolBnb + sellVolBnb) * (feeBps / 10000) : null;
 
@@ -1949,7 +1975,7 @@ const bnbUsd = useMemo(() => {
       feeRate: metrics ? `${(Number(metrics.protocolFeeBps) / 100).toFixed(2)}%` : "—",
       lpRate: metrics ? `${(Number(metrics.liquidityBps) / 100).toFixed(2)}%` : "—",
     };
-  }, [activity, metrics, formatBnbOrUsd]);
+  }, [activity, metrics, formatBnbOrUsd, isSolanaPage, solanaCurve]);
 
   const holderDistribution = useMemo(() => {
     const shortAddr = (a: string) =>
@@ -2045,7 +2071,8 @@ const bnbUsd = useMemo(() => {
 
     const loadActivity = async () => {
       try {
-        if (!campaign?.campaign) {
+        if (!campaign?.campaign || isSolanaPage) {
+          // Solana Campaign carries native counters; never interpret EVM activity ABI data as SOL.
           setActivity(null);
           return;
         }
@@ -2063,7 +2090,7 @@ const bnbUsd = useMemo(() => {
       cancelled = true;
       clearInterval(t);
     };
-  }, [campaign?.campaign, fetchCampaignActivity]);
+  }, [campaign?.campaign, fetchCampaignActivity, isSolanaPage]);
 
   // Solana: SOL/USD for $ graduation → native remaining (mirrors BNB oracle target).
   useEffect(() => {
@@ -2130,10 +2157,12 @@ const bnbUsd = useMemo(() => {
             (state.graduationTargetUsdMicros * 1_000_000_000n) / priceScaled;
         }
 
-        // Spot price (lamports per raw token) for display helpers.
+        // V2 marginal spot is lamports per WHOLE token. soldTokens is raw SPL units.
+        // V3 fixed-point slope will override this in the economics upgrade; keep V1/V2 dimensional math correct here.
+        const tokenScale = 10n ** BigInt(state.tokenDecimals);
         const spot =
           state.basePriceLamports +
-          (state.priceSlopeLamports * state.soldTokens); // linear approx at margin
+          (state.priceSlopeLamports * state.soldTokens) / tokenScale;
 
         setMetrics({
           sold: state.soldTokens,
@@ -2275,22 +2304,28 @@ const bnbUsd = useMemo(() => {
       .slice()
       .reverse()
       .filter((p: any) => {
-        const tx = String(p.txHash || "").toLowerCase();
-        if (!/^0x[a-f0-9]{64}$/.test(tx)) return false;
+        const rawTx = String(p.txHash || "").trim();
+        const tx = isSolanaPage ? rawTx : rawTx.toLowerCase();
+        const valid = isSolanaPage
+          ? /^[1-9A-HJ-NP-Za-km-z]{64,96}$/.test(tx)
+          : /^0x[a-f0-9]{64}$/.test(tx);
+        if (!valid) return false;
         if (seenTx.has(tx)) return false;
         seenTx.add(tx);
         return true;
       })
       .slice(0, 100)
       .map((p: any) => {
-        const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
-        const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
+        const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, tokenDecimals));
+        const bnb = Number(ethers.formatUnits(p.nativeWei ?? 0n, isSolanaPage ? 9 : 18));
         const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} ${nativeUnit}` : "—";
 
         const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
         const priceStr = formatPriceBnb(priceNum);
 
-        const txHash = String(p.txHash ?? "").toLowerCase();
+        const txHash = isSolanaPage
+          ? String(p.txHash ?? "").trim()
+          : String(p.txHash ?? "").toLowerCase();
         const ts = Number(p.timestamp ?? 0);
 
         return {
@@ -2308,7 +2343,7 @@ const bnbUsd = useMemo(() => {
       });
 
     setTxs(next);
-  }, [campaign, marketTradePoints, tokenData.marketCap, metrics]);
+  }, [campaign, marketTradePoints, tokenData.marketCap, metrics, isSolanaPage, tokenDecimals]);
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
@@ -2418,7 +2453,7 @@ const bnbUsd = useMemo(() => {
 
     let remainingBnbNum: number | null = null;
     try {
-      const n = Number(ethers.formatEther(remainingCurveWei));
+      const n = Number(ethers.formatUnits(remainingCurveWei, isSolanaPage ? 9 : 18));
       remainingBnbNum = Number.isFinite(n) ? n : null;
     } catch {
       remainingBnbNum = null;
@@ -2434,7 +2469,7 @@ const bnbUsd = useMemo(() => {
     // Primary follows the denomination toggle; secondary shows the other denomination.
     if (displayDenom === "USD") return { primary: usdLabel, secondary: bnbLabel };
     return { primary: bnbLabel, secondary: usdLabel };
-  }, [remainingCurveWei, displayDenom, bnbUsdPrice, bnbUsdLoading]);
+  }, [remainingCurveWei, displayDenom, bnbUsdPrice, bnbUsdLoading, isSolanaPage]);
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
@@ -2591,32 +2626,82 @@ const bnbUsd = useMemo(() => {
               }
             }
           } else {
-            // Solana Sell is exact token-in. The tab switch locks this denomination.
-            const tokensIn = parseTok(solStr, dec);
-            if (tokensIn <= 0n) {
-              if (!cancelled) {
-                setEffectiveTokenWei(0n);
-                setEffectiveBnbWei(0n);
-                setQuoteWei(null);
+            if (tradeInputDenom === "BNB") {
+              const targetLamports = parseSolLamports(solStr);
+              const walletMax = tokenBalanceWei != null && tokenBalanceWei > 0n ? tokenBalanceWei : sold;
+              const maxTokens = walletMax < sold ? walletMax : sold;
+              if (targetLamports <= 0n || maxTokens <= 0n) {
+                if (!cancelled) {
+                  setEffectiveTokenWei(0n);
+                  setEffectiveBnbWei(0n);
+                  setQuoteWei(null);
+                  setQuoteError(targetLamports <= 0n ? null : "No token balance available to sell.");
+                }
+                return;
               }
-              return;
-            }
-            const q = quoteSellExactTokensIn({
-              tokensIn,
-              basePrice,
-              slope,
-              sold,
-              sellFeeBps,
-              economicsVersion: econ,
-              tokenDecimals: dec,
-            });
-            if (!cancelled) {
-              setEffectiveTokenWei(tokensIn);
-              setEffectiveBnbWei(q.lamportsOut);
-              setQuoteWei(q.lamportsOut);
-              setQuoteError(
-                sold < tokensIn ? "Cannot sell more than the curve has sold." : q.lamportsOut <= 0n ? "Sell quote is zero." : null,
-              );
+              const quoteFor = (tokensIn: bigint) =>
+                quoteSellExactTokensIn({
+                  tokensIn,
+                  basePrice,
+                  slope,
+                  sold,
+                  sellFeeBps,
+                  economicsVersion: econ,
+                  tokenDecimals: dec,
+                });
+              const maxQuote = quoteFor(maxTokens);
+              if (maxQuote.lamportsOut < targetLamports) {
+                if (!cancelled) {
+                  setEffectiveTokenWei(maxTokens);
+                  setEffectiveBnbWei(maxQuote.lamportsOut);
+                  setQuoteWei(maxQuote.lamportsOut);
+                  setQuoteError(`Wallet cannot receive ${ethers.formatUnits(targetLamports, 9)} SOL from the available token balance.`);
+                }
+                return;
+              }
+              let lo = 1n;
+              let hi = maxTokens;
+              for (let i = 0; i < 64 && lo < hi; i += 1) {
+                const mid = (lo + hi) / 2n;
+                const q = quoteFor(mid);
+                if (q.lamportsOut >= targetLamports) hi = mid;
+                else lo = mid + 1n;
+              }
+              const solved = lo;
+              const q = quoteFor(solved);
+              if (!cancelled) {
+                setEffectiveTokenWei(solved);
+                setEffectiveBnbWei(q.lamportsOut);
+                setQuoteWei(q.lamportsOut);
+                setQuoteError(q.lamportsOut <= 0n ? "Sell quote is zero." : null);
+              }
+            } else {
+              const tokensIn = parseTok(solStr, dec);
+              if (tokensIn <= 0n) {
+                if (!cancelled) {
+                  setEffectiveTokenWei(0n);
+                  setEffectiveBnbWei(0n);
+                  setQuoteWei(null);
+                }
+                return;
+              }
+              const q = quoteSellExactTokensIn({
+                tokensIn,
+                basePrice,
+                slope,
+                sold,
+                sellFeeBps,
+                economicsVersion: econ,
+                tokenDecimals: dec,
+              });
+              if (!cancelled) {
+                setEffectiveTokenWei(tokensIn);
+                setEffectiveBnbWei(q.lamportsOut);
+                setQuoteWei(q.lamportsOut);
+                setQuoteError(
+                  sold < tokensIn ? "Cannot sell more than the curve has sold." : q.lamportsOut <= 0n ? "Sell quote is zero." : null,
+                );
+              }
             }
           }
           return;
@@ -2908,12 +2993,16 @@ const bnbUsd = useMemo(() => {
             description: `Exact ${ethers.formatUnits(amountIn, 9)} SOL in → min ${formatTokenFromWei(minOut)} tokens.`,
           });
         } else {
-          const tokStr = String(tradeAmount || "0").trim();
-          const parts = tokStr.split(".");
-          const whole = BigInt(parts[0] || "0");
-          const frac = (parts[1] || "").slice(0, decimals).padEnd(decimals, "0");
-          amountIn = whole * scale + BigInt(frac || "0");
-          if (amountIn <= 0n) throw new Error("Enter a token amount to sell.");
+          if (tradeInputDenom === "BNB") {
+            amountIn = effectiveTokenWei;
+          } else {
+            const tokStr = String(tradeAmount || "0").trim();
+            const parts = tokStr.split(".");
+            const whole = BigInt(parts[0] || "0");
+            const frac = (parts[1] || "").slice(0, decimals).padEnd(decimals, "0");
+            amountIn = whole * scale + BigInt(frac || "0");
+          }
+          if (amountIn <= 0n) throw new Error("Enter a token amount or target SOL payout to sell.");
           const estSol = quoteWei != null && quoteWei > 0n ? quoteWei : effectiveBnbWei;
           minOut = applySlippageMinOut(estSol > 0n ? estSol : 0n, SLIPPAGE_PCT);
           toast({
@@ -3969,9 +4058,13 @@ const bnbUsd = useMemo(() => {
                           ? prof.displayName.trim()
                           : tx.maker;
 
-                        const explorer = getExplorerBase(wallet.chainId);
+                        const explorer = getExplorerBase(chainIdForStorage);
                         const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
-                        const txUrl = tx.txHash ? `${explorer}/tx/${tx.txHash}` : "";
+                        const txUrl = tx.txHash
+                          ? isSolanaPage
+                            ? `https://explorer.solana.com/tx/${tx.txHash}${Number(chainIdForStorage) === 101 ? "?cluster=devnet" : ""}`
+                            : `${explorer}/tx/${tx.txHash}`
+                          : "";
 
                         return (
                           <tr key={tx.id} className="border-b border-border/40 hover:bg-muted/20">
@@ -4238,16 +4331,14 @@ const bnbUsd = useMemo(() => {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? nativeUnit : tokenData.ticker})</span>
-                        {!isSolanaPage ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                            onClick={toggleTradeInputDenom}
-                          >
-                            {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
-                          </Button>
-                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={toggleTradeInputDenom}
+                        >
+                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
+                        </Button>
                       </div>
                       <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
                     </div>
@@ -4272,6 +4363,7 @@ const bnbUsd = useMemo(() => {
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
                           const amt = (tokenBalanceWei * 25n) / 100n;
+                          setTradeInputDenom("TOKEN");
                           setTradeAmount(ethers.formatUnits(amt, tokenDecimals));
                         }}
                       >
@@ -4284,6 +4376,7 @@ const bnbUsd = useMemo(() => {
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
                           const amt = (tokenBalanceWei * 50n) / 100n;
+                          setTradeInputDenom("TOKEN");
                           setTradeAmount(ethers.formatUnits(amt, tokenDecimals));
                         }}
                       >
@@ -4295,6 +4388,7 @@ const bnbUsd = useMemo(() => {
                         className="flex-1 text-xs h-7"
                         onClick={() => {
                           if (tokenBalanceWei == null) return;
+                          setTradeInputDenom("TOKEN");
                           setTradeAmount(ethers.formatUnits(tokenBalanceWei, tokenDecimals));
                         }}
                       >

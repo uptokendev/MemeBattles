@@ -497,11 +497,34 @@ const Create = () => {
         // Read-only preflight happens before any upload or wallet signature, so a
         // creator cooldown/live-cap block is surfaced immediately.
         toast.message("Checking Solana launch eligibility…");
-        await preflightSolanaDirectCreate({
+        const directPreflight = await preflightSolanaDirectCreate({
           creatorWallet,
           chainId: SOLANA_CHAIN_ID,
           graduationTargetUsdMicros,
         });
+        const directEligibility = directPreflight.preflight;
+        if (!directEligibility.allowed) {
+          const cooldownActive =
+            Boolean(directEligibility.cooldownActive) ||
+            Number(directEligibility.nextAllowedAt || 0) > Number(directEligibility.chainNow || 0);
+          const errorMessage = cooldownActive
+            ? `Creator arm cooldown active until ${new Date(Number(directEligibility.nextAllowedAt || 0) * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
+            : `Live campaign limit reached (${directEligibility.creatorLiveBondingCount}/${directEligibility.creatorMaxLiveBondingCount}).`;
+          emitCreatorArmBlocked(
+            resolveCreatorArmBlock({
+              mode: "now",
+              eligibility: {
+                allowed: false,
+                cooldownEndsAt: directEligibility.nextAllowedAt || 0,
+                currentLiveCount: directEligibility.creatorLiveBondingCount,
+                maxLiveBonding: directEligibility.creatorMaxLiveBondingCount,
+              },
+              errorMessage,
+              errorCode: cooldownActive ? "SOLANA_CREATOR_COOLDOWN" : "SOLANA_CREATOR_LAUNCH_LIMIT",
+            }),
+          );
+          return;
+        }
 
         // One off-chain signature creates a short-lived Direct session. The same
         // session authorizes the logo upload and create authorization — no draft
@@ -588,7 +611,19 @@ const Create = () => {
         );
       } catch (error: any) {
         console.error(error);
-        toast.error(error?.message || "Solana direct deploy failed");
+        const errorCode = String(error?.code || "");
+        const errorMessage = String(error?.message || "Solana direct deploy failed");
+        if (/SOLANA_CREATOR_(?:COOLDOWN|LAUNCH_LIMIT)/i.test(errorCode + " " + errorMessage)) {
+          emitCreatorArmBlocked(
+            resolveCreatorArmBlock({
+              mode: "now",
+              errorMessage,
+              errorCode,
+            }),
+          );
+        } else {
+          toast.error(errorMessage);
+        }
       } finally {
         setIsDeploying(false);
       }

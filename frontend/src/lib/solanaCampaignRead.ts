@@ -25,10 +25,12 @@ export type SolanaCampaignCurveState = {
   buyFeeBps: number;
   sellFeeBps: number;
   creatorBuyLockUntil: number;
+  createdAt: number;
   soldTokens: bigint;
   netRaisedLamports: bigint;
   totalBuyVolumeLamports: bigint;
   totalSellVolumeLamports: bigint;
+  buyerCount: bigint;
   graduated: boolean;
 };
 
@@ -155,12 +157,12 @@ export function decodeSolanaCampaignAccount(
   take32(); // oracle_profile
   const creatorBuyLockUntil = takeI64();
   takeU16(); // creator_buy_cap_bps
-  takeI64(); // created_at
+  const createdAt = takeI64();
   const soldTokens = takeU64();
   const netRaisedLamports = takeU64();
   const totalBuyVolumeLamports = takeU64();
   const totalSellVolumeLamports = takeU64();
-  takeU64(); // buyer_count
+  const buyerCount = takeU64();
   takeU64(); // creator_bought_tokens
   takeU16(); // asset_initialization_version
   takeU8(); // mint_authority_revoked
@@ -189,10 +191,12 @@ export function decodeSolanaCampaignAccount(
     buyFeeBps,
     sellFeeBps,
     creatorBuyLockUntil,
+    createdAt,
     soldTokens,
     netRaisedLamports,
     totalBuyVolumeLamports,
     totalSellVolumeLamports,
+    buyerCount,
     graduated,
   };
 }
