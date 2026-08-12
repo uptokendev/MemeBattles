@@ -10,6 +10,7 @@
     "build:artifacts": "node scripts/generate-static-docs.mjs",
     "check:dist": "node scripts/assert-dist-shell.mjs",
     "test:deeplinks": "node scripts/smoke-deep-links.mjs",
+    "test:deeplinks:prod": "node scripts/smoke-deep-links.mjs --base-url=https://docs.memewar.zone",
     "build": "npm run check:routes && npm run build:app && npm run build:artifacts && npm run check:dist",
     "preview": "vite preview"
   },

@@ -5,6 +5,7 @@ import path from 'node:path'
 const root = process.cwd()
 const distDir = path.join(root, 'dist')
 const sidebarPath = path.join(root, 'src', 'content', 'sidebar.ts')
+const cliArgs = process.argv.slice(2)
 
 function extractNestedRoutes() {
   const raw = fs.readFileSync(sidebarPath, 'utf8')
@@ -36,6 +37,35 @@ function contentTypeFor(file) {
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message)
+  }
+}
+
+function parseBaseUrlArgument() {
+  for (let index = 0; index < cliArgs.length; index += 1) {
+    const arg = cliArgs[index]
+    if (arg.startsWith('--base-url=')) {
+      return arg.slice('--base-url='.length)
+    }
+
+    if (arg === '--base-url') {
+      return cliArgs[index + 1] ?? ''
+    }
+  }
+
+  return process.env.DOCS_SITE_URL ?? ''
+}
+
+function normalizeBaseUrl(raw) {
+  if (!raw) return null
+
+  const value = raw.trim().replace(/\/+$/, '')
+  if (!value) return null
+
+  try {
+    const url = new URL(value)
+    return `${url.protocol}//${url.host}`
+  } catch {
+    throw new Error(`Invalid base URL passed to deep-link smoke: ${raw}`)
   }
 }
 
@@ -73,7 +103,22 @@ async function withServer(run) {
   }
 }
 
-async function runShellOnlySmoke(sampleRoutes) {
+async function withTarget(baseUrl, run) {
+  if (baseUrl) {
+    await run(baseUrl)
+    return
+  }
+
+  await withServer(async () => {
+    await run('http://127.0.0.1:4174')
+  })
+}
+
+function targetLabel(baseUrl) {
+  return baseUrl ?? 'local dist shell'
+}
+
+async function runShellOnlySmoke(sampleRoutes, baseUrl) {
   const profiles = [
     {
       name: 'desktop',
@@ -85,10 +130,10 @@ async function runShellOnlySmoke(sampleRoutes) {
     }
   ]
 
-  await withServer(async () => {
+  await withTarget(baseUrl, async (targetBaseUrl) => {
     for (const profile of profiles) {
       for (const route of sampleRoutes) {
-        const response = await fetch(`http://127.0.0.1:4174${route}`, {
+        const response = await fetch(`${targetBaseUrl}${route}`, {
           headers: {
             'user-agent': profile.userAgent
           }
@@ -96,20 +141,34 @@ async function runShellOnlySmoke(sampleRoutes) {
 
         const html = await response.text()
 
-        assert(response.ok, `Deep-link shell smoke failed for ${route} at ${profile.name}: expected HTTP 200`)
-        assert(html.includes('<div id="root"></div>'), `Deep-link shell smoke failed for ${route} at ${profile.name}: SPA root shell was not served`)
-        assert(!html.includes('crawler-note'), `Deep-link shell smoke failed for ${route} at ${profile.name}: crawler-only markup was served`)
-        assert(!html.includes('Static crawler version.'), `Deep-link shell smoke failed for ${route} at ${profile.name}: crawler-only copy was served`)
+        assert(
+          response.ok,
+          `Deep-link shell smoke failed for ${route} at ${profile.name} on ${targetLabel(baseUrl)}: expected HTTP 200`
+        )
+        assert(
+          html.includes('id="root"'),
+          `Deep-link shell smoke failed for ${route} at ${profile.name} on ${targetLabel(baseUrl)}: SPA root shell was not served`
+        )
+        assert(
+          !html.includes('crawler-note'),
+          `Deep-link shell smoke failed for ${route} at ${profile.name} on ${targetLabel(baseUrl)}: crawler-only markup was served`
+        )
+        assert(
+          !html.includes('Static crawler version.'),
+          `Deep-link shell smoke failed for ${route} at ${profile.name} on ${targetLabel(baseUrl)}: crawler-only copy was served`
+        )
       }
     }
   })
 
-  console.log(`Deep-link shell smoke passed for ${sampleRoutes.length} nested routes on desktop and mobile`)
+  console.log(
+    `Deep-link shell smoke passed for ${sampleRoutes.length} nested routes on desktop and mobile against ${targetLabel(baseUrl)}`
+  )
   console.log('Playwright not installed. Ran shell-only route verification.')
 }
 
-async function runBrowserSmoke(sampleRoutes, chromium) {
-  await withServer(async () => {
+async function runBrowserSmoke(sampleRoutes, chromium, baseUrl) {
+  await withTarget(baseUrl, async (targetBaseUrl) => {
     let browser
 
     try {
@@ -133,35 +192,47 @@ async function runBrowserSmoke(sampleRoutes, chromium) {
 
         for (const route of sampleRoutes) {
           const page = await context.newPage()
-          await page.goto(`http://127.0.0.1:4174${route}`, { waitUntil: 'networkidle' })
+          await page.goto(`${targetBaseUrl}${route}`, { waitUntil: 'networkidle' })
 
           const pageTitle = (await page.locator('h1').first().textContent())?.trim()
           if (!pageTitle || pageTitle === 'Page not found') {
-            throw new Error(`Cold load failed for ${route} at ${viewport.name}: page content did not resolve`)
+            throw new Error(
+              `Cold load failed for ${route} at ${viewport.name} on ${targetLabel(baseUrl)}: page content did not resolve`
+            )
           }
 
           if (!(await page.locator('img[alt="MemeWarzone"]').first().isVisible())) {
-            throw new Error(`Cold load failed for ${route} at ${viewport.name}: top bar logo is missing`)
+            throw new Error(
+              `Cold load failed for ${route} at ${viewport.name} on ${targetLabel(baseUrl)}: top bar logo is missing`
+            )
           }
 
           if (viewport.name === 'desktop') {
             if (!(await page.locator('input[placeholder="Search docs…"]').first().isVisible())) {
-              throw new Error(`Cold load failed for ${route} at desktop: sidebar search is missing`)
+              throw new Error(
+                `Cold load failed for ${route} at desktop on ${targetLabel(baseUrl)}: sidebar search is missing`
+              )
             }
           } else {
             const toggle = page.locator('button[aria-label="Toggle navigation"]').first()
             if (!(await toggle.isVisible())) {
-              throw new Error(`Cold load failed for ${route} at mobile: mobile menu button is missing`)
+              throw new Error(
+                `Cold load failed for ${route} at mobile on ${targetLabel(baseUrl)}: mobile menu button is missing`
+              )
             }
             await toggle.click()
             if (!(await page.locator('input[placeholder="Search docs…"]').first().isVisible())) {
-              throw new Error(`Cold load failed for ${route} at mobile: mobile navigation did not open`)
+              throw new Error(
+                `Cold load failed for ${route} at mobile on ${targetLabel(baseUrl)}: mobile navigation did not open`
+              )
             }
           }
 
           const prevNextCount = await page.locator('text=Previous').count() + await page.locator('text=Next').count()
           if (prevNextCount === 0) {
-            throw new Error(`Cold load failed for ${route} at ${viewport.name}: previous and next controls are missing`)
+            throw new Error(
+              `Cold load failed for ${route} at ${viewport.name} on ${targetLabel(baseUrl)}: previous and next controls are missing`
+            )
           }
 
           await page.close()
@@ -174,7 +245,7 @@ async function runBrowserSmoke(sampleRoutes, chromium) {
     }
   })
 
-  console.log(`Deep-link smoke passed for ${sampleRoutes.length} nested routes on desktop and mobile`)
+  console.log(`Deep-link smoke passed for ${sampleRoutes.length} nested routes on desktop and mobile against ${targetLabel(baseUrl)}`)
 }
 
 async function loadPlaywright() {
@@ -189,7 +260,9 @@ async function loadPlaywright() {
 }
 
 async function main() {
-  if (!fs.existsSync(distDir)) {
+  const baseUrl = normalizeBaseUrl(parseBaseUrlArgument())
+
+  if (!baseUrl && !fs.existsSync(distDir)) {
     throw new Error('dist does not exist. Run the build before the deep-link smoke test.')
   }
 
@@ -200,11 +273,11 @@ async function main() {
 
   const playwright = await loadPlaywright()
   if (!playwright?.chromium) {
-    await runShellOnlySmoke(sampleRoutes)
+    await runShellOnlySmoke(sampleRoutes, baseUrl)
     return
   }
 
-  await runBrowserSmoke(sampleRoutes, playwright.chromium)
+  await runBrowserSmoke(sampleRoutes, playwright.chromium, baseUrl)
 }
 
 main().catch((error) => {
