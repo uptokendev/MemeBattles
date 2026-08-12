@@ -90,6 +90,7 @@ function main() {
   sameText(identity.localProgramSha256, protocol.programSha256, "program SHA-256 across deployment/protocol evidence");
   sameText(identity.deployedProgramSha256, protocol.programSha256, "deployed program SHA-256");
   requireSmokeReadyPauseFlags(protocol.expectedPauseFlags || {});
+  assert.equal(protocol.semanticGenerationMatchesSource, true, "on-chain generation semantics must match the source manifest");
 
   const frontendProgramId = protocol.envAgreement?.frontendProgramId || null;
   if (!frontendProgramId) {
@@ -112,14 +113,17 @@ function main() {
   }
   sameText(backendRouteSigner, protocol.authorities?.routeSigner, "backend/route signer");
 
-  const backendManifestHash = protocol.envAgreement?.backendManifestHash || protocol.authHealth?.manifestHash || null;
+  const backendManifestHash = protocol.envAgreement?.backendManifestHash || protocol.envAgreement?.configuredManifestHash || protocol.authHealth?.manifestHash || null;
   if (!backendManifestHash) {
-    fail("backend generation manifest hash was not verified; provide a backend env file or expose manifestHash from the auth health endpoint");
+    fail("backend generation commitment was not verified; provide SOLANA_GENERATION_MANIFEST_HASH, a backend env file, or expose manifestHash from the auth health endpoint");
   }
-  sameText(backendManifestHash, protocol.generationManifestSha256, "backend/generation manifest hash");
+  if (!protocol.onChainManifestHash) {
+    fail("protocol evidence is missing the on-chain GenerationConfig.manifestHash commitment");
+  }
+  sameText(backendManifestHash, protocol.onChainManifestHash, "backend/on-chain generation manifest commitment");
 
   const canonical = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "verified_smoke_ready",
     network: "solana-devnet",
     cluster: "devnet",
@@ -146,7 +150,10 @@ function main() {
       clusterProfile: protocol.accounts?.clusterProfile || null,
       generationIdHex: protocol.generationIdHex,
       generationManifest: protocol.generationManifest,
-      generationManifestSha256: protocol.generationManifestSha256,
+      sourceManifestSha256: protocol.sourceManifestSha256 || protocol.generationManifestSha256,
+      onChainManifestHash: protocol.onChainManifestHash,
+      manifestProvenance: protocol.manifestProvenance,
+      semanticGenerationMatchesSource: protocol.semanticGenerationMatchesSource,
       securityDefaultsLocked: protocol.securityDefaultsLocked,
       pauseFlags: protocol.expectedPauseFlags,
     },
@@ -177,6 +184,9 @@ function main() {
   console.log(`ProgramData: ${canonical.program.programDataAddress}`);
   console.log(`Deployment slot: ${canonical.program.deploymentSlot}`);
   console.log(`GenerationConfig: ${canonical.protocol.generationConfig}`);
+  console.log(`Source manifest SHA-256: ${canonical.protocol.sourceManifestSha256}`);
+  console.log(`On-chain manifest commitment: ${canonical.protocol.onChainManifestHash}`);
+  console.log(`Manifest provenance: ${canonical.protocol.manifestProvenance}`);
 }
 
 try {
