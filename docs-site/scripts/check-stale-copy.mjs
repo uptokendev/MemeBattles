@@ -20,6 +20,30 @@ const forbiddenPatterns = [
   {
     label: 'single-chain positioning',
     pattern: /\bBNB\s+only\b/i
+  },
+  {
+    label: 'public devnet language',
+    pattern: /\bdevnet\b/i
+  },
+  {
+    label: 'public testnet language',
+    pattern: /\btestnet\b/i
+  },
+  {
+    label: 'unfinished parity language',
+    pattern: /\bparity\s+(?:remains|is|still)\b/i
+  },
+  {
+    label: 'internal rollout language',
+    pattern: /\brollout\s+(?:controlled|enabled|remains|gate|gates)\b/i
+  },
+  {
+    label: 'developer implementation language',
+    pattern: /\b(?:support|backend|infrastructure)\s+rails?\b/i
+  },
+  {
+    label: 'placeholder instruction',
+    pattern: /\b(?:placeholder|replace this|todo|tbd)\b/i
   }
 ]
 
@@ -37,6 +61,8 @@ const violations = []
 
 for (const file of walk(contentDir)) {
   const rel = path.relative(contentDir, file).replace(/\\/g, '/')
+  if (rel.startsWith('internal/')) continue
+
   const raw = fs.readFileSync(file, 'utf8')
 
   for (const rule of forbiddenPatterns) {
@@ -52,4 +78,4 @@ if (violations.length > 0) {
   process.exit(1)
 }
 
-console.log(`Validated stale copy guardrails across ${walk(contentDir).length} markdown files`)
+console.log(`Validated public copy guardrails across ${walk(contentDir).length} markdown files`)
