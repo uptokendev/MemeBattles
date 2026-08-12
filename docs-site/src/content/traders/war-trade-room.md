@@ -1,47 +1,63 @@
 ---
 title: War Trade Room
-description: How the War Trade Room handles DRAFT, PRE, and POST states across chains.
+description: Find campaigns across BNB and Solana and act according to their current market state.
 ---
 
-The War Trade Room is the cross chain discovery and trading board.
+The War Trade Room is the cross chain campaign board for MemeWarzone.
 
-It brings drafts, live launchpad campaigns, and post graduation market entries into one view. The key rule is simple: every row is state driven.
+It brings Draft, live launchpad, and post graduation campaigns into one view so you can find the market you want without jumping between separate lists.
 
-## DRAFT
+![War Trade Room campaign board](/images/docs/war-trade-room-board.png)
 
-DRAFT is the preview state.
+## Read the state first
 
-This is where users can read the campaign identity, timing, links, and early signals before trading opens. Draft rows are for awareness and preparation, not for live trading.
+Every campaign row carries a state. That state determines the actions available to you.
 
-## PRE
+### DRAFT
+
+DRAFT is the preparation state.
+
+Use the campaign row to inspect the identity, chain, timing, official links, and public campaign information before trading opens.
+
+### PRE
 
 PRE is the live launchpad state.
 
-This is where bonding curve trading is active. When a row is in PRE, expect the launchpad action set such as quote, buy, sell, and the supporting campaign detail links.
+The campaign is trading through its launch market. Open Token Details for the full campaign view and use the active buy, sell, quote, and discovery controls shown for that chain.
 
-## POST
+### POST
 
 POST is the post graduation state.
 
-On BNB, POST can lead into the Topaz market path when that route is active.
-On Solana, POST remains limited until the post graduation trading path is fully proven.
+The campaign has completed its launch phase and moved to its post graduation market route. Open the campaign to use the market controls and links shown for its chain.
 
-## How to work the board
+## Find a campaign
 
-Use filters and search to narrow the view by:
+Use search and filters to narrow the board by:
 
-- chain
-- state
+- BNB or Solana
+- campaign state
 - ticker
 - campaign name
 - creator
-- token or campaign address
+- campaign or token address
 
-Open Token Details whenever you need the full campaign view behind the row.
+![War Trade Room filters](/images/docs/war-trade-room-filters.png)
 
-## One rule that matters
+## Verify before you trade
 
-A visible row tells you the campaign exists.
-The state label tells you what you can do with it.
+Before submitting a transaction:
 
-Read: **[Chain Readiness](/platform/chain-readiness)** and **[Campaign System](/platform/campaign-lifecycle)**.
+1. confirm the chain
+2. confirm the campaign state
+3. verify the ticker and address
+4. open Token Details when you need the full campaign record
+5. review the wallet transaction before signing
+
+## Operating rule
+
+A campaign row confirms that the campaign is on the board.
+
+The chain and state tell you which market you are entering and which actions are available.
+
+Read **[Trading Basics](/traders/trading-basics)** and **[Campaign System](/platform/campaign-lifecycle)** before your first trade.
