@@ -25,15 +25,27 @@ function readJson(filePath, label) {
   }
 }
 
-function runCheck(label, script, args, env) {
-  console.log(`\n[verify-solana-devnet] ${label}`);
-  const result = spawnSync(process.execPath, ["-r", COMPAT_PRELOAD, script, ...args], {
+function runNodeScript(script, args, env, stdio = "inherit") {
+  return spawnSync(process.execPath, ["-r", COMPAT_PRELOAD, script, ...args], {
     cwd: ROOT,
     env,
-    stdio: "inherit",
+    stdio,
   });
+}
+
+function runCheck(label, script, args, env, options = {}) {
+  console.log(`\n[verify-solana-devnet] ${label}`);
+  const result = runNodeScript(script, args, env);
   if (result.error) fail(`${label} could not start: ${result.error.message}`);
-  if (result.status !== 0) fail(`${label} failed with exit code ${result.status}`);
+  if (result.status !== 0) {
+    if (options.diagnosticScript) {
+      const diagnostic = runNodeScript(options.diagnosticScript, [], env);
+      if (diagnostic.error) {
+        console.error(`[verify-solana-devnet] diagnostic could not start: ${diagnostic.error.message}`);
+      }
+    }
+    fail(`${label} failed with exit code ${result.status}`);
+  }
 }
 
 function sameText(actual, expected, label) {
@@ -67,6 +79,7 @@ function main() {
     path.join(__dirname, "devnet-protocol-verify.cjs"),
     [],
     strictEnv,
+    { diagnosticScript: path.join(__dirname, "devnet-generation-manifest-diagnose.cjs") },
   );
 
   const identity = readJson(IDENTITY_OUTPUT, "deployment identity evidence");
