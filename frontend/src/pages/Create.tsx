@@ -631,13 +631,42 @@ const Create = () => {
           });
         } catch (markErr: any) {
           console.error("[Create] mark-deploy after Solana create failed", markErr);
-          toast.error(
-            `On-chain create ok, but registry failed: ${String(markErr?.message || markErr)}. Token page may miss logo until re-synced.`,
-          );
+          // The transaction is already final on-chain. Never leave Direct in a fake
+          // "success" state with an unlinked draft. Re-enter the V4 authorizer using
+          // its deterministic already-on-chain recovery path; it links the draft,
+          // marks the reservation live and upserts /api/campaigns without re-creating.
+          toast.message("On-chain create confirmed — repairing frontend registry…");
+          try {
+            const recoveryAuth = await signSolanaDraftAction({
+              walletAddress: creatorWallet,
+              chainId: SOLANA_CHAIN_ID,
+              action: "deploy_draft",
+              draftId: draft.id,
+              forceNewOwnerSession: true,
+            });
+            const recovered = await requestSolanaCreateAuthorizationV4({
+              draftId: draft.id,
+              auth: recoveryAuth,
+              graduationTargetUsdMicros,
+              launchAt: "0",
+            });
+            if (!recovered.alreadyOnChain && !recovered.existingDeployment) {
+              throw new Error("Recovery did not recognize the confirmed campaign.");
+            }
+            campaignAddress =
+              recovered.existingDeployment?.campaignAddress || recovered.accounts?.campaign || campaignAddress;
+            mintAddress =
+              recovered.existingDeployment?.mintAddress || recovered.accounts?.mint || mintAddress;
+          } catch (recoveryErr: any) {
+            console.error("[Create] Solana post-create recovery failed", recoveryErr);
+            throw new Error(
+              `On-chain create confirmed (${deployTxHash}), but frontend finalization failed: ${String(recoveryErr?.message || recoveryErr)}. Do not deploy again; recover the existing Direct rail.`,
+            );
+          }
         }
 
         toast.success("Solana campaign deployed.");
-        // Prefer campaign PDA in URL (curve account), mint as ?mint=
+        // Public route is mint canonical; campaign PDA remains internal execution state.
         navigate(
           tokenDetailsPath(
             { tokenAddress: mintAddress, campaignAddress, chainId: SOLANA_CHAIN_ID },

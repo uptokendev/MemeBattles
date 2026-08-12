@@ -486,7 +486,18 @@ const TokenDetails = () => {
   const [effectiveBnbWei, setEffectiveBnbWei] = useState<bigint>(0n);
   const [tradeTab, setTradeTab] = useState<"buy" | "sell">("buy");
   const handleTradeTabChange = (value: string) => {
-    setTradeTab(value as "buy" | "sell");
+    const next = value as "buy" | "sell";
+    setTradeTab(next);
+    if (isSolanaPage) {
+      // V4 bonding supports exact SOL-in buys and exact token-in sells. Do not leave
+      // Sell in native denomination and then reinterpret e.g. "0.01 SOL" as 0.01 token.
+      setTradeAmount("0");
+      setQuoteWei(null);
+      setQuoteError(null);
+      setEffectiveTokenWei(0n);
+      setEffectiveBnbWei(0n);
+      setTradeInputDenom(next === "sell" ? "TOKEN" : "BNB");
+    }
   };
   const [selectedTimeframe, setSelectedTimeframe] = useState<
     "5m" | "1h" | "4h" | "24h"
@@ -815,13 +826,10 @@ const TokenDetails = () => {
               campaignIdHex: hit.campaignIdHex ? String(hit.campaignIdHex) : null,
             } as CampaignInfo;
             resolvedCampaignFromIndexer = match.campaign;
-            // Prefer campaign PDA in the path (mint is only for display / ATA).
-            const preferred = canonicalCampaign || canonicalToken;
-            const qs = new URLSearchParams({ chainId: String(SOLANA_CHAIN_ID) });
-            if (canonicalToken && canonicalCampaign && canonicalToken !== canonicalCampaign) {
-              qs.set("mint", canonicalToken);
-            }
-            const desired = `/token/${encodeURIComponent(preferred)}?${qs.toString()}`;
+            // Canonical public identity is the SPL mint. The campaign PDA is resolved
+            // from the registry and must not leak into the public TokenDetails URL.
+            const preferred = canonicalToken || canonicalCampaign;
+            const desired = `/token/${encodeURIComponent(preferred)}`;
             const current = `${location.pathname}${location.search || ""}`;
             if (preferred && current !== desired) {
               navigate(desired, { replace: true });
@@ -2570,11 +2578,8 @@ const bnbUsd = useMemo(() => {
               }
             }
           } else {
-            // Sell: prefer token amount; native denom inverts poorly — treat as tokens if TOKEN.
-            const tokensIn =
-              tradeInputDenom === "TOKEN"
-                ? parseTok(solStr, dec)
-                : parseTok(solStr, dec); // UI still uses amount field
+            // Solana Sell is exact token-in. The tab switch locks this denomination.
+            const tokensIn = parseTok(solStr, dec);
             if (tokensIn <= 0n) {
               if (!cancelled) {
                 setEffectiveTokenWei(0n);
@@ -4220,14 +4225,16 @@ const bnbUsd = useMemo(() => {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? nativeUnit : tokenData.ticker})</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                          onClick={toggleTradeInputDenom}
-                        >
-                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
-                        </Button>
+                        {!isSolanaPage ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                            onClick={toggleTradeInputDenom}
+                          >
+                            {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : `Switch to ${nativeUnit}`}
+                          </Button>
+                        ) : null}
                       </div>
                       <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
                     </div>

@@ -252,7 +252,14 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
 
       if (cancelled) return;
 
-      setProfileDrafts(drafts);
+      // Direct deploy uses a private draft row internally for ticker reservation and
+      // deterministic recovery. Once it is deployed/live it is no longer a user draft.
+      // Keep failed/pre-deploy rails visible so the creator can recover them.
+      const visibleDrafts = drafts.filter((draft) => {
+        const status = String(draft.status || "").trim().toLowerCase();
+        return status !== "deployed" && status !== "live" && status !== "archived";
+      });
+      setProfileDrafts(visibleDrafts);
     } catch (err: any) {
       if (cancelled) return;
 

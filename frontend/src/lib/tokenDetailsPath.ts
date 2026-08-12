@@ -83,9 +83,9 @@ export function tokenDetailsPath(
 
   const token = pick(tokenOrCampaign.tokenAddress, tokenOrCampaign.token);
   const campaign = pick(tokenOrCampaign.campaignAddress, tokenOrCampaign.campaign);
-  // Solana: prefer campaign PDA in the path (bonding curve account). Mint is 82-byte
-  // SPL data and cannot be decoded as Campaign — still pass mint as ?mint= for display.
-  const id = isSolana ? campaign || token : token || campaign;
+  // Public TokenDetails URLs are token/mint canonical. The bonding campaign/PDA stays
+  // an internal execution identity and is resolved from the registry on page load.
+  const id = token || campaign;
   if (!id) return "/";
 
   const params = new URLSearchParams();
@@ -98,12 +98,11 @@ export function tokenDetailsPath(
         ? chainId
         : 0;
 
-  if (resolvedChain === 101 || resolvedChain === 102) {
+  // Devnet base58 routes are self-identifying and stay clean: /token/<mint>.
+  // Keep an explicit network pin for future Solana mainnet-beta and for EVM chains.
+  if (resolvedChain === 102) {
     params.set("chainId", String(resolvedChain));
-    if (token && campaign && token !== campaign) {
-      params.set("mint", token);
-    }
-  } else if (resolvedChain > 0 && (options?.chainId != null || tokenOrCampaign.chainId != null)) {
+  } else if (resolvedChain > 0 && resolvedChain !== 101 && (options?.chainId != null || tokenOrCampaign.chainId != null)) {
     params.set("chainId", String(resolvedChain));
   }
 
