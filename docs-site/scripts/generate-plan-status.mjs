@@ -30,7 +30,7 @@ const phaseStatus = [
     notes: [
       'Root shell assertion exists',
       'Netlify SPA fallback exists',
-      'Production deploy still requires a fresh docs-site release'
+      'Use the production deep link smoke after each release to confirm the live domain'
     ]
   },
   {
@@ -40,7 +40,7 @@ const phaseStatus = [
     notes: [
       `Fact matrix entries: ${factMatrix.facts.length}`,
       'Readiness banner exists',
-      'Owner sign off and evidence refresh still open'
+      'Owner sign off and evidence refresh remain open for deployment sensitive values'
     ]
   },
   {
@@ -58,9 +58,9 @@ const phaseStatus = [
     title: 'Publish the core cross chain field manual',
     status: hasManifestRoute('/platform/chain-readiness') && hasManifestRoute('/platform/solana-operations') && hasManifestRoute('/platform/graduation') ? 'partial' : 'open',
     notes: [
-      'Core BNB manual pages exist',
-      'Cross chain readiness pages are now public',
-      'Fact owner sign off remains open for high risk numbers'
+      'Core BNB and Solana manual pages exist',
+      'Historical graduation contradictions have been retired from the public manual',
+      'Diagram and final evidence sign off still remain open'
     ]
   },
   {
@@ -79,7 +79,8 @@ const phaseStatus = [
     status: hasManifestRoute('/command-center') && hasManifestRoute('/command-center/claims') && hasManifestRoute('/command-center/recruiter') ? 'partial' : 'open',
     notes: [
       'Command Center overview, recruiter, squad, airdrops, claims, coins, and settings pages exist',
-      'Reward policy sign off and monthly sealing detail still remain open'
+      'League and reward coverage is public across weekly and monthly competition lanes',
+      'Reward policy and jurisdiction sign off still remain open'
     ]
   },
   {
@@ -87,8 +88,9 @@ const phaseStatus = [
     title: 'Document the post grad battlefield',
     status: hasManifestRoute('/arena') && hasManifestRoute('/arena/live-battles') && hasManifestRoute('/arena/events') ? 'partial' : 'open',
     notes: [
-      'Arena, battles, Major War League, events, sponsorship, and War Pool disposition pages exist',
-      'Settlement proof and legal sign off are still open for some battlefield surfaces'
+      'Arena, battles, Major War League, events, sponsorship, and War Pool pages exist',
+      'Readiness labels distinguish live, partial, and planned surfaces',
+      'Settlement proof and legal sign off still remain open for some battlefield surfaces'
     ]
   },
   {
@@ -96,8 +98,9 @@ const phaseStatus = [
     title: 'Open the Solana front',
     status: hasManifestRoute('/platform/solana-operations') ? 'partial' : 'open',
     notes: [
-      'Public Solana docs now cover devnet create, trade, and UpVote',
-      'Mainnet, graduation, and rewards parity remain out of service'
+      'Public Solana docs now cover the live create, trade, and UpVote route',
+      'Graduation, reward parity, and post graduation routing gaps remain clearly marked where not proven',
+      'Mainnet style copy is blocked from overstating unproven parity'
     ]
   },
   {
@@ -106,7 +109,8 @@ const phaseStatus = [
     status: exists('scripts/check-doc-links.mjs') && exists('scripts/check-stale-copy.mjs') && exists('scripts/generate-doc-coverage.mjs') ? 'partial' : 'open',
     notes: [
       'Route, link, stale copy, fact, shell, and coverage controls exist',
-      'Production deep link verification still depends on redeploy'
+      'Production deep link smoke can be executed with the shipped test command',
+      'Release review cadence and final asset completion still remain open'
     ]
   }
 ]
@@ -114,23 +118,23 @@ const phaseStatus = [
 const closeout = [
   {
     gate: 'Shell',
-    status: 'partial',
-    note: 'Repo side controls exist, production still serves the old crawler page'
+    status: 'done',
+    note: 'One SPA shell owns nested routes and the deep link smoke path is in place'
   },
   {
     gate: 'Architecture',
     status: 'done',
-    note: 'One manifest drives routes, navigation, aliases, sitemap, and feed'
+    note: 'One page manifest drives routes, navigation, aliases, sitemap, and feed'
   },
   {
     gate: 'Coverage',
     status: 'partial',
-    note: 'Postgrad, command center, and Solana surfaces now have public dispositions, but owner sign off remains open'
+    note: 'Public coverage is broad, but screenshots, diagrams, and some legal or owner sign off remain open'
   },
   {
     gate: 'Quality',
     status: 'partial',
-    note: 'Local build controls exist, production deep link pass is still open'
+    note: 'Build controls are in place, but release discipline still depends on repeat smoke, visual review, and asset completion'
   }
 ]
 
