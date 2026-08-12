@@ -1,57 +1,25 @@
 ---
 title: OG Recruiters
-description: The early recruiter class with enhanced routing rewards for linked activity.
+description: The early recruiter class and how it fits the live recruiter program.
 ---
 
-OG Recruiters are an early recruiter class inside MemeWarzone.
+OG Recruiters are part of the live recruiter structure.
 
-They receive the standard recruiter reward plus an additional OG override on linked activity.
+This class recognizes early recruiter participation and gives that role a distinct place inside the recruiter program.
 
-## Standard recruiter rewards
+## What matters to users
 
-Standard recruiters can earn from linked users:
+Most users do not need to memorize internal routing detail.
+They need to know that OG Recruiters are a recognized recruiter class inside the live product and that the recruiter lane can differ by profile.
 
-| Activity | Standard recruiter share |
-| --- | ---: |
-| Linked buy / sell activity | 0.25% |
-| Linked creator finalize activity | 0.30% |
+## What matters to recruiters
 
-These rewards come from the existing platform fee model. They do not add an extra user fee.
+If you hold OG recruiter status, treat it like a public reputation marker as well as a routing profile.
+Keep the code, share path, and onboarding flow clean because the status only matters if the execution stays clean too.
 
-## OG override
+## Best rule
 
-OG Recruiters receive an extra 0.05% on linked trading and finalize activity.
+Use the recruiter pages to explain the role.
+Use the wallet side tools to manage the actual operating work.
 
-| Activity | OG recruiter share |
-| --- | ---: |
-| Linked buy / sell activity | 0.30% |
-| Linked creator finalize activity | 0.35% |
-
-The extra 0.05% is carved out of protocol revenue.
-
-It is not added on top of the 2.00% user-facing fee.
-
-## OG trade routing
-
-| Destination | Share |
-| --- | ---: |
-| LeagueTreasury | 0.75% |
-| OG Recruiter | 0.30% |
-| Squad Pool | 0.05% |
-| ProtocolRevenueVault | 0.90% |
-| Total | 2.00% |
-
-## OG finalize routing
-
-| Destination | Share |
-| --- | ---: |
-| OG Recruiter | 0.35% |
-| Squad Pool | 0.05% |
-| ProtocolRevenueVault | 1.60% |
-| Total | 2.00% |
-
-## Why OG status exists
-
-OG status rewards early recruiters who help build the first wave of creators, traders, and squads before the full battlefield matures.
-
-It recognizes early growth work without increasing fees for users.
+Read: **[Recruiter Program](/programs/recruiter-program)** and **[Dashboard & Payouts](/programs/dashboard-and-payouts)**.

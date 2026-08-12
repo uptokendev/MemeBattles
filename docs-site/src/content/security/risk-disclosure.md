@@ -1,58 +1,28 @@
 ---
 title: Risk Disclosure
-description: The plain-English risks of trading meme campaigns and participating in competitive on-chain markets.
+description: The plain language risk statement for trading campaigns and using speculative market tools.
 ---
 
-Meme tokens are high risk.
+MemeWarzone can improve structure and visibility.
+It cannot remove market risk.
 
-Do not trade money you cannot afford to lose.
+## The main risks
 
-## Market risk
-
-Prices can move violently.
-
-You can lose money because of:
+Users can still lose money because of:
 
 - volatility
-- low liquidity
-- failed momentum
-- sell pressure
-- poor execution
-- slippage
-- broader market conditions
-
-## Creator risk
-
-Creators may fail to execute.
-
-Risks include:
-
-- abandoned campaigns
-- weak communication
-- misleading marketing
-- poor community management
-- failed graduation pushes
-
-## Smart contract risk
-
-Smart contracts can contain bugs.
-
-Audits, testing, and monitoring reduce risk but cannot remove it completely.
-
-## Platform risk
-
-Systems can fail or become unavailable.
-
-Risks include:
-
-- RPC issues
-- indexer delays
-- frontend downtime
-- wrong or delayed displayed data
-- third-party infrastructure failures
+- poor timing
+- weak campaigns
+- fast state changes
+- bad links or bad judgment
+- infrastructure issues or delays
 
 ## Reward risk
 
-League, recruiter, Squad Pool, and Warzone BNB Airdrop rewards depend on final rules, eligibility, available pools, anti-abuse checks, and claim windows.
+Rewards are part of the product, but they should never be treated as guaranteed income.
+A reward lane can depend on timing, state, publication, and account context.
 
-Do not trade solely because you expect a reward.
+## Best rule
+
+Do not use money you cannot afford to lose.
+Do not treat a live page as proof that the outcome will be good.

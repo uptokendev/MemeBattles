@@ -133,7 +133,7 @@
     {
       "id": "readiness.solana_docs",
       "label": "Solana documentation readiness",
-      "value": "Testnet active",
+      "value": "Documented",
       "unit": "status",
       "environment": "Solana",
       "status": "active",

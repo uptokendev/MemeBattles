@@ -1,48 +1,30 @@
 ---
 title: Incident Response
-description: What users should do if they suspect a scam, exploit, or dangerous campaign behavior.
+description: What users should do if they see a fake link, suspicious prompt, or dangerous campaign behavior.
 ---
 
-If something looks wrong, slow down.
+If something looks wrong, slow down first.
 
-Do not rush signatures or transactions during confusion.
+The fastest mistake in a live market is often the one that hurts most.
 
 ## If you see a fake link
 
-1. Do not click it.
-2. Warn others only in official channels.
-3. Report the link to moderators.
-4. Include screenshots and the source if safe.
+1. do not use it
+2. save evidence if it is safe to do so
+3. report it in the official channel
 
 ## If you signed something suspicious
 
-1. Stop using that wallet for new actions.
-2. Review recent approvals.
-3. Revoke suspicious approvals with trusted tools.
-4. Move remaining funds to a safe wallet if needed.
-5. Report the incident.
+1. stop new actions on that wallet
+2. review approvals
+3. remove anything that does not belong
+4. move funds to a safe wallet if needed
 
-## If a campaign looks suspicious
+## If a campaign looks dangerous
 
-Collect evidence:
+Collect the campaign link, the relevant wallets, the transaction references, and the timing.
+Then report it through the official path.
 
-- campaign URL
-- wallet addresses
-- screenshots
-- transaction hashes
-- timestamps
-- chat messages if relevant
+## Best rule
 
-Then report it through official channels.
-
-## Platform response direction
-
-The platform should be able to:
-
-- investigate reports
-- warn users
-- mark suspicious campaigns
-- pause affected systems where technically possible
-- communicate clearly after incidents
-
-Speed matters, but accuracy matters more.
+Speed matters in incidents, but clear evidence matters too.

@@ -1,43 +1,40 @@
 ---
 title: Trader Overview
-description: How traders use MemeWarzone to discover campaigns, trade bonding curves, compete in Leagues, and qualify for rewards.
+description: How traders use MemeWarzone to discover campaigns, work PRE markets, follow post graduation activity, and manage reward opportunities.
 ---
 
-Traders are front-line participants in MemeWarzone.
+Traders are the force that turns attention into live market action.
 
-They discover campaigns, trade the bonding curve, support launches, push UpVotes, compete in Leagues, and may qualify for Warzone BNB Airdrops or Squad Pool rewards.
+A trader uses the product to discover campaigns early, evaluate the page fast, choose an entry point, and manage risk while the state changes around the campaign.
 
-## Trader path
+## Trader mission
 
-1. Browse campaigns.
-2. Check campaign details and links.
-3. Understand bonding-curve risk.
-4. Trade only what you can afford to lose.
-5. Watch League categories.
-6. Use UpVotes if you want to support visibility.
-7. Check eligibility and claim rewards through official pages.
+The normal trader flow is:
 
-## What traders can earn
-
-Traders can earn from:
-
-- successful trades
-- League prizes
-- Warzone BNB Airdrops
-- Squad Pool rewards if they are in an eligible squad
-- status and ranking progression
+1. find a campaign
+2. confirm the chain and the page state
+3. inspect the links and context
+4. trade only after the setup is clear
+5. watch the campaign as it moves through the product surfaces
 
 ## What traders should watch
 
-Before trading, review:
+Strong traders keep an eye on:
 
-- creator/deployer information
-- campaign links
-- trading activity
-- holder concentration when available
-- unique buyers vs volume when available
-- whether graduation is close
-- chat behavior in the War Room
-- eligibility reason codes in private dashboard views
+- chain and wallet context
+- campaign state
+- link quality
+- public momentum
+- state changes between DRAFT, PRE, and POST
+- private reward and claim status in the wallet tools
 
-A campaign can be active and still be risky.
+## Where traders spend time
+
+Most trader time lives in:
+
+- Token Details
+- War Trade Room
+- Arena where relevant
+- Command Center and reward views for private follow through
+
+Read: **[Trading Basics](/traders/trading-basics)**, **[War Trade Room](/traders/war-trade-room)**, and **[Claiming Rewards](/traders/claiming-rewards)**.

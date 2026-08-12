@@ -1,55 +1,36 @@
 ---
 title: Avoid Scams
-description: Basic safety rules for using MemeWarzone and avoiding fake links, fake claims, and impersonators.
+description: The simple safety rules every user should follow before clicking links, signing, or claiming.
 ---
 
-Meme launch markets attract scammers.
-
-Use these rules every time.
+Scammers follow attention.
+That means any live campaign platform needs a simple safety rule set that users can apply fast.
 
 ## Use official domains
 
-Official site:
+Main site:
 
 `https://memewar.zone`
 
-Official docs:
+Docs:
 
 `https://docs.memewar.zone`
 
-Do not trust lookalike domains.
+If a domain looks wrong, stop.
 
-## Never trust random DMs
+## Do not trust random messages
 
-MemeWarzone support will not randomly DM you with urgent claim links.
+Ignore claim prompts, support messages, and recovery offers from unknown accounts.
 
-Be careful with:
+## Check the wallet prompt
 
-- “you won” messages
-- fake airdrop claim links
-- fake support accounts
-- fake recruiter dashboards
-- fake token recovery offers
-- wallet verification scams
-
-## Check wallet prompts
-
-Before signing or submitting a transaction:
+Before you sign:
 
 - read the action
-- check the domain
-- verify the contract interaction
-- avoid unlimited approvals when not needed
-- stop if the prompt looks unrelated to your action
+- confirm the domain
+- confirm the chain
+- stop if the prompt does not match what you intended to do
 
-## Campaign links
+## Best rule
 
-Creators can add links, but users should still verify them.
-
-A campaign page is not an endorsement of every external link.
-
-## Chat safety
-
-The War Room can contain user-generated messages.
-
-Never trust a contract, claim link, or support link just because it was posted in chat.
+If the route feels rushed, unclear, or off brand, stop and verify before you act.

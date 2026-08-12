@@ -1,73 +1,40 @@
 ---
 title: Transparency
-description: What MemeWarzone makes public, what users can see privately, and what remains protected to prevent reward farming.
+description: What the product makes public, what stays private to the wallet owner, and what remains protected for system integrity.
 ---
 
-MemeWarzone is built around visible competition and clear reward flows.
+Transparency matters because MemeWarzone is built around visible competition.
 
-Users should understand how rankings, rewards, claims, and treasury flows work. At the same time, some anti-abuse logic must remain private so the system cannot be farmed.
+Users should be able to understand the public state of campaigns, rewards, rankings, and wallet side claim flows without exposing every private enforcement detail behind the system.
 
 ## Public information
 
-Public surfaces can include:
+The public side can show:
 
-- campaign pages
-- UpVote activity
-- League standings
-- League winners
-- public recruiter profiles
-- recruiter leaderboard
-- squad leaderboard
-- squad public member ranking
-- exact public member score
-- Warzone Airdrop winner pages
-- broad reward rules
-- broad anti-abuse categories
+- campaign state
+- standings
+- winners
+- public profiles
+- public leaderboards
+- broad rule sets
 
-## User-private information
+## Private information
 
-A connected user should be able to see their own:
+The wallet owner should be able to see their own:
 
-- linked recruiter
-- squad status
-- pending rewards
-- claimable rewards
-- claim history
-- eligibility status
-- broad ineligibility reason codes
-- estimated Squad Pool reward
-- dashboard/profile reward breakdown
+- linked state
+- claim state
+- reward rows
+- broad eligibility status
+- private account context that does not belong on public pages
 
-This helps users understand their own position without exposing unnecessary private analytics publicly.
+## Protected information
 
-## Admin-only information
+Some internal signals must stay private so the product can hold the line against farming and manipulation.
 
-Some data should remain admin-only:
+## Best rule
 
-- wallet-level attribution internals
-- risk scoring
-- clustering logic
-- anti-abuse thresholds
-- review queues
-- manual override tools
-- dispute handling data
-- detailed per-recruit analytics where privacy matters
+The product should be transparent about outcomes and public rules.
+It should stay guarded about the internal trigger map that keeps those outcomes honest.
 
-## Why not publish everything?
-
-Publishing exact farming thresholds would make the reward system easier to exploit.
-
-The goal is to be transparent about the rules and outcomes while protecting the detection logic that keeps rewards fair.
-
-## Transparency principle
-
-Users should understand:
-
-- how to participate
-- how to qualify
-- where fees go
-- when rewards are processed
-- how to claim
-- why they may be ineligible
-
-Farmers should not be able to calculate the exact minimum exploit path.
+Read: **[Protection Model](/security/protection-model)** and **[Anti-Abuse System](/security/anti-abuse)**.

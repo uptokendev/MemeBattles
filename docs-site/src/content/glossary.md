@@ -1,88 +1,52 @@
 ---
 title: Glossary
-description: Common MemeWarzone terms explained quickly.
+description: Common MemeWarzone terms explained in plain language.
 ---
 
-## Airdrop treasury
+## Arena
 
-The reward path for Warzone BNB Airdrops, funded by unlinked recruiter/squad slices and expired airdrop rewards.
+The post graduation competition surface for battles, events, standings, and featured visibility.
 
-## Bonding curve
+## Bonding Curve
 
-The pre-graduation pricing mechanism where token price changes based on buying and selling through the campaign contract.
+The PRE market mechanism used before a campaign moves beyond the launchpad phase.
 
 ## Campaign
 
-A token launch page and trading environment on MemeWarzone, including bonding-curve trading, UpVotes, League stats, creator reputation, and reward history.
+The main product object that carries the launch story, state, market context, and related signals for a token.
 
-## CommunityRewardsVault
+## Command Center
 
-The vault that tracks Warzone Airdrop and Squad Pool balances.
+The private wallet console for claims, account tools, and personal campaign management.
 
-## Creator
+## DRAFT
 
-A user who prepares and launches a campaign.
-
-## Crowd Favorite
-
-A League category based on UpVote performance.
+The staging state before live trading opens.
 
 ## Epoch
 
-A fixed reward or competition period. Weekly reward epochs close Monday 00:00 UTC.
+A fixed competition or reward window that the product uses for publication and claims.
 
-## Finalize fee
+## POST
 
-The 2.00% fee taken from raised liquidity at graduation before the remaining liquidity is split.
+The state after the launchpad phase when a campaign has moved into the next market lane.
 
-## Graduation
+## PRE
 
-The transition that happens when a campaign reaches the 50 BNB threshold.
-
-## LeagueTreasury
-
-The treasury funded by 0.75% of every buy and sell to support League prize pools.
-
-## OG recruiter
-
-An early recruiter class that earns 0.30% from linked buy/sell activity and 0.35% from linked finalize activity.
-
-## Prepare Mode
-
-The pre-live phase where creators prepare campaigns and recruiters build squads before live deployment.
-
-## ProtocolRevenueVault
-
-The vault that receives protocol revenue after TreasuryRouter has routed reward allocations.
+The live launchpad trading state before graduation.
 
 ## Recruiter
 
-An approved user who brings creators and traders into MemeWarzone through an attributed link.
+A growth operator who brings users into the product through a tracked share path.
 
-## RecruiterRewardsVault
+## Solana Route
 
-The vault that receives recruiter reward allocations from linked activity.
-
-## Squad
-
-A recruiter-connected group of linked creators and traders.
-
-## Squad Pool
-
-The contribution-based weekly reward pool for eligible squad members.
-
-## TreasuryRouter
-
-The single routing entry point that splits fee flows into League, recruiter, airdrop, Squad Pool, and protocol revenue buckets.
+The live Solana chain path inside the product.
 
 ## UpVote
 
-A paid visibility action costing 0.003 BNB.
+A paid visibility action used to push campaign discovery.
 
-## War Room
+## War Trade Room
 
-Campaign-level chat designed for live community and trading discussion.
-
-## Warzone BNB Airdrops
-
-Weekly BNB reward opportunities for eligible active smaller creators and traders.
+The state driven discovery and trading board across DRAFT, PRE, and POST.

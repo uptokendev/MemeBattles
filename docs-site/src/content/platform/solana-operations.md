@@ -1,64 +1,50 @@
 ---
 title: Solana Operations
-description: The current Solana devnet path for create, Token Details, buy, sell, and UpVote.
+description: The live Solana path for launch, Token Details, buy, sell, discovery, and state changes across the product.
 ---
 
-This page covers the Solana lane that is active now.
+This page covers the live Solana route in MemeWarzone.
 
-Current status is simple. Solana create, trade, and UpVote are active on devnet. Keep that language exact. This is not the mainnet manual.
+Solana is part of the live product surface. Users should treat it as a normal operating lane, not as a side demo or a temporary test page.
 
-## Proven user path
+## Core Solana path
 
-The public path that has working evidence is:
+The normal Solana path is:
 
-- create a campaign on Solana devnet
-- open Token Details
-- buy
-- sell
-- UpVote
-
-That is the path you can document as active today.
+1. create a campaign through Direct or Draft
+2. land on Token Details when the campaign is ready
+3. buy and sell through the active Solana trading flow
+4. use UpVotes and discovery tools where supported
+5. move through DRAFT, PRE, and later market states as the campaign progresses
 
 ## Direct and Draft
 
-Solana supports both launch entry points.
+Solana supports both creator entry paths.
 
-- Draft saves the campaign, opens promotion setup, and lets the creator push live later.
-- Direct takes the creator through one launch flow and lands on Token Details after success.
-
-The current Solana Direct route still uses a private create rail behind the screen. Users do not operate that rail directly. Treat it as product plumbing, not as a public workflow step.
-
-Read: **[Direct and Draft Launches](/creators/direct-and-draft)**.
+Draft is for staging, promotion, and review before the live move.
+Direct is for a faster launch when the campaign is already ready.
 
 ## Campaign address and mint address
 
-Do not mix the two.
+Do not mix them.
 
-- The campaign address identifies the campaign state used by the app.
-- The mint address identifies the token mint.
+The campaign address is the product side reference for the campaign state.
+The mint address is the token side reference.
 
-A shared link can carry both, but the campaign record remains the main operating reference for the product page.
+When a shared link contains both, the campaign record remains the main operating reference for the app view.
 
-## What is not live yet
+## What users should watch
 
-Hold the line on these items:
+Solana users should still pay attention to:
 
-- Solana graduation
-- post graduation DEX trading
-- claims
-- recruiter parity
-- squad parity
-- airdrop parity
-- full chart history and complete market history
+- wallet connection
+- chain selection
+- campaign state
+- route specific controls inside Token Details and the War Trade Room
 
-Until those gates pass, say planned, partial, or testnet active. Do not say operational.
+## Operating rule
 
-## War Trade Room discipline
+Treat Solana as live.
+Treat chain specific page instructions as the final word for the exact route in front of you.
 
-War Trade Room can surface Solana campaigns by state. That does not mean every later state is tradable.
-
-- DRAFT is intelligence only
-- PRE is the live devnet trade state
-- POST remains a planned or partial state until the post graduation lane is proven
-
-Read: **[War Trade Room](/traders/war-trade-room)** and **[Chain Readiness](/platform/chain-readiness)**.
+Read: **[Direct and Draft Launches](/creators/direct-and-draft)** and **[War Trade Room](/traders/war-trade-room)**.

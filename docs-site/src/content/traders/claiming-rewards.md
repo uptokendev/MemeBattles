@@ -1,60 +1,35 @@
 ---
 title: Claiming Rewards
-description: How eligible users claim League, recruiter, Squad Pool, and Warzone BNB Airdrop rewards safely.
+description: How eligible users claim rewards safely through the official wallet flows.
 ---
 
-MemeWarzone rewards are claim-based.
+Rewards are claimed through the official product pages after the relevant epoch or result window closes.
 
-Eligible users claim through official MemeWarzone dashboard or profile pages after an epoch is processed and published.
+This is a wallet side action. Treat it like a real financial action every time.
 
-## Claim only from official pages
+## Claim rule
 
-Always claim through official MemeWarzone pages.
+Claim only from official MemeWarzone pages.
+Never trust copied claim links, random messages, or fake support prompts.
 
-Never trust:
+## What users should expect
 
-- random DM claim links
-- fake support accounts
-- unofficial airdrop checker pages
-- Telegram or Discord links from unknown users
+When a reward is ready, the wallet flow should tell you:
 
-## Weekly claims
+- what program the row belongs to
+- which epoch or result window it belongs to
+- whether the reward is claimable now
+- what the next action is
 
-Most reward programs run on weekly epochs.
+## Before you confirm
 
-Weekly reward epochs close Monday 00:00 UTC. After processing and publication, eligible rewards become claimable.
+Check:
 
-The standard claim window is 7 days after epoch end.
+- domain
+- wallet prompt
+- chain
+- reward row details
 
-Read: **[Epochs & Claims](/rewards/epochs-and-claims)**.
+## Best next pages
 
-## What can become claimable
-
-Depending on eligibility, users may see:
-
-- recruiter rewards
-- Squad Pool rewards
-- Warzone BNB Airdrops
-- League-related rewards
-
-The dashboard should show pending, claimable, claimed, expired, and rolled-over states.
-
-## Expired claims
-
-Expired rewards stay inside the ecosystem:
-
-| Reward type | Expiry destination |
-| --- | --- |
-| Recruiter rewards | Squad Pool |
-| Squad Pool rewards | Squad Pool |
-| Warzone BNB Airdrops | Airdrop treasury |
-
-## Claim safety checklist
-
-Before claiming:
-
-- verify the domain
-- verify the wallet prompt
-- read what the transaction does
-- never approve unknown tokens or contracts blindly
-- ask in official channels if unsure
+Read **[Epochs & Claims](/rewards/epochs-and-claims)** and **[Claims Console](/command-center/claims)**.

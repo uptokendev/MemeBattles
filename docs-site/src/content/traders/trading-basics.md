@@ -1,59 +1,35 @@
 ---
 title: Trading Basics
-description: The practical basics traders should know before buying or selling MemeWarzone campaigns.
+description: The core checks traders should make before buying or selling a campaign.
 ---
 
-Trading on MemeWarzone starts during the bonding-curve phase.
+Trading starts with discipline.
 
-This phase can be fast, volatile, and competitive.
+Before you press buy or sell, confirm that you understand the chain, the campaign state, the page you are on, and the action the wallet is about to take.
 
-## Before you trade
+## First checks
 
-Make sure you understand:
+Before trading, verify:
 
-- which chain you are on
-- how much BNB you are spending
-- the buy/sell fee
-- your slippage settings
-- whether the campaign has reliable links
-- where the campaign is in the lifecycle
-- whether you are linked to a recruiter or squad
+- active chain
+- active wallet
+- campaign state
+- official links
+- the amount you are willing to risk
 
-## Fees
+## What matters in PRE
 
-Buys and sells have a 2.00% fee.
+PRE is the live launchpad state.
 
-From every buy and sell, 0.75% of trade notional routes to LeagueTreasury. Other slices route to recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue based on attribution profile.
+This is where price can move quickly and where a campaign can change character fast as attention builds or fades.
 
-Read: **[Fee Routing](/fees/fee-routing)**.
+## What matters after PRE
 
-## Reward eligibility
+If the campaign has moved beyond PRE, make sure you understand which market lane you are in and which controls belong to that state.
 
-Trading can affect:
+## Simple rule
 
-- League standings
-- Warzone BNB Airdrop eligibility
-- Squad Pool score
-- profile and ranking history
+Do not trade because the page is loud.
+Trade only after the setup is clear.
 
-Reward eligibility is subject to caps and anti-abuse checks. Do not trade solely because you expect a reward.
-
-## Slippage
-
-During volatile campaigns, trades can fail if slippage is too low.
-
-Never blindly raise slippage without understanding the risk. High slippage can produce worse fills than expected.
-
-## Graduation risk
-
-Campaigns near graduation can move quickly.
-
-Understand what happens at 50 BNB before trading near that threshold.
-
-Read: **[Graduation](/platform/graduation)**.
-
-## Chat risk
-
-The War Room can be useful, but it can also be noisy.
-
-Do not treat chat hype as verification. Always check official campaign data and links.
+Read: **[Bonding Curve](/platform/bonding-curve)**, **[Graduation](/platform/graduation)**, and **[Risk Disclosure](/security/risk-disclosure)**.

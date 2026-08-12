@@ -1,88 +1,28 @@
 ---
 title: Ranking System & Profiles
-description: How status, profiles, leaderboards, badges, trophies, rewards, and public/private progression fit into MemeWarzone.
+description: How public reputation, standings, and private wallet context work together across the product.
 ---
 
-MemeWarzone is not only about single trades.
+Rankings turn activity into visible status.
+Profiles turn repeated activity into a public track record.
 
-The ranking system turns activity into visible status.
+## What public profiles are for
 
-## What rankings can show
+Public profiles help users inspect who keeps showing up, who launches cleanly, who performs well, and who builds real momentum over time.
 
-User profiles can display:
+## What private views are for
 
-- rank badges
-- League trophies
-- creator history
-- trader history
-- recruiter status
-- squad metrics
-- campaign participation
-- claim history where appropriate
-- shareable wins
+Private wallet views are for account state, claim rows, and the details that only the wallet owner should manage.
 
-## Why profiles matter
+## Why the split matters
 
-Profiles make reputation visible.
+The product needs both.
+Public reputation helps the market read people.
+Private wallet context helps the user manage actions safely.
 
-That matters because users want to know:
+## Best rule
 
-- who creates serious campaigns
-- who repeatedly abandons launches
-- who wins Leagues
-- who builds active squads
-- who actually participates
-- who has transparent reward history
+Use public profiles for trust and standing.
+Use Command Center for the private operating picture.
 
-## Creator reputation
-
-Creator profiles can help show:
-
-- previous launches
-- graduation rate
-- sell-through behavior
-- past League wins
-- activity history
-- qualified creator activity for reward systems
-
-## Trader reputation
-
-Trader profiles can help show:
-
-- League wins
-- claim history
-- rank progression
-- campaign participation
-- airdrop eligibility status in private views
-- Squad Pool state in private views
-
-## Recruiter reputation
-
-Recruiter profiles can help show:
-
-- squad size
-- active creators
-- active traders
-- linked graduations
-- leaderboard position
-- OG status when applicable
-
-## Squad leaderboards
-
-Squad pages can show:
-
-- squad rank
-- raw score
-- effective score
-- estimated allocation
-- active members
-- eligible members
-- exact public member score
-
-## Transparency boundary
-
-Public profiles should show competition and reputation.
-
-Private wallet dashboards should show sensitive wallet-specific eligibility, linked state, reason codes, and claim actions.
-
-Admin-only risk scoring and clustering logic should stay private.
+Read: **[Command Center Overview](/command-center)**.

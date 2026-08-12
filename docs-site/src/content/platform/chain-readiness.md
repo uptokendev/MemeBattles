@@ -1,58 +1,44 @@
 ---
 title: Chain Readiness
-description: What is live on BNB, what is live on Solana devnet, and what remains held back.
+description: What is live on BNB and Solana and how to read chain specific differences across the product.
 ---
 
 Read the chain before you move.
 
-MemeWarzone does not run one universal path across every network. BNB and Solana are on different readiness lines.
+MemeWarzone runs live on BNB and Solana, but the routes are not identical and the wallet flow can differ by chain.
 
-## BNB line
+## BNB
 
-BNB is the live launch line.
+BNB is the full launchpad line.
 
-Use BNB when you need the current production path for:
+Use the BNB route for campaign launch, PRE trading, graduation tracking, reward flows, and the main recurring competition systems described across this manual.
+
+## Solana
+
+Solana is live and should be treated as a live product surface.
+
+Use the Solana route for:
 
 - campaign creation
-- bonding curve trading
-- UpVotes
-- graduation flow
-- reward and claim flows that are already published in the main manual
-
-## Solana line
-
-Solana is active on devnet.
-
-The proven public path is:
-
-- create
 - Token Details
-- buy
-- sell
-- UpVote
+- buy and sell flow
+- UpVotes
+- discovery across the shared product surfaces
 
-Treat that as a devnet field lane only.
+## What can still differ
 
-Do not tell users that Solana graduation, claims, recruiter parity, squad parity, or post graduation trading are live until those gates are cleared.
+A live chain does not mean every screen works in exactly the same way.
 
-## What the readiness banner means
+Users should still check:
 
-Use the banner at the top of each page as the command signal.
+- wallet type
+- chain selection
+- page specific status note
+- route specific flow differences where a page calls them out
 
-- Operational means the page reflects the live product surface.
-- Partial means part of the flow is live, but route, chain, or release differences still matter.
-- Testnet active means the flow works on testnet or devnet only.
-- Planned means the page records approved direction, not a released surface.
+## Best rule
 
-## Before you share a link
-
-Check four things:
-
-- chain
-- wallet
-- readiness banner
-- page date and wording around planned behavior
-
-If the page points to Solana, keep the words devnet and testnet visible until the mainnet line is cleared.
+Always confirm the active chain before you act.
+If a page is chain specific, treat that page as the operating order for that route.
 
 Read: **[Campaign System](/platform/campaign-lifecycle)** and **[Solana Operations](/platform/solana-operations)**.

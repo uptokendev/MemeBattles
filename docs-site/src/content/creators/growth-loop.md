@@ -1,49 +1,34 @@
 ---
 title: Creator Growth Loop
-description: How creators can use UpVotes, community activity, recruiters, and Leagues to build momentum.
+description: How creators use launch timing, attention, community action, and recurring competition to keep a campaign visible.
 ---
 
-MemeWarzone is built around repeatable attention loops.
+A creator should think beyond launch day.
 
-A creator should not only think: “How do I launch?”
+The real growth loop is what keeps the campaign visible long enough to build market memory and public momentum.
 
-A better question is: “How do I keep the campaign visible long enough to attract real activity?”
+## The growth loop
 
-## The loop
+1. prepare a clean campaign
+2. launch on the right chain with the right wallet
+3. bring the first audience wave
+4. use discovery tools and community action to stay visible
+5. convert attention into trading and participation
+6. carry that result into future launches and profile strength
 
-1. Prepare a clean campaign.
-2. Bring your first community push.
-3. Drive early bonding-curve activity.
-4. Use UpVotes to compete for discovery.
-5. Rally traders into the War Room.
-6. Chase League categories.
-7. Push toward graduation.
-8. Use results to build credibility for the next launch.
+## Where the loop shows up
 
-## UpVotes
+Creators work this loop through:
 
-UpVotes let creators and communities push visibility transparently.
+- Token Details
+- War Trade Room
+- UpVotes
+- Arena and ladder surfaces where relevant
+- public profile reputation
 
-They are useful for:
+## Rule of engagement
 
-- getting into discovery surfaces
-- fighting for Crowd Favorite
-- turning community conviction into a visible signal
+Do not rely on noise alone.
+Real growth comes from clean links, clear message, real community action, and repeated execution.
 
-Read: **[UpVotes](/platform/upvotes)**.
-
-## Recruiters
-
-Creators can join through recruiter links.
-
-A strong recruiter can help bring traders, creators, and social firepower around a campaign.
-
-Read: **[Recruiter Program](/programs/recruiter-program)**.
-
-## Leagues
-
-League categories turn launches into public battles.
-
-Creators should understand which League categories fit their campaign strategy.
-
-Read: **[League categories](/leagues/categories)**.
+Read: **[UpVotes](/platform/upvotes)**, **[War Trade Room](/traders/war-trade-room)**, and **[Ranking System & Profiles](/ranking-system)**.

@@ -1,35 +1,30 @@
 ---
 title: UpVotes for Traders
-description: How traders can use UpVotes to support campaigns and influence discovery.
+description: How traders use UpVotes to push visibility without confusing visibility with safety.
 ---
 
-Traders can use UpVotes to support campaigns they believe deserve visibility.
+Traders can use UpVotes to push campaigns higher in the discovery fight.
 
-Each UpVote costs **0.003 BNB**.
+That can help a community gather momentum, but it should never be confused with proof of safety or proof of future price action.
 
-## Why a trader might UpVote
+## Why a trader would UpVote
 
-A trader may UpVote because they want to:
+A trader may use UpVotes to:
 
-- push a campaign higher in discovery
-- help a community rally
-- compete for Crowd Favorite
-- signal attention to other users
+- back a campaign they believe in
+- push discovery while the market is active
+- support a community visibility move
+- help a campaign compete in attention driven lanes
 
-## What an UpVote does not mean
+## What an UpVote does not do
 
-An UpVote is not a guarantee of safety or future price.
+An UpVote does not certify the campaign.
+It does not remove market risk.
+It does not guarantee that other traders will follow.
 
-UpVoting a campaign does not remove:
+## Best rule
 
-- creator risk
-- market risk
-- volatility risk
-- sell pressure risk
-- smart contract risk
+Use UpVotes as a visibility tool.
+Use your own judgment for risk.
 
-## UpVotes and Leagues
-
-UpVotes are connected to the **Crowd Favorite** League category.
-
-Campaigns with strong community support can use UpVotes as part of their visibility battle.
+Read: **[UpVotes](/platform/upvotes)** and **[League Categories](/leagues/categories)**.

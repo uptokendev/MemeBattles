@@ -1,75 +1,35 @@
 ---
 title: Dashboard & Payouts
-description: What the recruiter dashboard shows and how claim-based recruiter rewards should be presented.
+description: What the recruiter dashboard should show for linked growth, account state, and wallet side reward handling.
 ---
 
-The recruiter dashboard is where approved recruiters track squad growth, attribution, and claimable rewards.
+The recruiter dashboard is the private operating panel for recruiter activity.
 
-## Dashboard metrics
+It should give the recruiter a fast read on linked growth, current state, and any reward actions that belong to that wallet.
 
-The dashboard should show:
+## What the dashboard should show
+
+A strong recruiter dashboard gives quick access to:
 
 - recruiter code
-- share link
-- linked creators
-- linked traders
-- active squad count
-- routed activity
-- pending earnings
-- claimable earnings
-- claimed earnings
-- last claim time
-- leaderboard position when available
+- share path
+- linked creators and linked traders
+- current squad state
+- current activity state
+- reward rows that belong to the recruiter wallet
 
-## Squad view
+## What the dashboard is for
 
-Recruiters should understand who is in their squad without exposing unnecessary private information.
+Use it to:
 
-Useful views include:
+- monitor linked growth
+- check whether the squad path is active
+- move into claim actions when the wallet side state allows it
+- keep the public recruiter presence aligned with the live growth lane
 
-- creator count
-- trader count
-- recently joined users
-- active creators
-- active traders
-- graduated linked creators
-- detached or closed states where applicable
+## What it is not for
 
-## Share tools
+The recruiter dashboard is not a public trophy wall.
+Public recognition belongs on the profile and leaderboard surfaces. The dashboard is for private operating work.
 
-Recruiters should have easy share actions for:
-
-- X
-- Telegram
-- Discord
-- direct copy link
-
-## Claim-based payouts
-
-Recruiter rewards are claim-based.
-
-The UI should distinguish:
-
-- estimated earnings
-- pending earnings
-- claimable earnings
-- claimed earnings
-- expired earnings
-
-After a weekly epoch is published, eligible rewards become claimable. The standard claim window is 7 days after epoch end.
-
-Expired recruiter rewards return to the Squad Pool path.
-
-## Leaderboards
-
-Recruiter leaderboards can create social competition.
-
-Useful leaderboard formats:
-
-- weekly top recruiters
-- top squad builders
-- top creator recruiters
-- top trader recruiters
-- highest squad activity
-
-Leaderboard moments are good content for X, Telegram, and Discord.
+Read: **[Recruiter Console](/command-center/recruiter)** and **[Claims Console](/command-center/claims)**.

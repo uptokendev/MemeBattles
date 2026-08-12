@@ -1,62 +1,49 @@
 ---
 title: Create a Campaign
-description: What creators should prepare before launching a MemeWarzone campaign.
+description: What a creator should prepare before opening a campaign on MemeWarzone.
 ---
 
-A strong campaign starts before deployment.
+A strong campaign starts before the button press.
 
-The more complete and credible your setup is, the easier it is for traders and communities to understand what they are joining.
+Use this page to prepare the assets, message, and links that make a launch understandable on first contact.
 
-## Before you create
+## What to prepare
 
-Prepare these assets:
+Before you open the campaign flow, have these items ready:
 
-- token name
+- name
 - ticker
 - logo
-- banner or header image
-- short description
-- website or landing page, if available
-- X account
-- Telegram or Discord
-- launch announcement copy
-- recruiter link, if you are connected to a recruiter
+- banner or supporting image
+- short public description
+- official website if you have one
+- official X account
+- official Telegram or Discord
+- launch note or announcement copy
 
-## Campaign description
+## What the description should do
 
-Your description should explain:
+The description should answer four questions fast:
 
-- what the meme is
-- why people should care
-- what community you are building
-- where official updates happen
-- what users should never trust
+- what is this campaign
+- why should people care
+- where are the real links
+- where should the audience watch for updates
 
-Keep it direct. Meme traders scan fast.
+## Link discipline
 
-## Links
+Use one official link per channel.
+If users see conflicting links, trust collapses fast.
 
-Use one canonical link per channel.
+## Final check before launch
 
-Bad launch pages usually have scattered, inconsistent, or suspicious links.
+Before you move, confirm:
 
-Good launch pages make it obvious where official communication happens.
+- the chain is correct
+- the wallet is correct
+- the logo is final
+- the text is readable
+- the public links are official
+- the timing is clear
 
-## Prepare Mode behavior
-
-During Prepare Mode, creators can prepare the campaign before full live deployment.
-
-When the platform flips live, prepared creators can deploy campaigns into the active warzone.
-
-## Launch checklist
-
-Before going live, confirm:
-
-- name and ticker are correct
-- logo is final
-- links are official
-- socials are active
-- community knows the launch plan
-- you understand graduation economics
-- you understand League categories
-- you are not relying on hidden promotion
+Read: **[Promotion and Push Live](/creators/promotion-and-push-live)** and **[Prepare Mode](/prepare-mode)**.

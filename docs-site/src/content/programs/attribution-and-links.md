@@ -1,73 +1,33 @@
 ---
 title: Attribution & Links
-description: How recruiter links, 30-day referral windows, wallet linking, lock rules, and detachment work.
+description: How recruiter attribution works from the share path into the connected wallet flow.
 ---
 
-Recruiter attribution connects new users to the recruiter who brought them into MemeWarzone.
+Attribution connects a user to the recruiter who brought them in.
 
-## Recruiter links
+It gives the product a clean way to track who opened the route without turning the user flow into a confusing maze.
 
-The preferred short format is:
+## How the share path works
 
-```txt
-https://memewar.zone/r/CODE
-```
+A recruiter can use a direct share path or a parameter based link.
+Both should lead to the same attribution result inside the product.
 
-The universal parameter format is:
+## What happens before wallet connect
 
-```txt
-https://memewar.zone/?ref=CODE
-```
+A user can arrive first and connect later.
+The product should preserve that path long enough for the later wallet connection to complete under the same recruiter route.
 
-Both should resolve to the same attribution logic.
+## What happens after wallet connect
 
-## Before wallet connect
+When the wallet connects, the platform can attach the account to the captured recruiter path if the route is valid and the account is not already locked to another recruiter state.
 
-A user may click a recruiter link before connecting a wallet.
+## Why the lock matters
 
-MemeWarzone preserves that recruiter code for a 30-day pre-connect window so attribution can still happen when the user later connects.
+The lock exists to keep routing auditable and to stop easy hopping between codes once a user has already become active.
 
-This avoids losing attribution just because the user browsed first and connected later.
+## Best rule
 
-## Wallet linking
+Use one clear share path and keep the onboarding message simple.
+If a user enters through the wrong route, fix the confusion early before activity begins.
 
-When the user connects, the platform can link the wallet to the captured recruiter if:
-
-- the recruiter code is valid
-- the recruiter is active
-- the wallet does not already have a locked recruiter link
-- the wallet is not blocked by abuse or admin state
-
-## Lock after first activity
-
-After the wallet has first eligible platform activity, the recruiter link locks.
-
-This protects both sides:
-
-- recruiters keep attribution for users they genuinely onboarded
-- users cannot hop between codes to farm rewards
-- reward routing stays auditable
-
-## Creator/trader choice
-
-When a user arrives through a recruiter link, the flow should make clear that they are joining as a creator or trader, not applying to become a recruiter.
-
-This prevents referred users from entering the wrong flow.
-
-## Code management
-
-Recruiter codes should be unique.
-
-If a recruiter edits their code and the new code is already taken, the UI should clearly explain the conflict.
-
-## Manual corrections
-
-Admin tools may be needed for edge cases, such as users who joined incorrectly during an earlier confusing flow.
-
-Manual corrections should be logged carefully because attribution affects routing and payouts.
-
-## Detachment
-
-A wallet can detach from a recruiter when platform policy requires it, such as recruiter closure, inactivity, abuse review, or admin correction.
-
-Detached state should be visible to the affected wallet in private dashboard/profile views.
+Read: **[Recruiter Program](/programs/recruiter-program)**.
