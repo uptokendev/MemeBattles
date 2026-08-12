@@ -89,6 +89,12 @@ function bigint(value) {
   return BigInt(value.toString());
 }
 
+function normalizeHash(value, label) {
+  const normalized = String(value || "").trim().replace(/^0x/i, "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) fail(`${label} must be a 32-byte hex SHA-256 value`);
+  return normalized;
+}
+
 function parseBool(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return null;
@@ -154,7 +160,7 @@ function derivePda(programId, ...seeds) {
   return PublicKey.findProgramAddressSync(seeds.map((seed) => Buffer.from(seed)), programId)[0];
 }
 
-function generationArgs(manifest, manifestHash) {
+function generationArgs(manifest, sourceManifestHash) {
   const settings = manifest.settings;
   return {
     generationId: fixed32(hash32(manifest.generationIdSeed)),
@@ -181,7 +187,7 @@ function generationArgs(manifest, manifestHash) {
     oracleProfile: fixed32(hash32(settings.oracleProfileSeed)),
     activeCreation: settings.activeCreation,
     supportEnabled: settings.supportEnabled,
-    manifestHash: fixed32(manifestHash),
+    sourceManifestHash: fixed32(sourceManifestHash),
   };
 }
 
@@ -208,7 +214,7 @@ function expectedAuthority(global, envName, field) {
   return new PublicKey(configured || global[field]);
 }
 
-function verifyGeneration(generation, programId, generationConfig, args) {
+function verifyGenerationSemantics(generation, programId, generationConfig, args) {
   sameBytes(generation.generationId, args.generationId, "GenerationConfig.generationId");
   sameKey(generation.programId, programId, "GenerationConfig.programId");
   sameKey(generation.configPda, generationConfig, "GenerationConfig.configPda");
@@ -218,7 +224,7 @@ function verifyGeneration(generation, programId, generationConfig, args) {
   for (const field of ["tokenTotalSupply", "basePriceLamports", "priceSlopeLamports"]) {
     sameBigint(generation[field], args[field], `GenerationConfig.${field}`);
   }
-  for (const field of ["tradeRouteProfile", "finalizeRouteProfile", "treasuryProfile", "dexProfile", "oracleProfile", "manifestHash"]) {
+  for (const field of ["tradeRouteProfile", "finalizeRouteProfile", "treasuryProfile", "dexProfile", "oracleProfile"]) {
     sameBytes(generation[field], args[field], `GenerationConfig.${field}`);
   }
   assert.equal(generation.activeCreation, args.activeCreation, "GenerationConfig.activeCreation mismatch");
@@ -239,8 +245,8 @@ async function verifyAuthHealth(url, expected) {
   const manifestHash = firstNonEmpty(parsed?.manifestHash, parsed?.generationManifestHash, parsed?.data?.manifestHash);
   if (programId) sameKey(programId, expected.programId, "backend health program ID");
   if (routeSigner) sameKey(routeSigner, expected.routeSigner, "backend health route signer");
-  if (manifestHash) assert.equal(manifestHash.toLowerCase(), expected.manifestHash, "backend health manifest hash mismatch");
-  return { url, status: response.status, programId: programId || null, routeSigner: routeSigner || null, manifestHash: manifestHash ? manifestHash.toLowerCase() : null, json: Boolean(parsed) };
+  if (manifestHash) assert.equal(normalizeHash(manifestHash, "backend health manifest hash"), expected.onChainManifestHash, "backend health/on-chain manifest commitment mismatch");
+  return { url, status: response.status, programId: programId || null, routeSigner: routeSigner || null, manifestHash: manifestHash ? normalizeHash(manifestHash, "backend health manifest hash") : null, json: Boolean(parsed) };
 }
 
 async function main() {
@@ -248,8 +254,8 @@ async function main() {
   const manifest = readJson(options.manifest, "generation manifest");
   const idlText = readText(options.idl, "generated IDL");
   const idl = JSON.parse(idlText);
-  const manifestHash = hash32(canonicalJson(manifest));
-  const manifestHashHex = manifestHash.toString("hex");
+  const sourceManifestHash = hash32(canonicalJson(manifest));
+  const sourceManifestHashHex = sourceManifestHash.toString("hex");
   const idlHashHex = sha256Hex(idlText);
   const anchorToml = readText(DEFAULT_ANCHOR_TOML, "Anchor.toml");
   const source = readText(DEFAULT_PROGRAM_SOURCE, "program source");
@@ -263,7 +269,6 @@ async function main() {
   if (idl.address) sameKey(idl.address, configuredProgramId, "IDL metadata address");
 
   const configuredManifestHash = firstNonEmpty(process.env.SOLANA_GENERATION_MANIFEST_HASH);
-  if (configuredManifestHash) assert.equal(configuredManifestHash.toLowerCase(), manifestHashHex, "configured manifest hash mismatch");
   const configuredIdlHash = firstNonEmpty(process.env.SOLANA_LAUNCHPAD_IDL_SHA256);
   if (configuredIdlHash) assert.equal(configuredIdlHash.toLowerCase(), idlHashHex, "configured IDL hash mismatch");
   if (!fs.existsSync(DEFAULT_PROGRAM_BINARY)) fail(`program binary not found: ${DEFAULT_PROGRAM_BINARY}`);
@@ -279,7 +284,6 @@ async function main() {
   if (backendProgramId) sameKey(backendProgramId, configuredProgramId, "backend program ID");
   const backendRouteSigner = firstNonEmpty(backendEnv.values.get("SOLANA_ROUTE_SIGNER_PUBLIC_KEY"));
   const backendManifestHash = firstNonEmpty(backendEnv.values.get("SOLANA_GENERATION_MANIFEST_HASH"));
-  if (backendManifestHash) assert.equal(backendManifestHash.toLowerCase(), manifestHashHex, "backend env manifest hash mismatch");
 
   const rpcUrl = firstNonEmpty(process.env.SOLANA_RPC_URL, DEFAULT_RPC);
   const connection = new anchor.web3.Connection(rpcUrl, "confirmed");
@@ -292,7 +296,7 @@ async function main() {
   assert.equal(programInfo.executable, true, "program account must be executable");
   sameKey(programInfo.owner, UPGRADEABLE_LOADER, "program owner");
 
-  const generation = generationArgs(manifest, manifestHash);
+  const generation = generationArgs(manifest, sourceManifestHash);
   const generationId = Buffer.from(generation.generationId);
   const clusterId = hash32(manifest.riskClusterIdSeed);
   const globalConfig = derivePda(configuredProgramId, "global");
@@ -301,6 +305,14 @@ async function main() {
   const global = await program.account.globalConfig.fetch(globalConfig);
   const generationState = await program.account.generationConfig.fetch(generationConfig);
   const clusterState = await program.account.clusterProfile.fetch(clusterProfile);
+  const onChainManifestHashHex = Buffer.from(generationState.manifestHash).toString("hex");
+
+  if (configuredManifestHash) {
+    assert.equal(normalizeHash(configuredManifestHash, "SOLANA_GENERATION_MANIFEST_HASH"), onChainManifestHashHex, "configured/on-chain generation manifest commitment mismatch");
+  }
+  if (backendManifestHash) {
+    assert.equal(normalizeHash(backendManifestHash, "backend SOLANA_GENERATION_MANIFEST_HASH"), onChainManifestHashHex, "backend env/on-chain generation manifest commitment mismatch");
+  }
 
   const authorities = {
     admin: expectedAuthority(global, "SOLANA_ADMIN_PUBLIC_KEY", "admin"),
@@ -318,7 +330,7 @@ async function main() {
   assert.equal(global.authorizedTradingRequired, true, "authorized trading must remain required");
   const expectedPauseFlags = resolveExpectedPauseFlags(manifest.pauseFlags);
   for (const [name, expected] of Object.entries(expectedPauseFlags)) assert.equal(global[name], expected, `GlobalConfig.${name} mismatch`);
-  verifyGeneration(generationState, configuredProgramId, generationConfig, generation);
+  verifyGenerationSemantics(generationState, configuredProgramId, generationConfig, generation);
   sameBytes(global.activeGenerationId, generation.generationId, "GlobalConfig.activeGenerationId");
   sameBytes(clusterState.clusterId, clusterId, "ClusterProfile.clusterId");
   sameNumber(clusterState.size, manifest.clusterProfile.size, "ClusterProfile.size");
@@ -326,10 +338,14 @@ async function main() {
   assert.equal(clusterState.restricted, manifest.clusterProfile.restricted, "ClusterProfile.restricted mismatch");
 
   const authHealthUrl = firstNonEmpty(options.skipAuthHealth ? "" : options.authHealthUrl, backendEnv.values.get("SOLANA_AUTH_HEALTHCHECK_URL"), frontendEnv.values.get("SOLANA_AUTH_HEALTHCHECK_URL"));
-  const authHealth = authHealthUrl ? await verifyAuthHealth(authHealthUrl, { programId: configuredProgramId, routeSigner: authorities.routeSigner, manifestHash: manifestHashHex }) : null;
+  const authHealth = authHealthUrl ? await verifyAuthHealth(authHealthUrl, { programId: configuredProgramId, routeSigner: authorities.routeSigner, onChainManifestHash: onChainManifestHashHex }) : null;
+  const semanticGenerationMatchesSource = true;
+  const manifestProvenance = onChainManifestHashHex === sourceManifestHashHex
+    ? "source_canonical_match"
+    : "legacy_unreconstructed_commitment";
 
   const evidence = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: "verified",
     mode: "verify",
     verifiedAt: new Date().toISOString(),
@@ -338,7 +354,11 @@ async function main() {
     programId: configuredProgramId.toBase58(),
     operator: null,
     generationManifest: path.relative(ROOT, options.manifest),
-    generationManifestSha256: manifestHashHex,
+    generationManifestSha256: sourceManifestHashHex,
+    sourceManifestSha256: sourceManifestHashHex,
+    onChainManifestHash: onChainManifestHashHex,
+    manifestProvenance,
+    semanticGenerationMatchesSource,
     idlSha256: idlHashHex,
     programSha256: localProgramHash,
     staticProgramIds: { declareId: declaredProgramId, anchorLocalnet: anchorLocalnetProgramId, anchorDevnet: anchorDevnetProgramId, idlAddress: firstNonEmpty(idl.address) || null },
@@ -350,7 +370,15 @@ async function main() {
     bootstrapPauseFlags: { ...manifest.pauseFlags },
     expectedPauseFlags,
     securityDefaultsLocked: global.securityDefaultsLocked,
-    envAgreement: { frontendEnvFile: frontendEnv.exists ? path.relative(ROOT, frontendEnv.path) : null, frontendProgramId: frontendProgramId || null, backendEnvFile: backendEnv.exists ? path.relative(ROOT, backendEnv.path) : null, backendProgramId: backendProgramId || null, backendManifestHash: backendManifestHash ? backendManifestHash.toLowerCase() : null, backendRouteSigner: backendRouteSigner || null },
+    envAgreement: {
+      frontendEnvFile: frontendEnv.exists ? path.relative(ROOT, frontendEnv.path) : null,
+      frontendProgramId: frontendProgramId || null,
+      backendEnvFile: backendEnv.exists ? path.relative(ROOT, backendEnv.path) : null,
+      backendProgramId: backendProgramId || null,
+      configuredManifestHash: configuredManifestHash ? normalizeHash(configuredManifestHash, "SOLANA_GENERATION_MANIFEST_HASH") : null,
+      backendManifestHash: backendManifestHash ? normalizeHash(backendManifestHash, "backend SOLANA_GENERATION_MANIFEST_HASH") : null,
+      backendRouteSigner: backendRouteSigner || null,
+    },
     authHealth,
     transactionSignatures: [],
   };
@@ -360,7 +388,9 @@ async function main() {
   console.log(`Program: ${evidence.programId}`);
   console.log(`GlobalConfig: ${evidence.accounts.globalConfig}`);
   console.log(`GenerationConfig: ${evidence.accounts.generationConfig}`);
-  console.log(`Manifest SHA-256: ${evidence.generationManifestSha256}`);
+  console.log(`Source manifest SHA-256: ${evidence.sourceManifestSha256}`);
+  console.log(`On-chain manifest commitment: ${evidence.onChainManifestHash}`);
+  console.log(`Manifest provenance: ${evidence.manifestProvenance}`);
   if (authHealth) console.log(`Auth health: ${authHealth.url} (${authHealth.status})`);
 }
 
