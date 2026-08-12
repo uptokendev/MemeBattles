@@ -64,8 +64,8 @@ function main() {
   );
   runCheck(
     "2/2 protocol/generation state",
-    path.join(__dirname, "devnet-protocol-state.cjs"),
-    ["verify"],
+    path.join(__dirname, "devnet-protocol-verify.cjs"),
+    [],
     strictEnv,
   );
 
