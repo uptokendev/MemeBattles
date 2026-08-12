@@ -1,6 +1,6 @@
 ---
 title: Fee Examples
-description: Simple BNB examples for trading fees, creator trade earnings, fee routing, UpVotes, finalize routing, and graduation economics.
+description: Simple BNB examples for trading fees, creator trade earnings, fee routing, UpVotes, finalize routing, and graduation walkthroughs.
 ---
 
 These examples use BNB amounts to keep the math easy.
@@ -38,7 +38,7 @@ Unlinked activity sends the unassigned recruiter and squad slices to Warzone Air
 
 ## OG trade example
 
-If an OG-linked user buys or sells with 1 BNB:
+If an OG linked user buys or sells with 1 BNB:
 
 | Destination | Amount |
 | --- | ---: |
@@ -49,19 +49,19 @@ If an OG-linked user buys or sells with 1 BNB:
 | ProtocolRevenueVault, 0.80% | 0.0080 BNB |
 | Total fee | 0.0200 BNB |
 
-The OG override comes from protocol revenue. It does not increase the user-facing fee.
+The OG override comes from protocol revenue. It does not increase the user facing fee.
 
 ## Creator trade earnings example
 
-If a creator's campaign receives 100 BNB of bonding-curve buy/sell notional before graduation, the creator earns:
+If a creator's campaign receives 100 BNB of bonding curve buy and sell notional before graduation, the creator earns:
 
 | Item | Amount |
 | --- | ---: |
-| Bonding-curve trade notional | 100 BNB |
+| Bonding curve trade notional | 100 BNB |
 | Creator direct trade share | 0.10% |
 | Direct creator trade earnings | 0.100 BNB |
 
-This is separate from the graduation payout. It is earned from trading activity on the creator's own campaign.
+This is separate from the creator payout. It is earned from trading activity on the creator's own campaign.
 
 ## UpVote example
 
@@ -75,19 +75,19 @@ If a campaign receives 100 UpVotes:
 
 UpVotes are paid visibility actions. They are not a safety label and do not guarantee graduation or price performance.
 
-## Graduation example
+## Example graduation walkthrough
 
-At the minimum 50 BNB graduation threshold:
+This walkthrough uses a 50 BNB raise only as a round number for math.
 
 | Item | Amount |
 | --- | ---: |
 | Raised liquidity | 50 BNB |
 | Finalize fee, 2.00% | 1 BNB |
 | Remaining after fee | 49 BNB |
-| LP liquidity, 80% | 39.2 BNB |
-| Creator payout, 20% | 9.8 BNB |
+| Launch liquidity | 39.2 BNB |
+| Creator payout | 9.8 BNB |
 
-The 1 BNB finalize fee then routes according to the campaign attribution profile.
+The numbers above are illustrative. Use the live deployment policy for the current target and distribution rules.
 
 ## Standard linked finalize example
 
@@ -100,7 +100,7 @@ If a standard linked campaign finalizes with a 1 BNB finalize fee:
 | ProtocolRevenueVault | 1.65% | 0.825 BNB |
 | Total finalize fee | 2.00% | 1.000 BNB |
 
-Finalize does not route to LeagueTreasury or the creator direct trade-share path.
+Finalize does not route to LeagueTreasury or the creator direct trade share path.
 
 ## Unlinked finalize example
 
@@ -116,7 +116,7 @@ The unassigned recruiter and squad slices route to Warzone Airdrops.
 
 ## OG linked finalize example
 
-If an OG-linked campaign finalizes with a 1 BNB finalize fee:
+If an OG linked campaign finalizes with a 1 BNB finalize fee:
 
 | Destination | Share | Amount |
 | --- | ---: | ---: |
