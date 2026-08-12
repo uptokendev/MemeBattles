@@ -1,50 +1,66 @@
 ---
 title: Solana Operations
-description: The live Solana path for launch, Token Details, buy, sell, discovery, and state changes across the product.
+description: Launch, trade, vote, graduate, and follow campaigns on the Solana side of MemeWarzone.
 ---
 
-This page covers the live Solana route in MemeWarzone.
+Solana is a live MemeWarzone network alongside BNB.
 
-Solana is part of the live product surface. Users should treat it as a normal operating lane, not as a side demo or a temporary test page.
+The product keeps the campaign flow familiar across both networks while using the wallet, addresses, transaction fees, and market route native to the selected chain.
 
-## Core Solana path
+![Solana campaign flow](/images/docs/solana-campaign-flow.png)
 
-The normal Solana path is:
+## Create a Solana campaign
 
-1. create a campaign through Direct or Draft
-2. land on Token Details when the campaign is ready
-3. buy and sell through the active Solana trading flow
-4. use UpVotes and discovery tools where supported
-5. move through DRAFT, PRE, and later market states as the campaign progresses
+Choose Solana before starting the campaign form.
 
-## Direct and Draft
+Creators can use Direct for a campaign that is ready to launch or Draft when they want to prepare the campaign and promotion page before opening trading.
 
-Solana supports both creator entry paths.
+## Token Details
 
-Draft is for staging, promotion, and review before the live move.
-Direct is for a faster launch when the campaign is already ready.
+Token Details is the main campaign view after creation.
+
+Use it to verify the campaign, read its current state, inspect public information, and use the actions available for that stage of the campaign.
+
+![Solana Token Details](/images/docs/solana-token-details.png)
+
+## Buy and sell
+
+When the campaign is in PRE, use the active Solana trading controls shown by the product.
+
+Before signing:
+
+1. confirm Solana is selected
+2. confirm the campaign and mint information
+3. review the quoted transaction
+4. confirm the wallet request
+5. wait for the transaction result before submitting another action
+
+## UpVotes and discovery
+
+Solana campaigns participate in MemeWarzone discovery through the campaign surfaces available to them, including UpVotes and the War Trade Room.
+
+UpVotes increase visibility. They do not verify a campaign or guarantee its performance.
 
 ## Campaign address and mint address
 
-Do not mix them.
+These are different references.
 
-The campaign address is the product side reference for the campaign state.
-The mint address is the token side reference.
+The campaign address identifies the MemeWarzone campaign record and its state.
 
-When a shared link contains both, the campaign record remains the main operating reference for the app view.
+The mint address identifies the Solana token.
 
-## What users should watch
+Verify which address a wallet, explorer, or product field is asking for before copying it.
 
-Solana users should still pay attention to:
+## Graduation and POST
 
-- wallet connection
-- chain selection
-- campaign state
-- route specific controls inside Token Details and the War Trade Room
+When a Solana campaign completes its launch phase, its state advances and the product exposes the post graduation route available to that campaign.
 
-## Operating rule
+Use the campaign state and War Trade Room as the source for the next market action.
 
-Treat Solana as live.
-Treat chain specific page instructions as the final word for the exact route in front of you.
+## Wallet discipline
 
-Read: **[Direct and Draft Launches](/creators/direct-and-draft)** and **[War Trade Room](/traders/war-trade-room)**.
+Never approve a transaction because a social post, direct message, or copied link tells you to.
+
+Open MemeWarzone through the official site, verify the chain and campaign, then review the wallet request before signing.
+
+Read **[Direct and Draft Launches](/creators/direct-and-draft)**, **[War Trade Room](/traders/war-trade-room)**, and **[Avoid Scams](/security/avoid-scams)**.
