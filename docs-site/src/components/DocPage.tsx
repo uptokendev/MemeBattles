@@ -4,17 +4,59 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Toc from './Toc'
 import PrevNext from './PrevNext'
-import { getPageByPath, normalizePath } from '../content/loader'
+import { getPageByPath, getSourcePathByRoute, normalizePath } from '../content/loader'
 import { parseFrontmatter } from '../lib/frontmatter'
 import FaqContent from './FaqContent'
 import { buildFaqToc, parseFaqMarkdown } from '../lib/faq'
 import RoadmapBattlefield from './RoadmapBattlefield'
+
+function resolveDocLinkHref(href: string, sourcePath: string | null) {
+  if (!href) return null
+
+  if (href.startsWith('#')) {
+    return { kind: 'anchor' as const, href }
+  }
+
+  if (/\.[a-z0-9]+(?=[#?]|$)/i.test(href) && !/\.md(?=[#?]|$)/i.test(href)) {
+    return { kind: 'anchor' as const, href }
+  }
+
+  const externalSchemes = ['http://', 'https://', 'mailto:', 'tel:']
+  if (externalSchemes.some((scheme) => href.startsWith(scheme))) {
+    const url = new URL(href, 'https://docs.memewar.zone')
+    if (url.origin !== 'https://docs.memewar.zone') {
+      return { kind: 'external' as const, href }
+    }
+
+    const internalPath = `${url.pathname === '/' ? '/introduction' : url.pathname}${url.hash}`
+    return { kind: 'internal' as const, href: internalPath }
+  }
+
+  const resolvedSourcePath = sourcePath ?? '/introduction'
+  const sourceDir = resolvedSourcePath.endsWith('/index')
+    ? resolvedSourcePath.slice(0, -'/index'.length)
+    : resolvedSourcePath.split('/').slice(0, -1).join('/') || '/'
+  const basePath = sourceDir.endsWith('/') ? sourceDir : `${sourceDir}/`
+  const normalizedHref = href.replace(/\.md(?=[#?]|$)/, '')
+  const resolved = new URL(normalizedHref, `https://docs.memewar.zone${basePath}`)
+
+  let pathname = resolved.pathname.replace(/\/index$/, '')
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1)
+  }
+
+  return {
+    kind: 'internal' as const,
+    href: `${pathname || '/introduction'}${resolved.hash}`
+  }
+}
 
 export default function DocPage() {
   const loc = useLocation()
   const path = useMemo(() => normalizePath(loc.pathname), [loc.pathname])
 
   const raw = useMemo(() => getPageByPath(path), [path])
+  const sourcePath = useMemo(() => getSourcePathByRoute(path), [path])
   const { data, content } = useMemo(() => parseFrontmatter(raw ?? ''), [raw])
 
   const title = (data.title as string) || 'Not found'
@@ -99,9 +141,37 @@ export default function DocPage() {
                   blockquote: ({ node, ...props }) => (
                     <blockquote className="my-5 border-l-2 border-mb-accent/60 pl-4 text-mb-muted" {...props} />
                   ),
-                  a: ({ node, ...props }) => (
-                    <a className="text-mb-accent2 hover:text-mb-accent2/95" target="_blank" rel="noreferrer" {...props} />
-                  )
+                  a: ({ node, href = '', children, ...props }) => {
+                    const resolved = resolveDocLinkHref(href, sourcePath)
+
+                    if (!resolved || resolved.kind === 'anchor') {
+                      return (
+                        <a href={href} className="text-mb-accent2 hover:text-mb-accent2/95" {...props}>
+                          {children}
+                        </a>
+                      )
+                    }
+
+                    if (resolved.kind === 'external') {
+                      return (
+                        <a
+                          href={resolved.href}
+                          className="text-mb-accent2 hover:text-mb-accent2/95"
+                          target="_blank"
+                          rel="noreferrer"
+                          {...props}
+                        >
+                          {children}
+                        </a>
+                      )
+                    }
+
+                    return (
+                      <Link to={resolved.href} className="text-mb-accent2 hover:text-mb-accent2/95">
+                        {children}
+                      </Link>
+                    )
+                  }
                 }}
               >
                 {content}

@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/generate-static-docs.mjs",
+    "check:routes": "node scripts/validate-doc-routes.mjs",
+    "build:app": "tsc -b && vite build",
+    "build:artifacts": "node scripts/generate-static-docs.mjs",
+    "check:dist": "node scripts/assert-dist-shell.mjs",
+    "test:deeplinks": "node scripts/smoke-deep-links.mjs",
+    "build": "npm run check:routes && npm run build:app && npm run build:artifacts && npm run check:dist",
     "preview": "vite preview"
   },
   "dependencies": {

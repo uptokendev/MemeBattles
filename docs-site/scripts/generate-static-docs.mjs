@@ -4,22 +4,16 @@ import path from 'node:path'
 const root = process.cwd()
 const contentDir = path.join(root, 'src', 'content')
 const outDir = path.join(root, 'dist')
+const sidebarPath = path.join(contentDir, 'sidebar.ts')
 const siteUrl = process.env.DOCS_SITE_URL || 'https://docs.memewar.zone'
 
-const escapeHtml = (value = '') =>
+const escapeXml = (value = '') =>
   String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-
-const slugify = (value = '') =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
 
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -32,163 +26,111 @@ function walk(dir) {
 }
 
 function parseFrontmatter(raw) {
-  if (!raw.startsWith('---')) return { data: {}, content: raw }
-  const end = raw.indexOf('\n---', 3)
-  if (end === -1) return { data: {}, content: raw }
-  const fm = raw.slice(3, end).trim()
-  const content = raw.slice(end + 4).trim()
+  if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
+    return { data: {}, content: raw }
+  }
+
+  const fence = /\r?\n---\r?\n/
+  const match = fence.exec(raw)
+  if (!match) return { data: {}, content: raw }
+
   const data = {}
-  for (const line of fm.split('\n')) {
-    const idx = line.indexOf(':')
+  const block = raw.slice(4, match.index)
+  const content = raw.slice(match.index + match[0].length)
+
+  for (const line of block.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const idx = trimmed.indexOf(':')
     if (idx === -1) continue
-    const key = line.slice(0, idx).trim()
-    const value = line.slice(idx + 1).trim().replace(/^['\"]|['\"]$/g, '')
+    const key = trimmed.slice(0, idx).trim()
+    let value = trimmed.slice(idx + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
     data[key] = value
   }
+
   return { data, content }
 }
 
-function markdownToHtml(md) {
-  const lines = md.split('\n')
-  const html = []
-  let listType = null
-  let inCode = false
-  let code = []
+function extractSidebarRoutes() {
+  const raw = fs.readFileSync(sidebarPath, 'utf8')
+  const routePattern = /\{\s*title:\s*'([^']+)'\s*,\s*href:\s*'([^']+)'\s*\}/g
+  const items = []
+  let match
 
-  const closeList = () => {
-    if (listType) {
-      html.push(`</${listType}>`)
-      listType = null
+  while ((match = routePattern.exec(raw))) {
+    items.push({
+      navTitle: match[1],
+      route: match[2]
+    })
+  }
+
+  return items
+}
+
+function buildRouteIndex() {
+  const index = new Map()
+
+  for (const file of walk(contentDir)) {
+    const rel = path.relative(contentDir, file).replace(/\\/g, '/')
+    const slug = rel.replace(/\.md$/, '')
+    const route = `/${slug}`.replace(/\/index$/, '') || '/'
+    if (!index.has(route)) {
+      index.set(route, file)
     }
   }
 
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd()
+  return index
+}
 
-    if (line.startsWith('```')) {
-      if (inCode) {
-        html.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`)
-        code = []
-        inCode = false
-      } else {
-        closeList()
-        inCode = true
+function loadCanonicalPages() {
+  const routeIndex = buildRouteIndex()
+  const seen = new Set()
+
+  return extractSidebarRoutes()
+    .filter((item) => {
+      if (seen.has(item.route)) return false
+      seen.add(item.route)
+      return true
+    })
+    .map((item) => {
+      const file = routeIndex.get(item.route)
+      if (!file) {
+        throw new Error(`Missing markdown source for canonical route ${item.route}`)
       }
-      continue
-    }
 
-    if (inCode) {
-      code.push(rawLine)
-      continue
-    }
+      const raw = fs.readFileSync(file, 'utf8')
+      const { data, content } = parseFrontmatter(raw)
 
-    if (!line.trim()) {
-      closeList()
-      continue
-    }
-
-    const heading = /^(#{2,4})\s+(.+)$/.exec(line)
-    if (heading) {
-      closeList()
-      const level = heading[1].length
-      const text = heading[2].trim()
-      html.push(`<h${level} id="${slugify(text)}">${escapeHtml(text)}</h${level}>`)
-      continue
-    }
-
-    const unordered = /^[-*]\s+(.+)$/.exec(line.trim())
-    if (unordered) {
-      if (listType !== 'ul') {
-        closeList()
-        listType = 'ul'
-        html.push('<ul>')
+      return {
+        route: item.route,
+        title: data.title || item.navTitle,
+        description: data.description || '',
+        content
       }
-      html.push(`<li>${escapeHtml(unordered[1])}</li>`)
-      continue
-    }
-
-    const ordered = /^\d+\.\s+(.+)$/.exec(line.trim())
-    if (ordered) {
-      if (listType !== 'ol') {
-        closeList()
-        listType = 'ol'
-        html.push('<ol>')
-      }
-      html.push(`<li>${escapeHtml(ordered[1])}</li>`)
-      continue
-    }
-
-    closeList()
-    html.push(`<p>${escapeHtml(line)}</p>`)
-  }
-
-  closeList()
-  return html.join('\n')
+    })
 }
 
-function routeFromFile(file) {
-  const rel = path.relative(contentDir, file).replace(/\\/g, '/')
-  const slug = rel.replace(/\.md$/, '')
-  return `/${slug}`.replace(/\/index$/, '')
+if (!fs.existsSync(outDir)) {
+  throw new Error('dist does not exist. Run the Vite build before generating docs artifacts.')
 }
 
-function pageTemplate({ title, description, route, body }) {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title)} | MemeWarzone Docs</title>
-  <meta name="description" content="${escapeHtml(description)}" />
-  <link rel="canonical" href="${siteUrl}${route}" />
-  <style>
-    body{margin:0;background:#0b0d10;color:#f2f2ee;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.65;padding:32px;max-width:920px}a{color:#ff8a2a}main{border:1px solid rgba(84,93,105,.35);border-radius:24px;padding:28px;background:linear-gradient(180deg,rgba(20,24,30,.9),rgba(13,16,20,.9))}h1,h2,h3{line-height:1.15}h1{font-size:40px}h2{margin-top:42px;color:#ff8a2a}p,li{color:#d8dde5}pre{overflow:auto;background:#080a0d;border-radius:14px;padding:14px}.crawler-note{margin-bottom:16px;color:#b5bcc6;font-size:14px}
-  </style>
-</head>
-<body>
-  <main>
-    <p class="crawler-note">Static crawler version. Interactive docs are available at <a href="${route}">${siteUrl}${route}</a>.</p>
-    <h1>${escapeHtml(title)}</h1>
-    ${description ? `<p>${escapeHtml(description)}</p>` : ''}
-    ${body}
-  </main>
-</body>
-</html>`
-}
-
-if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
-
-const pages = walk(contentDir)
-  .map((file) => {
-    const raw = fs.readFileSync(file, 'utf8')
-    const { data, content } = parseFrontmatter(raw)
-    const route = routeFromFile(file)
-    return {
-      route,
-      title: data.title || route.replace(/^\//, '') || 'Introduction',
-      description: data.description || '',
-      content,
-      html: markdownToHtml(content)
-    }
-  })
-  .sort((a, b) => a.route.localeCompare(b.route))
-
-for (const page of pages) {
-  const targetDir = path.join(outDir, page.route)
-  fs.mkdirSync(targetDir, { recursive: true })
-  fs.writeFileSync(path.join(targetDir, 'index.html'), pageTemplate({ ...page, body: page.html }))
-}
+const pages = loadCanonicalPages()
 
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
-  .map((p) => `  <url><loc>${siteUrl}${p.route}</loc></url>`)
+  .map((page) => `  <url><loc>${siteUrl}${page.route}</loc></url>`)
   .join('\n')}\n</urlset>\n`
+
 fs.writeFileSync(path.join(outDir, 'sitemap.xml'), sitemap)
 
 const feed = `<?xml version="1.0" encoding="UTF-8"?>\n<docs generated="${new Date().toISOString()}">\n${pages
   .map(
-    (p) => `  <page>\n    <loc>${siteUrl}${p.route}</loc>\n    <title>${escapeHtml(p.title)}</title>\n    <description>${escapeHtml(p.description)}</description>\n    <content>${escapeHtml(p.content)}</content>\n  </page>`
+    (page) => `  <page>\n    <loc>${siteUrl}${page.route}</loc>\n    <title>${escapeXml(page.title)}</title>\n    <description>${escapeXml(page.description)}</description>\n    <content>${escapeXml(page.content.trim())}</content>\n  </page>`
   )
   .join('\n')}\n</docs>\n`
+
 fs.writeFileSync(path.join(outDir, 'docs-feed.xml'), feed)
 
-console.log(`Generated ${pages.length} static doc pages, sitemap.xml, and docs-feed.xml`)
+console.log(`Generated sitemap.xml and docs-feed.xml for ${pages.length} canonical pages`)

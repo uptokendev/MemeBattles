@@ -60,12 +60,19 @@ export function normalizePath(pathname: string) {
   return routeAliases[normalized] ?? normalized
 }
 
-export function getPageByPath(path: string): string | null {
-  if (index[path]) return index[path]
-  // fallback: allow /x to map to /x/index
+export function getSourcePathByRoute(path: string): string | null {
+  if (index[path]) return path
+
   const withIndex = `${path}/index`
-  if (index[withIndex]) return index[withIndex]
+  if (index[withIndex]) return withIndex
+
   return null
+}
+
+export function getPageByPath(path: string): string | null {
+  const sourcePath = getSourcePathByRoute(path)
+  if (!sourcePath) return null
+  return index[sourcePath]
 }
 
 export function getFrontmatterTitle(path: string): string | null {

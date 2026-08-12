@@ -1,66 +1,47 @@
 ---
 title: Docs Update Closeout Checklist
-description: Internal validation checklist for the MemeWarzone docs routing, rewards, claims, treasury, and trust update.
+description: Final release gate for the docs shell, canonical routes, artifacts, and reward-system coverage.
 ---
 
-This internal page tracks the docs update against the source-of-truth scope.
+## Mission gate
 
-## Repo and build
+- Build passes with `npm run build`
+- Deep-link smoke passes with `npm run test:deeplinks`
+- No nested route serves a crawler-only `index.html`
+- Every shared route loads the React shell
 
-- [x] `docs-site` builds successfully with `npm run build`
-- [x] No broken markdown imports
-- [x] No broken sidebar routes
-- [x] All new pages render correctly
-- [x] Prev/next navigation works after sidebar update
+## Route control
 
-## Navigation
+- Every canonical sidebar route resolves to one markdown page
+- Every alias resolves to one canonical page
+- Duplicate sidebar titles fail validation
+- Duplicate sidebar routes fail validation
 
-- [x] Sidebar includes How MemeWarzone Works
-- [x] Sidebar includes Reward & Incentive pages
-- [x] Sidebar includes Fee Routing
-- [x] Sidebar includes Anti-Abuse
-- [x] Sidebar includes Transparency
-- [x] Recruiter Program section includes OG Recruiters
+## Artifact control
 
-## Fee and routing accuracy
+- `sitemap.xml` is generated from canonical pages only
+- `docs-feed.xml` is generated from canonical pages only
+- `dist/index.html` remains the only application shell entry point
+- Netlify fallback remains `/* /index.html 200`
+- Vercel catch-all rewrite remains active
 
-- [x] Buy fee documented as 2.00%
-- [x] Sell fee documented as 2.00%
-- [x] Finalize fee documented as 2.00%
-- [x] League share documented as 0.75% of buy/sell
-- [x] Standard recruiter trade share documented as 0.25%
-- [x] Standard recruiter finalize share documented as 0.30%
-- [x] Squad Pool share documented as 0.05%
-- [x] Standard protocol trade remainder documented as 0.95%
-- [x] Standard protocol finalize remainder documented as 1.65%
-- [x] OG recruiter trade share documented as 0.30%
-- [x] OG recruiter finalize share documented as 0.35%
-- [x] OG protocol trade remainder documented as 0.90%
-- [x] OG protocol finalize remainder documented as 1.60%
-- [x] Unlinked recruiter/squad slices documented as routing to Airdrops
-- [x] Docs state no extra fee is added for reward systems
+## Shell control
 
-## Product positioning
+- Top bar loads on cold links
+- Desktop sidebar loads on cold links
+- Mobile menu opens on cold links
+- Table of contents renders on long pages
+- Previous and next navigation renders on canonical pages
+- Public assets load on nested routes
 
-- [x] Docs no longer position MemeWarzone as only a launch site
-- [x] Docs describe MemeWarzone as a competitive on-chain ecosystem
-- [x] Campaign language is unified
-- [x] Full flywheel is explained clearly
+## Link control
 
-## Rewards
+- Internal docs links stay inside React Router
+- External links open as external links
+- Legacy aliases land on the canonical page
 
-- [x] Recruiter Program page explains rewards and lifecycle
-- [x] Squad Pool page exists
-- [x] Warzone BNB Airdrops page exists
-- [x] Epochs & Claims page exists
-- [x] Dashboard & Rewards UX page exists
-- [x] 7-day claim window documented
-- [x] Expiry destinations documented
+## Content control
 
-## Trust
-
-- [x] Security page mentions no dev-wallet custody
-- [x] Router-enforced splits documented
-- [x] Claim-based payout safety documented
-- [x] Anti-abuse page exists
-- [x] Transparency page exists
+- Fee routing pages stay aligned with the current 2% envelope
+- Recruiter, Squad Pool, Airdrops, and claim wording remain consistent
+- Internal review pages stay out of the public sidebar
