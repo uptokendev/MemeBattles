@@ -76,7 +76,7 @@ function inspectPrerequisites(env = process.env) {
     backendEnv.values.get("SOLANA_AUTH_HEALTHCHECK_URL"),
   );
   if (authHealthUrl) satisfied.push(`backend auth-health URL is configured: ${authHealthUrl}`);
-  else blockers.push("SOLANA_AUTH_HEALTHCHECK_URL is required for deployed-backend verification");
+  else blockers.push("SOLANA_AUTH_HEALTHCHECK_URL is required for deployed-backend verification; use the deployed Frontend API /api/solana/trade-status route after it contains the S0 public health fields");
 
   const backendProgramId = firstNonEmpty(
     env.SOLANA_BACKEND_PROGRAM_ID,
@@ -90,26 +90,26 @@ function inspectPrerequisites(env = process.env) {
 
   if (backendEnvPath && !backendEnv.exists) blockers.push(`SOLANA_BACKEND_ENV_FILE does not exist: ${backendEnvPath}`);
   if (backendProgramId) satisfied.push("backend program ID proof is available from local backend-public env evidence");
-  else if (authHealthUrl) warnings.push("backend program ID must be exposed by the auth-health response as programId (or provide SOLANA_BACKEND_PROGRAM_ID / SOLANA_BACKEND_ENV_FILE)");
+  else if (authHealthUrl) warnings.push("backend program ID must be exposed by the auth-health response as programId; the upgraded /api/solana/trade-status route does this");
   else blockers.push("backend program ID proof is missing");
 
   if (backendRouteSigner) satisfied.push("backend route-signer proof is available from SOLANA_BACKEND_ENV_FILE");
-  else if (authHealthUrl) warnings.push("backend route signer must be exposed by the auth-health response as routeSigner; current /api/solana/trade-status does not expose it, so provide SOLANA_BACKEND_ENV_FILE unless that endpoint has been upgraded");
+  else if (authHealthUrl) warnings.push("backend route signer must be exposed by the auth-health response as routeSigner; the upgraded /api/solana/trade-status route does this after Railway deploys the current branch");
   else blockers.push("backend route-signer proof is missing; provide SOLANA_BACKEND_ENV_FILE with SOLANA_ROUTE_SIGNER_PUBLIC_KEY or an auth-health endpoint that exposes routeSigner");
 
   if (backendManifestHash) satisfied.push("backend/on-chain manifest commitment proof is configured");
-  else if (authHealthUrl) warnings.push("backend generation commitment must be exposed by the auth-health response as manifestHash or provided through SOLANA_GENERATION_MANIFEST_HASH / SOLANA_BACKEND_ENV_FILE");
+  else if (authHealthUrl) warnings.push("backend generation commitment must be exposed by the auth-health response as manifestHash; the upgraded /api/solana/trade-status route does this");
   else blockers.push("backend generation commitment proof is missing");
 
   if (!firstNonEmpty(env.SOLANA_RPC_URL)) warnings.push("SOLANA_RPC_URL is not pinned locally; verifier will fall back to https://api.devnet.solana.com");
   if (!firstNonEmpty(env.SOLANA_LAUNCHPAD_PROGRAM_ID)) warnings.push("SOLANA_LAUNCHPAD_PROGRAM_ID is not pinned locally; verifier will fall back to IDL/source identity");
   if (!firstNonEmpty(env.SOLANA_PROGRAMDATA_ADDRESS)) warnings.push("SOLANA_PROGRAMDATA_ADDRESS is not pinned (optional stronger deployment-identity lock)");
   if (!firstNonEmpty(env.SOLANA_DEPLOYMENT_SLOT)) warnings.push("SOLANA_DEPLOYMENT_SLOT is not pinned (optional stronger deployment-identity lock)");
-  if (!firstNonEmpty(env.SOLANA_LAUNCHPAD_IDL_SHA256)) warnings.push("SOLANA_LAUNCHPAD_IDL_SHA256 is not pinned locally; Railway still requires it for create authorization");
-  if (!firstNonEmpty(env.SOLANA_LAUNCHPAD_PROGRAM_SHA256)) warnings.push("SOLANA_LAUNCHPAD_PROGRAM_SHA256 is not pinned locally; Railway still requires it for create authorization");
+  if (!firstNonEmpty(env.SOLANA_LAUNCHPAD_IDL_SHA256)) warnings.push("SOLANA_LAUNCHPAD_IDL_SHA256 is not pinned locally; copy the public Railway value to verify it against the local IDL");
+  if (!firstNonEmpty(env.SOLANA_LAUNCHPAD_PROGRAM_SHA256)) warnings.push("SOLANA_LAUNCHPAD_PROGRAM_SHA256 is not pinned locally; copy the public Railway value to verify it against the exact deployed binary");
   if (!firstNonEmpty(env.SOLANA_ROUTE_SIGNER_PUBLIC_KEY) && !backendRouteSigner) warnings.push("SOLANA_ROUTE_SIGNER_PUBLIC_KEY is not pinned locally; on-chain route signer will be observed rather than compared to an explicit local public key");
 
-  warnings.push("Railway live create/trade readiness also requires SOLANA_CLUSTER, SOLANA_CREATE_AUTH_ENABLED=true, SOLANA_TRADE_AUTH_ENABLED=true, SOLANA_CLUSTER_HASH_HEX, SOLANA_ROUTE_SIGNER_SECRET_KEY matching SOLANA_ROUTE_SIGNER_PUBLIC_KEY, SOLANA_LAUNCHPAD_IDL_SHA256, and SOLANA_LAUNCHPAD_PROGRAM_SHA256. Never copy the secret key into this local verifier.");
+  warnings.push("Railway live create/trade readiness requires SOLANA_CLUSTER, SOLANA_CREATE_AUTH_ENABLED=true, SOLANA_TRADE_AUTH_ENABLED=true, SOLANA_CLUSTER_HASH_HEX, SOLANA_ROUTE_SIGNER_SECRET_KEY matching SOLANA_ROUTE_SIGNER_PUBLIC_KEY, SOLANA_LAUNCHPAD_IDL_SHA256, and SOLANA_LAUNCHPAD_PROGRAM_SHA256. The upgraded public /api/solana/trade-status checks these without returning secret material. Never copy SOLANA_ROUTE_SIGNER_SECRET_KEY into this local verifier.");
 
   return {
     ok: blockers.length === 0,
