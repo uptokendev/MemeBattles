@@ -5,8 +5,11 @@
   "scripts": {
     "test": "mocha --timeout 1000000 v4-create-acceptance.cjs railway-v4-onchain-decoders.cjs",
     "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs",
-    "devnet:bootstrap": "node devnet-protocol-state.cjs bootstrap",
-    "devnet:verify": "node devnet-protocol-state.cjs verify",
+    "bootstrap-solana-devnet": "node devnet-protocol-state.cjs bootstrap",
+    "bootstrap-solana-devnet:allow-pause-reset": "node devnet-protocol-state.cjs bootstrap --allow-pause-reset",
+    "verify-solana-devnet": "node devnet-protocol-state.cjs verify",
+    "devnet:bootstrap": "npm run bootstrap-solana-devnet",
+    "devnet:verify": "npm run verify-solana-devnet",
     "devnet:check": "node --check devnet-protocol-state.cjs",
     "devnet:trade-ops": "node devnet-trade-ops.cjs",
     "devnet:trade-status": "node devnet-trade-ops.cjs status",

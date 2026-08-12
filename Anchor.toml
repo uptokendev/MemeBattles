@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-memewarzone_solana = "Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG"
+memewarzone_solana = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt"
 
 [programs.devnet]
-memewarzone_solana = "Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG"
+memewarzone_solana = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt"
 
 [registry]
 url = "https://api.apr.dev"
