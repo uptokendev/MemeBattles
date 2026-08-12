@@ -22,7 +22,8 @@ use anchor_spl::token::{self, Transfer};
 
 use crate::{
     authorized_create::{
-        Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
+        load_risk_profile_or_default, Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED,
+        TOKEN_VAULT_SEED,
     },
     GlobalConfig, LaunchpadError, RiskProfile, BPS_DENOMINATOR, CURVE_KIND_LINEAR_V1,
     ECONOMICS_VERSION_V1, ECONOMICS_VERSION_V2, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
@@ -356,7 +357,7 @@ pub struct BuyTokens<'info> {
     /// CHECK: trader ATA for mint.
     #[account(mut)]
     pub trader_token_account: UncheckedAccount<'info>,
-    /// CHECK: risk profile for trader.
+    /// CHECK: optional risk profile for trader. Missing means unrestricted/no cluster, matching BNB RiskRegistry.
     #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]
     pub risk_profile: UncheckedAccount<'info>,
     /// CHECK: trade-auth PDA (created when trading requires route auth).
@@ -396,7 +397,7 @@ pub struct SellTokens<'info> {
     /// CHECK: trader ATA.
     #[account(mut)]
     pub trader_token_account: UncheckedAccount<'info>,
-    /// CHECK: risk profile.
+    /// CHECK: optional risk profile. Missing means unrestricted/no cluster, matching BNB RiskRegistry.
     #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]
     pub risk_profile: UncheckedAccount<'info>,
     /// CHECK: trade-auth PDA.
@@ -468,13 +469,12 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             LaunchpadError::InvalidCampaign
         );
 
-        {
-            let risk_data = ctx.accounts.risk_profile.try_borrow_data()?;
-            let mut risk_slice: &[u8] = &risk_data;
-            let risk = RiskProfile::try_deserialize(&mut risk_slice)?;
-            require_keys_eq!(risk.wallet, trader, LaunchpadError::InvalidRiskProfile);
-            require!(!risk.restricted, LaunchpadError::WalletRestricted);
-        }
+        let risk = load_risk_profile_or_default(
+            &ctx.accounts.risk_profile.to_account_info(),
+            trader,
+            ctx.bumps.risk_profile,
+        )?;
+        validate_trade_risk_profile(&risk, trader)?;
 
         if auth_required {
             let digest = build_trade_authorization_digest(
@@ -683,13 +683,12 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             LaunchpadError::InvalidCampaign
         );
 
-        {
-            let risk_data = ctx.accounts.risk_profile.try_borrow_data()?;
-            let mut risk_slice: &[u8] = &risk_data;
-            let risk = RiskProfile::try_deserialize(&mut risk_slice)?;
-            require_keys_eq!(risk.wallet, trader, LaunchpadError::InvalidRiskProfile);
-            require!(!risk.restricted, LaunchpadError::WalletRestricted);
-        }
+        let risk = load_risk_profile_or_default(
+            &ctx.accounts.risk_profile.to_account_info(),
+            trader,
+            ctx.bumps.risk_profile,
+        )?;
+        validate_trade_risk_profile(&risk, trader)?;
 
         if auth_required {
             let digest = build_trade_authorization_digest(
@@ -820,6 +819,18 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+fn validate_trade_risk_profile(risk: &RiskProfile, trader: Pubkey) -> Result<()> {
+    require_keys_eq!(risk.wallet, trader, LaunchpadError::InvalidRiskProfile);
+    require!(!risk.restricted, LaunchpadError::WalletRestricted);
+    // Solana carries an explicit manual-review bit in addition to BNB's restricted flag.
+    // Preserve that stronger explicit enforcement while keeping an absent profile permissive.
+    require!(
+        !risk.manual_review_required,
+        LaunchpadError::WalletRestricted
+    );
+    Ok(())
+}
 
 fn validate_trade_accounts(
     campaign: &Campaign,
@@ -1113,5 +1124,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cost, refund);
+    }
+
+    #[test]
+    fn explicit_risk_manual_review_blocks_trade() {
+        let trader = Pubkey::new_unique();
+        let risk = RiskProfile {
+            wallet: trader,
+            risk_level: 1,
+            restricted: false,
+            cluster_id: [0; 32],
+            manual_review_required: true,
+            bump: 1,
+        };
+        assert!(validate_trade_risk_profile(&risk, trader).is_err());
     }
 }
