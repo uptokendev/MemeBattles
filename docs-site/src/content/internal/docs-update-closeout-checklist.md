@@ -23,7 +23,7 @@ description: Final release gate for the docs shell, canonical routes, artifacts,
 - `docs-feed.xml` is generated from canonical pages only
 - `dist/index.html` remains the only application shell entry point
 - Netlify fallback remains `/* /index.html 200`
-- Vercel catch-all rewrite remains active
+- Netlify publish directory remains `dist`
 
 ## Shell control
 
@@ -44,4 +44,5 @@ description: Final release gate for the docs shell, canonical routes, artifacts,
 
 - Fee routing pages stay aligned with the current 2% envelope
 - Recruiter, Squad Pool, Airdrops, and claim wording remain consistent
+- Fact matrix stays current for public deployment sensitive claims
 - Internal review pages stay out of the public sidebar

@@ -1,0 +1,160 @@
+{
+  "facts": [
+    {
+      "id": "fee.trade.envelope",
+      "label": "Trading fee envelope",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/fees/index.md"
+      ]
+    },
+    {
+      "id": "fee.finalize.envelope",
+      "label": "Finalize fee envelope",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/platform/graduation.md"
+      ]
+    },
+    {
+      "id": "fee.creator.direct_trade_share",
+      "label": "Creator direct trade share",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/economics.md"
+      ]
+    },
+    {
+      "id": "fee.league.trade_share",
+      "label": "League trade allocation",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/leagues/epochs-and-prizes.md"
+      ]
+    },
+    {
+      "id": "fee.upvote.price",
+      "label": "UpVote price",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product",
+      "evidence": [
+        "docs-site/src/content/platform/upvotes.md"
+      ]
+    },
+    {
+      "id": "route.postgrad.platform_fee",
+      "label": "Post graduation platform route fee",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/economics.md"
+      ]
+    },
+    {
+      "id": "graduation.target",
+      "label": "Graduation target",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/platform/graduation.md"
+      ]
+    },
+    {
+      "id": "graduation.distribution",
+      "label": "Post finalize distribution",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "BNB",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/fees/examples.md"
+      ]
+    },
+    {
+      "id": "rewards.claim_window.weekly_epoch_close",
+      "label": "Weekly epoch close",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "shared",
+      "status": "partial",
+      "visibility": "public",
+      "owner": "product-ops",
+      "evidence": [
+        "docs-site/src/content/rewards/epochs-and-claims.md"
+      ]
+    },
+    {
+      "id": "readiness.bnb_docs",
+      "label": "BNB documentation readiness",
+      "value": "Documented",
+      "unit": "status",
+      "environment": "BNB",
+      "status": "active",
+      "visibility": "public",
+      "owner": "docs",
+      "evidence": [
+        "docs-site/src/content/page-manifest.json"
+      ]
+    },
+    {
+      "id": "readiness.solana_docs",
+      "label": "Solana documentation readiness",
+      "value": "Planned",
+      "unit": "status",
+      "environment": "Solana",
+      "status": "planned",
+      "visibility": "public",
+      "owner": "docs",
+      "evidence": [
+        "docs-site/src/content/roadmap.md"
+      ]
+    },
+    {
+      "id": "postgrad.meteora_fee_target",
+      "label": "Meteora target trading fee split",
+      "value": "Pending sign off",
+      "unit": "policy",
+      "environment": "Solana",
+      "status": "planned",
+      "visibility": "public",
+      "owner": "product-contract",
+      "evidence": [
+        "docs-site/src/content/roadmap.md"
+      ]
+    }
+  ]
+}

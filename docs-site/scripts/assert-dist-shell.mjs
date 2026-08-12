@@ -4,7 +4,6 @@ import path from 'node:path'
 const root = process.cwd()
 const distDir = path.join(root, 'dist')
 const redirectsPath = path.join(root, 'public', '_redirects')
-const vercelConfigPath = path.join(root, 'vercel.json')
 const netlifyConfigPath = path.join(root, 'netlify.toml')
 
 function walk(dir) {
@@ -51,14 +50,8 @@ assert(
   'Netlify SPA fallback is missing from public/_redirects'
 )
 
-assert(fs.existsSync(vercelConfigPath), 'vercel.json is missing')
-const vercelConfig = JSON.parse(fs.readFileSync(vercelConfigPath, 'utf8'))
-const hasCatchAllRewrite = Array.isArray(vercelConfig.rewrites)
-  && vercelConfig.rewrites.some((rule) => rule.source === '/(.*)' && rule.destination === '/index.html')
-assert(hasCatchAllRewrite, 'Vercel catch-all rewrite is missing from vercel.json')
-
 assert(fs.existsSync(netlifyConfigPath), 'netlify.toml is missing')
 const netlifyConfig = fs.readFileSync(netlifyConfigPath, 'utf8')
 assert(netlifyConfig.includes('publish = "dist"'), 'Netlify publish directory is not set to dist')
 
-console.log('Verified the docs shell build output and deployment rewrites')
+console.log('Verified the docs shell build output and Netlify deployment rewrites')

@@ -8,12 +8,13 @@
     "check:routes": "node scripts/validate-doc-routes.mjs",
     "check:links": "node scripts/check-doc-links.mjs",
     "check:copy": "node scripts/check-stale-copy.mjs",
+    "check:facts": "node scripts/validate-fact-matrix.mjs",
     "build:app": "tsc -b && vite build",
-    "build:artifacts": "node scripts/generate-static-docs.mjs && node scripts/generate-doc-coverage.mjs",
+    "build:artifacts": "node scripts/generate-static-docs.mjs && node scripts/generate-doc-coverage.mjs && node scripts/generate-plan-status.mjs",
     "check:dist": "node scripts/assert-dist-shell.mjs",
     "test:deeplinks": "node scripts/smoke-deep-links.mjs",
     "test:deeplinks:prod": "node scripts/smoke-deep-links.mjs --base-url=https://docs.memewar.zone",
-    "build": "npm run check:routes && npm run check:links && npm run check:copy && npm run build:app && npm run build:artifacts && npm run check:dist",
+    "build": "npm run check:routes && npm run check:links && npm run check:copy && npm run check:facts && npm run build:app && npm run build:artifacts && npm run check:dist",
     "preview": "vite preview"
   },
   "dependencies": {
