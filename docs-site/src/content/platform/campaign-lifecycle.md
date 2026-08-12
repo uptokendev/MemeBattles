@@ -1,78 +1,76 @@
 ---
 title: Campaign System
-description: The path from draft or Direct launch into bonding, graduation, post graduation state, and rewards.
+description: The campaign path from creation to trading, graduation, post graduation markets, and rewards.
 ---
 
-A campaign is the core field object in MemeWarzone.
+A campaign is the core unit of MemeWarzone.
 
-It is not just a token. It is the campaign brief, launch state, trade state, visibility battle, creator record, and reward context around that token.
+It combines the token, creator identity, official links, market state, trading activity, discovery signals, and competition history in one public record.
+
+![Campaign lifecycle](/images/docs/campaign-lifecycle.png)
 
 ## 1. Prepare
 
-Before the live move, the creator prepares the campaign.
+The creator chooses BNB or Solana and prepares the campaign identity.
 
-This usually includes:
+A complete campaign normally includes:
 
 - name and ticker
-- logo and visuals
+- logo and campaign media
 - description
-- official links
+- official website and social links
 - community plan
 - launch timing
 
-## 2. Choose the launch route
+## 2. Choose Direct or Draft
 
-Creators can move in through Draft or Direct.
+**Direct** moves a ready campaign toward launch without a public staging period.
 
-- Draft is the staged route.
-- Direct is the short route.
+**Draft** creates the campaign first so the creator can prepare the public page, coordinate promotion, and choose when to push live.
 
-Read: **[Direct and Draft Launches](/creators/direct-and-draft)**.
+Read **[Direct and Draft Launches](/creators/direct-and-draft)**.
 
-## 3. PRE trade state
+## 3. PRE trading
 
-PRE is the launchpad trade state.
+PRE is the launch market state.
 
 During PRE:
 
-- users buy and sell on the launchpad curve
-- live trade fees route through the active treasury policy
-- visibility and league signals start moving
-- UpVotes can change attention
+- traders can use the active buy and sell controls
+- the campaign advances through its launch market
+- trading fees follow the published fee routing
+- UpVotes and public activity can increase visibility
+- league and ranking signals can begin to move
 
-Read: **[Bonding Curve](/platform/bonding-curve)**.
+Read **[Bonding Curve](/platform/bonding-curve)** and **[Fee Model](/fees)**.
 
-## 4. Graduation check
+## 4. Graduation
 
-A campaign graduates only when the active graduation target for that chain and deployment is reached.
+Graduation ends the launch phase when the campaign reaches the graduation conditions shown by the product.
 
-At graduation:
+The graduation transaction applies the published fee and routing rules, settles the launch phase, and moves the campaign toward its post graduation market state.
 
-- the live finalize policy runs
-- treasury routing runs
-- liquidity and creator outcomes follow the active deployment rules
-- the campaign can move into its next market state
+Read **[Graduation](/platform/graduation)**.
 
-Read: **[Graduation](/platform/graduation)**.
+## 5. POST trading
 
-## 5. POST market state
+POST is the post graduation state on BNB and Solana.
 
-POST is the post graduation state.
+The War Trade Room keeps the campaign visible after graduation and directs users to the market actions available for its chain.
 
-On BNB, this can move into the Topaz market path.
-On Solana, the post graduation market lane remains planned until it is proven.
+Read **[War Trade Room](/traders/war-trade-room)**.
 
-Read: **[War Trade Room](/traders/war-trade-room)**.
+## 6. Competition and rewards
 
-## 6. Rewards and reputation
+A campaign can remain active across MemeWarzone after the launch phase through:
 
-After the live trade phase, the campaign can still affect:
+- Arena battles
+- league standings
+- reward epochs
+- creator history
+- squad activity
+- community attention
 
-- rewards
-- league outcomes
-- creator reputation
-- future community reach
+The campaign page and Command Center provide the operating view for the wallet and campaign involved.
 
-Users should only claim through official product pages.
-
-Read: **[Epochs & Claims](/rewards/epochs-and-claims)** and **[Chain Readiness](/platform/chain-readiness)**.
+Read **[Arena Overview](/arena)** and **[Epochs & Claims](/rewards/epochs-and-claims)**.
