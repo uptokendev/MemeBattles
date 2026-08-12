@@ -4,7 +4,7 @@ import path from 'node:path'
 const root = process.cwd()
 const contentDir = path.join(root, 'src', 'content')
 const outDir = path.join(root, 'dist')
-const sidebarPath = path.join(contentDir, 'sidebar.ts')
+const manifestPath = path.join(contentDir, 'page-manifest.json')
 const siteUrl = process.env.DOCS_SITE_URL || 'https://docs.memewar.zone'
 
 const escapeXml = (value = '') =>
@@ -14,16 +14,6 @@ const escapeXml = (value = '') =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-
-function walk(dir) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
-  return entries.flatMap((entry) => {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return walk(full)
-    if (!entry.name.endsWith('.md')) return []
-    return [full]
-  })
-}
 
 function parseFrontmatter(raw) {
   if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) {
@@ -54,83 +44,25 @@ function parseFrontmatter(raw) {
   return { data, content }
 }
 
-function extractSidebarRoutes() {
-  const raw = fs.readFileSync(sidebarPath, 'utf8')
-  const routePattern = /\{\s*title:\s*'([^']+)'\s*,\s*href:\s*'([^']+)'\s*\}/g
-  const items = []
-  let match
-
-  while ((match = routePattern.exec(raw))) {
-    items.push({
-      navTitle: match[1],
-      route: match[2]
-    })
-  }
-
-  return items
-}
-
-function buildRouteIndex() {
-  const exactRouteIndex = new Map()
-
-  for (const file of walk(contentDir)) {
-    const rel = path.relative(contentDir, file).replace(/\\/g, '/')
-    const slug = rel.replace(/\.md$/, '')
-    exactRouteIndex.set(`/${slug}`, file)
-  }
-
-  const routeIndex = new Map()
-
-  for (const [exactRoute, file] of exactRouteIndex.entries()) {
-    const canonicalRoute = exactRoute.replace(/\/index$/, '') || '/'
-    const preferredExactRoute = canonicalRoute === '/' ? '/' : canonicalRoute
-    const preferredExactFile = exactRouteIndex.get(preferredExactRoute)
-    const preferredIndexFile = exactRouteIndex.get(`${preferredExactRoute}/index`)
-
-    if (preferredExactFile) {
-      routeIndex.set(canonicalRoute, preferredExactFile)
-      continue
-    }
-
-    if (preferredIndexFile) {
-      routeIndex.set(canonicalRoute, preferredIndexFile)
-      continue
-    }
-
-    if (!routeIndex.has(canonicalRoute)) {
-      routeIndex.set(canonicalRoute, file)
-    }
-  }
-
-  return routeIndex
-}
-
 function loadCanonicalPages() {
-  const routeIndex = buildRouteIndex()
-  const seen = new Set()
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 
-  return extractSidebarRoutes()
-    .filter((item) => {
-      if (seen.has(item.route)) return false
-      seen.add(item.route)
-      return true
-    })
-    .map((item) => {
-      const file = routeIndex.get(item.route)
-      if (!file) {
-        throw new Error(`Missing markdown source for canonical route ${item.route}`)
-      }
+  return manifest.pages.map((page) => {
+    const file = path.join(contentDir, page.source)
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing markdown source for canonical route ${page.route}: ${page.source}`)
+    }
 
-      const raw = fs.readFileSync(file, 'utf8')
-      const { data, content } = parseFrontmatter(raw)
+    const raw = fs.readFileSync(file, 'utf8')
+    const { data, content } = parseFrontmatter(raw)
 
-      return {
-        route: item.route,
-        title: data.title || item.navTitle,
-        description: data.description || '',
-        content
-      }
-    })
+    return {
+      route: page.route,
+      title: data.title || page.title,
+      description: data.description || '',
+      content
+    }
+  })
 }
 
 if (!fs.existsSync(outDir)) {

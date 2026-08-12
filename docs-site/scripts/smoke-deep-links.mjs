@@ -4,23 +4,17 @@ import path from 'node:path'
 
 const root = process.cwd()
 const distDir = path.join(root, 'dist')
-const sidebarPath = path.join(root, 'src', 'content', 'sidebar.ts')
+const manifestPath = path.join(root, 'src', 'content', 'page-manifest.json')
 const cliArgs = process.argv.slice(2)
 
 function extractNestedRoutes() {
-  const raw = fs.readFileSync(sidebarPath, 'utf8')
-  const itemPattern = /\{\s*title:\s*'([^']+)'\s*,\s*href:\s*'([^']+)'\s*\}/g
-  const routes = []
-  let match
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 
-  while ((match = itemPattern.exec(raw))) {
-    const route = match[2]
-    if (route.split('/').filter(Boolean).length >= 2) {
-      routes.push(route)
-    }
-  }
-
-  return Array.from(new Set(routes)).slice(0, 3)
+  return manifest.pages
+    .map((page) => page.route)
+    .filter((route, index, routes) => routes.indexOf(route) === index)
+    .filter((route) => route.split('/').filter(Boolean).length >= 2)
+    .slice(0, 3)
 }
 
 function contentTypeFor(file) {

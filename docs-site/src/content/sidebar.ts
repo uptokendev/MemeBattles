@@ -1,109 +1,58 @@
+import manifest from './page-manifest.json'
+
 export type NavItem = { title: string; href: string }
 export type NavSection = { title: string; items: NavItem[] }
 
-export const sidebar: NavSection[] = [
-  {
-    title: 'Start here',
-    items: [
-      { title: 'Introduction', href: '/introduction' },
-      { title: 'How MemeWarzone Works', href: '/how-memewarzone-works' },
-      { title: 'Getting Started', href: '/getting-started' },
-      { title: 'Prepare Mode', href: '/prepare-mode' },
-      { title: 'Roadmap', href: '/roadmap' }
-    ]
-  },
-  {
-    title: 'Platform basics',
-    items: [
-      { title: 'Campaign System', href: '/platform/campaign-lifecycle' },
-      { title: 'Bonding Curve', href: '/platform/bonding-curve' },
-      { title: 'Graduation', href: '/platform/graduation' },
-      { title: 'UpVotes', href: '/platform/upvotes' },
-      { title: 'War Room Chat', href: '/platform/war-room' }
-    ]
-  },
-  {
-    title: 'Battle Leagues',
-    items: [
-      { title: 'Leagues Overview', href: '/leagues' },
-      { title: 'League Categories', href: '/leagues/categories' },
-      { title: 'Epochs & Prizes', href: '/leagues/epochs-and-prizes' }
-    ]
-  },
-  {
-    title: 'Rewards & incentives',
-    items: [
-      { title: 'Squad Pool', href: '/rewards/squad-pool' },
-      { title: 'Warzone BNB Airdrops', href: '/rewards/warzone-airdrops' },
-      { title: 'Epochs & Claims', href: '/rewards/epochs-and-claims' },
-      { title: 'Reward Dashboard', href: '/rewards/dashboard-ux' }
-    ]
-  },
-  {
-    title: 'For creators',
-    items: [
-      { title: 'Creator Overview', href: '/creators' },
-      { title: 'Create a Campaign', href: '/creators/create-a-campaign' },
-      { title: 'Creator Earnings', href: '/creators/creator-earnings' },
-      { title: 'Creator Growth Loop', href: '/creators/growth-loop' }
-    ]
-  },
-  {
-    title: 'For traders',
-    items: [
-      { title: 'Trader Overview', href: '/traders' },
-      { title: 'Trading Basics', href: '/traders/trading-basics' },
-      { title: 'UpVotes for Traders', href: '/traders/upvotes' },
-      { title: 'Claiming Rewards', href: '/traders/claiming-rewards' }
-    ]
-  },
-  {
-    title: 'Recruiter Program',
-    items: [
-      { title: 'Program Overview', href: '/programs/recruiter-program' },
-      { title: 'Attribution & Links', href: '/programs/attribution-and-links' },
-      { title: 'Dashboard & Payouts', href: '/programs/dashboard-and-payouts' },
-      { title: 'OG Recruiters', href: '/programs/og-recruiters' }
-    ]
-  },
-  {
-    title: 'Fees & treasury',
-    items: [
-      { title: 'Economic Model', href: '/economics' },
-      { title: 'Fee Model', href: '/fees' },
-      { title: 'Fee Routing', href: '/fees/fee-routing' },
-      { title: 'Where Fees Go', href: '/fees/where-fees-go' },
-      { title: 'Fee Examples', href: '/fees/examples' },
-      { title: 'Treasury Structure', href: '/treasury' },
-      { title: 'Weekly Distribution', href: '/treasury/weekly-distribution' }
-    ]
-  },
-  {
-    title: 'Security & trust',
-    items: [
-      { title: 'Protection Model', href: '/security/protection-model' },
-      { title: 'Anti-Abuse System', href: '/security/anti-abuse' },
-      { title: 'Transparency', href: '/security/transparency' },
-      { title: 'Avoid Scams', href: '/security/avoid-scams' },
-      { title: 'Risk Disclosure', href: '/security/risk-disclosure' },
-      { title: 'Incident Response', href: '/security/incident-response' }
-    ]
-  },
-  {
-    title: 'Legal',
-    items: [
-      { title: 'Privacy Statement', href: '/legal/privacy-policy' },
-      { title: 'Terms of Service', href: '/legal/terms-of-service' }
-    ]
-  },
-  {
-    title: 'FAQ',
-    items: [
-      { title: 'FAQ', href: '/faq' },
-      { title: 'Glossary', href: '/glossary' },
-      { title: 'Ranking System & Profiles', href: '/ranking-system' }
-    ]
-  }
-]
+export type PageManifestEntry = {
+  route: string
+  title: string
+  group: string
+  groupOrder: number
+  pageOrder: number
+  status: string
+  source: string
+  aliases: string[]
+}
 
-export const flatNav: NavItem[] = sidebar.flatMap(s => s.items)
+type PageManifest = {
+  pages: PageManifestEntry[]
+}
+
+export const pageManifest = manifest as PageManifest
+
+function sortPages(a: PageManifestEntry, b: PageManifestEntry) {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder
+  if (a.pageOrder !== b.pageOrder) return a.pageOrder - b.pageOrder
+  return a.title.localeCompare(b.title)
+}
+
+export const canonicalPages = [...pageManifest.pages].sort(sortPages)
+
+export const sidebar: NavSection[] = canonicalPages.reduce<NavSection[]>((sections, page) => {
+  const section = sections.find((entry) => entry.title === page.group)
+
+  if (section) {
+    section.items.push({ title: page.title, href: page.route })
+    return sections
+  }
+
+  sections.push({
+    title: page.group,
+    items: [{ title: page.title, href: page.route }]
+  })
+
+  return sections
+}, [])
+
+export const flatNav: NavItem[] = canonicalPages.map((page) => ({
+  title: page.title,
+  href: page.route
+}))
+
+export const routeAliases = canonicalPages.reduce<Record<string, string>>((aliases, page) => {
+  for (const alias of page.aliases) {
+    aliases[alias] = page.route
+  }
+
+  return aliases
+}, {})

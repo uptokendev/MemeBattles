@@ -1,4 +1,5 @@
 import { parseFrontmatter } from '../lib/frontmatter'
+import { canonicalPages, routeAliases } from './sidebar'
 
 // Load all markdown content at build-time.
 // Paths are exported as: /src/content/<slug>.md
@@ -11,37 +12,8 @@ const pages = import.meta.glob('./**/*.md', {
 
 type PageIndex = Record<string, string>
 
-const routeAliases: Record<string, string> = {
-  '/what-is-memewarzone': '/introduction',
-  '/what-is-memebattles': '/introduction',
-  '/why-we-built-this': '/introduction',
-  '/problem-we-solve': '/introduction',
-  '/concepts': '/platform/campaign-lifecycle',
-  '/core-concepts': '/platform/campaign-lifecycle',
-  '/core-concepts/index': '/platform/campaign-lifecycle',
-  '/core-concepts/campaigns': '/platform/campaign-lifecycle',
-  '/core-concepts/bonding-curve': '/platform/bonding-curve',
-  '/core-concepts/graduation': '/platform/graduation',
-  '/core-concepts/upvotes': '/platform/upvotes',
-  '/core-concepts/leagues': '/leagues',
-  '/core-concepts/fees-and-treasury': '/fees',
-  '/core-concepts/claims': '/rewards/epochs-and-claims',
-  '/how-it-works/lifecycle': '/platform/campaign-lifecycle',
-  '/how-it-works/bonding-curve': '/platform/bonding-curve',
-  '/how-it-works/graduation': '/platform/graduation',
-  '/leagues/overview': '/leagues',
-  '/leagues/epochs': '/leagues/epochs-and-prizes',
-  '/leagues/claims': '/rewards/epochs-and-claims',
-  '/leagues/airdrops': '/rewards/warzone-airdrops',
-  '/fees/trading': '/fees',
-  '/fees/upvotes': '/platform/upvotes',
-  '/fees/finalize': '/platform/graduation',
-  '/treasury/wallet-model': '/treasury',
-  '/treasury/where-does-revenue-go': '/fees/where-fees-go',
-  '/security/overview': '/security/protection-model'
-}
-
 const index: PageIndex = {}
+const canonicalRouteToSourcePath = new Map<string, string>()
 
 for (const [k, v] of Object.entries(pages)) {
   // k example: './how-it-works/lifecycle.md'
@@ -52,21 +24,30 @@ for (const [k, v] of Object.entries(pages)) {
   index[`/${slug}`] = v
 }
 
+for (const page of canonicalPages) {
+  canonicalRouteToSourcePath.set(page.route, `/${page.source.replace(/\.md$/, '')}`)
+}
+
 export function normalizePath(pathname: string) {
   const p = pathname.split('?')[0].split('#')[0]
   // Root should land on a high-level intro page (GitBook-like behavior)
   if (p === '' || p === '/') return '/introduction'
+
   const normalized = p.endsWith('/') ? p.slice(0, -1) : p
-  return routeAliases[normalized] ?? normalized
+  if (routeAliases[normalized]) return routeAliases[normalized]
+  if (canonicalRouteToSourcePath.has(normalized)) return normalized
+
+  if (normalized.endsWith('/index')) {
+    const withoutIndex = normalized.slice(0, -'/index'.length) || '/'
+    if (routeAliases[withoutIndex]) return routeAliases[withoutIndex]
+    if (canonicalRouteToSourcePath.has(withoutIndex)) return withoutIndex
+  }
+
+  return normalized
 }
 
 export function getSourcePathByRoute(path: string): string | null {
-  if (index[path]) return path
-
-  const withIndex = `${path}/index`
-  if (index[withIndex]) return withIndex
-
-  return null
+  return canonicalRouteToSourcePath.get(path) ?? null
 }
 
 export function getPageByPath(path: string): string | null {

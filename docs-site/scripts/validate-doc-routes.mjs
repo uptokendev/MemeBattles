@@ -3,8 +3,7 @@ import path from 'node:path'
 
 const root = process.cwd()
 const contentDir = path.join(root, 'src', 'content')
-const sidebarPath = path.join(contentDir, 'sidebar.ts')
-const loaderPath = path.join(contentDir, 'loader.ts')
+const manifestPath = path.join(contentDir, 'page-manifest.json')
 
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -21,17 +20,15 @@ function getRouteCandidates(file) {
   const slug = rel.replace(/\.md$/, '')
   const exactRoute = `/${slug}`
   const canonicalRoute = exactRoute.replace(/\/index$/, '') || '/'
-  const isIndexVariant = exactRoute.endsWith('/index')
 
   return {
     file,
     exactRoute,
-    canonicalRoute,
-    isIndexVariant
+    canonicalRoute
   }
 }
 
-function collectRoutes() {
+function collectMarkdownRoutes() {
   const routes = new Map()
   const duplicates = []
 
@@ -50,10 +47,10 @@ function collectRoutes() {
     const allowedPair = [existing.file, candidate.file].sort().join('|') === [preferredExactFile, preferredIndexFile].sort().join('|')
 
     if (allowedPair) {
-      const preferred = fs.existsSync(preferredExactFile)
-        ? getRouteCandidates(preferredExactFile)
-        : getRouteCandidates(preferredIndexFile)
-      routes.set(candidate.canonicalRoute, preferred)
+      routes.set(
+        candidate.canonicalRoute,
+        fs.existsSync(preferredExactFile) ? getRouteCandidates(preferredExactFile) : getRouteCandidates(preferredIndexFile)
+      )
       continue
     }
 
@@ -63,91 +60,73 @@ function collectRoutes() {
   return { routes, duplicates }
 }
 
-function parseSidebarItems() {
-  const raw = fs.readFileSync(sidebarPath, 'utf8')
-  const itemPattern = /\{\s*title:\s*'([^']+)'\s*,\s*href:\s*'([^']+)'\s*\}/g
-  const items = []
-  let match
-
-  while ((match = itemPattern.exec(raw))) {
-    items.push({
-      title: match[1],
-      href: match[2]
-    })
-  }
-
-  return items
-}
-
-function parseAliases() {
-  const raw = fs.readFileSync(loaderPath, 'utf8')
-  const aliasBlockMatch = raw.match(/const routeAliases: Record<string, string> = \{([\s\S]*?)\n\}/)
-  if (!aliasBlockMatch) return []
-
-  const aliasPattern = /'([^']+)':\s*'([^']+)'/g
-  const aliases = []
-  let match
-
-  while ((match = aliasPattern.exec(aliasBlockMatch[1]))) {
-    aliases.push({
-      from: match[1],
-      to: match[2]
-    })
-  }
-
-  return aliases
-}
-
-const { routes, duplicates } = collectRoutes()
-const sidebarItems = parseSidebarItems()
-const aliases = parseAliases()
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+const pages = manifest.pages
+const { routes, duplicates } = collectMarkdownRoutes()
 const errors = []
 
 if (duplicates.length > 0) {
   errors.push(`Duplicate canonical markdown routes detected: ${duplicates.join(' | ')}`)
 }
 
-const sidebarHrefCounts = new Map()
-const sidebarTitleCounts = new Map()
+const canonicalRouteCounts = new Map()
+const titleCounts = new Map()
+const sourceCounts = new Map()
+const aliasCounts = new Map()
+const canonicalRoutes = new Set()
 
-for (const item of sidebarItems) {
-  sidebarHrefCounts.set(item.href, (sidebarHrefCounts.get(item.href) || 0) + 1)
-  sidebarTitleCounts.set(item.title, (sidebarTitleCounts.get(item.title) || 0) + 1)
+for (const page of pages) {
+  canonicalRoutes.add(page.route)
+  canonicalRouteCounts.set(page.route, (canonicalRouteCounts.get(page.route) || 0) + 1)
+  titleCounts.set(page.title, (titleCounts.get(page.title) || 0) + 1)
+  sourceCounts.set(page.source, (sourceCounts.get(page.source) || 0) + 1)
 
-  if (!routes.has(item.href)) {
-    errors.push(`Sidebar route does not resolve to a markdown page: ${item.href}`)
+  const sourceFile = path.join(contentDir, page.source)
+  if (!fs.existsSync(sourceFile)) {
+    errors.push(`Manifest source does not exist for canonical route ${page.route}: ${page.source}`)
+  }
+
+  const resolved = routes.get(page.route)
+  if (!resolved) {
+    errors.push(`Canonical route does not resolve to a markdown page: ${page.route}`)
+  } else if (path.relative(contentDir, resolved.file).replace(/\\/g, '/') !== page.source) {
+    errors.push(`Manifest source does not match the canonical markdown route for ${page.route}: expected ${path.relative(contentDir, resolved.file).replace(/\\/g, '/')} but found ${page.source}`)
+  }
+
+  for (const alias of page.aliases) {
+    aliasCounts.set(alias, (aliasCounts.get(alias) || 0) + 1)
+
+    if (alias === page.route) {
+      errors.push(`Alias duplicates its canonical route: ${alias}`)
+    }
   }
 }
 
-for (const [href, count] of sidebarHrefCounts.entries()) {
+for (const [route, count] of canonicalRouteCounts.entries()) {
   if (count > 1) {
-    errors.push(`Duplicate sidebar href detected: ${href}`)
+    errors.push(`Duplicate canonical route detected in manifest: ${route}`)
   }
 }
 
-for (const [title, count] of sidebarTitleCounts.entries()) {
+for (const [title, count] of titleCounts.entries()) {
   if (count > 1) {
-    errors.push(`Duplicate sidebar title detected: ${title}`)
+    errors.push(`Duplicate canonical title detected in manifest: ${title}`)
   }
 }
 
-const aliasSources = new Map()
-
-for (const alias of aliases) {
-  aliasSources.set(alias.from, (aliasSources.get(alias.from) || 0) + 1)
-
-  if (!routes.has(alias.to)) {
-    errors.push(`Alias target does not resolve to a markdown page: ${alias.from} -> ${alias.to}`)
-  }
-
-  if (!sidebarHrefCounts.has(alias.to)) {
-    errors.push(`Alias target is not a canonical sidebar route: ${alias.from} -> ${alias.to}`)
-  }
-}
-
-for (const [aliasRoute, count] of aliasSources.entries()) {
+for (const [source, count] of sourceCounts.entries()) {
   if (count > 1) {
-    errors.push(`Duplicate alias route detected: ${aliasRoute}`)
+    errors.push(`Duplicate manifest source detected: ${source}`)
+  }
+}
+
+for (const [alias, count] of aliasCounts.entries()) {
+  if (count > 1) {
+    errors.push(`Duplicate alias route detected: ${alias}`)
+  }
+
+  if (canonicalRoutes.has(alias)) {
+    errors.push(`Alias conflicts with a canonical route: ${alias}`)
   }
 }
 
@@ -159,5 +138,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `Validated ${sidebarItems.length} canonical sidebar entries, ${aliases.length} route aliases, and ${routes.size} canonical markdown routes`
+  `Validated ${pages.length} canonical manifest pages, ${aliasCounts.size} route aliases, and ${routes.size} canonical markdown routes`
 )
