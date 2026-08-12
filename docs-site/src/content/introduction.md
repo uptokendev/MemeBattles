@@ -1,43 +1,57 @@
 ---
 title: Introduction
-description: The fast path to understanding MemeWarzone as a competitive on chain ecosystem with campaigns, rewards, routing, and weekly battles.
+description: The fast path to understanding MemeWarzone across BNB and Solana.
 ---
 
-MemeWarzone is a competitive campaign platform built around launch, trading, attention, and recurring rewards.
+MemeWarzone is a competitive on chain launch and trading platform built around campaigns, community attention, battles, and recurring rewards.
 
-It is not just a token page. It is a full operating loop where creators launch, traders compete, communities rally, and reward systems keep the battlefield active after the first burst of attention.
+Creators can prepare and launch campaigns. Traders can discover campaigns early, trade through the active market route, back campaigns with UpVotes, and follow them into leagues and post graduation competition.
 
 ![MemeWarzone battlefield overview](/images/docs/introduction-battlefield-overview.png)
 
-## What makes the platform different
+## The battlefield
 
-MemeWarzone connects four layers into one system:
+MemeWarzone connects the full campaign life cycle in one place:
 
-- campaign launch and preparation
-- PRE trading on the launchpad
-- post graduation competition and discovery
-- recurring rewards, claims, and private wallet tools
+- campaign creation and preparation
+- launch and early trading
+- discovery through UpVotes and public activity
+- graduation and post graduation markets
+- Arena battles and league competition
+- rewards, claims, squads, and recruiter programs
 
-That means a campaign can move from launch day into a longer public life instead of disappearing after the first round of trading.
+A campaign does not stop being relevant after launch day. Its activity can continue through rankings, leagues, Arena surfaces, rewards, and community growth.
 
-## Who this is built for
+## BNB and Solana
 
-| Role | Main objective |
+MemeWarzone operates on BNB and Solana.
+
+The chain is always shown in the product because addresses, wallets, transaction costs, and market routes differ between networks. The campaign experience remains familiar across both chains: find the campaign, verify the chain, check its current state, then use the actions available on that campaign.
+
+## Who uses MemeWarzone
+
+| Role | Mission |
 | --- | --- |
-| Creators | launch a campaign and build attention |
-| Traders | find campaigns early and trade with discipline |
-| Recruiters | bring real users into the platform |
-| Squads | grow together and compete for reward share |
-| Communities | rally around campaigns and push visibility |
+| Creators | build and launch campaigns, then lead the community |
+| Traders | discover campaigns, trade, vote, and compete |
+| Recruiters | bring new users into MemeWarzone and track attribution |
+| Squads | build coordinated communities and compete for rewards |
+| Communities | rally behind campaigns and keep attention moving |
 
-## Current operating line
+## Campaign states
 
-BNB is the main live route.
-Solana create, buy, sell, and UpVote flows are active on devnet and marked separately where needed.
+Campaign controls change as the campaign advances.
 
-Always read the readiness banner before you share a link as if every chain and every route works the same way.
+**DRAFT** means the campaign is being prepared.
 
-## First move
+**PRE** means launchpad trading is active.
 
-Read **[How MemeWarzone Works](/how-memewarzone-works)** for the full system loop.
-Then move to **[Getting Started](/getting-started)** for the role based path.
+**POST** means the campaign has graduated and uses its post graduation market route.
+
+Always read the state before submitting a transaction.
+
+## Start here
+
+Read **[How MemeWarzone Works](/how-memewarzone-works)** for the full operating loop.
+
+Then use **[Getting Started](/getting-started)** to choose the path for creators, traders, recruiters, and squads.
