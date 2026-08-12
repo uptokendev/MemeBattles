@@ -1,44 +1,53 @@
 ---
-title: Chain Readiness
-description: What is live on BNB and Solana and how to read chain specific differences across the product.
+title: BNB and Solana
+description: How BNB and Solana fit into MemeWarzone and what to verify before using either network.
 ---
 
-Read the chain before you move.
+MemeWarzone operates on BNB and Solana.
 
-MemeWarzone runs live on BNB and Solana, but the routes are not identical and the wallet flow can differ by chain.
+Both networks support the MemeWarzone campaign experience, but wallets, addresses, transaction fees, explorers, and market routes are chain specific.
+
+![BNB and Solana network selector](/images/docs/bnb-solana-network-selector.png)
 
 ## BNB
 
-BNB is the full launchpad line.
+Use the BNB network for BNB campaigns and BNB denominated transactions.
 
-Use the BNB route for campaign launch, PRE trading, graduation tracking, reward flows, and the main recurring competition systems described across this manual.
+The BNB campaign path covers creation, launch trading, graduation, post graduation activity, leagues, rewards, and the account tools connected to those campaigns.
 
 ## Solana
 
-Solana is live and should be treated as a live product surface.
+Use the Solana network for Solana campaigns and Solana transactions.
 
-Use the Solana route for:
+The Solana path covers campaign creation, Direct and Draft launches, Token Details, trading, UpVotes, graduation, post graduation activity, and the campaign discovery surfaces connected to Solana.
 
-- campaign creation
-- Token Details
-- buy and sell flow
-- UpVotes
-- discovery across the shared product surfaces
+## What changes when you switch chains
 
-## What can still differ
+When moving between BNB and Solana, verify:
 
-A live chain does not mean every screen works in exactly the same way.
+- the selected network
+- the connected wallet
+- the campaign state
+- the campaign or token address
+- the asset used for the transaction
+- the wallet transaction before signing
 
-Users should still check:
+## Shared campaign states
 
-- wallet type
-- chain selection
-- page specific status note
-- route specific flow differences where a page calls them out
+MemeWarzone uses campaign states to make the current stage clear.
 
-## Best rule
+**DRAFT** is preparation.
 
-Always confirm the active chain before you act.
-If a page is chain specific, treat that page as the operating order for that route.
+**PRE** is launch market trading.
 
-Read: **[Campaign System](/platform/campaign-lifecycle)** and **[Solana Operations](/platform/solana-operations)**.
+**POST** is post graduation activity.
+
+The controls shown by the campaign are based on its chain and state.
+
+## Before sharing a campaign
+
+Share the MemeWarzone campaign link when possible. It gives the recipient the campaign context, chain, state, and product actions in one place.
+
+When sharing an address separately, label whether it is a BNB contract address, Solana mint address, or campaign reference.
+
+Read **[Campaign System](/platform/campaign-lifecycle)** and **[Solana Operations](/platform/solana-operations)**.
