@@ -1,6 +1,6 @@
 ---
 title: Creator Overview
-description: How creators use MemeWarzone to prepare campaigns, build attention, compete, and earn at graduation.
+description: How creators use MemeWarzone to prepare campaigns, build attention, compete, and earn when campaigns graduate.
 ---
 
 Creators are the campaign supply side of MemeWarzone.
@@ -13,10 +13,10 @@ A creator launches a campaign, brings attention, rallies a community, and fights
 2. Add clean branding and official links.
 3. Build attention before deployment.
 4. Deploy when live mode opens.
-5. Push bonding-curve activity.
+5. Push bonding curve activity.
 6. Compete in Leagues and discovery rankings.
-7. Graduate at 50 BNB.
-8. Earn creator payout from the graduation split.
+7. Reach the active graduation target.
+8. Earn the creator payout defined by the live deployment policy.
 
 ## What creators can earn
 
@@ -27,7 +27,7 @@ Creators can earn from:
 - community growth
 - future campaign credibility
 
-At the minimum 50 BNB graduation threshold, the example creator payout is 9.8 BNB after the 2.00% finalize fee and 80/20 remaining split.
+At graduation, creator payout depends on the active finalize rules and distribution policy in force for that deployment. Treat examples as illustrations until the fact matrix is locked.
 
 Read: **[Creator earnings](/creators/creator-earnings)**.
 
