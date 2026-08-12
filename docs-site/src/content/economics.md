@@ -16,9 +16,9 @@ The system does not add separate user fees for creators, recruiters, squads, air
 | Creator direct trade share | 0.10% of buys and sells on the creator's own bonding curve |
 | Finalize fee | 2.00% |
 | UpVote price | 0.003 BNB |
-| Graduation threshold | 50 BNB |
-| Post-finalize split | 80% LP / 20% creator payout |
-| Post-graduation platform route fee | 0.05% when traded through MemeWarzone |
+| Graduation target | Active by deployment |
+| Post finalize distribution | Active launch liquidity and creator payout policy by deployment |
+| Post graduation platform route fee | 0.05% when traded through MemeWarzone |
 
 ## Trading fees
 
@@ -39,9 +39,9 @@ The exact route depends on whether the wallet has active recruiter attribution a
 
 Creators receive **0.10% of every buy and sell** made through their own token bonding curve.
 
-This is paid directly to the campaign creator wallet as trading happens. It is not a separate fee on top of the 2.00% buy/sell fee.
+This is paid directly to the campaign creator wallet as trading happens. It is not a separate fee on top of the 2.00% buy and sell fee.
 
-Creator trade earnings are separate from the creator graduation payout.
+Creator trade earnings are separate from the creator payout released at graduation.
 
 ## UpVotes
 
@@ -49,28 +49,23 @@ UpVotes cost 0.003 BNB.
 
 They are paid discovery actions. They help campaigns compete for attention but do not mean the platform endorses a campaign.
 
-On future chains, UpVotes should keep BNB-equivalent pricing while users pay in that chain's native token.
+On future chains, UpVotes should keep BNB equivalent pricing while users pay in that chain's native token.
 
 ## Finalize mechanics
 
-When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before LP creation and creator payout.
+When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before launch liquidity and creator payout are calculated.
 
-The remaining raised liquidity is split:
+The remaining raised liquidity is then distributed between launch liquidity and the creator payout according to the active deployment policy.
 
-| Destination | Share of remaining liquidity |
-| --- | ---: |
-| LP liquidity | 80% |
-| Creator payout | 20% |
+Use the live readiness and economics references for the current target and distribution values.
 
-At the 50 BNB graduation threshold, the 2.00% finalize fee is 1 BNB. The remaining 49 BNB splits into 39.2 BNB LP liquidity and 9.8 BNB creator payout.
-
-## Post-graduation trading
+## Post graduation trading
 
 Graduation does not end MemeWarzone's relationship with a campaign.
 
 When users continue trading a graduated token through the MemeWarzone interface or routing path, the platform can earn a **0.05%** platform route fee.
 
-This fee is platform-route based. It is not a permanent token tax built into the token itself.
+This fee is platform route based. It is not a permanent token tax built into the token itself.
 
 ## Incentive redistribution
 
@@ -78,13 +73,13 @@ MemeWarzone uses routing to keep incentives recurring:
 
 | System | Funding source |
 | --- | --- |
-| Creators | 0.10% of buys and sells on their own bonding curve, plus 20% graduation payout after finalize fee |
+| Creators | 0.10% of buys and sells on their own bonding curve, plus the creator payout released at graduation under the active deployment policy |
 | Leagues | 0.75% of buy and sell notional |
 | Recruiter Program | Linked recruiter trade and finalize slices |
-| Squad Pool | Linked squad slice or expired recruiter/squad rewards |
-| Warzone BNB Airdrops | Unlinked recruiter/squad slices and expired airdrops |
+| Squad Pool | Linked squad slice or expired recruiter and squad rewards |
+| Warzone BNB Airdrops | Unlinked recruiter and squad slices and expired airdrops |
 | Protocol revenue | Remainder after creator and reward routing |
-| Post-graduation platform route | 0.05% when graduated tokens are traded through MemeWarzone |
+| Post graduation platform route | 0.05% when graduated tokens are traded through MemeWarzone |
 
 ## Protocol revenue
 
