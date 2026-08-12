@@ -3,91 +3,59 @@ title: FAQ
 description: Fast answers for creators, traders, recruiters, and new MemeWarzone users.
 ---
 
-## Getting Started
+## What is MemeWarzone?
 
-### What is MemeWarzone?
-MemeWarzone is a competitive on-chain ecosystem for meme campaigns on BNB Chain. It combines campaigns, bonding-curve trading, UpVotes, Leagues, recruiters, squads, Warzone BNB Airdrops, fee routing, and claim-based rewards.
+MemeWarzone is a competitive campaign platform that combines launch, PRE trading, post graduation competition, and recurring reward systems into one product.
 
-### When does Prepare Mode open?
-Prepare Mode opens on **May 12**.
+## Which chain is live now?
 
-### What is Prepare Mode?
-Prepare Mode is the pre-live phase where creators prepare campaigns, recruiters build squads, and users learn the platform before full live deployment.
+BNB is the main live route.
+Solana create, buy, sell, and UpVote flows are documented separately as devnet active where applicable.
 
-### Which chain does MemeWarzone use?
-MemeWarzone is built for **BNB Chain**.
+## What is a campaign?
 
-## Campaigns
+A campaign is the product object that holds the token story, launch state, trading context, and related reward or visibility signals.
 
-### What is a campaign?
-A campaign is the launch page and trading environment for a meme token on MemeWarzone.
+## What is Direct?
 
-### What is the graduation threshold?
-The graduation threshold is **50 BNB**.
+Direct is the fast launch route for a campaign that is already ready to go live.
 
-### What happens at graduation?
-A 2.00% finalize fee is taken, then the remaining liquidity is split: **80% LP** and **20% creator payout**.
+## What is Draft?
 
-### How much can a creator earn at minimum graduation?
-At 50 BNB raised, the example creator payout is **9.8 BNB** after the finalize fee.
+Draft is the staging route for a campaign that still needs preparation before the live move.
 
-## Fees and routing
+## What is Prepare Mode?
 
-### What are the trading fees?
-Buys and sells have a **2.00% fee**.
+Prepare Mode is the staging lane where a creator can tighten the page, links, timing, and message before launch.
 
-### How much goes to LeagueTreasury?
-**0.75% of every buy and sell** goes to LeagueTreasury.
+## What is PRE?
 
-### What is TreasuryRouter?
-TreasuryRouter is the single fee-routing entry point. It routes fee flows into LeagueTreasury, RecruiterRewardsVault, CommunityRewardsVault, and ProtocolRevenueVault.
+PRE is the live launchpad trading state before graduation.
 
-### Does the reward system add extra user fees?
-No. Recruiter, Squad Pool, Airdrop, and League allocations come from the existing 2.00% fee envelope.
+## What is POST?
 
-### What is protocol revenue?
-Protocol revenue is the remainder after reward routing.
+POST is the post graduation state. The exact trading lane after POST depends on the current chain and readiness state.
 
-## Recruiters and squads
+## Does an UpVote mean a campaign is safe?
 
-### What do standard recruiters earn?
-Standard recruiters can earn **0.25%** from linked buy/sell activity and **0.30%** from linked creator finalize activity.
+No.
+An UpVote is a paid visibility signal, not a safety label.
 
-### What do OG recruiters earn?
-OG recruiters can earn **0.30%** from linked buy/sell activity and **0.35%** from linked creator finalize activity.
+## Are rewards automatic?
 
-### What is the Squad Pool?
-The Squad Pool is a contribution-based weekly reward system for eligible members of recruiter-connected squads. It is not an equal split.
+No.
+Rewards move through the claim flow after the relevant epoch closes and results are published.
 
-## Airdrops
+## Where should I claim?
 
-### What are Warzone BNB Airdrops?
-Warzone BNB Airdrops are weekly BNB reward opportunities for eligible active smaller creators and traders.
+Only through the official MemeWarzone product pages.
+Never trust random claim prompts from copied links or direct messages.
 
-### How are Airdrops funded?
-They are funded by unlinked recruiter and squad slices, plus expired airdrop rewards.
+## Does the docs site use fixed numbers forever?
 
-### Is it the same as Leagues?
-No. Leagues reward top competitive performance. Airdrops give active smaller fighters a capped, weighted random chance at rewards.
+No.
+The live manual now points to active policy and readiness where values can change by deployment.
 
-## Claims
+## Where should a new user start?
 
-### When do weekly reward epochs reset?
-Weekly reward epochs close **Monday 00:00 UTC**.
-
-### How long is the claim window?
-The standard claim deadline is **7 days after epoch end**.
-
-### Where should I claim rewards?
-Only through official MemeWarzone pages. Never trust random DM claim links.
-
-## Safety
-
-### Does MemeWarzone remove all risk?
-No. Meme tokens are high risk. The platform can improve transparency and mechanics, but it cannot remove market, creator, or smart contract risk.
-
-### Does an UpVote mean a token is safe?
-No. An UpVote is a paid visibility signal only.
-
-### How does MemeWarzone handle abuse?
-Reward systems can exclude wash trading, self-trading, circular trading, wallet splitting, common-control wallets, creator-funded fake demand, and recruiter farming loops.
+Read **[Introduction](/introduction)**, then **[How MemeWarzone Works](/how-memewarzone-works)**, then **[Getting Started](/getting-started)**.

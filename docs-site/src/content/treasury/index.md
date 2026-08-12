@@ -1,85 +1,34 @@
 ---
 title: Treasury Structure
-description: How MemeWarzone separates reward routing, protocol revenue, Owners Safe policy, and Ops Safe execution.
+description: How reward routing, protocol revenue, and operating funds are kept in separate lanes.
 ---
 
-MemeWarzone treasury design should be boring on purpose.
+Treasury structure should be simple enough to inspect and boring enough to trust.
 
-The system separates reward routing from protocol revenue and operations.
+The main rule is separation. Reward routing should not be mixed into personal wallets or vague off chain handling.
 
-## Core principle
+## The treasury stack
 
-TreasuryRouter routes fees first.
+At a high level, the stack works like this:
 
-Protocol revenue is what remains after League, recruiter, airdrop, and Squad Pool allocations.
+1. the router sends value into the right destination
+2. reward lanes remain separated from protocol revenue
+3. protocol revenue follows treasury policy
+4. operating funds move through the approved treasury path
 
-```txt
-fee amount -> TreasuryRouter -> reward buckets + ProtocolRevenueVault
-ProtocolRevenueVault -> Owners Safe policy
-Owners Safe -> Ops Safe and weekly distribution policy
-```
+## Why that matters
 
-## Routing layer
+This separation reduces confusion around who controls what and how reward money differs from operating money.
 
-TreasuryRouter can route to:
+It also makes it easier to explain that reward systems are not being improvised after the fact.
 
-| Destination | Purpose |
-| --- | --- |
-| LeagueTreasury | League prizes |
-| RecruiterRewardsVault | Recruiter reward allocations |
-| CommunityRewardsVault | Warzone Airdrops and Squad Pool balances |
-| ProtocolRevenueVault | Protocol revenue remainder |
+## What users need to know
 
-This means protocol revenue is not the full fee. It is the routed remainder.
+Most users do not need every treasury detail.
+They need to know that:
 
-## Owners Safe
+- reward routing is separated from protocol revenue
+- treasury handling follows an approved structure
+- platform funds are not supposed to flow straight into personal developer wallets
 
-The Owners Safe is the main treasury and governance wallet.
-
-Direction:
-
-- 2-of-3 multisig
-- receives protocol revenue through the ProtocolRevenueVault path
-- controls treasury and governance actions
-- supports weekly founder distribution policy
-- keeps protocol revenue out of personal developer wallets
-
-## Ops Safe
-
-The Ops Safe is for day-to-day execution.
-
-Target balance: 50 BNB.
-
-Policy direction:
-
-- if Ops Safe is below 50 BNB, top it up from Owners Safe
-- if Ops Safe is above 50 BNB, sweep excess back to Owners Safe
-
-This gives operational flexibility without exposing the full treasury.
-
-## Weekly payouts
-
-Weekly treasury movement should follow a fixed policy:
-
-1. Normalize Ops Safe.
-2. Retain the configured treasury buffer.
-3. Distribute the remaining configured amount to predefined payout wallets.
-
-Read: **[Weekly Distribution](/treasury/weekly-distribution)**.
-
-## Developer wallets
-
-Developer EOAs can deploy contracts and prepare transactions.
-
-They should not receive protocol revenue directly.
-
-## Why this matters
-
-This structure reduces:
-
-- personal wallet custody risk
-- founder disputes
-- accidental treasury exposure
-- operational deadlocks
-- unclear revenue ownership
-- contradictions between reward routing and treasury policy
+Read: **[Fee Routing](/fees/fee-routing)** and **[Weekly Distribution](/treasury/weekly-distribution)**.

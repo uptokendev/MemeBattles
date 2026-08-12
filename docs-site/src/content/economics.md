@@ -1,101 +1,42 @@
 ---
 title: Economic Model
-description: How MemeWarzone combines creator trade earnings, trading fees, UpVotes, finalize mechanics, reward routing, treasury policy, and recurring incentives.
+description: How platform activity funds creator earnings, rewards, routing, treasury policy, and the recurring competition loop.
 ---
 
-MemeWarzone economics are built around a simple idea: normal platform activity should fund the competitive ecosystem.
+MemeWarzone economics are built to keep normal platform activity feeding the rest of the system.
 
-The system does not add separate user fees for creators, recruiters, squads, airdrops, or Leagues. It routes the existing fee envelope into the correct buckets.
+The main principle is simple. The platform does not need a separate fee for every reward lane. It routes the active fee envelope into the correct destinations.
 
-## Core numbers
+## What the model is trying to do
 
-| Mechanic | Value |
-| --- | ---: |
-| Buy fee | 2.00% |
-| Sell fee | 2.00% |
-| Creator direct trade share | 0.10% of buys and sells on the creator's own bonding curve |
-| Finalize fee | 2.00% |
-| UpVote price | 0.003 BNB |
-| Graduation target | Active by deployment |
-| Post finalize distribution | Active launch liquidity and creator payout policy by deployment |
-| Post graduation platform route fee | 0.05% when traded through MemeWarzone |
+The economic system is built to support:
 
-## Trading fees
+- creator earnings
+- recurring competition
+- recruiter and squad incentives
+- smaller user reward lanes
+- protocol revenue and operations
 
-Every buy and sell has a 2.00% fee.
+## What users should remember
 
-That 2.00% can route into:
+The public numbers that matter most are the active buy fee, sell fee, finalize policy, and any live route based post graduation fee.
 
-- creator wallet direct trade share
-- LeagueTreasury
-- RecruiterRewardsVault
-- CommunityRewardsVault for Warzone Airdrops
-- CommunityRewardsVault for Squad Pool
-- ProtocolRevenueVault
+The internal split matters too, but it should be explained as routing policy, not as a pile of hidden taxes.
 
-The exact route depends on whether the wallet has active recruiter attribution and whether the recruiter is an OG recruiter.
+## The platform flywheel
 
-## Creator trade earnings
+The loop works like this:
 
-Creators receive **0.10% of every buy and sell** made through their own token bonding curve.
+1. campaigns create activity
+2. activity creates fees
+3. fees route into creator, reward, and protocol lanes
+4. rewards create new reasons to return
+5. new competition brings more activity back into the system
 
-This is paid directly to the campaign creator wallet as trading happens. It is not a separate fee on top of the 2.00% buy and sell fee.
+## Policy discipline
 
-Creator trade earnings are separate from the creator payout released at graduation.
+When the deployment policy changes, this page must move with it.
 
-## UpVotes
+That is why the manual now points to active policy and readiness instead of treating one old target or one old split as permanent law.
 
-UpVotes cost 0.003 BNB.
-
-They are paid discovery actions. They help campaigns compete for attention but do not mean the platform endorses a campaign.
-
-On future chains, UpVotes should keep BNB equivalent pricing while users pay in that chain's native token.
-
-## Finalize mechanics
-
-When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before launch liquidity and creator payout are calculated.
-
-The remaining raised liquidity is then distributed between launch liquidity and the creator payout according to the active deployment policy.
-
-Use the live readiness and economics references for the current target and distribution values.
-
-## Post graduation trading
-
-Graduation does not end MemeWarzone's relationship with a campaign.
-
-When users continue trading a graduated token through the MemeWarzone interface or routing path, the platform can earn a **0.05%** platform route fee.
-
-This fee is platform route based. It is not a permanent token tax built into the token itself.
-
-## Incentive redistribution
-
-MemeWarzone uses routing to keep incentives recurring:
-
-| System | Funding source |
-| --- | --- |
-| Creators | 0.10% of buys and sells on their own bonding curve, plus the creator payout released at graduation under the active deployment policy |
-| Leagues | 0.75% of buy and sell notional |
-| Recruiter Program | Linked recruiter trade and finalize slices |
-| Squad Pool | Linked squad slice or expired recruiter and squad rewards |
-| Warzone BNB Airdrops | Unlinked recruiter and squad slices and expired airdrops |
-| Protocol revenue | Remainder after creator and reward routing |
-| Post graduation platform route | 0.05% when graduated tokens are traded through MemeWarzone |
-
-## Protocol revenue
-
-Protocol revenue is the remainder after TreasuryRouter has routed creator, League, recruiter, airdrop, and Squad Pool allocations.
-
-ProtocolRevenueVault can then feed the Owners Safe and weekly treasury policy. That keeps incentive routing separate from operating revenue.
-
-## Flywheel
-
-The economic loop is:
-
-1. Campaign activity creates fees.
-2. Fees route into creator earnings, rewards, and protocol revenue.
-3. Rewards create weekly competition and claim moments.
-4. Competition brings users back.
-5. More users create more campaign activity.
-6. Strong campaigns can graduate and keep trading through MemeWarzone.
-
-The model is meant to make incentives core to the ecosystem, not a side promotion.
+Read: **[Fee Model](/fees)**, **[Fee Routing](/fees/fee-routing)**, and **[Treasury Structure](/treasury)**.

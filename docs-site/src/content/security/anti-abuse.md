@@ -1,80 +1,41 @@
 ---
 title: Anti-Abuse System
-description: How MemeWarzone protects rewards, rankings, Leagues, airdrops, and Squad Pool distributions from farming and fake activity.
+description: How reward lanes and rankings are protected from fake or circular activity.
 ---
 
-MemeWarzone rewards are for real activity.
+Reward systems are only useful if they can resist farming.
 
-Because the platform includes Leagues, recruiter rewards, airdrops, and Squad Pool distributions, the system filters fake or circular behavior before rewards are published.
+The anti abuse system exists to keep rankings, airdrops, squad rewards, and other competition lanes focused on real activity instead of easy loops.
 
-## What the system protects
+## What it can affect
 
-Anti-abuse checks can apply to:
+Anti abuse checks can affect:
 
-- League eligibility
-- Warzone BNB Airdrops
-- Squad Pool scoring
-- recruiter rewards
-- public rankings
-- claim eligibility
-- campaign activity metrics
+- eligibility
+- ranking state
+- winner selection
+- claim status
+- reward inclusion or exclusion
 
-## Excluded behavior
+## What behavior can be excluded
 
-The system may exclude activity connected to:
+The platform can exclude activity that looks like:
 
-- self-trading
+- self trading
 - wash trading
-- circular trading
-- common-control wallets
-- wallet splitting
-- creator-funded fake demand
-- recruiter-linked farming loops
-- repeated no-market back-and-forth activity
-- own-campaign trading where not allowed
-- linked-wallet buyer clusters
-- suspicious activity designed mainly to farm rewards
+- circular activity
+- linked wallet farming
+- artificial demand loops
+- other behavior aimed mainly at gaming the reward system
 
-## Two-layer enforcement
+## Public and private boundary
 
-### Reward exclusion
+The manual should explain the kinds of behavior that can be excluded.
+It should not publish the internal trigger map that would help farmers reverse engineer the line.
 
-Reward exclusion can be aggressive.
+## Why the line matters
 
-If activity looks ineligible, suspicious, circular, or farmed, it can be excluded from scoring. This protects the reward pools.
+Honest users need enough clarity to understand the rules.
+Bad actors should not get a field manual for how to slip through them.
 
-### Sanctions or account action
-
-Punitive action should use a higher confidence threshold.
-
-A wallet may be excluded from rewards without necessarily being banned or sanctioned.
-
-## Public vs private logic
-
-MemeWarzone can publish broad exclusion categories.
-
-It should not publish exact thresholds, clustering logic, scoring weights, or trigger combinations. Those details would help farmers reverse-engineer the reward system.
-
-## Reason codes
-
-Users should see broad reason codes when they are ineligible.
-
-Examples:
-
-- insufficient weekly activity
-- below minimum trade count
-- activity cap reached
-- own-campaign trading excluded
-- suspected linked-wallet activity
-- suspicious circular trading
-- cooldown active
-- winner exclusion active
-- review required
-
-Reason codes should help honest users improve without giving farmers a playbook.
-
-## Why this matters
-
-A reward system without anti-abuse becomes a farming system.
-
-MemeWarzone is built to reward creators, traders, recruiters, and squads who bring real activity to the battlefield.
+Read: **[Protection Model](/security/protection-model)**.

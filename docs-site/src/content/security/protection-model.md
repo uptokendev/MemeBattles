@@ -1,68 +1,38 @@
 ---
 title: Protection Model
-description: The user-facing safety, treasury, routing, claim, and transparency model for MemeWarzone.
+description: The public facing safety model for launch, trading, routing, and reward visibility.
 ---
 
-MemeWarzone should not be a blind campaign market.
+MemeWarzone is not meant to be a blind campaign board.
 
-The protection model combines contract rules, router-enforced fee splits, visible reputation, launch limits, claim-based payouts, and user education.
+The protection model combines product rules, visible signals, treasury separation, claim based rewards, and user education so people have more to work with than hype alone.
 
-## Core safety principles
+## What the model tries to protect
 
-Users should be able to evaluate:
+Users should be able to inspect:
 
-- who launched a campaign
-- whether the deployer has history
-- how previous campaigns performed
-- whether graduation happened cleanly
-- whether holder concentration looks dangerous
-- whether activity is broad or fake-looking
-- where fees route
-- which rewards are claimable
+- campaign identity
+- launch history where available
+- public market context
+- fee and reward visibility
+- claim status in the wallet flow
+- warning signs that deserve caution
 
-## Router-enforced splits
+## What the platform can do
 
-TreasuryRouter enforces fee routing before protocol revenue is defined.
+The platform can improve transparency and structure.
+It cannot remove market risk from speculative assets.
 
-That matters because reward allocations are not manually decided after the fact. The router sends funds into League, recruiter, airdrop, Squad Pool, and protocol revenue buckets according to route profile.
+That distinction matters. A better market surface is not the same thing as a risk free one.
 
-## No dev-wallet custody
+## Where protection shows up
 
-Protocol revenue should not flow directly to developer wallets.
+Protection appears through:
 
-ProtocolRevenueVault feeds treasury policy, and Owners Safe/Ops Safe separation keeps operating funds away from personal wallet custody.
+- clearer launch flow
+- visible routing and reward state
+- claim based wallet views
+- ranking and reputation context
+- education around fake links and unsafe assumptions
 
-## Claim-based payout safety
-
-Rewards are claim-based.
-
-This reduces operational risk because the system can:
-
-- process eligibility before payout
-- apply anti-abuse checks
-- show users what they are claiming
-- avoid automatic payout spam
-- keep claims auditable
-
-## User-facing protections
-
-Important protection categories include:
-
-- anti-rug launch mechanics
-- LP handling visibility
-- finalize rules
-- creator/deployer reputation
-- creator cooldowns
-- campaign caps
-- unique buyers vs volume indicators
-- top-holder concentration visibility
-- suspicious activity flags
-- scam-link education
-
-## Anti-abuse
-
-Reward systems must filter fake activity.
-
-Wash trading, self-trading, common-control wallets, wallet splitting, circular trading, and recruiter farming loops can be excluded from rewards.
-
-Read: **[Anti-Abuse System](/security/anti-abuse)**.
+Read: **[Anti-Abuse System](/security/anti-abuse)** and **[Avoid Scams](/security/avoid-scams)**.

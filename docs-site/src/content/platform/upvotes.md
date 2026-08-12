@@ -1,46 +1,38 @@
 ---
 title: UpVotes
-description: Paid discovery for campaigns, designed to make promotion transparent instead of hidden.
+description: Paid discovery for campaigns, designed to make promotion visible instead of hidden.
 ---
 
 UpVotes are paid visibility actions.
 
-An UpVote helps a campaign compete for attention in MemeWarzone discovery surfaces such as Featured, Trending, and Crowd Favorite rankings.
+They help campaigns compete for attention in the discovery surfaces that matter, such as featured views, trending lanes, and community attention boards.
 
-## Price
+## What an UpVote means
 
-Each UpVote costs **0.003 BNB**.
+An UpVote means somebody spent money to push visibility.
+That is all.
+
+It does not mean the campaign is safe, approved, or guaranteed to perform well.
 
 ## Why UpVotes exist
 
-Most meme platforms have hidden promotion markets.
+Most promotion systems are hidden.
+UpVotes make that pressure visible.
 
-MemeWarzone makes promotion visible and economic:
+That gives creators, traders, and communities a way to see when attention is being pushed instead of guessing where it came from.
 
-- creators can push their own campaign
-- traders can support campaigns they are active in
-- communities can rally around a campaign
-- the platform can rank attention transparently
+## What users should not assume
 
-## What UpVotes are not
+Do not read an UpVote as:
 
-UpVotes are not a guarantee that a token is safe.
+- a safety label
+- a quality guarantee
+- a platform endorsement
+- a promise of graduation
 
-They do not mean:
+## Where UpVotes matter most
 
-- the creator is verified
-- the campaign will graduate
-- the price will go up
-- the platform endorses the token
+UpVotes affect discovery and community attention.
+They also matter in the Crowd Favorite competition lane.
 
-An UpVote is a paid visibility signal, not a safety label.
-
-## Fair-use direction
-
-MemeWarzone is designed around fair discovery. UpVote limits and ranking rules may be used to prevent one wallet or group from dominating visibility too easily.
-
-## League connection
-
-The **Crowd Favorite** League category is based on UpVote performance.
-
-Read: **[League categories](/leagues/categories)**.
+Read: **[League Categories](/leagues/categories)**.

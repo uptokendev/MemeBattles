@@ -1,51 +1,33 @@
 ---
 title: Graduation
-description: What happens when a MemeWarzone campaign reaches its active graduation target.
+description: What happens when a campaign reaches its active graduation target.
 ---
 
-Graduation is the transition from bonding curve campaign to post graduation liquidity.
+Graduation is the handoff from the launchpad phase into the next market lane.
 
-The graduation target is defined by the active deployment policy.
+It happens only when the campaign reaches the active target for the current deployment and chain context.
 
-## What happens at graduation
+## What graduation changes
 
 When a campaign graduates:
 
-1. The campaign reaches the active graduation target.
-2. A 2.00% finalize fee is taken from raised liquidity before launch liquidity is set.
-3. TreasuryRouter routes the finalize fee.
-4. The remaining amount is split under the active deployment policy.
-5. Launch liquidity is created from the configured share of the remainder.
-6. The creator payout is released from the configured share of the remainder.
-7. The campaign enters the DEX stage.
+1. the target is reached
+2. the finalize policy runs
+3. fee routing for finalize is applied
+4. the remaining value follows the active post finalize distribution policy
+5. the campaign moves out of pure PRE state
 
-## Reference note
+## What to remember
 
-Use the current economics and readiness references for the live target and distribution values. Those numbers can change by deployment and should not be treated as permanent doctrine.
+The public manual should not treat one historical number as permanent doctrine.
 
-## Finalize routing
+The target and the post finalize distribution belong to the active deployment policy. Always pair this page with the current economics and readiness pages when you explain a live campaign.
 
-Finalize uses the same 2.00% user facing fee envelope.
+## Why graduation matters
 
-| Profile | Recruiter | Squad Pool | Airdrops | Protocol revenue |
-| --- | ---: | ---: | ---: | ---: |
-| Standard linked | 0.30% | 0.05% | 0.00% | 1.65% |
-| Standard unlinked | 0.00% | 0.00% | 0.35% | 1.65% |
-| OG linked | 0.35% | 0.05% | 0.00% | 1.60% |
+Graduation changes the market context.
 
-Finalize does not route to LeagueTreasury.
+Before graduation, the campaign is a launchpad market.
+After graduation, it moves toward the post graduation lane supported by the current chain and release state.
 
-## Why this structure exists
-
-Graduation should reward creators without draining the entire campaign.
-
-The live distribution policy is designed to:
-
-- give the token real liquidity after graduation
-- reward creators for successful campaign execution
-- keep economics predictable
-- avoid unclear off chain payout negotiations
-
-## After graduation
-
-After graduation, the campaign is no longer only a bonding curve campaign. It becomes a post graduation market with launch liquidity and broader trading behavior.
+Read: **[Economic Model](/economics)**, **[Chain Readiness](/platform/chain-readiness)**, and **[War Trade Room](/traders/war-trade-room)**.

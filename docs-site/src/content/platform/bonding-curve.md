@@ -1,55 +1,37 @@
 ---
 title: Bonding Curve
-description: How pre-graduation MemeWarzone trading works and how trading fees route into the ecosystem.
+description: How pre graduation trading works on the launchpad and what users should expect before a campaign graduates.
 ---
 
-Before graduation, campaigns trade through a bonding curve.
+Before graduation, campaigns trade through the launchpad curve.
 
-A bonding curve is a pricing mechanism where token price changes as users buy and sell through the campaign contract.
+This is the PRE market. It is where a campaign proves demand, where traders enter early, and where the platform records the activity that feeds visibility and reward systems.
 
-## Why MemeWarzone uses it
+## What the bonding curve phase does
 
-The bonding-curve phase gives every campaign an initial battlefield before DEX liquidity is created.
+The bonding curve gives a campaign an active market before post graduation routing takes over.
 
-It allows:
+During this phase, users can:
 
-- fast campaign activation
-- visible early demand
-- transparent campaign progress
-- graduation based on actual raised liquidity
-- League tracking during the most competitive phase
-- reward routing from real trading activity
+- buy and sell through the launchpad
+- watch campaign progress in real time
+- see whether momentum is building toward graduation
+- follow the campaign while visibility systems and rankings react
 
-## What traders should know
+## What traders should expect
 
-Bonding-curve trading can move fast.
+PRE markets can move fast.
 
-Early campaigns may have:
+Price impact is often stronger early in the campaign and conditions can change quickly. Do not mistake a live page for a safe page.
 
-- high volatility
-- stronger price impact
-- fast leaderboard changes
-- quick graduation attempts
-- sudden sell pressure
+## What creators should focus on
 
-Never assume a campaign is safe just because it is early or active.
+The bonding curve phase is where public demand becomes visible.
 
-## What creators should know
+A creator should keep the page clean, links official, and timing clear. Strong communication matters because this is the phase where attention converts into real market action.
 
-The bonding-curve phase is where your community proves demand.
+## Fee note
 
-Creators should focus on:
+Trading during PRE uses the active fee model for buy and sell activity.
 
-- clear communication
-- one official campaign link
-- avoiding fake promises
-- pushing transparent activity
-- building enough momentum to reach graduation
-
-## Fees during bonding
-
-Buy and sell fees are 2.00%.
-
-From every buy and sell, 0.75% of trade notional routes to LeagueTreasury. Other slices can route to recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue based on attribution profile.
-
-Read: **[Fee Routing](/fees/fee-routing)**.
+Read: **[Fee Model](/fees)** and **[Fee Routing](/fees/fee-routing)**.
