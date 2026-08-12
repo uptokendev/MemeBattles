@@ -1,62 +1,55 @@
 ---
 title: Direct and Draft Launches
-description: How to choose between Direct and Draft, and what each route does.
+description: Choose the right launch route and move a campaign from setup to live trading.
 ---
 
-Choose your launch route before you build momentum.
+MemeWarzone gives creators two launch routes on BNB and Solana: Direct and Draft.
 
-MemeWarzone gives creators two ways to open a campaign. Both can lead to a live launch, but they serve different needs.
+![Direct and Draft launch routes](/images/docs/creator-direct-draft-routes.png)
 
-## Choose Direct when the campaign is ready
+## Direct
 
-Direct is the fast lane.
+Direct is for campaigns that are ready to move.
 
-Take Direct when:
+Use Direct when:
 
-- the name, ticker, and creative are final
-- the links are final
-- the timing is already set
-- you want to move from create to Token Details without staging a public prep page first
-
-Direct is best when the campaign is already locked and the team is ready to move.
-
-## Choose Draft when you need room to prepare
-
-Draft is the staging lane.
-
-Take Draft when you still need to:
-
-- refine the campaign brief
-- set up the promotion page
-- warm up the audience before trading opens
-- schedule the launch window
-- review the public presentation before going live
-
-Draft is the better route when timing and presentation need control.
-
-## Draft flow
-
-The normal Draft flow is:
-
-1. create the draft
-2. complete promotion setup
-3. review the public Prepare page
-4. push live when the campaign is clear
-
-## Direct flow
+- the name and ticker are final
+- the logo and campaign media are ready
+- official links have been checked
+- the community knows the launch plan
+- you are ready to complete the wallet transaction
 
 The normal Direct flow is:
 
-1. complete the create form
-2. confirm the wallet action
-3. let the app submit the launch
-4. land on Token Details after acceptance
+1. choose the active chain
+2. complete the campaign form
+3. review the campaign details
+4. confirm the wallet transaction
+5. open Token Details after the campaign is accepted
 
-On Solana, the visible creator flow is still one product path even though some support rails behind it are still being finalized.
+## Draft
 
-## Quick rule
+Draft gives you a staging area before trading opens.
 
-Choose Draft for preparation.
-Choose Direct for speed.
+Use Draft when you want to prepare the campaign, build a public promotion page, coordinate the community, or control the launch window before opening the market.
 
-Read: **[Promotion and Push Live](/creators/promotion-and-push-live)** and **[Create a Campaign](/creators/create-a-campaign)**.
+The normal Draft flow is:
+
+1. choose the active chain
+2. create the draft
+3. complete the campaign identity and official links
+4. prepare the public campaign page
+5. share the Prepare page when you are ready to build attention
+6. push the campaign live when the launch window opens
+
+## Before you push live
+
+Confirm the chain, ticker, campaign image, official links, and launch timing before the final wallet action.
+
+Once the campaign enters live trading, users will act on the information attached to it. Clean information at launch prevents confusion later.
+
+## After launch
+
+Open Token Details to follow the campaign state, trading activity, UpVotes, and graduation progress.
+
+Use **[Promotion and Push Live](/creators/promotion-and-push-live)** for the Draft launch sequence and **[Create a Campaign](/creators/create-a-campaign)** for the full preparation checklist.
