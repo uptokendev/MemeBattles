@@ -97,16 +97,20 @@ function validateCreateArgsType(idl) {
   return definition;
 }
 
-function validateProgramAccounts(idl) {
+function validateGeneratedProgramAccounts(idl) {
+  // Anchor 0.30.1's compile-time IDL only emits account/type definitions that are
+  // reachable through typed instruction contexts. Campaign, CampaignSolVault and
+  // CreateAuthorization are intentionally handler-managed UncheckedAccount PDAs to
+  // keep CreateCampaign's BPF stack bounded, so they remain present in the
+  // instruction account list but are not emitted as generated IDL account types.
+  // Keep this check strict for the protocol accounts that Anchor can deterministically
+  // emit, while validateCreateInstruction above still verifies the full V4 account ABI.
   for (const account of [
     "GlobalConfig",
     "GenerationConfig",
     "CreatorProfile",
     "RiskProfile",
     "ClusterProfile",
-    "Campaign",
-    "CampaignSolVault",
-    "CreateAuthorization",
   ]) {
     const declared = findByName(idl.accounts, account) || findByName(idl.types, account);
     if (!declared) fail(`account/type ${account} is missing`);
@@ -119,7 +123,7 @@ function main() {
   const { raw, idl } = readIdl(idlPath);
   const instruction = validateCreateInstruction(idl);
   validateCreateArgsType(idl);
-  validateProgramAccounts(idl);
+  validateGeneratedProgramAccounts(idl);
 
   const idlSha256 = crypto.createHash("sha256").update(raw).digest("hex");
   const binding = {
