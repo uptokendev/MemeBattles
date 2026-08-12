@@ -251,6 +251,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
             const follows = Number(popularity?.follows || 0);
             const popularityPct = Number(popularity?.popularityPercentage || 0);
             const scheduled = isDiscoverableScheduledDraft(draft);
+            const isSolanaDraft = Number(draft.chainId) === SOLANA_CHAIN_ID;
             const launchDate = scheduled
               ? (scheduledLaunchSeconds(draft)
                   ? formatLaunchDate(draft.scheduledLaunchAt)
@@ -285,7 +286,18 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                       <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="mwz-section-title block truncate text-lg leading-none hover:text-accent">
                         {draft.name}
                       </Link>
-                      <div className="mt-1 truncate text-sm text-success/70">{draft.ticker ? `$${draft.ticker}` : ""}</div>
+                      <div className="mt-1 flex items-center gap-1.5 overflow-hidden">
+                        <div className="truncate text-sm text-success/70">{draft.ticker ? `$${draft.ticker}` : ""}</div>
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded border px-1.5 py-px text-[9px] font-medium uppercase tracking-[0.08em] ${
+                            isSolanaDraft
+                              ? "border-violet-400/60 bg-violet-400/10 text-violet-300"
+                              : "border-amber-400/60 bg-amber-400/10 text-amber-300"
+                          }`}
+                        >
+                          {isSolanaDraft ? "Solana" : "BNB"}
+                        </span>
+                      </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] uppercase tracking-[0.16em] text-success/50">
                       {ageLabel(draft.draftCreatedAt || draft.createdAt)}
