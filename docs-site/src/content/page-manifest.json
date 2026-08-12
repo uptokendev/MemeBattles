@@ -51,8 +51,9 @@
       "group": "Start here",
       "groupOrder": 10,
       "pageOrder": 50,
-      "status": "live",
+      "status": "planned",
       "source": "roadmap.md",
+      "statusNote": "This page tracks planned work. Treat it as forward guidance until the feature is fielded.",
       "aliases": []
     },
     {

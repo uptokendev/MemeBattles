@@ -5,10 +5,12 @@ import remarkGfm from 'remark-gfm'
 import Toc from './Toc'
 import PrevNext from './PrevNext'
 import { getPageByPath, getSourcePathByRoute, normalizePath } from '../content/loader'
+import { getCanonicalPage } from '../content/sidebar'
 import { parseFrontmatter } from '../lib/frontmatter'
 import FaqContent from './FaqContent'
 import { buildFaqToc, parseFaqMarkdown } from '../lib/faq'
 import RoadmapBattlefield from './RoadmapBattlefield'
+import ReadinessBanner from './ReadinessBanner'
 
 function resolveDocLinkHref(href: string, sourcePath: string | null) {
   if (!href) return null
@@ -57,6 +59,7 @@ export default function DocPage() {
 
   const raw = useMemo(() => getPageByPath(path), [path])
   const sourcePath = useMemo(() => getSourcePathByRoute(path), [path])
+  const pageMeta = useMemo(() => getCanonicalPage(path), [path])
   const { data, content } = useMemo(() => parseFrontmatter(raw ?? ''), [raw])
 
   const title = (data.title as string) || 'Not found'
@@ -111,6 +114,10 @@ export default function DocPage() {
           </div>
 
           {path === '/roadmap' && <RoadmapBattlefield />}
+
+          {pageMeta && (
+            <ReadinessBanner status={pageMeta.status} note={pageMeta.statusNote} />
+          )}
 
           <div className="prose-mb text-mb-text">
             {path === '/faq' ? (

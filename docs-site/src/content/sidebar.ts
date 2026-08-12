@@ -11,6 +11,7 @@ export type PageManifestEntry = {
   pageOrder: number
   status: string
   source: string
+  statusNote?: string
   aliases: string[]
 }
 
@@ -56,3 +57,7 @@ export const routeAliases = canonicalPages.reduce<Record<string, string>>((alias
 
   return aliases
 }, {})
+
+export function getCanonicalPage(path: string) {
+  return canonicalPages.find((page) => page.route === path) ?? null
+}

@@ -64,6 +64,7 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 const pages = manifest.pages
 const { routes, duplicates } = collectMarkdownRoutes()
 const errors = []
+const allowedStatuses = new Set(['live', 'partial', 'planned', 'testnet'])
 
 if (duplicates.length > 0) {
   errors.push(`Duplicate canonical markdown routes detected: ${duplicates.join(' | ')}`)
@@ -80,6 +81,10 @@ for (const page of pages) {
   canonicalRouteCounts.set(page.route, (canonicalRouteCounts.get(page.route) || 0) + 1)
   titleCounts.set(page.title, (titleCounts.get(page.title) || 0) + 1)
   sourceCounts.set(page.source, (sourceCounts.get(page.source) || 0) + 1)
+
+  if (!allowedStatuses.has(page.status)) {
+    errors.push(`Unsupported manifest status for ${page.route}: ${page.status}`)
+  }
 
   const sourceFile = path.join(contentDir, page.source)
   if (!fs.existsSync(sourceFile)) {
