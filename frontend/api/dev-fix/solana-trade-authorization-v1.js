@@ -62,6 +62,11 @@ function isTruthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 
+function normalizeHex32(value) {
+  const normalized = String(value || "").trim().replace(/^0x/i, "").toLowerCase();
+  return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
+}
+
 function requiredEnv(name) {
   const value = String(process.env[name] || "").trim();
   if (!value) {
@@ -278,26 +283,55 @@ function buildTradeAuthorizationDigest({
 
 /**
  * GET /api/solana/trade-status
- * Read-only honesty probe for FE safety (no secrets, no signature).
- * Reports Railway auth gate + optional GlobalConfig pause flags.
+ * Public read-only deployment/auth-health probe. Never returns secret material.
+ * Exposes the public Railway identity fields required by deterministic S0 verification.
  */
 export async function solanaTradeStatus(req, res) {
   if (!methodAllowed(req, res, ["GET", "POST"])) return;
 
   try {
+    const createAuthEnabled = isTruthy(process.env.SOLANA_CREATE_AUTH_ENABLED);
     const tradeAuthEnabled = isTruthy(process.env.SOLANA_TRADE_AUTH_ENABLED);
     const programIdRaw = String(process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || "").trim();
+    const routeSignerRaw = String(process.env.SOLANA_ROUTE_SIGNER_PUBLIC_KEY || "").trim();
+    const routeSecretRaw = String(process.env.SOLANA_ROUTE_SIGNER_SECRET_KEY || "").trim();
     const rpcUrl = String(process.env.SOLANA_RPC_URL || "").trim();
+    const cluster = String(process.env.SOLANA_CLUSTER || "").trim() || null;
+    const manifestHash = normalizeHex32(process.env.SOLANA_GENERATION_MANIFEST_HASH);
+    const idlSha256 = normalizeHex32(process.env.SOLANA_LAUNCHPAD_IDL_SHA256);
+    const programSha256 = normalizeHex32(process.env.SOLANA_LAUNCHPAD_PROGRAM_SHA256);
+    const clusterHash = normalizeHex32(process.env.SOLANA_CLUSTER_HASH_HEX);
+
     let programId = null;
+    let routeSigner = null;
     try {
       programId = programIdRaw ? publicKeyString(programIdRaw, "programId") : null;
     } catch {
       programId = null;
     }
+    try {
+      routeSigner = routeSignerRaw ? publicKeyString(routeSignerRaw, "routeSigner") : null;
+    } catch {
+      routeSigner = null;
+    }
+
+    let routeSignerSecretMatchesPublicKey = null;
+    if (routeSecretRaw && routeSigner) {
+      try {
+        const signer = createEd25519Signer(routeSecretRaw);
+        routeSignerSecretMatchesPublicKey = samePublicKey(signer.publicKeyBase58, routeSigner);
+      } catch {
+        routeSignerSecretMatchesPublicKey = false;
+      }
+    }
 
     let pauses = null;
     let rpcOk = false;
     let rpcError = null;
+    let onChainRouteSigner = null;
+    let securityDefaultsLocked = null;
+    let routeAuthorizationRequired = null;
+    let authorizedTradingRequired = null;
     if (rpcUrl && programId) {
       try {
         const globalPda = findProgramAddressSync([Buffer.from("global", "utf8")], programId).publicKey;
@@ -309,6 +343,14 @@ export async function solanaTradeStatus(req, res) {
         if (b64) {
           const { decodeGlobalConfig } = await import("./solana-v4-primitives.js");
           const decoded = decodeGlobalConfig(Buffer.from(b64, "base64"));
+          try {
+            onChainRouteSigner = decoded.routeSigner ? publicKeyString(decoded.routeSigner, "GlobalConfig.routeSigner") : null;
+          } catch {
+            onChainRouteSigner = null;
+          }
+          securityDefaultsLocked = Boolean(decoded.securityDefaultsLocked);
+          routeAuthorizationRequired = Boolean(decoded.routeAuthorizationRequired);
+          authorizedTradingRequired = Boolean(decoded.authorizedTradingRequired);
           pauses = {
             paused: Boolean(decoded.paused),
             createPaused: Boolean(decoded.createPaused),
@@ -316,7 +358,7 @@ export async function solanaTradeStatus(req, res) {
             sellPaused: Boolean(decoded.sellPaused),
             graduationPaused: Boolean(decoded.graduationPaused),
             claimsPaused: Boolean(decoded.claimsPaused),
-            authorizedTradingRequired: Boolean(decoded.authorizedTradingRequired),
+            authorizedTradingRequired,
           };
           rpcOk = true;
         } else {
@@ -329,31 +371,74 @@ export async function solanaTradeStatus(req, res) {
       rpcError = !rpcUrl ? "SOLANA_RPC_URL not set" : "SOLANA_LAUNCHPAD_PROGRAM_ID not set";
     }
 
+    const routeSignerMatchesOnChain = Boolean(
+      routeSigner && onChainRouteSigner && samePublicKey(routeSigner, onChainRouteSigner),
+    );
     const buyOpen = tradeAuthEnabled && pauses && !pauses.paused && !pauses.buyPaused;
     const sellOpen = tradeAuthEnabled && pauses && !pauses.paused && !pauses.sellPaused;
-    const protocolLive = Boolean(buyOpen || sellOpen);
+    const createOpen = createAuthEnabled && pauses && !pauses.paused && !pauses.createPaused;
+    const protocolLive = Boolean(createOpen && buyOpen && sellOpen);
+
+    const missingOrInvalid = [];
+    if (!cluster) missingOrInvalid.push("SOLANA_CLUSTER");
+    if (!rpcUrl) missingOrInvalid.push("SOLANA_RPC_URL");
+    if (!programId) missingOrInvalid.push("SOLANA_LAUNCHPAD_PROGRAM_ID");
+    if (!routeSigner) missingOrInvalid.push("SOLANA_ROUTE_SIGNER_PUBLIC_KEY");
+    if (!routeSecretRaw) missingOrInvalid.push("SOLANA_ROUTE_SIGNER_SECRET_KEY");
+    else if (routeSignerSecretMatchesPublicKey !== true) missingOrInvalid.push("SOLANA_ROUTE_SIGNER_SECRET_KEY does not match public key");
+    if (!manifestHash) missingOrInvalid.push("SOLANA_GENERATION_MANIFEST_HASH");
+    if (!idlSha256) missingOrInvalid.push("SOLANA_LAUNCHPAD_IDL_SHA256");
+    if (!programSha256) missingOrInvalid.push("SOLANA_LAUNCHPAD_PROGRAM_SHA256");
+    if (!clusterHash) missingOrInvalid.push("SOLANA_CLUSTER_HASH_HEX");
+    if (!createAuthEnabled) missingOrInvalid.push("SOLANA_CREATE_AUTH_ENABLED=true");
+    if (!tradeAuthEnabled) missingOrInvalid.push("SOLANA_TRADE_AUTH_ENABLED=true");
+    if (!rpcOk) missingOrInvalid.push("Solana RPC / GlobalConfig read");
+    if (routeSigner && onChainRouteSigner && !routeSignerMatchesOnChain) missingOrInvalid.push("Railway route signer != GlobalConfig.routeSigner");
+    if (securityDefaultsLocked !== true) missingOrInvalid.push("GlobalConfig.securityDefaultsLocked=true");
+    if (routeAuthorizationRequired !== true) missingOrInvalid.push("GlobalConfig.routeAuthorizationRequired=true");
+    if (authorizedTradingRequired !== true) missingOrInvalid.push("GlobalConfig.authorizedTradingRequired=true");
+    if (pauses?.paused) missingOrInvalid.push("GlobalConfig.paused=false");
+    if (pauses?.createPaused) missingOrInvalid.push("GlobalConfig.createPaused=false");
+    if (pauses?.buyPaused) missingOrInvalid.push("GlobalConfig.buyPaused=false");
+    if (pauses?.sellPaused) missingOrInvalid.push("GlobalConfig.sellPaused=false");
+
+    const healthy = missingOrInvalid.length === 0;
 
     return json(res, 200, {
+      healthy,
       chainId: 101,
+      cluster,
+      createAuthEnabled,
       tradeAuthEnabled,
       protocolLive,
+      createOpen: Boolean(createOpen),
       buyOpen: Boolean(buyOpen),
       sellOpen: Boolean(sellOpen),
       programId,
+      routeSigner,
+      manifestHash,
+      idlSha256,
+      programSha256,
+      clusterHash,
+      routeSignerSecretConfigured: Boolean(routeSecretRaw),
+      routeSignerSecretMatchesPublicKey,
+      routeSignerMatchesOnChain,
+      onChainRouteSigner,
+      securityDefaultsLocked,
+      routeAuthorizationRequired,
+      authorizedTradingRequired,
       pauses,
       rpcOk,
       rpcError,
-      message: !tradeAuthEnabled
-        ? "Railway SOLANA_TRADE_AUTH_ENABLED is false — trade authorize is fail-closed."
-        : !rpcOk
-          ? `Trade auth is on; could not read on-chain pauses (${rpcError || "rpc"}).`
-          : pauses?.buyPaused || pauses?.sellPaused
-            ? "Trade auth is on but buy/sell still paused on GlobalConfig — run unpause-trade."
-            : "Solana bonding trade window is open (auth + unpaused).",
+      missingOrInvalid,
+      message: healthy
+        ? "Solana Railway auth identity and create/buy/sell readiness are healthy."
+        : `Solana Railway auth health has ${missingOrInvalid.length} blocker(s).`,
     });
   } catch (error) {
     console.error("[solana-trade-status]", error);
     return json(res, 500, {
+      healthy: false,
       error: "Solana trade status failed.",
       code: "SOLANA_TRADE_STATUS_ERROR",
     });
