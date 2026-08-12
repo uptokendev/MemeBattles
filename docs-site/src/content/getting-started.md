@@ -51,10 +51,12 @@ Start here:
 
 ## Step 3
 
-Check the chain and the page status.
+Confirm your network.
 
-Readiness matters.
-A page can be operational, partial, testnet active, or planned. Do not assume every route works the same way on every chain.
+BNB and Solana are both live.
+The wallet prompt, market path, and available controls can differ by chain, so verify the selected network before you sign any transaction.
+
+Read **[Chain Readiness](/platform/chain-readiness)** if you need a quick comparison.
 
 ## Step 4
 
