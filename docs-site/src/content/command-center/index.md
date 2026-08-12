@@ -1,40 +1,54 @@
 ---
 title: Command Center Overview
-description: The private wallet console for recruiter tools, squads, airdrops, claims, coins, and settings.
+description: Manage recruiter activity, squads, airdrops, claims, campaigns, and account settings from one wallet console.
 ---
 
-Command Center is the private console for the connected wallet.
+Command Center is the private operating console for your connected wallet.
 
-It gathers the account tools that belong to the wallet owner and keeps them separate from the public profile that everyone else can see.
+Use it to manage the parts of MemeWarzone that belong to your account while public campaign and profile pages remain available for everyone to view.
 
-## What lives in Command Center
+![Command Center overview](/images/docs/command-center-overview.png)
 
-- recruiter tools
-- squad status
-- airdrop status
-- reward claims
-- drafts and owned coins
-- profile, wallet, and notification settings
+## Recruiter
 
-## Public and private split
+The Recruiter console contains your referral link, attribution activity, roster information, and recruiter reward data.
 
-Public profile pages are for visibility.
-Command Center is for management.
+Use it when you are building a network or checking whether activity is attached to your recruiter account.
 
-That means claim states, notifications, owned drafts, and other wallet specific controls stay here instead of on public profile pages.
+## Squad
 
-## Main sections
+The Squad console shows your squad membership and the information attached to that squad.
 
-Recruiter covers referral tools and roster management.
-Squad shows membership and contribution context.
-Airdrops tracks the current pool and recent winners.
-Claims shows what can be claimed now and what is still pending.
-My Coins keeps drafts, live campaigns, and graduated campaigns in one place.
-Settings handles profile and wallet level preferences.
+Use it to follow your position inside the squad system and the reward activity connected to it.
 
-## Best use
+## Airdrops
 
-Open Command Center when you need to act on your own account.
-Open public profile pages when you need to share your presence with other users.
+The Airdrops console shows active airdrop information, pool status, and winner information made available to your wallet.
 
-Read: **[Claims Console](/command-center/claims)** and **[My Coins Console](/command-center/coins)**.
+![Command Center airdrops](/images/docs/command-center-airdrops.png)
+
+## Claims
+
+The Claims console is where you check rewards that are pending, available, completed, or no longer claimable.
+
+Always connect the wallet that earned the reward before attempting a claim.
+
+## My Coins
+
+My Coins keeps your campaign activity together.
+
+Use it to find drafts, live campaigns, graduated campaigns, and the account actions attached to campaigns you created or control.
+
+![Command Center My Coins](/images/docs/command-center-my-coins.png)
+
+## Settings
+
+Settings contains account preferences, profile information, wallet related options, and notification controls exposed by the product.
+
+## Public profile or Command Center
+
+Use the public profile when you want other users to see your MemeWarzone identity.
+
+Use Command Center when you need to manage your own wallet, campaigns, rewards, or program activity.
+
+Read **[Claims Console](/command-center/claims)** and **[My Coins Console](/command-center/coins)** next.
