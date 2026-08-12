@@ -4,7 +4,7 @@ import type { DraftActionAuth } from "@/lib/draftAuth";
 export const SOLANA_CREATE_AUTH_SCHEMA_VERSION = 4 as const;
 export const SOLANA_CREATE_AUTH_DOMAIN = "MEMEWARZONE_SOLANA_CREATE_V4" as const;
 
-export type SolanaCreateMode = "draft_deploy_now" | "countdown";
+export type SolanaCreateMode = "draft_deploy_now" | "countdown" | "direct_create";
 
 export type SolanaV4CreateArgs = {
   campaignId: number[];
@@ -105,6 +105,8 @@ export type SolanaV4CreateAuthorizationResponse = {
   preflight: Record<string, unknown>;
   transaction: null;
   transactionPolicy: string;
+  /** Direct only: opaque short-lived token used for post-transaction registry finalization. */
+  finalizeToken?: string;
   /** Set when deterministic campaign PDA already exists from a prior create. */
   alreadyOnChain?: boolean;
   /** Server already wrote campaign_address / reservation LIVE — client may skip mark-deploy. */

@@ -56,6 +56,7 @@ import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
+import { SOLANA_WALLET_EVENT, ensureSolanaListeners } from "@/lib/solanaWallet";
 import {
   CrypticPumpBadge,
   CrypticPumpListButton,
@@ -684,6 +685,18 @@ const TokenDetails = () => {
   /** Solana V4 campaign curve snapshot (quotes / vaults / lock). */
   const [solanaCurve, setSolanaCurve] = useState<import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null>(null);
   const [solanaBalanceTick, setSolanaBalanceTick] = useState(0);
+
+  // Phantom/Solflare/Backpack accountChanged is separate from the EVM WalletContext.
+  // Refresh the displayed SOL + ATA balances as soon as the selected Solana account changes.
+  useEffect(() => {
+    if (!isSolanaPage) return;
+    ensureSolanaListeners({ readExistingAccount: true });
+    const onSolanaWalletChanged = () => setSolanaBalanceTick((value) => value + 1);
+    window.addEventListener(SOLANA_WALLET_EVENT, onSolanaWalletChanged as EventListener);
+    return () => {
+      window.removeEventListener(SOLANA_WALLET_EVENT, onSolanaWalletChanged as EventListener);
+    };
+  }, [isSolanaPage]);
   /** SOL/USD for graduation target conversion (USD micros → SOL lamports). */
   const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
   /** V4 tokens use on-chain decimals (default 6); EVM launchpad tokens use 18. */

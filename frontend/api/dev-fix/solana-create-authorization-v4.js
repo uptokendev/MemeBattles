@@ -203,7 +203,7 @@ function graduationTargetMask(target) {
   return TARGET_MASKS.get(target) || 0;
 }
 
-function validateGraduationTarget(generation, target) {
+export function validateGraduationTarget(generation, target) {
   const mask = graduationTargetMask(target);
   if (!mask || (generation.allowedGraduationTierMask & mask) === 0) {
     throw new SolanaCreateAuthorizationError("Graduation target is not enabled by the active Solana generation.", {
@@ -356,7 +356,7 @@ function validateProgramConfiguration(programId) {
   return canonical;
 }
 
-function enforceCreatorLaunchLimits(creatorProfile, chainNow) {
+export function enforceCreatorLaunchLimits(creatorProfile, chainNow) {
   if (creatorProfile.restricted || creatorProfile.manualReviewRequired) {
     throw new SolanaCreateAuthorizationError("Creator is restricted or requires manual review on Solana.", {
       code: "SOLANA_CREATOR_RESTRICTED",
@@ -483,7 +483,7 @@ function validateOnchainState({
   }
 }
 
-async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, skipCreatorLaunchLimits = false }) {
+export async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, skipCreatorLaunchLimits = false }) {
   const globalConfigPda = findProgramAddressSync([Buffer.from("global", "utf8")], programId);
   const [globalInfo] = await getMultipleAccounts(rpcUrl, [globalConfigPda.publicKey]);
   const global = decodeOwnedAccount(globalInfo, globalConfigPda.publicKey, programId, decodeGlobalConfig, "GlobalConfig");
@@ -574,7 +574,7 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, 
   };
 }
 
-function validateDeploymentEvidence(generation) {
+export function validateDeploymentEvidence(generation) {
   const idlSha256 = hashEnv("SOLANA_LAUNCHPAD_IDL_SHA256");
   const programBinarySha256 = hashEnv("SOLANA_LAUNCHPAD_PROGRAM_SHA256");
   const expectedManifest = String(process.env[GENERATION_MANIFEST_ENV] || "").trim();
@@ -982,7 +982,7 @@ async function authorizeReservation(pool, {
   });
 }
 
-function publicGeneration(generation) {
+export function publicGeneration(generation) {
   return {
     generationIdHex: hex32(generation.generationId),
     programId: generation.programId,

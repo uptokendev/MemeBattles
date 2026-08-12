@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { pool } from "../server/db.js";
 import { isSolanaAddress, normalizeAddress } from "../server/http.js";
 import { requireWalletActionAuth } from "./lib/walletActionAuth.js";
+import { verifySolanaDirectSessionToken } from "./dev-fix/solana-direct-create.js";
 
 export const config = {
   api: { bodyParser: false },
@@ -115,10 +116,26 @@ export default async function handler(req, res) {
       normalizeUploadAddress(firstField(fields, "walletAddress") || firstField(fields, "address") || q.walletAddress || address, chainId) ||
       address;
 
+    // A Direct session is created only after one creator wallet signature. It may authorize
+    // the logo upload without consuming a second auth nonce/signature.
+    let directSession = null;
+    const directSessionToken = String(q.directSession || "").trim();
+    if (kind === "logo" && directSessionToken) {
+      try {
+        directSession = verifySolanaDirectSessionToken(directSessionToken);
+        const directWallet = normalizeUploadAddress(directSession?.creatorWallet, chainId);
+        if (Number(directSession?.chainId) !== chainId || !directWallet || directWallet !== address) {
+          return bad(res, 401, "Direct upload session does not match this wallet or chain.");
+        }
+      } catch (error) {
+        return bad(res, Number(error?.httpStatus || 401), String(error?.message || "Direct upload session is invalid."));
+      }
+    }
+
     // Public sponsorship creatives may omit wallet (kind=sponsor|sponsorship).
     // Avatar/logo/squad still require address + wallet action auth when enforce is on.
     const isPublicSponsorKind = kind === "sponsor" || kind === "sponsorship";
-    if (address && !isPublicSponsorKind) {
+    if (address && !isPublicSponsorKind && !directSession) {
       // logo → upload_logo; everything else (avatar, squad, …) → upload_avatar
       const action = kind === "logo" ? "upload_logo" : "upload_avatar";
       const verified = await requireWalletActionAuth({
