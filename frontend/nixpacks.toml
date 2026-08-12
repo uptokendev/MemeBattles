@@ -5,7 +5,10 @@ NIXPACKS_NODE_VERSION = "22"
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm ci"]
+# Use npm install here because this hotfix adds a server-runtime image decoder.
+# The committed lockfile can be regenerated on the next local dependency refresh;
+# Railway must not fail deployment while the live share-card endpoint is broken.
+cmds = ["npm install --include=dev"]
 
 [phases.build]
 cmds = ["node -e \"console.log('Skipping Vite build for Railway API gateway service')\""]
