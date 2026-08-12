@@ -26,8 +26,9 @@ use anchor_spl::token::{
 use crate::{
     generation_allows_graduation_target, ClusterProfile, CreatorProfile, GenerationConfig,
     GlobalConfig, LaunchpadError, RiskProfile, BPS_DENOMINATOR, CLUSTER_PROFILE_SEED,
-    CREATOR_PROFILE_SEED, EMPTY_CLUSTER_ID, GENERATION_CONFIG_SEED, GLOBAL_CONFIG_SEED,
-    RISK_PROFILE_SEED,
+    CREATOR_PROFILE_SEED, CREATOR_TIER_1, EMPTY_CLUSTER_ID, GENERATION_CONFIG_SEED,
+    GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED, TIER_1_CREATOR_LOCK_SECONDS,
+    TIER_1_MAX_LIVE_BONDING, TIER_COOLDOWN_SECONDS,
 };
 
 pub const CAMPAIGN_SEED: &[u8] = b"campaign";
@@ -43,6 +44,8 @@ pub const ASSET_INITIALIZATION_VERSION: u16 = 1;
 pub const MIN_SCHEDULE_SECONDS: i64 = 300;
 pub const MAX_SCHEDULE_SECONDS: i64 = 30 * 24 * 60 * 60;
 
+const DEFAULT_NEW_CREATOR_TRUST_SCORE: u16 = 0;
+const DEFAULT_NEW_CREATOR_BUY_CAP_BPS: u16 = 1_000;
 const ED25519_HEADER_SIZE: usize = 16;
 const ED25519_SIGNATURE_SIZE: usize = 64;
 const ED25519_PUBLIC_KEY_SIZE: usize = 32;
@@ -60,13 +63,13 @@ pub struct CreateCampaign<'info> {
     pub global_config: UncheckedAccount<'info>,
     /// CHECK: generation config; seeds + typed load in handler.
     pub generation_config: UncheckedAccount<'info>,
-    /// CHECK: creator profile PDA; typed load in handler.
+    /// CHECK: creator profile PDA; created with NewCreator defaults on first successful launch.
     #[account(mut, seeds = [CREATOR_PROFILE_SEED, creator.key().as_ref()], bump)]
     pub creator_profile: UncheckedAccount<'info>,
-    /// CHECK: risk profile PDA; typed load in handler.
+    /// CHECK: optional risk profile PDA. Missing profile means unrestricted/no cluster, matching BNB RiskRegistry.
     #[account(seeds = [RISK_PROFILE_SEED, creator.key().as_ref()], bump)]
     pub risk_profile: UncheckedAccount<'info>,
-    /// CHECK: cluster profile; PDA seeds verified in handler via risk.cluster_id.
+    /// CHECK: cluster profile; only deserialized when the wallet has a non-zero risk cluster.
     pub cluster_profile: UncheckedAccount<'info>,
     /// CHECK: campaign PDA; created in handler (avoids huge Account stack in try_accounts).
     #[account(mut, seeds = [CAMPAIGN_SEED, args.campaign_id.as_ref()], bump)]
@@ -284,6 +287,88 @@ fn create_program_account<'info>(
     Ok(())
 }
 
+fn new_creator_profile(wallet: Pubkey, bump: u8) -> CreatorProfile {
+    CreatorProfile {
+        wallet,
+        tier: CREATOR_TIER_1,
+        trust_score: DEFAULT_NEW_CREATOR_TRUST_SCORE,
+        live_bonding_count: 0,
+        last_launch_timestamp: 0,
+        total_launches: 0,
+        successful_graduations: 0,
+        restricted: false,
+        manual_review_required: false,
+        creator_buy_cap_bps: DEFAULT_NEW_CREATOR_BUY_CAP_BPS,
+        max_live_bonding_count: TIER_1_MAX_LIVE_BONDING,
+        cooldown_seconds: TIER_COOLDOWN_SECONDS,
+        creator_buy_lock_seconds: TIER_1_CREATOR_LOCK_SECONDS,
+        bump,
+    }
+}
+
+#[inline(never)]
+fn ensure_creator_profile<'info>(ctx: &Context<CreateCampaign<'info>>) -> Result<()> {
+    let account = ctx.accounts.creator_profile.to_account_info();
+    if account.owner == &crate::ID && !account.data_is_empty() {
+        return Ok(());
+    }
+    require!(account.lamports() == 0, LaunchpadError::InvalidCreatorProfile);
+    require!(account.data_is_empty(), LaunchpadError::InvalidCreatorProfile);
+
+    let wallet = ctx.accounts.creator.key();
+    let bump_seed = [ctx.bumps.creator_profile];
+    let seeds: &[&[u8]] = &[CREATOR_PROFILE_SEED, wallet.as_ref(), &bump_seed];
+    create_program_account(
+        &ctx.accounts.creator.to_account_info(),
+        &account,
+        &ctx.accounts.system_program.to_account_info(),
+        8 + CreatorProfile::INIT_SPACE,
+        seeds,
+    )?;
+
+    let profile = new_creator_profile(wallet, ctx.bumps.creator_profile);
+    let mut data = account.try_borrow_mut_data()?;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    profile.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+pub(crate) fn load_risk_profile_or_default(
+    account: &AccountInfo<'_>,
+    wallet: Pubkey,
+    bump: u8,
+) -> Result<RiskProfile> {
+    if account.owner == &crate::ID && !account.data_is_empty() {
+        let data = account.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        return RiskProfile::try_deserialize(&mut slice);
+    }
+    require!(account.lamports() == 0, LaunchpadError::InvalidRiskProfile);
+    require!(account.data_is_empty(), LaunchpadError::InvalidRiskProfile);
+    Ok(RiskProfile {
+        wallet,
+        risk_level: 0,
+        restricted: false,
+        cluster_id: EMPTY_CLUSTER_ID,
+        manual_review_required: false,
+        bump,
+    })
+}
+
+fn validate_risk_wallet(creator: Pubkey, risk_profile: &RiskProfile) -> Result<()> {
+    require_keys_eq!(
+        risk_profile.wallet,
+        creator,
+        LaunchpadError::InvalidRiskProfile
+    );
+    require!(!risk_profile.restricted, LaunchpadError::WalletRestricted);
+    require!(
+        !risk_profile.manual_review_required,
+        LaunchpadError::CreatorManualReviewRequired
+    );
+    Ok(())
+}
+
 pub fn create_campaign_handler(
     ctx: &mut Context<CreateCampaign>,
     args: &CreateCampaignArgs,
@@ -304,6 +389,10 @@ pub fn create_campaign_handler(
         LaunchpadError::InvalidCampaign
     );
 
+    // BNB CreatorRegistry treats an unknown wallet as NewCreator. Materialize the same
+    // Tier-1 defaults atomically on the first successful Solana create. If any later
+    // authorization/validation fails, Solana transaction atomicity rolls this creation back.
+    ensure_creator_profile(ctx)?;
     let prep = prepare_and_verify_create_auth(ctx, args, now)?;
 
     let campaign_key = ctx.accounts.campaign.key();
@@ -628,18 +717,33 @@ fn prepare_and_verify_create_auth<'info>(
     };
 
     let risk_cluster_id = {
-        let data = ctx.accounts.risk_profile.try_borrow_data()?;
-        let mut slice: &[u8] = &data;
-        let risk_profile = RiskProfile::try_deserialize(&mut slice)?;
-        let data = ctx.accounts.cluster_profile.try_borrow_data()?;
-        let mut slice: &[u8] = &data;
-        let cluster_profile = ClusterProfile::try_deserialize(&mut slice)?;
-        let (expected_cluster, _) = Pubkey::find_program_address(
-            &[CLUSTER_PROFILE_SEED, risk_profile.cluster_id.as_ref()],
-            &crate::ID,
-        );
-        require_keys_eq!(cluster_key, expected_cluster, LaunchpadError::InvalidCampaign);
-        validate_create_risk_profiles(creator_key, &risk_profile, &cluster_profile)?;
+        let risk_profile = load_risk_profile_or_default(
+            &ctx.accounts.risk_profile.to_account_info(),
+            creator_key,
+            ctx.bumps.risk_profile,
+        )?;
+        validate_risk_wallet(creator_key, &risk_profile)?;
+
+        if risk_profile.cluster_id == EMPTY_CLUSTER_ID {
+            // BNB RiskRegistry: an unknown/unclustered wallet is allowed unless it is
+            // explicitly restricted. Bind the deterministic zero-cluster PDA but do not
+            // require it to exist or deserialize it.
+            let (expected_cluster, _) = Pubkey::find_program_address(
+                &[CLUSTER_PROFILE_SEED, EMPTY_CLUSTER_ID.as_ref()],
+                &crate::ID,
+            );
+            require_keys_eq!(cluster_key, expected_cluster, LaunchpadError::InvalidCampaign);
+        } else {
+            let data = ctx.accounts.cluster_profile.try_borrow_data()?;
+            let mut slice: &[u8] = &data;
+            let cluster_profile = ClusterProfile::try_deserialize(&mut slice)?;
+            let (expected_cluster, _) = Pubkey::find_program_address(
+                &[CLUSTER_PROFILE_SEED, risk_profile.cluster_id.as_ref()],
+                &crate::ID,
+            );
+            require_keys_eq!(cluster_key, expected_cluster, LaunchpadError::InvalidCampaign);
+            validate_create_risk_profiles(creator_key, &risk_profile, &cluster_profile)?;
+        }
         risk_profile.cluster_id
     };
 
@@ -1202,19 +1306,10 @@ pub(crate) fn validate_create_risk_profiles(
     risk_profile: &RiskProfile,
     cluster_profile: &ClusterProfile,
 ) -> Result<()> {
-    require_keys_eq!(
-        risk_profile.wallet,
-        creator,
-        LaunchpadError::InvalidRiskProfile
-    );
+    validate_risk_wallet(creator, risk_profile)?;
     require!(
         risk_profile.cluster_id != EMPTY_CLUSTER_ID,
         LaunchpadError::InvalidCluster
-    );
-    require!(!risk_profile.restricted, LaunchpadError::WalletRestricted);
-    require!(
-        !risk_profile.manual_review_required,
-        LaunchpadError::CreatorManualReviewRequired
     );
     require!(
         cluster_profile.cluster_id == risk_profile.cluster_id,
@@ -1430,6 +1525,36 @@ mod tests {
         assert_eq!(args.campaign_id, [1; 32]);
         assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 4);
         assert_eq!(CREATE_AUTH_DOMAIN, b"MEMEWARZONE_SOLANA_CREATE_V4");
+    }
+
+    #[test]
+    fn new_creator_defaults_match_bnb_new_creator_rules() {
+        let wallet = Pubkey::new_unique();
+        let profile = new_creator_profile(wallet, 200);
+        assert_eq!(profile.wallet, wallet);
+        assert_eq!(profile.tier, CREATOR_TIER_1);
+        assert_eq!(profile.trust_score, 0);
+        assert_eq!(profile.live_bonding_count, 0);
+        assert_eq!(profile.max_live_bonding_count, TIER_1_MAX_LIVE_BONDING);
+        assert_eq!(profile.cooldown_seconds, 86_400);
+        assert_eq!(profile.creator_buy_lock_seconds, 86_400);
+        assert!(!profile.restricted);
+        assert!(!profile.manual_review_required);
+    }
+
+    #[test]
+    fn implicit_risk_defaults_match_bnb_unknown_wallet() {
+        let wallet = Pubkey::new_unique();
+        let profile = RiskProfile {
+            wallet,
+            risk_level: 0,
+            restricted: false,
+            cluster_id: EMPTY_CLUSTER_ID,
+            manual_review_required: false,
+            bump: 1,
+        };
+        assert!(validate_risk_wallet(wallet, &profile).is_ok());
+        assert_eq!(profile.cluster_id, EMPTY_CLUSTER_ID);
     }
 
     #[test]
