@@ -5,7 +5,7 @@ description: The five main MemeWarzone League categories and what each one rewar
 
 MemeWarzone has five core League categories.
 
-Each category rewards a different type of battlefield performance so the warzone is not just one whale-dominated volume board.
+Each category rewards a different type of battlefield performance so the warzone is not just one whale dominated volume board.
 
 ## Simple version
 
@@ -13,9 +13,9 @@ Each category rewards a different type of battlefield performance so the warzone
 | --- | --- |
 | Perfect Run | Clean, rare campaign execution |
 | Fastest Finish | Fastest campaign graduation |
-| Biggest Hit | Biggest single bonding-curve buy |
+| Biggest Hit | Biggest single bonding curve buy |
 | Top Earner | Strongest trader performance |
-| Crowd Favorite | Strongest UpVote-driven community attention |
+| Crowd Favorite | Strongest UpVote driven community attention |
 
 Category rules can be tightened as the battlefield matures, but the purpose of each category is fixed: reward different forms of real campaign performance.
 
@@ -23,45 +23,45 @@ Category rules can be tightened as the battlefield matures, but the purpose of e
 
 Perfect Run rewards campaigns that achieve a clean run under strict campaign behavior rules.
 
-This is the rare-execution category. It is designed for campaigns that do not just move fast, but move cleanly.
+This is the rare execution category. It is designed for campaigns that do not just move fast, but move cleanly.
 
 Current design:
 
 - monthly category
-- jackpot-style prize potential
+- jackpot style prize potential
 - rollover if no campaign qualifies
 - strict eligibility checks
 - designed to reward rare, clean launch execution
 
-A campaign can be active and still fail Perfect Run requirements if its activity does not meet the clean-run standard.
+A campaign can be active and still fail Perfect Run requirements if its activity does not meet the clean run standard.
 
 ## Fastest Finish
 
 Fastest Finish rewards campaigns that graduate the fastest.
 
-The category focuses on speed to the 50 BNB graduation threshold.
+The category focuses on speed to the active graduation target.
 
 Core rule direction:
 
 - the campaign must graduate inside the active epoch
 - time is measured from campaign launch to graduation
 - creator buys are excluded from the measurement where the system can identify them
-- suspicious or artificial demand can be excluded by anti-abuse checks
+- suspicious or artificial demand can be excluded by anti abuse checks
 
-The goal is to reward real external campaign demand, not creator-funded speed farming.
+The goal is to reward real external campaign demand, not creator funded speed farming.
 
 ## Biggest Hit
 
-Biggest Hit rewards the biggest single buy during the bonding-curve phase.
+Biggest Hit rewards the biggest single buy during the bonding curve phase.
 
 This category creates dramatic moments around major entries.
 
 Core rule direction:
 
-- only completed on-platform bonding-curve buys count
+- only completed on platform bonding curve buys count
 - the buy must happen inside the active epoch
 - cancelled, failed, reversed, or excluded activity does not count
-- suspicious wallet-cluster activity can be excluded
+- suspicious wallet cluster activity can be excluded
 
 Biggest Hit is about conviction, timing, and visible battlefield impact.
 
@@ -72,8 +72,8 @@ Top Earner rewards the strongest trader performance within the League rules and 
 Core rule direction:
 
 - performance is measured from eligible campaign trading activity
-- only completed on-platform activity counts where applicable
-- self-trading, wash trading, circular trading, and common-control loops can be excluded
+- only completed on platform activity counts where applicable
+- self trading, wash trading, circular trading, and common control loops can be excluded
 - the system may require enough activity to make the result meaningful
 
 Top Earner should reward skillful trading, not fake loops designed to manufacture profit.
@@ -82,7 +82,7 @@ Top Earner should reward skillful trading, not fake loops designed to manufactur
 
 Crowd Favorite rewards campaigns that win the attention battle through UpVotes.
 
-This is the most community-driven category.
+This is the most community driven category.
 
 Core rule direction:
 
@@ -109,10 +109,10 @@ Multiple categories create more ways to win:
 
 This makes the warzone more dynamic than a simple volume leaderboard.
 
-## Anti-abuse boundary
+## Anti abuse boundary
 
 League rules should be public enough for honest users to understand how to compete.
 
-Exact anti-abuse thresholds, clustering logic, review triggers, and internal scoring details should remain private so farmers cannot reverse-engineer the minimum exploit path.
+Exact anti abuse thresholds, clustering logic, review triggers, and internal scoring details should remain private so farmers cannot reverse engineer the minimum exploit path.
 
 Read: **[Anti-Abuse System](/security/anti-abuse)**.
