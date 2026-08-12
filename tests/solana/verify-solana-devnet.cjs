@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const ROOT = path.resolve(__dirname, "../..");
+const COMPAT_PRELOAD = path.join(__dirname, "web3-loader-compat.cjs");
 const IDENTITY_OUTPUT = path.join(ROOT, "deployments/solana-devnet.deployment-identity.json");
 const PROTOCOL_OUTPUT = path.join(ROOT, "deployments/solana-devnet.protocol-state.json");
 const CURRENT_OUTPUT = path.join(ROOT, "deployments/solana-devnet.current.json");
@@ -26,7 +27,7 @@ function readJson(filePath, label) {
 
 function runCheck(label, script, args, env) {
   console.log(`\n[verify-solana-devnet] ${label}`);
-  const result = spawnSync(process.execPath, [script, ...args], {
+  const result = spawnSync(process.execPath, ["-r", COMPAT_PRELOAD, script, ...args], {
     cwd: ROOT,
     env,
     stdio: "inherit",
