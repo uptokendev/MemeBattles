@@ -3,7 +3,7 @@ title: How MemeWarzone Works
 description: The full ecosystem loop: campaigns, trading, UpVotes, Leagues, recruiters, squads, airdrops, fee routing, epochs, and claims.
 ---
 
-MemeWarzone is a competitive on-chain ecosystem for meme campaigns.
+MemeWarzone is a competitive on chain ecosystem for meme campaigns.
 
 Creators launch campaigns. Traders enter bonding curves. Communities push attention through UpVotes. Recruiters bring new users. Squads compete. Platform fees route into League, recruiter, squad, airdrop, and protocol buckets. Weekly epochs close. Eligible users claim rewards.
 
@@ -26,19 +26,19 @@ That loop is the product.
 
 | Role | What they do | What they can earn |
 | --- | --- | --- |
-| Creators | Launch campaigns and build communities | Creator graduation payout, visibility, League wins |
+| Creators | Launch campaigns and build communities | Creator payout at graduation, visibility, League wins |
 | Traders | Trade campaigns and support winners | Trading upside, League prizes, airdrops, Squad Pool rewards |
 | Recruiters | Bring creators and traders into MemeWarzone | Recruiter rewards from linked activity |
-| Squads | Groups connected through recruiter-led growth | Squad Pool rewards and leaderboard status |
+| Squads | Groups connected through recruiter led growth | Squad Pool rewards and leaderboard status |
 | Communities | Push campaigns through attention and activity | Visibility, status, rewards, and momentum |
 
 ## Campaigns
 
 Campaigns are the base object in MemeWarzone.
 
-A campaign includes the token, campaign page, bonding-curve trading phase, UpVote history, League stats, graduation state, creator reputation, and reward history around that launch.
+A campaign includes the token, campaign page, bonding curve trading phase, UpVote history, League stats, graduation state, creator reputation, and reward history around that launch.
 
-When a campaign reaches the 50 BNB graduation threshold, the finalize process takes the 2.00% finalize fee, creates LP from 80% of the remaining raised liquidity, and sends 20% of the remaining raised liquidity to the creator payout.
+When a campaign reaches the active graduation target, the finalize process takes the 2.00% finalize fee, builds launch liquidity from the configured remainder, and releases the creator payout defined by the active deployment policy.
 
 ## UpVotes
 
@@ -68,7 +68,7 @@ Recruiter rewards do not add a new user fee. They come from the existing 2.00% f
 
 The Squad Pool rewards eligible squad members.
 
-A squad is connected to recruiter-led growth. Eligible creators and traders inside a squad can share weekly Squad Pool rewards based on contribution. The split is not equal.
+A squad is connected to recruiter led growth. Eligible creators and traders inside a squad can share weekly Squad Pool rewards based on contribution. The split is not equal.
 
 ## Warzone BNB Airdrops
 
@@ -76,7 +76,7 @@ Warzone BNB Airdrops give active smaller users a real shot at weekly BNB rewards
 
 When activity is unlinked, the unassigned recruiter and squad slices route into the Warzone Airdrop balance. That keeps solo activity useful instead of leaving reward buckets idle.
 
-Airdrops use eligibility rules, volume caps, weighted random selection, cooldowns, and anti-abuse checks.
+Airdrops use eligibility rules, volume caps, weighted random selection, cooldowns, and anti abuse checks.
 
 ## Epochs and claims
 
@@ -84,16 +84,16 @@ Most reward systems run on weekly epochs.
 
 The standard weekly close is Monday 00:00 UTC. After an epoch is processed and published, eligible rewards become claimable through the dashboard or profile flow.
 
-Rewards are claim-based. They are not pushed automatically to every wallet.
+Rewards are claim based. They are not pushed automatically to every wallet.
 
 ## Why MemeWarzone is different
 
 MemeWarzone is built around recurring competition:
 
-- not one-time launches
+- not one time launches
 - recurring weekly and monthly battles
-- self-funding incentives
-- community-driven outcomes
+- self funding incentives
+- community driven outcomes
 - public leaderboards and winner moments
 - private wallet dashboards for eligibility and claims
 
