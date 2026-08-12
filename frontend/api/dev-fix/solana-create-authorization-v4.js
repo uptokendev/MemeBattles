@@ -41,6 +41,13 @@ const MIN_SCHEDULE_SECONDS = 5 * 60;
 const MAX_SCHEDULE_SECONDS = 30 * 24 * 60 * 60;
 const DEFAULT_AUTH_TTL_SECONDS = 10 * 60;
 const MAX_AUTH_TTL_SECONDS = 60 * 60;
+const EMPTY_BYTES_32 = Buffer.alloc(32);
+const DEFAULT_NEW_CREATOR_TIER = 1;
+const DEFAULT_NEW_CREATOR_TRUST_SCORE = 0;
+const DEFAULT_NEW_CREATOR_MAX_LIVE_BONDING = 3;
+const DEFAULT_NEW_CREATOR_COOLDOWN_SECONDS = 24 * 60 * 60;
+const DEFAULT_NEW_CREATOR_BUY_LOCK_SECONDS = 24 * 60 * 60;
+const DEFAULT_NEW_CREATOR_BUY_CAP_BPS = 1_000;
 const PLACEHOLDER_PROGRAM_IDS = new Set([
   SYSTEM_PROGRAM_ID,
   "Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG",
@@ -134,6 +141,36 @@ function sameBytes32(left, right) {
   } catch {
     return false;
   }
+}
+
+function defaultCreatorProfile(creator, bump) {
+  return {
+    wallet: publicKeyString(creator, "creator"),
+    tier: DEFAULT_NEW_CREATOR_TIER,
+    trustScore: DEFAULT_NEW_CREATOR_TRUST_SCORE,
+    liveBondingCount: 0,
+    lastLaunchTimestamp: 0n,
+    totalLaunches: 0n,
+    successfulGraduations: 0n,
+    restricted: false,
+    manualReviewRequired: false,
+    creatorBuyCapBps: DEFAULT_NEW_CREATOR_BUY_CAP_BPS,
+    maxLiveBondingCount: DEFAULT_NEW_CREATOR_MAX_LIVE_BONDING,
+    cooldownSeconds: DEFAULT_NEW_CREATOR_COOLDOWN_SECONDS,
+    creatorBuyLockSeconds: DEFAULT_NEW_CREATOR_BUY_LOCK_SECONDS,
+    bump,
+  };
+}
+
+function defaultRiskProfile(creator, bump) {
+  return {
+    wallet: publicKeyString(creator, "creator"),
+    riskLevel: 0,
+    restricted: false,
+    clusterId: Buffer.from(EMPTY_BYTES_32),
+    manualReviewRequired: false,
+    bump,
+  };
 }
 
 function normalizeDraftMetadata(row, reservation) {
@@ -277,21 +314,8 @@ async function getMultipleAccounts(rpcUrl, addresses) {
   return result.value;
 }
 
-function decodeOwnedAccount(info, address, programId, decoder, label, context = {}) {
+function decodeOwnedAccount(info, address, programId, decoder, label) {
   if (!info) {
-    const creator = context.creator ? String(context.creator) : "";
-    if (label === "CreatorProfile") {
-      throw new SolanaCreateAuthorizationError(
-        `CreatorProfile is not initialized for creator ${creator || "wallet"} (PDA ${address}). Operator must run sync_creator_profile + sync_risk_profile before Push Live.`,
-        { code: "SOLANA_CREATOR_PROFILE_MISSING", httpStatus: 409 },
-      );
-    }
-    if (label === "RiskProfile") {
-      throw new SolanaCreateAuthorizationError(
-        `RiskProfile is not initialized for creator ${creator || "wallet"} (PDA ${address}). Operator must run sync_creator_profile + sync_risk_profile before Push Live.`,
-        { code: "SOLANA_RISK_PROFILE_MISSING", httpStatus: 409 },
-      );
-    }
     throw new SolanaCreateAuthorizationError(`${label} account ${address} does not exist.`, {
       code: "SOLANA_REQUIRED_ACCOUNT_MISSING",
       httpStatus: 409,
@@ -436,8 +460,8 @@ function validateOnchainState({
   if (!skipCreatorLaunchLimits) {
     enforceCreatorLaunchLimits(creatorProfile, chainNow);
   }
-  if (!samePublicKey(riskProfile.wallet, creator) || riskProfile.clusterId.equals(Buffer.alloc(32))) {
-    throw new SolanaCreateAuthorizationError("Creator RiskProfile is invalid or has no cluster.", {
+  if (!samePublicKey(riskProfile.wallet, creator)) {
+    throw new SolanaCreateAuthorizationError("Creator RiskProfile is not bound to the draft creator.", {
       code: "SOLANA_RISK_PROFILE_INVALID",
       httpStatus: 403,
     });
@@ -448,11 +472,14 @@ function validateOnchainState({
       httpStatus: 403,
     });
   }
-  if (!sameBytes32(clusterProfile.clusterId, riskProfile.clusterId) || clusterProfile.restricted) {
-    throw new SolanaCreateAuthorizationError("Creator risk cluster is invalid or restricted.", {
-      code: "SOLANA_CLUSTER_RESTRICTED",
-      httpStatus: 403,
-    });
+  const riskClusterId = bytes32(riskProfile.clusterId, "RiskProfile.clusterId");
+  if (!riskClusterId.equals(EMPTY_BYTES_32)) {
+    if (!clusterProfile || !sameBytes32(clusterProfile.clusterId, riskClusterId) || clusterProfile.restricted) {
+      throw new SolanaCreateAuthorizationError("Creator risk cluster is invalid or restricted.", {
+        code: "SOLANA_CLUSTER_RESTRICTED",
+        httpStatus: 403,
+      });
+    }
   }
 }
 
@@ -481,34 +508,36 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, 
     decodeGenerationConfig,
     "GenerationConfig",
   );
-  const creatorProfile = decodeOwnedAccount(
-    creatorInfo,
-    creatorProfilePda.publicKey,
-    programId,
-    decodeCreatorProfile,
-    "CreatorProfile",
-    { creator },
-  );
-  const riskProfile = decodeOwnedAccount(
-    riskInfo,
-    riskProfilePda.publicKey,
-    programId,
-    decodeRiskProfile,
-    "RiskProfile",
-    { creator },
-  );
+
+  // BNB parity: CreatorRegistry maps Unknown -> NewCreator and RiskRegistry permits an
+  // unknown/unclustered wallet unless an explicit restriction exists. Use the same
+  // conservative virtual defaults for authorization; the program materializes the
+  // CreatorProfile atomically on the first successful create.
+  const creatorProfileImplicitDefault = !creatorInfo;
+  const riskProfileImplicitDefault = !riskInfo;
+  const creatorProfile = creatorInfo
+    ? decodeOwnedAccount(creatorInfo, creatorProfilePda.publicKey, programId, decodeCreatorProfile, "CreatorProfile")
+    : defaultCreatorProfile(creator, creatorProfilePda.bump);
+  const riskProfile = riskInfo
+    ? decodeOwnedAccount(riskInfo, riskProfilePda.publicKey, programId, decodeRiskProfile, "RiskProfile")
+    : defaultRiskProfile(creator, riskProfilePda.bump);
+
+  const riskClusterId = bytes32(riskProfile.clusterId, "RiskProfile.clusterId");
   const clusterProfilePda = findProgramAddressSync(
-    [Buffer.from("cluster", "utf8"), nonZeroBytes32(riskProfile.clusterId, "RiskProfile.clusterId")],
+    [Buffer.from("cluster", "utf8"), riskClusterId],
     programId,
   );
-  const [clusterInfo] = await getMultipleAccounts(rpcUrl, [clusterProfilePda.publicKey]);
-  const clusterProfile = decodeOwnedAccount(
-    clusterInfo,
-    clusterProfilePda.publicKey,
-    programId,
-    decodeClusterProfile,
-    "ClusterProfile",
-  );
+  let clusterProfile = null;
+  if (!riskClusterId.equals(EMPTY_BYTES_32)) {
+    const [clusterInfo] = await getMultipleAccounts(rpcUrl, [clusterProfilePda.publicKey]);
+    clusterProfile = decodeOwnedAccount(
+      clusterInfo,
+      clusterProfilePda.publicKey,
+      programId,
+      decodeClusterProfile,
+      "ClusterProfile",
+    );
+  }
   const chainNow = await getChainUnixTime(rpcUrl);
 
   validateOnchainState({
@@ -533,6 +562,8 @@ async function loadOnchainPolicy({ rpcUrl, programId, creator, cluster, signer, 
     creatorProfile,
     riskProfile,
     clusterProfile,
+    creatorProfileImplicitDefault,
+    riskProfileImplicitDefault,
     accounts: {
       globalConfig: globalConfigPda.publicKey,
       generationConfig: generationConfigPda.publicKey,
@@ -837,8 +868,10 @@ async function finalizeExistingOnChainDeployment({
       creatorTier: onchain.creatorProfile.tier,
       creatorLiveBondingCount: onchain.creatorProfile.liveBondingCount,
       creatorMaxLiveBondingCount: onchain.creatorProfile.maxLiveBondingCount,
+      creatorProfileImplicitDefault: Boolean(onchain.creatorProfileImplicitDefault),
       riskLevel: onchain.riskProfile.riskLevel,
-      riskClusterSize: onchain.clusterProfile.size,
+      riskProfileImplicitDefault: Boolean(onchain.riskProfileImplicitDefault),
+      riskClusterSize: onchain.clusterProfile?.size ?? 0,
     },
     transaction: null,
     transactionPolicy:
@@ -1354,6 +1387,8 @@ export async function solanaCreateAuthorizationV4(req, res) {
           deadline: deadline.toString(),
           digestHex: digest.toString("hex"),
           canonicalPayloadLength: canonicalPayload.length,
+          creatorProfileImplicitDefault: Boolean(onchain.creatorProfileImplicitDefault),
+          riskProfileImplicitDefault: Boolean(onchain.riskProfileImplicitDefault),
           idlSha256: deploymentEvidence.idlSha256,
           programBinarySha256: deploymentEvidence.programBinarySha256,
         };
@@ -1428,8 +1463,10 @@ export async function solanaCreateAuthorizationV4(req, res) {
         creatorTier: onchain.creatorProfile.tier,
         creatorLiveBondingCount: onchain.creatorProfile.liveBondingCount,
         creatorMaxLiveBondingCount: onchain.creatorProfile.maxLiveBondingCount,
+        creatorProfileImplicitDefault: Boolean(onchain.creatorProfileImplicitDefault),
         riskLevel: onchain.riskProfile.riskLevel,
-        riskClusterSize: onchain.clusterProfile.size,
+        riskProfileImplicitDefault: Boolean(onchain.riskProfileImplicitDefault),
+        riskClusterSize: onchain.clusterProfile?.size ?? 0,
       },
       transaction: null,
       transactionPolicy: "Creator wallet constructs and signs the transaction. Railway signs only the 32-byte V4 digest.",
