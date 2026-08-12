@@ -1,39 +1,31 @@
 ---
 title: Graduation
-description: What happens when a MemeWarzone campaign reaches the 50 BNB graduation threshold.
+description: What happens when a MemeWarzone campaign reaches its active graduation target.
 ---
 
-Graduation is the transition from bonding-curve campaign to post-graduation liquidity.
+Graduation is the transition from bonding curve campaign to post graduation liquidity.
 
-The graduation threshold is 50 BNB.
+The graduation target is defined by the active deployment policy.
 
 ## What happens at graduation
 
 When a campaign graduates:
 
-1. The campaign reaches the 50 BNB threshold.
-2. A 2.00% finalize fee is taken from raised liquidity before LP.
+1. The campaign reaches the active graduation target.
+2. A 2.00% finalize fee is taken from raised liquidity before launch liquidity is set.
 3. TreasuryRouter routes the finalize fee.
-4. The remaining amount is split.
-5. 80% goes to LP liquidity.
-6. 20% goes to the creator payout.
+4. The remaining amount is split under the active deployment policy.
+5. Launch liquidity is created from the configured share of the remainder.
+6. The creator payout is released from the configured share of the remainder.
 7. The campaign enters the DEX stage.
 
-## Minimum graduation example
+## Reference note
 
-At the 50 BNB threshold:
-
-| Step | Amount |
-| --- | ---: |
-| Raised liquidity | 50 BNB |
-| Finalize fee, 2.00% | 1 BNB |
-| Remaining after fee | 49 BNB |
-| LP liquidity, 80% of remaining | 39.2 BNB |
-| Creator payout, 20% of remaining | 9.8 BNB |
+Use the current economics and readiness references for the live target and distribution values. Those numbers can change by deployment and should not be treated as permanent doctrine.
 
 ## Finalize routing
 
-Finalize uses the same 2.00% user-facing fee envelope.
+Finalize uses the same 2.00% user facing fee envelope.
 
 | Profile | Recruiter | Squad Pool | Airdrops | Protocol revenue |
 | --- | ---: | ---: | ---: | ---: |
@@ -47,13 +39,13 @@ Finalize does not route to LeagueTreasury.
 
 Graduation should reward creators without draining the entire campaign.
 
-The 80/20 split is designed to:
+The live distribution policy is designed to:
 
 - give the token real liquidity after graduation
 - reward creators for successful campaign execution
 - keep economics predictable
-- avoid unclear off-chain payout negotiations
+- avoid unclear off chain payout negotiations
 
 ## After graduation
 
-After graduation, the campaign is no longer only a bonding-curve campaign. It becomes a post-graduation market with LP liquidity and broader trading behavior.
+After graduation, the campaign is no longer only a bonding curve campaign. It becomes a post graduation market with launch liquidity and broader trading behavior.
