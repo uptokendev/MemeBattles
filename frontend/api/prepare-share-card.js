@@ -13,10 +13,33 @@ function esc(value) {
 function absoluteUrl(base, value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
+
+  // Keep share-card image resolution in parity with the browser media helper.
+  // Prepare Mode can store IPFS/Arweave URIs (and bare IPFS CIDs), which render
+  // in the browser but previously got dropped by the server-side share-card renderer.
+  if (raw.startsWith("ipfs://")) {
+    let path = raw.slice("ipfs://".length);
+    if (path.startsWith("ipfs/")) path = path.slice("ipfs/".length);
+    return `https://cloudflare-ipfs.com/ipfs/${path}`;
+  }
+  if (raw.startsWith("ipfs/")) {
+    return `https://cloudflare-ipfs.com/ipfs/${raw.slice("ipfs/".length)}`;
+  }
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(raw) || /^b[a-z2-7]{20,}$/i.test(raw)) {
+    return `https://cloudflare-ipfs.com/ipfs/${raw}`;
+  }
+  if (raw.startsWith("ar://")) {
+    return `https://arweave.net/${raw.slice("ar://".length)}`;
+  }
   if (/^https?:\/\//i.test(raw)) return raw;
   if (raw.startsWith("//")) return `https:${raw}`;
-  if (raw.startsWith("/")) return `${String(base || "").replace(/\/+$/, "")}${raw}`;
-  return raw;
+
+  const cleanBase = String(base || "").replace(/\/+$/, "");
+  if (raw.startsWith("/")) return cleanBase ? `${cleanBase}${raw}` : raw;
+
+  // Some storage/CDN values are persisted as naked relative paths. The browser
+  // resolves those against the app origin; do the same on the server.
+  return cleanBase ? `${cleanBase}/${raw.replace(/^\/+/, "")}` : raw;
 }
 
 function shortWallet(value) {
@@ -171,23 +194,56 @@ function normalizeImageSrc(value) {
   }
 }
 
+async function fetchImageResponse(clean) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(clean, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          // resvg 0.34 reliably decodes PNG/JPEG/GIF. Prefer those when the
+          // upstream CDN supports content negotiation instead of asking for WebP/AVIF.
+          accept: "image/png,image/jpeg,image/gif,image/svg+xml;q=0.9,*/*;q=0.1",
+          "user-agent": "MemeWarzone-ShareCard/1.0",
+        },
+      });
+      clearTimeout(timer);
+      if (response.ok) return response;
+      lastError = new Error(`image fetch failed (${response.status})`);
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("image fetch failed");
+}
+
 async function imageToDataUrl(src) {
   const clean = normalizeImageSrc(src);
   if (!clean) return "";
   if (/^data:image\//i.test(clean)) return clean;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const response = await fetch(clean, {
-      signal: controller.signal,
-      headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*" },
-    });
-    clearTimeout(timer);
-    if (!response.ok) return "";
-    const contentType = response.headers.get("content-type") || "image/png";
+    const response = await fetchImageResponse(clean);
+    const contentType = String(response.headers.get("content-type") || "image/png")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
     if (!/^image\//i.test(contentType)) return "";
     const buffer = Buffer.from(await response.arrayBuffer());
     if (!buffer.length || buffer.length > 2_500_000) return "";
+
+    // @resvg/resvg-js@2.6.2 uses resvg 0.34, whose raster decoder supports
+    // PNG/JPEG/GIF but not WebP/AVIF. Returning an unsupported data URI creates
+    // a valid share-card PNG with a mysteriously blank token image, so fail
+    // explicitly to the ticker fallback instead of silently embedding it.
+    if (contentType === "image/webp" || contentType === "image/avif") {
+      console.warn(`[prepare-share-card] unsupported raster format from ${clean}: ${contentType}`);
+      return "";
+    }
+
     return `data:${contentType};base64,${buffer.toString("base64")}`;
   } catch (err) {
     console.warn("[prepare-share-card] failed to embed logo", err?.message || err);
