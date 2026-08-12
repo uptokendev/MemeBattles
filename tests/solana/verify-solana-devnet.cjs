@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { inspectPrerequisites } = require("./devnet-verification-prereqs.cjs");
 
 const ROOT = path.resolve(__dirname, "../..");
 const COMPAT_PRELOAD = path.join(__dirname, "web3-loader-compat.cjs");
@@ -59,6 +60,70 @@ function requireSmokeReadyPauseFlags(flags) {
   assert.equal(flags.sellPaused, false, "sell must be unpaused");
 }
 
+function printPrerequisiteAudit(result) {
+  console.log("\n[verify-solana-devnet] 0/2 prerequisite audit");
+  if (result.blockers.length) {
+    console.error("Blockers:");
+    for (const blocker of result.blockers) console.error(`  - ${blocker}`);
+  } else {
+    console.log("Blockers: none");
+  }
+  if (result.warnings.length) {
+    console.log("Warnings / stronger pins:");
+    for (const warning of result.warnings) console.log(`  - ${warning}`);
+  }
+}
+
+function collectFinalProofErrors(identity, protocol) {
+  const errors = [];
+  const frontendProgramId = protocol.envAgreement?.frontendProgramId || null;
+  if (!frontendProgramId) {
+    errors.push("frontend program ID was not verified; provide VITE_SOLANA_LAUNCHPAD_PROGRAM_ID or a frontend env file");
+  } else if (String(frontendProgramId).toLowerCase() !== String(protocol.programId || "").toLowerCase()) {
+    errors.push("frontend/program ID mismatch");
+  }
+
+  if (!protocol.authHealth) {
+    errors.push("backend auth health was not verified; set SOLANA_AUTH_HEALTHCHECK_URL to a deployed Solana auth/status endpoint");
+  }
+
+  const backendProgramId = protocol.envAgreement?.backendProgramId || protocol.authHealth?.programId || null;
+  if (!backendProgramId) {
+    errors.push("backend program ID was not verified; provide SOLANA_BACKEND_PROGRAM_ID, SOLANA_BACKEND_ENV_FILE, or expose programId from auth health");
+  } else if (String(backendProgramId).toLowerCase() !== String(protocol.programId || "").toLowerCase()) {
+    errors.push("backend/program ID mismatch");
+  }
+
+  const backendRouteSigner = protocol.envAgreement?.backendRouteSigner || protocol.authHealth?.routeSigner || null;
+  if (!backendRouteSigner) {
+    errors.push("backend route signer was not verified; provide SOLANA_BACKEND_ENV_FILE with SOLANA_ROUTE_SIGNER_PUBLIC_KEY or expose routeSigner from auth health");
+  } else if (String(backendRouteSigner).toLowerCase() !== String(protocol.authorities?.routeSigner || "").toLowerCase()) {
+    errors.push("backend/route signer mismatch");
+  }
+
+  const backendManifestHash = protocol.envAgreement?.backendManifestHash || protocol.envAgreement?.configuredManifestHash || protocol.authHealth?.manifestHash || null;
+  if (!backendManifestHash) {
+    errors.push("backend generation commitment was not verified; provide SOLANA_GENERATION_MANIFEST_HASH, SOLANA_BACKEND_ENV_FILE, or expose manifestHash from auth health");
+  }
+  if (!protocol.onChainManifestHash) {
+    errors.push("protocol evidence is missing the on-chain GenerationConfig.manifestHash commitment");
+  } else if (backendManifestHash && String(backendManifestHash).toLowerCase() !== String(protocol.onChainManifestHash).toLowerCase()) {
+    errors.push("backend/on-chain generation manifest commitment mismatch");
+  }
+
+  if (String(identity.programId || "").toLowerCase() !== String(protocol.programId || "").toLowerCase()) {
+    errors.push("program ID differs across deployment/protocol evidence");
+  }
+  if (String(identity.localProgramSha256 || "").toLowerCase() !== String(protocol.programSha256 || "").toLowerCase()) {
+    errors.push("local program SHA-256 differs across deployment/protocol evidence");
+  }
+  if (String(identity.deployedProgramSha256 || "").toLowerCase() !== String(protocol.programSha256 || "").toLowerCase()) {
+    errors.push("deployed program SHA-256 differs from protocol evidence");
+  }
+
+  return errors;
+}
+
 function main() {
   const strictEnv = {
     ...process.env,
@@ -67,6 +132,12 @@ function main() {
     SOLANA_EXPECT_BUY_PAUSED: "false",
     SOLANA_EXPECT_SELL_PAUSED: "false",
   };
+
+  const prerequisites = inspectPrerequisites(strictEnv);
+  printPrerequisiteAudit(prerequisites);
+  if (!prerequisites.ok) {
+    fail(`prerequisite audit failed with ${prerequisites.blockers.length} blocker(s); resolve the complete list above before rerunning`);
+  }
 
   runCheck(
     "1/2 deployed program identity",
@@ -86,41 +157,15 @@ function main() {
   const protocol = readJson(PROTOCOL_OUTPUT, "protocol state evidence");
   const generation = readJson(GENERATION_MANIFEST, "generation manifest");
 
-  sameText(identity.programId, protocol.programId, "program ID across deployment/protocol evidence");
-  sameText(identity.localProgramSha256, protocol.programSha256, "program SHA-256 across deployment/protocol evidence");
-  sameText(identity.deployedProgramSha256, protocol.programSha256, "deployed program SHA-256");
   requireSmokeReadyPauseFlags(protocol.expectedPauseFlags || {});
   assert.equal(protocol.semanticGenerationMatchesSource, true, "on-chain generation semantics must match the source manifest");
 
-  const frontendProgramId = protocol.envAgreement?.frontendProgramId || null;
-  if (!frontendProgramId) {
-    fail("frontend program ID was not verified; provide VITE_SOLANA_LAUNCHPAD_PROGRAM_ID or a frontend env file");
+  const finalProofErrors = collectFinalProofErrors(identity, protocol);
+  if (finalProofErrors.length) {
+    console.error("\n[verify-solana-devnet] final proof blockers:");
+    for (const error of finalProofErrors) console.error(`  - ${error}`);
+    fail(`final evidence gate failed with ${finalProofErrors.length} blocker(s); resolve the complete list above before rerunning`);
   }
-  sameText(frontendProgramId, protocol.programId, "frontend/program ID");
-
-  if (!protocol.authHealth) {
-    fail("backend auth health was not verified; set SOLANA_AUTH_HEALTHCHECK_URL to the deployed Solana auth/status endpoint");
-  }
-  const backendProgramId = protocol.envAgreement?.backendProgramId || protocol.authHealth?.programId || null;
-  if (!backendProgramId) {
-    fail("backend program ID was not verified; provide a backend env file or expose programId from the auth health endpoint");
-  }
-  sameText(backendProgramId, protocol.programId, "backend/program ID");
-
-  const backendRouteSigner = protocol.envAgreement?.backendRouteSigner || protocol.authHealth?.routeSigner || null;
-  if (!backendRouteSigner) {
-    fail("backend route signer was not verified; provide a backend env file or expose routeSigner from the auth health endpoint");
-  }
-  sameText(backendRouteSigner, protocol.authorities?.routeSigner, "backend/route signer");
-
-  const backendManifestHash = protocol.envAgreement?.backendManifestHash || protocol.envAgreement?.configuredManifestHash || protocol.authHealth?.manifestHash || null;
-  if (!backendManifestHash) {
-    fail("backend generation commitment was not verified; provide SOLANA_GENERATION_MANIFEST_HASH, a backend env file, or expose manifestHash from the auth health endpoint");
-  }
-  if (!protocol.onChainManifestHash) {
-    fail("protocol evidence is missing the on-chain GenerationConfig.manifestHash commitment");
-  }
-  sameText(backendManifestHash, protocol.onChainManifestHash, "backend/on-chain generation manifest commitment");
 
   const canonical = {
     schemaVersion: 2,
