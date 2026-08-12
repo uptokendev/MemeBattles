@@ -3,67 +3,60 @@ title: Direct and Draft Launches
 description: How to choose between Direct and Draft, and what each route does.
 ---
 
-Choose the launch route before you touch the button.
+Choose your launch route before you build momentum.
 
-MemeWarzone supports two creator paths. Both paths can end at a live campaign. They do not serve the same mission.
+MemeWarzone gives creators two ways to open a campaign. Both can lead to a live launch, but they serve different needs.
 
-## Use Direct when you are ready now
+## Choose Direct when the campaign is ready
 
-Direct is the short route.
+Direct is the fast lane.
 
-Use it when:
+Take Direct when:
 
-- the creative is final
+- the name, ticker, and creative are final
 - the links are final
-- the launch timing is final
-- you want to go from create to Token Details without working a public prep page first
+- the timing is already set
+- you want to move from create to Token Details without staging a public prep page first
 
-Direct is the right call for fast execution.
+Direct is best when the campaign is already locked and the team is ready to move.
 
-## Use Draft when you need staging room
+## Choose Draft when you need room to prepare
 
-Draft is the control route.
+Draft is the staging lane.
 
-Use it when you need time to:
+Take Draft when you still need to:
 
-- tune the campaign brief
-- build the promotion page
-- stage a launch window
-- publish the campaign for discovery before trading opens
-- hand off review inside your team
+- refine the campaign brief
+- set up the promotion page
+- warm up the audience before trading opens
+- schedule the launch window
+- review the public presentation before going live
 
-Draft gives you more room to prepare before the live move.
+Draft is the better route when timing and presentation need control.
 
-## Draft route
+## Draft flow
 
-The normal Draft route is:
+The normal Draft flow is:
 
-- create the draft
-- open promotion setup
-- publish the promotion page
-- review the public Prepare page
-- push live when the campaign is cleared
+1. create the draft
+2. complete promotion setup
+3. review the public Prepare page
+4. push live when the campaign is clear
 
-That route is the better choice when timing and presentation matter.
+## Direct flow
 
-Read: **[Promotion and Push Live](/creators/promotion-and-push-live)**.
+The normal Direct flow is:
 
-## Direct route
+1. complete the create form
+2. confirm the wallet action
+3. let the app submit the launch
+4. land on Token Details after acceptance
 
-The Direct route is shorter:
+On Solana, the visible creator flow is still one product path even though some support rails behind it are still being finalized.
 
-- complete the create form
-- confirm the wallet action
-- let the app submit the live create
-- land on Token Details after the create is accepted
+## Quick rule
 
-On Solana, Direct still runs through private support rails behind the product. Users do not work those rails. The visible route remains one creator flow.
+Choose Draft for preparation.
+Choose Direct for speed.
 
-## Command rule
-
-Use Draft for preparation.
-Use Direct for speed.
-
-If the team still needs copy work, scheduling, or public warm up, do not force Direct just because it looks faster.
-
-Read: **[Create a Campaign](/creators/create-a-campaign)** and **[War Trade Room](/traders/war-trade-room)**.
+Read: **[Promotion and Push Live](/creators/promotion-and-push-live)** and **[Create a Campaign](/creators/create-a-campaign)**.

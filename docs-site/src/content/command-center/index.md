@@ -3,42 +3,38 @@ title: Command Center Overview
 description: The private wallet console for recruiter tools, squads, airdrops, claims, coins, and settings.
 ---
 
-Command Center is the private wallet console.
+Command Center is the private console for the connected wallet.
 
-Use it to manage the data that belongs to the connected wallet. Public profiles stay public. Wallet scoped operations stay here.
+It gathers the account tools that belong to the wallet owner and keeps them separate from the public profile that everyone else can see.
 
-## What you control here
-
-Command Center brings together:
+## What lives in Command Center
 
 - recruiter tools
-- squad state
-- airdrop state
-- claims
-- owned drafts and coins
-- profile and notification settings
+- squad status
+- airdrop status
+- reward claims
+- drafts and owned coins
+- profile, wallet, and notification settings
 
-## Public versus private
+## Public and private split
 
-Keep the split clear.
+Public profile pages are for visibility.
+Command Center is for management.
 
-- public profile pages show what other users can inspect
-- Command Center shows the wallet specific data that should not sit on a public profile page
-
-That includes balances, claim states, notifications, and management actions.
+That means claim states, notifications, owned drafts, and other wallet specific controls stay here instead of on public profile pages.
 
 ## Main sections
 
-- Recruiter handles code, share links, squad image, and recruiter roster.
-- Squad shows membership, contribution, and squad reward context.
-- Airdrops shows the current pool, countdown, and recent winners.
-- Claims shows claimable, pending, failed, and expired reward states.
-- My Coins shows drafts, live coins, graduated coins, and fee recovery lanes.
-- Settings handles profile, wallet, chain, and notifications.
+Recruiter covers referral tools and roster management.
+Squad shows membership and contribution context.
+Airdrops tracks the current pool and recent winners.
+Claims shows what can be claimed now and what is still pending.
+My Coins keeps drafts, live campaigns, and graduated campaigns in one place.
+Settings handles profile and wallet level preferences.
 
-## Operating rule
+## Best use
 
-Use Command Center as the private console.
-Use profile pages as the public window.
+Open Command Center when you need to act on your own account.
+Open public profile pages when you need to share your presence with other users.
 
 Read: **[Claims Console](/command-center/claims)** and **[My Coins Console](/command-center/coins)**.

@@ -3,42 +3,38 @@ title: Major War League
 description: How the postgrad Arena ladder, divisions, and movement rules appear in the product.
 ---
 
-Major War League is the postgrad Arena ladder.
+Major War League is the standing table for the Arena ladder.
 
-Keep it separate from the top level reward leagues.
+It tracks how post graduation campaigns are performing across a season and shows which ones are climbing, holding, or slipping.
 
-## What the page tracks
+## What you see on the page
 
-- season label
-- current week
-- season state
-- standings
-- promotion pressure
-- relegation pressure
-- reward context for the ladder
+- season and week
+- current league state
+- table position
+- movement pressure
+- campaign performance context
 
-## What a standing means
+## Reading the table
 
-A standing shows ladder position.
-It does not by itself prove that a prize payout has already been settled.
+A higher place in the table means stronger current standing.
+A lower place means the campaign needs better results to recover ground.
 
-## Movement
+The ladder is useful for momentum and placement. Claim timing and reward rules still live in the main rewards manual.
 
-The page can show movement states such as:
+## Movement states
+
+The league can mark a campaign as:
 
 - promoted
 - safe
 - relegated
 
-Read those as ladder movement signals, not as settlement receipts.
+Treat those labels as ladder movement, not as a payout notice.
 
-## Major War versus prize leagues
+## Where to go next
 
-This distinction matters.
-
-- Major War League belongs to the Arena ladder.
-- Prize leagues, epochs, and claims belong to the broader reward system.
-
-If a user asks where to check claim timing, move them back to the reward manual.
+Use Major War League when you want the season view.
+Use the rewards pages when you need epoch and claim rules.
 
 Read: **[Leagues Overview](/leagues)** and **[Epochs & Claims](/rewards/epochs-and-claims)**.

@@ -3,60 +3,44 @@ title: Promotion and Push Live
 description: What happens in promotion setup, the public Prepare page, and the Push Live step.
 ---
 
-Draft work has three public control points.
+Draft launches move through three checkpoints.
 
-- promotion setup
-- the Prepare page
-- Push Live
-
-Treat each one as a separate checkpoint.
+Those checkpoints are promotion setup, the public Prepare page, and Push Live. Each one exists to keep the campaign clear before trading opens.
 
 ## Promotion setup
 
-Promotion setup is where the creator tightens the public brief.
+Promotion setup is where the campaign becomes presentable.
 
-Use it to confirm:
+Use this step to confirm:
 
-- mission statement
-- launch strategy
+- campaign message
 - official links
+- launch timing
 - creator note
-- visibility state
 - logo and creative
 
-This is where a rough draft becomes a campaign that can be shown to other people without confusion.
+If those pieces are still moving, stop here and finish them before you continue.
 
 ## Prepare page
 
 The Prepare page is the public staging room.
 
-It is where people can inspect the campaign before trading opens. If the creator publishes the promotion page, the draft can be discoverable before live trading starts.
-
-Use the Prepare page to show:
-
-- what the campaign is
-- when the creator intends to move
-- where the official links are
-- how the audience can follow the launch
+It is where other people can inspect the campaign before trading opens. That makes it the right place to check whether the page reads clean, the links work, and the timing is clear.
 
 ## Push Live
 
-Push Live is the commit point.
+Push Live is the final commit point.
 
-This is where the creator confirms the live deploy or schedules the launch window. Once this step is accepted, the draft stops being just a prep object and becomes a launch operation.
+This is where the creator turns a prepared campaign into a live launch operation. If the launch is scheduled, confirm the countdown and public details before you arm it.
 
-For scheduled launches, hold the timing line. Update the public brief before you arm the countdown.
+## Do not push live yet if
 
-## When to stop and rework
+- the links are still changing
+- the creative is unfinished
+- the wrong wallet is connected
+- the launch time is still uncertain
+- the public page still carries stale copy
 
-Do not push live if:
-
-- links are still changing
-- the logo is not final
-- the timing is unclear
-- the creator wallet is wrong
-- the audience is still looking at stale instructions
-
-Clean the draft first. Then push.
+Clean the draft first. Then move.
 
 Read: **[Direct and Draft Launches](/creators/direct-and-draft)** and **[Prepare Mode](/prepare-mode)**.

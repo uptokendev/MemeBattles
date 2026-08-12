@@ -3,29 +3,32 @@ title: Events and Tournaments
 description: How live events, scheduled events, tournament brackets, and archived results are presented in Arena.
 ---
 
-Arena events are timed surfaces.
+Events and Tournaments collects the timed activity around Arena.
 
-Use this page to explain what is live now, what is scheduled next, and what already closed.
+This page is the calendar view for live events, upcoming windows, and tournament structures.
 
 ## Live events
 
-Live events are the active timed experiences. They can show participants, dates, and event type.
+Live events are the items that are active now.
+
+Check the event card for timing, participants, and the specific format being used.
 
 ## Upcoming events
 
-Upcoming events tell users what is forming next. A scheduled tile is not a guarantee of final payout wiring. It is a scheduling signal.
+Upcoming events show what is scheduled next.
+
+Use this lane to see what is approaching, when it opens, and whether you need to watch for a bracket, battle, or featured campaign window.
 
 ## Tournaments
 
-Tournament pages can expose bracket state. Treat bracket visibility and settlement proof as separate checks.
+Tournament pages group campaigns into a structured competition.
+
+If a tournament is live, use the bracket view and the event timing together. If a tournament is only listed as planned, treat it as forward notice until the readiness banner changes.
 
 ## Archived results
 
-Archived events help users see what already happened. They are useful for context, but they do not replace a dedicated settlement record.
+Archived results help players review what already closed.
 
-## Good operating rule
-
-Use Arena events for timing and structure.
-Use the core rewards and claims pages for payout rules.
+They are useful for context, standings, and follow up, especially when you want to trace how an event or tournament unfolded over time.
 
 Read: **[Arena Overview](/arena)** and **[Sponsorship Application](/arena/sponsorships)**.

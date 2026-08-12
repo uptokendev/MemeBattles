@@ -3,42 +3,38 @@ title: Sponsorship Application
 description: How the public sponsorship intake page works for featured placements and rail scheduling.
 ---
 
-The sponsorship application page is the public intake route for paid placement requests.
+The sponsorship application is the intake route for featured placement requests.
 
-Use it when a project needs review for a featured slot or sponsored rail position.
+Projects use this page when they want to request a sponsored slot, a featured rail position, or another paid visibility placement inside the platform.
 
-## What the applicant submits
+## What to prepare before you apply
+
+Have these items ready before you open the form:
 
 - project name
 - contact channel
 - website
-- public bio
-- creative image
-- preferred slot
-- package choice
+- short public bio
+- creative asset
+- preferred slot or package
 - preferred dates
-- payment reference
-- extra notes
+- payment reference if requested
 
-## What happens next
+## What happens after submission
 
-The application does not bypass review.
+A submitted form starts a review.
+It does not reserve the slot by itself.
 
-The normal command order is:
+The normal flow is:
 
-1. submit the request
-2. review the project
-3. confirm scheduling
+1. send the request
+2. review the project and creative
+3. confirm placement timing
 4. confirm payment handling
-5. publish the placement when approved
+5. publish the placement after approval
 
-## Creative discipline
+## Good practice
 
-The image and public bio should be ready for display before the request is submitted. Do not send users into this route with unfinished assets.
-
-## Command rule
-
-A submitted form is a request.
-It is not an automatic slot award.
+Make sure the bio, logo, and dates are final before you submit. Clean input speeds up review and reduces rework.
 
 Read: **[Arena Overview](/arena)**.

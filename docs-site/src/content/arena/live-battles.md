@@ -3,29 +3,31 @@ title: Live Battles
 description: How live battles, queue states, and recent results appear on the Arena surface.
 ---
 
-Live Battles is the match board.
+Live Battles is the match board inside Arena.
 
-It groups the battle flow into three visible lanes.
+It shows which campaigns are already fighting, which campaigns are waiting for a rival, and which matchups have recently closed.
 
-## Live battles
+## Live battle lane
 
-Live battles are the active matches.
+The live lane is for active matchups.
 
-Use them to inspect the current pairing, the active battle page, and the campaign identities involved.
+Open a battle when you want to check the pairing, move into the battle view, or jump back into the campaigns involved.
 
-## Open for battle
+## Open for battle lane
 
-Open for battle is the waiting line.
+The open lane is the queue.
 
-Use it to see which coin is looking for a rival. A queue card is an invitation to inspect the surface. It is not proof of a settled prize rail.
+A campaign in this lane is ready to be matched, but it is still waiting for an opponent. It is a good place to spot fresh activity before the board fills out.
 
 ## Recent results
 
-Recent results show completed battle records where the feed is available. Treat archive visibility and final settlement as separate questions until the Arena rollout is fully proven.
+Recent results give you a quick read on what just happened.
 
-## Good operating rule
+Use them to review momentum, not as a replacement for the underlying campaign page. If you need full trading context, move back into Token Details or the War Trade Room.
 
-When a user needs full campaign context, send them to Token Details.
-When a user needs the match context, send them to the battle page.
+## Best use
+
+Start here when you want the match view.
+Move to Token Details when you need the full campaign story.
 
 Read: **[Arena Overview](/arena)** and **[War Trade Room](/traders/war-trade-room)**.

@@ -3,38 +3,36 @@ title: Squad Console
 description: How squad membership, contribution, standings, and reward context appear inside Command Center.
 ---
 
-Squad Console is the wallet view for squad status.
+Squad Console shows how the connected wallet fits into squad activity.
 
-Use it to confirm whether the wallet is in a squad and how that squad work is being reflected.
+Use it to confirm membership, contribution, and the reward context that belongs to your own account.
 
-## What this page shows
+## What you can review here
 
-- squad membership
+- current squad membership
 - contribution context
 - estimated reward context where available
-- public squad standing references
-- the split between private wallet data and public squad data
+- links to public squad standings
+- wallet specific details that do not belong on a public page
 
 ## What this page does not do
 
-This page does not override the reward rules.
+This page does not change the reward rules.
 
-A visible contribution row does not guarantee a payout. Final reward checks still pass through the weekly program logic, exclusion rules, and publication steps.
+A visible contribution record is a useful signal, but final reward outcomes still depend on the weekly program rules, exclusions, and published results.
 
-## Public versus private
+## Public and private split
 
-Keep the split tight.
+Public squad standings stay on public leaderboards.
+Wallet specific reward detail stays in Command Center.
 
-- public squad standings stay visible on squad leaderboards
-- wallet specific reward detail stays inside Command Center
+## Best use
 
-## Good use
-
-Use Squad Console to answer four questions:
+Check this page when you want to answer four questions:
 
 - am I in a squad
 - is my squad active
-- is my contribution being recorded
-- when should I check claims
+- is my contribution showing up
+- when should I review claims
 
 Read: **[Squad Pool](/rewards/squad-pool)** and **[Claims Console](/command-center/claims)**.

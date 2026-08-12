@@ -3,52 +3,40 @@ title: Recruiter Console
 description: How recruiter code, recruiter links, squad images, and recruiter roster controls work inside Command Center.
 ---
 
-Recruiter Console is the recruiter management desk.
+Recruiter Console is the control room for recruiter tools.
 
-Use it after the wallet is approved for the recruiter program.
+If your wallet is approved for the recruiter program, this is where you manage the code, links, squad presentation, and roster view tied to that role.
 
-## Main actions
-
-This section lets the recruiter:
+## What you can do here
 
 - confirm recruiter status
 - set or update the recruiter code
-- copy the main referral links
+- copy share links
 - upload a squad image
-- inspect the squad roster
+- inspect the roster
 - open the public recruiter page
-- move into recruiter claim lanes
+- move into recruiter claim flows
 
-## Wallet discipline
+## Wallet check
 
-The recruiter tools are locked to the approved wallet path.
-
-If the wrong wallet is connected, do not continue. Switch first. Then sign in to the recruiter tools session.
+Recruiter tools are tied to the approved wallet.
+If the wrong wallet is connected, switch first before you edit anything or share links.
 
 ## Share discipline
 
-Use one recruiter code.
-Use one canonical share link.
-Keep the public squad image clean and current.
-
-That reduces confusion when a creator or trader enters through the recruiter route.
+Keep one recruiter code and one clean share path in circulation.
+That makes it easier for creators and traders to arrive through the right route without confusion.
 
 ## Roster view
 
-The roster view is for field awareness.
+The roster view helps you track:
 
-Use it to inspect:
-
-- total squad size
+- total members
 - creator count
 - trader count
 - join timing
 - member wallet references
 
-Do not confuse that roster with final reward eligibility. Reward checks still depend on the live program rules.
-
-## Chain note
-
-Recruiter tooling is live on the approved wallet path. Solana parity remains incomplete. Keep that line visible when you explain the feature.
+Roster size and activity are useful signals, but final reward eligibility still depends on the live program rules.
 
 Read: **[Program Overview](/programs/recruiter-program)** and **[Claims Console](/command-center/claims)**.

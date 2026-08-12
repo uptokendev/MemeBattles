@@ -3,39 +3,37 @@ title: Claims Console
 description: How claimable, pending, failed, and expired reward states work inside Command Center.
 ---
 
-Claims Console is the payout control board.
+Claims Console is the payout board for the connected wallet.
 
-It groups reward rows by type and shows the exact state the wallet can act on.
+It groups reward rows by state so you can see what is ready now, what is already moving, and what needs no action.
 
 ## Claim states
 
-- Claimable means the wallet can submit a claim now.
-- Pending means a claim action is already in motion.
-- Failed means the last claim attempt did not clear.
+- Claimable means you can submit the claim now.
+- Pending means a claim request is already in flight.
+- Failed means the last attempt did not clear.
 - Expired means the claim window closed.
-- Empty means no reward is ready on that lane.
+- Empty means there is no reward ready on that lane.
 
-## What to do
+## Claim order
 
 Move in this order:
 
-1. Read the state label.
-2. Confirm the wallet and chain.
-3. Claim only the rows that are actually claimable.
-4. Recheck the board after the chain confirms.
+1. read the state
+2. confirm the wallet and chain
+3. claim only the rows marked claimable
+4. recheck the board after confirmation
 
-## Chain note
+## Chain status
 
 BNB claims are active.
-Solana claims are tracked but not enabled.
+Solana reward records can appear before Solana claim buttons are enabled.
 
-That means a Solana reward row can exist as a record without exposing a live claim button.
+That distinction matters. A reward record is not the same thing as a live claim path.
 
-## Reason discipline
+## When something looks wrong
 
-The board can show broad reason signals.
-It should not expose anti abuse thresholds or internal enforcement logic.
-
-If a row is not claimable, read the state first. Do not assume the funds are missing.
+Start with the state label.
+Do not assume funds are missing just because a row is not claimable yet.
 
 Read: **[Epochs & Claims](/rewards/epochs-and-claims)** and **[Reward Dashboard](/rewards/dashboard-ux)**.

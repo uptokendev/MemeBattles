@@ -3,31 +3,29 @@ title: War Pools
 description: Current disposition for War Pools while custody, settlement, and legal language remain under review.
 ---
 
-War Pools are not cleared as a live public operating surface yet.
+War Pools are reserved for a later release.
 
-Treat this page as a disposition record.
+The product can surface the concept today, but the live public rule set for custody, settlement, and payout language is not cleared yet.
 
-## Current call
+## What this means right now
 
-War Pool copy is held back until three things are verified:
+War Pools should be read as planned, not operational.
 
-- custody model
-- settlement model
-- legal language
-
-## What that means for users
-
-Do not tell users that a visible War Pool label, mock card, or early UI element means:
+Do not assume that a visible label, mock card, or preview state means:
 
 - funds are live
 - payouts are live
-- custody is on chain
-- winners can claim today
+- winners can claim now
+- custody is already finalized on chain
 
-## Publication rule
+## What to watch for
 
-War Pools can move from planned to partial or operational only after the custody and settlement line is proven and the public wording is approved.
+War Pools can move forward only after three things are settled:
 
-Until that point, hold the language.
+- custody model
+- settlement model
+- approved public rules
+
+Until then, this page stays in place so users know the feature is not yet open for normal use.
 
 Read: **[Arena Overview](/arena)**.

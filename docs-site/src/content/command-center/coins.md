@@ -3,39 +3,33 @@ title: My Coins Console
 description: How creators track drafts, live coins, graduated coins, and fee recovery inside Command Center.
 ---
 
-My Coins Console is the owner view for drafts and live campaigns.
+My Coins Console is the owner view for drafts and campaigns.
 
-It gathers the creator's working set in one place.
+It keeps the creator working set in one place so you can move from preparation to live management without hunting through public pages.
 
-## What appears here
+## What you will find here
 
-- prepare drafts
-- live bonding curve coins
-- graduated coins
-- fee recovery lanes where they are active
-- quick path back into create
+- drafts in preparation
+- live PRE campaigns
+- graduated campaigns
+- fee recovery context where that route is active
+- a quick path back into create
 
-## Draft lane
+## Drafts
 
-Use drafts to reopen campaign prep, polish promotion copy, and push live when the campaign is clear.
+Open draft rows when you want to continue preparation, update promotion copy, or push a campaign toward launch.
 
-## Live coin lane
+## Live campaigns
 
-Use live coin rows to inspect the current campaign state and reopen Token Details.
+Open live rows when you need the current campaign state, Token Details, or the next action inside the launch flow.
 
-## Graduated coin lane
+## Graduated campaigns
 
-Graduated rows can show fee recovery context where that route is active. A visible fee panel does not mean every chain supports the same recovery action.
+Graduated rows help you keep track of campaigns that have already moved beyond the launchpad. Recovery and post graduation options can differ by chain, so always read the page state before you act.
 
-## Filter discipline
+## Best use
 
-This page can expose filters for drafts, coins, and later battle states.
-
-If a battle filter is absent or empty, treat that as rollout scope. Do not invent a hidden live feature from a placeholder state.
-
-## Good operating rule
-
-Use My Coins Console to manage the creator inventory.
-Use public profile and public token pages to share with other people.
+Use My Coins when you are managing your own inventory.
+Use public profile and token pages when you are sharing campaigns with everyone else.
 
 Read: **[Direct and Draft Launches](/creators/direct-and-draft)** and **[Promotion and Push Live](/creators/promotion-and-push-live)**.

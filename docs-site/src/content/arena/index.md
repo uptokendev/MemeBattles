@@ -3,42 +3,35 @@ title: Arena Overview
 description: The postgrad battlefield for featured coins, live battles, queues, events, and rankings.
 ---
 
-Arena is the postgrad battlefield.
+Arena is where graduated campaigns fight for attention after the launchpad phase.
 
-This is not the launchpad. It is the surface that pulls together featured coins, live battles, match queues, events, and the Major War League.
+When a coin moves beyond PRE trading, Arena becomes the main surface for discovery, matchups, featured placements, and ladder context. It gives players one place to scan what is active now, what is forming next, and which campaigns are holding ground.
 
-## What sits here
+## What you can do in Arena
 
-- sponsored placements
-- featured coins
-- live battles
-- open for battle queue
-- events
-- Major War League context
+- open live battles
+- check which campaigns are waiting for a rival
+- follow featured placements and sponsored slots
+- track Major War League standings
+- inspect event and tournament entries
+- move back into Token Details when you need full campaign context
 
-## Readiness rule
+## How Arena fits the product
 
-Arena surfaces are rollout controlled.
+Arena is not the launchpad.
+Arena does not replace the main rewards manual.
 
-A page can exist before every feed, settlement rail, or prize path is fully fielded. Read the readiness banner before you share a battle or event guide as if it were a finished live system.
+The launchpad covers create, PRE trading, and graduation.
+Arena covers the post graduation battlefield and the surfaces built around it.
 
-## What Arena is not
+## Before you share an Arena link
 
-Arena is not the same thing as the top level prize leagues.
+Read the readiness banner first.
 
-- Arena Major War League is the postgrad ladder.
-- Top level leagues and rewards are documented in the main rewards manual.
+Some Arena surfaces are live now.
+Some are partial.
+Some remain planned.
 
-Keep those two lanes separate when you explain the product.
+That banner is the command signal for whether a page is ready for daily use or is still waiting on more infrastructure.
 
-## Navigation order
-
-Use this order:
-
-1. Arena Overview for the big picture.
-2. Live Battles for direct match flow.
-3. Major War League for ladder logic.
-4. Events and Tournaments for timed surfaces.
-5. Sponsorship Application for paid placement intake.
-
-Read: **[Live Battles](/arena/live-battles)** and **[Major War League](/arena/major-war-league)**.
+Read: **[Live Battles](/arena/live-battles)**, **[Major War League](/arena/major-war-league)**, and **[War Trade Room](/traders/war-trade-room)**.
