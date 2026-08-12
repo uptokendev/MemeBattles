@@ -3,98 +3,48 @@ title: How MemeWarzone Works
 description: The full ecosystem loop: campaigns, trading, UpVotes, Leagues, recruiters, squads, airdrops, fee routing, epochs, and claims.
 ---
 
-MemeWarzone is a competitive on chain ecosystem for meme campaigns.
+MemeWarzone runs on one simple loop.
 
-Creators launch campaigns. Traders enter bonding curves. Communities push attention through UpVotes. Recruiters bring new users. Squads compete. Platform fees route into League, recruiter, squad, airdrop, and protocol buckets. Weekly epochs close. Eligible users claim rewards.
+A creator opens a campaign. Traders enter. Attention builds. Fees route into reward systems. Epochs close. Winners and eligible wallets claim. Then the next cycle starts.
 
-That loop is the product.
+![MemeWarzone ecosystem loop](/images/docs/how-it-works-ecosystem-loop.png)
 
-## The battlefield loop
+## The operating loop
 
-1. A creator prepares or launches a campaign.
-2. Traders buy and sell through the bonding curve.
-3. UpVotes and social activity push campaign visibility.
-4. Trading and finalize fees route through TreasuryRouter.
-5. Leagues turn campaign activity into weekly and monthly competition.
-6. Recruiters earn from eligible linked activity.
-7. Squad members compete for Squad Pool rewards.
-8. Active smaller users can qualify for Warzone BNB Airdrops.
-9. Weekly epochs close on Monday at 00:00 UTC.
-10. Eligible rewards become claimable through profile and dashboard flows.
+1. A creator opens through Direct or Draft.
+2. The campaign becomes visible and enters DRAFT or PRE state.
+3. Traders buy and sell while the campaign is live on the launchpad.
+4. UpVotes and community activity push visibility.
+5. League, recruiter, squad, and airdrop systems track eligible activity.
+6. A campaign can graduate and move into the post graduation lane where supported.
+7. Weekly or monthly epochs close.
+8. Eligible rewards become visible in the wallet tools and can be claimed.
 
-## Main actors
+## The core surfaces
 
-| Role | What they do | What they can earn |
-| --- | --- | --- |
-| Creators | Launch campaigns and build communities | Creator payout at graduation, visibility, League wins |
-| Traders | Trade campaigns and support winners | Trading upside, League prizes, airdrops, Squad Pool rewards |
-| Recruiters | Bring creators and traders into MemeWarzone | Recruiter rewards from linked activity |
-| Squads | Groups connected through recruiter led growth | Squad Pool rewards and leaderboard status |
-| Communities | Push campaigns through attention and activity | Visibility, status, rewards, and momentum |
+| Surface | What it does |
+| --- | --- |
+| Launch flow | opens a new campaign |
+| Token Details | shows the campaign state and trading context |
+| War Trade Room | brings DRAFT, PRE, and POST discovery into one board |
+| Arena | covers post graduation battles, events, and ladder context |
+| Command Center | handles private wallet actions and reward views |
 
-## Campaigns
+## How rewards fit the system
 
-Campaigns are the base object in MemeWarzone.
-
-A campaign includes the token, campaign page, bonding curve trading phase, UpVote history, League stats, graduation state, creator reputation, and reward history around that launch.
-
-When a campaign reaches the active graduation target, the finalize process takes the 2.00% finalize fee, builds launch liquidity from the configured remainder, and releases the creator payout defined by the active deployment policy.
-
-## UpVotes
-
-UpVotes are paid discovery.
-
-They give campaigns a transparent way to compete for visibility. Instead of hidden boosts, campaigns can gain attention through visible UpVote activity.
-
-UpVotes cost 0.003 BNB.
-
-## Leagues
+Rewards are not a side feature.
+They are one of the engines that keep the platform moving.
 
 Leagues create recurring competition.
+Recruiter and squad systems reward growth and contribution.
+Airdrops give smaller active users a lane to compete.
+Claims keep rewards visible and auditable inside the wallet flow.
 
-Weekly and monthly League epochs turn campaign activity into scheduled battles with categories, rankings, winners, and prize moments.
+## Chain discipline
 
-Leagues are funded from platform activity. From every buy and sell, 0.75% of trade notional routes to LeagueTreasury.
+BNB and Solana do not share one universal path.
 
-## Recruiters
+BNB is the main live route for the full public manual.
+Solana public docs cover the active devnet path and clearly mark what is still partial or planned.
 
-Recruiters help grow the battlefield.
-
-A recruiter can bring creators and traders into MemeWarzone through attribution links. Once a wallet is linked and becomes active, the recruiter can earn from that linked activity.
-
-Recruiter rewards do not add a new user fee. They come from the existing 2.00% fee envelope.
-
-## Squad Pool
-
-The Squad Pool rewards eligible squad members.
-
-A squad is connected to recruiter led growth. Eligible creators and traders inside a squad can share weekly Squad Pool rewards based on contribution. The split is not equal.
-
-## Warzone BNB Airdrops
-
-Warzone BNB Airdrops give active smaller users a real shot at weekly BNB rewards.
-
-When activity is unlinked, the unassigned recruiter and squad slices route into the Warzone Airdrop balance. That keeps solo activity useful instead of leaving reward buckets idle.
-
-Airdrops use eligibility rules, volume caps, weighted random selection, cooldowns, and anti abuse checks.
-
-## Epochs and claims
-
-Most reward systems run on weekly epochs.
-
-The standard weekly close is Monday 00:00 UTC. After an epoch is processed and published, eligible rewards become claimable through the dashboard or profile flow.
-
-Rewards are claim based. They are not pushed automatically to every wallet.
-
-## Why MemeWarzone is different
-
-MemeWarzone is built around recurring competition:
-
-- not one time launches
-- recurring weekly and monthly battles
-- self funding incentives
-- community driven outcomes
-- public leaderboards and winner moments
-- private wallet dashboards for eligibility and claims
-
-The result is a flywheel where creators, traders, recruiters, squads, and the protocol all have reasons to keep the battlefield active.
+Read: **[Campaign System](/platform/campaign-lifecycle)**, **[Chain Readiness](/platform/chain-readiness)**, and **[War Trade Room](/traders/war-trade-room)**.

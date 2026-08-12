@@ -3,90 +3,73 @@ title: Getting Started
 description: A simple first read guide for creators, traders, and recruiters entering MemeWarzone.
 ---
 
-This guide explains the normal path through MemeWarzone.
+Use this page as your first briefing.
 
-## 1. Understand the ecosystem
+It shows where to start, which path fits your role, and which pages matter before you move money or publish a campaign.
 
-MemeWarzone is a competitive on chain ecosystem for meme campaigns.
+![Getting started role paths](/images/docs/getting-started-role-paths.png)
 
-Start with **[How MemeWarzone Works](/how-memewarzone-works)** if you want the whole loop in one page.
+## Step 1
 
-## 2. Choose your role
+Read the system first.
 
-MemeWarzone has three primary user paths.
+Start with **[How MemeWarzone Works](/how-memewarzone-works)** so you understand the full loop before you focus on one tool or one reward lane.
+
+## Step 2
+
+Choose your role.
 
 ### Creator
 
-You create a campaign, prepare your token page, bring your community, and fight to graduate.
+Creators build and launch campaigns.
 
 Start here:
 
-- **[Prepare Mode](/prepare-mode)**
-- **[Create a campaign](/creators/create-a-campaign)**
-- **[Creator earnings](/creators/creator-earnings)**
+- **[Direct and Draft Launches](/creators/direct-and-draft)**
+- **[Promotion and Push Live](/creators/promotion-and-push-live)**
+- **[Create a Campaign](/creators/create-a-campaign)**
 
 ### Trader
 
-You find campaigns, trade during the bonding curve phase, compete in Leagues, and claim rewards when eligible.
+Traders follow campaigns, work the PRE market, and track reward opportunities.
 
 Start here:
 
-- **[Trading basics](/traders/trading-basics)**
-- **[Bonding curve](/platform/bonding-curve)**
-- **[Leagues](/leagues)**
+- **[Trading Basics](/traders/trading-basics)**
+- **[Bonding Curve](/platform/bonding-curve)**
+- **[War Trade Room](/traders/war-trade-room)**
 
 ### Recruiter
 
-You bring creators and traders into the platform through your recruiter link and build a squad around real activity.
+Recruiters bring users into the platform and manage squad growth.
 
 Start here:
 
-- **[Recruiter Program](/programs/recruiter-program)**
-- **[Attribution & links](/programs/attribution-and-links)**
+- **[Program Overview](/programs/recruiter-program)**
+- **[Attribution & Links](/programs/attribution-and-links)**
 - **[Squad Pool](/rewards/squad-pool)**
 
-## 3. Understand the campaign lifecycle
+## Step 3
 
-A campaign moves through a clear lifecycle:
+Check the chain and the page status.
 
-1. Prepare: creator sets up campaign before live deployment.
-2. Deploy: campaign becomes active on the platform.
-3. Bonding curve: traders buy and sell before DEX liquidity.
-4. Graduation: campaign reaches the active graduation target.
-5. Launch liquidity: liquidity is created under the active deployment policy.
-6. Creator payout: payout is calculated under the active deployment policy.
-7. Claims and rewards: eligible rewards become claimable after epochs publish.
+Readiness matters.
+A page can be operational, partial, testnet active, or planned. Do not assume every route works the same way on every chain.
 
-Read: **[Campaign System](/platform/campaign-lifecycle)**.
+## Step 4
 
-## 4. Know the main numbers
+Use only official domains.
 
-| Item | Value |
-| --- | ---: |
-| Chain | BNB Chain |
-| Buy fee | 2.00% |
-| Sell fee | 2.00% |
-| Finalize fee | 2.00% |
-| LeagueTreasury share | 0.75% of every buy and sell |
-| Standard recruiter trade share | 0.25% |
-| Standard recruiter finalize share | 0.30% |
-| Squad Pool share | 0.05% |
-| UpVote price | 0.003 BNB |
-| Graduation target | Active by deployment |
-| Post finalize distribution | Active launch liquidity and creator payout policy |
-
-## 5. Use only official links
-
-The main site is:
+Main site:
 
 ```txt
 https://memewar.zone
 ```
 
-The official docs are:
+Docs site:
 
 ```txt
 https://docs.memewar.zone
 ```
 
-Never trust links from random DMs. Always verify the domain before connecting a wallet.
+If a link came through a random message, verify it before you connect a wallet.

@@ -3,80 +3,40 @@ title: Epochs & Claims
 description: How weekly reward epochs close, how claims work, and what happens to expired rewards.
 ---
 
-MemeWarzone rewards are organized around epochs.
+Claims run on an epoch rhythm.
 
-Epochs make the system predictable. Users know when activity counts, when rewards are calculated, and when claims open.
+That rhythm gives users a clear answer to three questions: when activity counted, when results were published, and when a reward can actually be claimed.
 
-## Weekly epoch close
+![Epochs and claims wallet flow](/images/docs/epochs-claims-wallet-flow.png)
 
-Weekly reward epochs close at:
+## Weekly close
 
-```txt
-Monday 00:00 UTC
-```
+The standard weekly close is Monday at 00:00 UTC.
+After that point, reward systems can publish the outcome for the completed window.
 
-After the epoch closes, the system can process:
+## Claim flow
 
-- recruiter rewards
-- Warzone BNB Airdrops
-- Squad Pool rewards
-- League-related reward states
-- claimable reward ledger entries
+The normal flow is:
 
-## Claim-based rewards
+1. activity is recorded during the epoch
+2. the epoch closes
+3. results are published
+4. eligible reward rows appear in the wallet flow
+5. the wallet claims through the official product pages
 
-MemeWarzone uses claim-based rewards.
+## Why claim based rewards matter
 
-Rewards are not automatically pushed to every wallet. Eligible users claim through official dashboard/profile flows.
-
-This keeps settlement cleaner because it:
-
-- avoids unnecessary payout spam
-- keeps reward settlement auditable
-- lets users see what they are claiming
-- allows eligibility and anti-abuse checks before payout
-- reduces operational risk
-
-## Claim window
-
-The standard claim deadline is 7 days after epoch end.
-
-Users should claim from their profile or dashboard after an epoch is processed and published.
+Claim based rewards keep the system cleaner for users and easier to audit.
+They also give the wallet owner a direct view of what is ready, what is pending, and what has already been collected.
 
 ## Expired rewards
 
-Expired rewards remain inside the ecosystem.
+If a reward expires, it does not simply disappear from the story.
+The product records the state and routes the outcome according to the active reward rules.
 
-| Reward type | Expiry destination |
-| --- | --- |
-| Recruiter rewards | Squad Pool |
-| Squad Pool rewards | Squad Pool |
-| Warzone BNB Airdrops | Airdrop treasury |
+## Best use
 
-This prevents idle rewards from sitting permanently stranded.
+Use this page for timing.
+Use Command Center for the actual wallet side claim board.
 
-## Eligibility visibility
-
-Users should be able to see:
-
-- whether they are eligible
-- pending rewards
-- claimable rewards
-- expired rewards
-- broad reason codes if ineligible
-- claim history
-
-Reason codes should help honest users understand the outcome without exposing anti-abuse thresholds.
-
-## Why epochs matter
-
-Epochs turn platform activity into recurring moments:
-
-- new winners
-- new squad rankings
-- new recruiter stats
-- new airdrop chances
-- new content beats
-- new reasons to return
-
-That weekly rhythm is a core part of MemeWarzone.
+Read: **[Claims Console](/command-center/claims)** and **[Reward Dashboard](/rewards/dashboard-ux)**.

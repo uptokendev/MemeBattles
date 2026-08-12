@@ -3,66 +3,36 @@ title: Leagues Overview
 description: How MemeWarzone Leagues turn campaign activity into weekly and monthly battles with recurring winners and prize pools.
 ---
 
-Leagues are recurring competition systems inside MemeWarzone.
+Leagues are the recurring competition engine inside MemeWarzone.
 
-They make platform activity visible, competitive, and repeatable.
+They turn campaign performance, trading activity, and community attention into scheduled battles that keep the platform moving beyond a single launch moment.
 
-## Why Leagues exist
+![Leagues overview cycle](/images/docs/leagues-overview-cycle.png)
 
-Meme campaigns often have a short attention window.
+## What Leagues do
 
-Leagues create recurring moments:
+Leagues create:
 
 - weekly battles
-- monthly finals
-- public winners
-- creator bragging rights
-- trader competition
-- community content
-- self-funded prize pools
+- monthly standings
+- public winner moments
+- repeat reasons to return
+- another path for campaigns to compete after launch day
 
-## How Leagues are funded
+## Why they matter
 
-From every buy and sell, 0.75% of trade notional routes to LeagueTreasury.
+Without leagues, every campaign fights only for the first burst of attention.
+With leagues, the platform gets recurring reasons for creators, traders, and communities to keep pushing.
 
-This routing happens through TreasuryRouter before protocol revenue is defined.
+## What to read next
 
-As trading volume grows, League prize capacity can grow with it.
+Use the league pages in this order:
 
-## Main League categories
+1. **[League Categories](/leagues/categories)** for the competition types
+2. **[Epochs & Prizes](/leagues/epochs-and-prizes)** for timing and winner flow
+3. **[Epochs & Claims](/rewards/epochs-and-claims)** for claim windows and reward follow through
 
-MemeWarzone uses five core categories:
+## One rule that matters
 
-- Perfect Run
-- Fastest Finish
-- Biggest Hit
-- Top Earner
-- Crowd Favorite
-
-Read: **[League categories](/leagues/categories)**.
-
-## Weekly and monthly cycles
-
-Leagues operate in weekly and monthly epochs.
-
-| Epoch | Timing |
-| --- | --- |
-| Weekly | Monday 00:00 UTC to next Monday 00:00 UTC |
-| Monthly | 1st 00:00 UTC to next 1st 00:00 UTC |
-
-Read: **[Epochs & prizes](/leagues/epochs-and-prizes)**.
-
-## Connection to the rest of the ecosystem
-
-Leagues are not isolated from the reward system.
-
-League activity connects to:
-
-- campaign visibility
-- trader competition
-- creator reputation
-- squad participation
-- airdrop exclusions for active Battle League winners
-- weekly content and claim moments
-
-Leagues are one of the main reasons MemeWarzone feels like a recurring battlefield instead of a one-time campaign board.
+League pages describe the competition lane.
+Claim and wallet actions still live in the reward manual and Command Center.

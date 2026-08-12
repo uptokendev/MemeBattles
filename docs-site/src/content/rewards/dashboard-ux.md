@@ -1,13 +1,15 @@
 ---
 title: Dashboard & Rewards UX
-description: What users should see for pending rewards, eligibility, claims, reason codes, squads, airdrops, and recruiter rewards.
+description: What users should see for pending rewards, eligibility, claims, squads, airdrops, and recruiter reward states.
 ---
 
-The dashboard and profile pages are the user's reward control center.
+The reward dashboard is the private wallet view for reward status.
 
-Public pages show competition. Private wallet views show eligibility, reward state, and claim actions.
+Public pages show competition and winners. Private wallet pages show whether your own account is eligible, pending, claimable, claimed, or expired.
 
-## What users should see
+![Rewards dashboard panels](/images/docs/rewards-dashboard-panels.png)
+
+## What a wallet should be able to see
 
 A connected wallet should be able to inspect:
 
@@ -15,75 +17,28 @@ A connected wallet should be able to inspect:
 - claimable rewards
 - claimed rewards
 - expired rewards
-- eligibility status
-- broad reason codes
+- broad eligibility status
+- relevant reason messages
 - claim deadlines
-- linked recruiter state
-- squad state
-- airdrop state
+- squad and recruiter context where applicable
 
-## Reward states
+## Public and private split
 
-| State | Meaning |
-| --- | --- |
-| Pending | Activity has been recorded, but the epoch is not published yet |
-| Claimable | The epoch is published and the wallet can claim |
-| Claimed | The wallet already claimed the reward |
-| Expired | The claim deadline passed |
-| Rolled over | The expired amount returned to its reward path |
-| Cancelled | The entry was cancelled by admin or reconciliation logic |
+Public pages are for standings, winner pages, and shared competition views.
+Private pages are for account level reward state and claim actions.
 
-## Claim buttons
+## Good interface rule
 
-Claim buttons should be shown only when a wallet has a claimable reward.
+The page should always make it clear:
 
-The UI should make clear:
+- what program the row belongs to
+- which epoch the row came from
+- whether action is available now
+- what the wallet should do next
 
-- which program is being claimed
-- which epoch the claim belongs to
-- the amount
-- the deadline
-- the transaction status
+## Security rule
 
-Users should only claim through official MemeWarzone pages.
+Users should claim only through the official MemeWarzone product pages.
+Do not trust claim prompts coming from random links or copied screenshots.
 
-## Eligibility and reason codes
-
-Reason codes should be clear enough for honest users.
-
-Examples include:
-
-- below minimum weekly volume
-- below minimum trade count
-- below active day requirement
-- own-campaign trading excluded
-- no squad
-- squad detached
-- recruiter direct-win excluded
-- repeat winner cooldown
-- Battle League winner exclusion active
-- suspected circular activity
-- review required
-
-The UI should not expose exact anti-abuse thresholds beyond the published rules.
-
-## Public vs private surfaces
-
-Public surfaces can include:
-
-- recruiter leaderboard
-- public recruiter profiles
-- squad leaderboard
-- public squad member ranking
-- Warzone Airdrop winner pages
-- League standings
-
-Private wallet surfaces can include:
-
-- personal eligibility status
-- linked recruiter
-- squad membership and detached state
-- estimated rewards
-- claimable balances
-- claim history
-- broad ineligibility reason codes
+Read: **[Command Center Overview](/command-center)** and **[Epochs & Claims](/rewards/epochs-and-claims)**.

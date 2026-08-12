@@ -1,55 +1,43 @@
 ---
 title: Introduction
-description: The fast path to understanding MemeWarzone as a competitive on-chain ecosystem with campaigns, rewards, routing, and weekly battles.
+description: The fast path to understanding MemeWarzone as a competitive on chain ecosystem with campaigns, rewards, routing, and weekly battles.
 ---
 
-MemeWarzone is a competitive on-chain ecosystem for meme campaigns on BNB Chain.
+MemeWarzone is a competitive campaign platform built around launch, trading, attention, and recurring rewards.
 
-It combines bonding-curve campaigns, creator rewards, paid discovery, Leagues, recruiter attribution, Squad Pool rewards, Warzone BNB Airdrops, and claim-based reward flows into one recurring battlefield.
+It is not just a token page. It is a full operating loop where creators launch, traders compete, communities rally, and reward systems keep the battlefield active after the first burst of attention.
 
-The goal is simple: every real action should help the system grow.
+![MemeWarzone battlefield overview](/images/docs/introduction-battlefield-overview.png)
 
-## The core idea
+## What makes the platform different
 
-Most meme campaign tools focus on one moment: create a token and hope attention shows up.
+MemeWarzone connects four layers into one system:
 
-MemeWarzone turns that moment into an ongoing system:
+- campaign launch and preparation
+- PRE trading on the launchpad
+- post graduation competition and discovery
+- recurring rewards, claims, and private wallet tools
 
-- creators launch campaigns and fight for attention
-- traders compete for upside, League prizes, and reward eligibility
-- recruiters bring real creators and traders into the ecosystem
-- squads compete through contribution-based rewards
-- smaller active fighters get chances at weekly Warzone BNB Airdrops
-- fees route through TreasuryRouter into reward buckets and protocol revenue
+That means a campaign can move from launch day into a longer public life instead of disappearing after the first round of trading.
 
-The result is not just a token factory. It is a recurring game loop around meme campaigns.
+## Who this is built for
 
-## Who it is for
+| Role | Main objective |
+| --- | --- |
+| Creators | launch a campaign and build attention |
+| Traders | find campaigns early and trade with discipline |
+| Recruiters | bring real users into the platform |
+| Squads | grow together and compete for reward share |
+| Communities | rally around campaigns and push visibility |
 
-| Role | What they do | What they can earn |
-| --- | --- | --- |
-| Creators | Launch campaigns, build communities, push attention | Creator graduation payout, visibility, League wins |
-| Traders | Trade bonding curves and support campaigns | Trading upside, League prizes, airdrops, Squad Pool rewards |
-| Recruiters | Bring creators and traders into MemeWarzone | Recruiter rewards from linked activity |
-| Squads | Compete as recruiter-connected groups | Squad Pool rewards and public ranking |
-| Communities | Rally around campaigns, UpVote, raid, compete | Discovery, status, rewards, momentum |
+## Current operating line
 
-## Why MemeWarzone is different
+BNB is the main live route.
+Solana create, buy, sell, and UpVote flows are active on devnet and marked separately where needed.
 
-MemeWarzone is built around recurring competition:
+Always read the readiness banner before you share a link as if every chain and every route works the same way.
 
-- not one-time launches
-- weekly and monthly epochs
-- self-funding incentives
-- transparent fee routing
-- claim-based rewards
-- public leaderboards and winner pages
-- private dashboard views for eligibility and claims
+## First move
 
-## Current launch phase
-
-MemeWarzone opens **Prepare Mode on May 12**.
-
-Prepare Mode lets creators, recruiters, and early users prepare before full live deployment. When the platform flips live, prepared creators can deploy their campaigns into the active warzone.
-
-Start with **[How MemeWarzone Works](/how-memewarzone-works)**, then read **[Getting Started](/getting-started)**.
+Read **[How MemeWarzone Works](/how-memewarzone-works)** for the full system loop.
+Then move to **[Getting Started](/getting-started)** for the role based path.
