@@ -5,14 +5,9 @@ const root = process.cwd()
 const outDir = path.join(root, 'dist')
 const manifestPath = path.join(root, 'src', 'content', 'page-manifest.json')
 const factMatrixPath = path.join(root, 'src', 'content', 'internal', 'fact-matrix.json')
-const repoRoot = path.resolve(root, '..')
 
 function exists(relPath) {
   return fs.existsSync(path.join(root, relPath))
-}
-
-function existsRepo(relPath) {
-  return fs.existsSync(path.join(repoRoot, relPath))
 }
 
 function hasManifestRoute(route) {
@@ -61,46 +56,48 @@ const phaseStatus = [
   {
     phase: 'Phase 3',
     title: 'Publish the core cross chain field manual',
-    status: hasManifestRoute('/platform/campaign-lifecycle') && hasManifestRoute('/platform/graduation') ? 'partial' : 'open',
+    status: hasManifestRoute('/platform/chain-readiness') && hasManifestRoute('/platform/solana-operations') && hasManifestRoute('/platform/graduation') ? 'partial' : 'open',
     notes: [
       'Core BNB manual pages exist',
-      'Chain split wording has improved',
-      'Solana and post graduation detail still need expansion'
+      'Cross chain readiness pages are now public',
+      'Fact owner sign off remains open for high risk numbers'
     ]
   },
   {
     phase: 'Phase 4',
     title: 'Document creator and trader operations',
-    status: hasManifestRoute('/creators/create-a-campaign') && hasManifestRoute('/traders/trading-basics') ? 'partial' : 'open',
+    status: hasManifestRoute('/creators/direct-and-draft') && hasManifestRoute('/creators/promotion-and-push-live') && hasManifestRoute('/traders/war-trade-room') ? 'partial' : 'open',
     notes: [
-      'Creator and trader guides exist',
-      'Draft, Direct, and War Trade Room state coverage remain incomplete'
+      'Creator launch route coverage exists for Direct, Draft, promotion, and Push Live',
+      'War Trade Room state coverage exists',
+      'Final screenshot and troubleshooting wave still remain open'
     ]
   },
   {
     phase: 'Phase 5',
     title: 'Document leagues, rewards and command center',
-    status: hasManifestRoute('/leagues') && hasManifestRoute('/rewards/epochs-and-claims') ? 'partial' : 'open',
+    status: hasManifestRoute('/command-center') && hasManifestRoute('/command-center/claims') && hasManifestRoute('/command-center/recruiter') ? 'partial' : 'open',
     notes: [
-      'League and reward pages exist',
-      'Command Center and monthly sealing detail still need buildout'
+      'Command Center overview, recruiter, squad, airdrops, claims, coins, and settings pages exist',
+      'Reward policy sign off and monthly sealing detail still remain open'
     ]
   },
   {
     phase: 'Phase 6',
     title: 'Document the post grad battlefield',
-    status: 'open',
+    status: hasManifestRoute('/arena') && hasManifestRoute('/arena/live-battles') && hasManifestRoute('/arena/events') ? 'partial' : 'open',
     notes: [
-      'Arena, battles, events, tournaments, war pools, and sponsorship docs are not yet in the public manifest'
+      'Arena, battles, Major War League, events, sponsorship, and War Pool disposition pages exist',
+      'Settlement proof and legal sign off are still open for some battlefield surfaces'
     ]
   },
   {
     phase: 'Phase 7',
     title: 'Open the Solana front',
-    status: existsRepo('docs/solana/devnet-go-live-status.md') ? 'partial' : 'open',
+    status: hasManifestRoute('/platform/solana-operations') ? 'partial' : 'open',
     notes: [
-      'Solana evidence exists in the repo',
-      'Public Solana docs are not yet in the docs-site manifest'
+      'Public Solana docs now cover devnet create, trade, and UpVote',
+      'Mainnet, graduation, and rewards parity remain out of service'
     ]
   },
   {
@@ -108,7 +105,7 @@ const phaseStatus = [
     title: 'Validate, deploy and hold the line',
     status: exists('scripts/check-doc-links.mjs') && exists('scripts/check-stale-copy.mjs') && exists('scripts/generate-doc-coverage.mjs') ? 'partial' : 'open',
     notes: [
-      'Route, link, stale copy, shell, and coverage controls exist',
+      'Route, link, stale copy, fact, shell, and coverage controls exist',
       'Production deep link verification still depends on redeploy'
     ]
   }
@@ -128,7 +125,7 @@ const closeout = [
   {
     gate: 'Coverage',
     status: 'partial',
-    note: 'Coverage artifacts exist, but post grad and Solana surfaces are not fully represented'
+    note: 'Postgrad, command center, and Solana surfaces now have public dispositions, but owner sign off remains open'
   },
   {
     gate: 'Quality',

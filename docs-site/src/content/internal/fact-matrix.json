@@ -133,14 +133,14 @@
     {
       "id": "readiness.solana_docs",
       "label": "Solana documentation readiness",
-      "value": "Planned",
+      "value": "Testnet active",
       "unit": "status",
       "environment": "Solana",
-      "status": "planned",
+      "status": "active",
       "visibility": "public",
       "owner": "docs",
       "evidence": [
-        "docs-site/src/content/roadmap.md"
+        "docs-site/src/content/platform/solana-operations.md"
       ]
     },
     {
@@ -153,7 +153,7 @@
       "visibility": "public",
       "owner": "product-contract",
       "evidence": [
-        "docs-site/src/content/roadmap.md"
+        "docs-site/src/content/platform/solana-operations.md"
       ]
     }
   ]

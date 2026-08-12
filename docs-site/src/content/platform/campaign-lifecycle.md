@@ -1,80 +1,78 @@
 ---
 title: Campaign System
-description: The full path from prepared campaign to bonding curve, graduation, liquidity, rewards, and reputation.
+description: The path from draft or Direct launch into bonding, graduation, post graduation state, and rewards.
 ---
 
-A campaign is the core object in MemeWarzone.
+A campaign is the core field object in MemeWarzone.
 
-It is not just a token. It is the campaign page, trading phase, visibility battle, creator reputation, League participation, and reward history around that token.
+It is not just a token. It is the campaign brief, launch state, trade state, visibility battle, creator record, and reward context around that token.
 
 ## 1. Prepare
 
-Before live deployment, the creator prepares the campaign.
+Before the live move, the creator prepares the campaign.
 
-This includes:
+This usually includes:
 
 - name and ticker
 - logo and visuals
 - description
-- links
+- official links
 - community plan
 - launch timing
 
-During Prepare Mode, this lets creators line up campaigns before the platform opens full deployment.
+## 2. Choose the launch route
 
-## 2. Deploy
+Creators can move in through Draft or Direct.
 
-When live deployment opens, the creator deploys the campaign.
+- Draft is the staged route.
+- Direct is the short route.
 
-A deployed campaign becomes tradable and visible in the active warzone.
+Read: **[Direct and Draft Launches](/creators/direct-and-draft)**.
 
-## 3. Bonding-curve phase
+## 3. PRE trade state
 
-During the bonding-curve phase:
+PRE is the launchpad trade state.
 
-- traders buy and sell through the campaign contract
-- price moves according to the curve
-- the 2.00% trading fee applies
-- TreasuryRouter routes fee flows
-- League metrics begin tracking
-- UpVotes can push visibility
+During PRE:
 
-This is the highest-intensity phase of a campaign.
+- users buy and sell on the launchpad curve
+- live trade fees route through the active treasury policy
+- visibility and league signals start moving
+- UpVotes can change attention
 
-Read: **[Bonding curve](/platform/bonding-curve)**.
+Read: **[Bonding Curve](/platform/bonding-curve)**.
 
-## 4. Graduation
+## 4. Graduation check
 
-A campaign graduates when it reaches the graduation threshold.
-
-The graduation threshold is 50 BNB.
+A campaign graduates only when the active graduation target for that chain and deployment is reached.
 
 At graduation:
 
-- the 2.00% finalize fee is taken
-- TreasuryRouter routes the finalize fee
-- remaining liquidity is split
-- 80% of remaining liquidity becomes LP liquidity
-- 20% of remaining liquidity becomes creator payout
-- the campaign enters the DEX stage
+- the live finalize policy runs
+- treasury routing runs
+- liquidity and creator outcomes follow the active deployment rules
+- the campaign can move into its next market state
 
 Read: **[Graduation](/platform/graduation)**.
 
-## 5. DEX stage
+## 5. POST market state
 
-After graduation, the token has liquidity outside the bonding curve.
+POST is the post graduation state.
 
-This is where the campaign moves from early battlefield into broader market trading.
+On BNB, this can move into the Topaz market path.
+On Solana, the post graduation market lane remains planned until it is proven.
 
-## 6. Claims and rewards
+Read: **[War Trade Room](/traders/war-trade-room)**.
 
-Eligible users may later claim rewards from:
+## 6. Rewards and reputation
 
-- League prizes
-- recruiter rewards
-- Squad Pool rewards
-- Warzone BNB Airdrops
+After the live trade phase, the campaign can still affect:
 
-Claims should always be made through official MemeWarzone pages only.
+- rewards
+- league outcomes
+- creator reputation
+- future community reach
 
-Read: **[Epochs & Claims](/rewards/epochs-and-claims)**.
+Users should only claim through official product pages.
+
+Read: **[Epochs & Claims](/rewards/epochs-and-claims)** and **[Chain Readiness](/platform/chain-readiness)**.
