@@ -71,18 +71,38 @@ function extractSidebarRoutes() {
 }
 
 function buildRouteIndex() {
-  const index = new Map()
+  const exactRouteIndex = new Map()
 
   for (const file of walk(contentDir)) {
     const rel = path.relative(contentDir, file).replace(/\\/g, '/')
     const slug = rel.replace(/\.md$/, '')
-    const route = `/${slug}`.replace(/\/index$/, '') || '/'
-    if (!index.has(route)) {
-      index.set(route, file)
+    exactRouteIndex.set(`/${slug}`, file)
+  }
+
+  const routeIndex = new Map()
+
+  for (const [exactRoute, file] of exactRouteIndex.entries()) {
+    const canonicalRoute = exactRoute.replace(/\/index$/, '') || '/'
+    const preferredExactRoute = canonicalRoute === '/' ? '/' : canonicalRoute
+    const preferredExactFile = exactRouteIndex.get(preferredExactRoute)
+    const preferredIndexFile = exactRouteIndex.get(`${preferredExactRoute}/index`)
+
+    if (preferredExactFile) {
+      routeIndex.set(canonicalRoute, preferredExactFile)
+      continue
+    }
+
+    if (preferredIndexFile) {
+      routeIndex.set(canonicalRoute, preferredIndexFile)
+      continue
+    }
+
+    if (!routeIndex.has(canonicalRoute)) {
+      routeIndex.set(canonicalRoute, file)
     }
   }
 
-  return index
+  return routeIndex
 }
 
 function loadCanonicalPages() {

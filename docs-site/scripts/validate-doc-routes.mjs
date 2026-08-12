@@ -16,21 +16,48 @@ function walk(dir) {
   })
 }
 
+function getRouteCandidates(file) {
+  const rel = path.relative(contentDir, file).replace(/\\/g, '/')
+  const slug = rel.replace(/\.md$/, '')
+  const exactRoute = `/${slug}`
+  const canonicalRoute = exactRoute.replace(/\/index$/, '') || '/'
+  const isIndexVariant = exactRoute.endsWith('/index')
+
+  return {
+    file,
+    exactRoute,
+    canonicalRoute,
+    isIndexVariant
+  }
+}
+
 function collectRoutes() {
   const routes = new Map()
   const duplicates = []
 
   for (const file of walk(contentDir)) {
-    const rel = path.relative(contentDir, file).replace(/\\/g, '/')
-    const slug = rel.replace(/\.md$/, '')
-    const route = `/${slug}`.replace(/\/index$/, '') || '/'
+    const candidate = getRouteCandidates(file)
+    const existing = routes.get(candidate.canonicalRoute)
 
-    if (routes.has(route)) {
-      duplicates.push(`${route}: ${routes.get(route)} and ${file}`)
+    if (!existing) {
+      routes.set(candidate.canonicalRoute, candidate)
       continue
     }
 
-    routes.set(route, file)
+    const exactCanonicalPath = `${candidate.canonicalRoute === '/' ? '' : candidate.canonicalRoute}.md`
+    const preferredExactFile = path.join(contentDir, exactCanonicalPath.replace(/^\//, ''))
+    const preferredIndexFile = path.join(contentDir, candidate.canonicalRoute.replace(/^\//, ''), 'index.md')
+    const allowedPair = [existing.file, candidate.file].sort().join('|') === [preferredExactFile, preferredIndexFile].sort().join('|')
+
+    if (allowedPair) {
+      const preferred = fs.existsSync(preferredExactFile)
+        ? getRouteCandidates(preferredExactFile)
+        : getRouteCandidates(preferredIndexFile)
+      routes.set(candidate.canonicalRoute, preferred)
+      continue
+    }
+
+    duplicates.push(`${candidate.canonicalRoute}: ${existing.file} and ${candidate.file}`)
   }
 
   return { routes, duplicates }
@@ -132,5 +159,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `Validated ${sidebarItems.length} canonical sidebar entries, ${aliases.length} route aliases, and ${routes.size} markdown routes`
+  `Validated ${sidebarItems.length} canonical sidebar entries, ${aliases.length} route aliases, and ${routes.size} canonical markdown routes`
 )
