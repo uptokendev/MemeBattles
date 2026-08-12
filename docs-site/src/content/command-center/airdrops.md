@@ -1,11 +1,13 @@
 ---
 title: Airdrops Console
-description: How current airdrop pool, countdown, and previous winners appear in Command Center.
+description: How current airdrop pools, countdowns, winner history, and claim status appear in Command Center.
 ---
 
-Airdrops Console is the wallet side view of the airdrop cycle.
+Airdrops Console is the wallet view for active MemeWarzone airdrop cycles.
 
-It shows the current pool, the next drop window, and the recent winner history that matters to the connected account.
+Use it to check the current pool, the next draw window, recent winners, and the chain tied to each reward lane.
+
+![Command Center airdrops](/images/docs/command-center-airdrops.png)
 
 ## First things to check
 
@@ -13,29 +15,37 @@ Start with these signals:
 
 - current pool
 - next drop countdown
+- active chain
 - recent winners
+- claim status
 
-Those three items tell you whether the lane is active and what just paid out.
+Together they show what is running now and what has already settled.
 
-## What this page is for
+## BNB and Solana
 
-Use it to:
+MemeWarzone supports BNB and Solana as live product networks.
 
-- track the active airdrop cycle
-- review recent payout history
-- confirm you are looking at the right chain context
-- jump from status into the reward manual when needed
+Airdrop entries remain chain specific. Always confirm the chain shown on the reward entry before you act or share a result.
 
-## Chain status
+## How to use the console
 
-BNB airdrop tooling is live.
-Solana parity is still pending.
+1. Connect the wallet tied to your MemeWarzone activity.
+2. Open Command Center.
+3. Select Airdrops.
+4. Check the current pool and countdown.
+5. Review recent winners and any reward status tied to your wallet.
+6. Move to Claims when a reward becomes claimable.
 
-If a Solana label is visible, treat it as product status information, not as proof that the same payout rail is already active there.
+## What the console does not mean
+
+A visible pool does not guarantee a reward for a specific wallet.
+Eligibility depends on the rules of that reward cycle.
+
+A winner entry is a record of the result. A claimable entry is the signal that your wallet can take action.
 
 ## Good practice
 
-Use this page as the status board for the airdrop lane.
-Use the rewards manual for the rule set behind eligibility and claims.
+Use Airdrops Console for current wallet status.
+Use the rewards pages for the rules behind each cycle.
 
 Read: **[Warzone BNB Airdrops](/rewards/warzone-airdrops)** and **[Epochs & Claims](/rewards/epochs-and-claims)**.
