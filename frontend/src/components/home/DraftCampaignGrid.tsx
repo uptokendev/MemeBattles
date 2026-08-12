@@ -115,8 +115,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
         const candidates = drafts
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
-          .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
-          .slice(0, 24);
+          .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed");
 
         const hydrated = await Promise.all(
           candidates.map(async (draft) => {
