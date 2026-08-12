@@ -322,7 +322,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                   </div>
 
 
-                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-success/70">{mission}</p>
+                  <p className="mt-3 min-h-[4.375rem] line-clamp-3 text-sm leading-relaxed text-success/70">{mission}</p>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="border border-success/20 bg-black/40 p-2">
