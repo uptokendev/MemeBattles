@@ -5,7 +5,7 @@ description: The main MemeWarzone fee numbers and how the fee envelope funds cre
 
 MemeWarzone uses simple visible fees.
 
-The user-facing numbers stay stable while TreasuryRouter handles the internal routing.
+The user facing numbers stay stable while TreasuryRouter handles the internal routing.
 
 ## Main numbers
 
@@ -16,9 +16,9 @@ The user-facing numbers stay stable while TreasuryRouter handles the internal ro
 | Creator direct trade share | 0.10% of buys and sells on the creator's own bonding curve |
 | Finalize fee | 2.00% |
 | UpVote price | 0.003 BNB |
-| Graduation threshold | 50 BNB |
-| Post-finalize split | 80% LP / 20% creator payout |
-| Post-graduation platform route fee | 0.05% when traded through MemeWarzone |
+| Graduation target | Active by deployment |
+| Post finalize distribution | Active launch liquidity and creator payout policy |
+| Post graduation platform route fee | 0.05% when traded through MemeWarzone |
 
 ## Trading fees
 
@@ -42,13 +42,13 @@ Read: **[Fee Routing](/fees/fee-routing)**.
 
 Creators receive 0.10% of every buy and sell on their own token bonding curve.
 
-This is inside the existing 2.00% buy/sell fee. It is not an extra fee added on top.
+This is inside the existing 2.00% buy and sell fee. It is not an extra fee added on top.
 
 ## Finalize fee
 
-When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before LP creation and creator payout calculation.
+When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before launch liquidity and creator payout calculation.
 
-Finalize routing can fund recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue. It does not route to LeagueTreasury and does not use the creator direct trade-share path.
+Finalize routing can fund recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue. It does not route to LeagueTreasury and does not use the creator direct trade share path.
 
 ## UpVote fee
 
@@ -56,11 +56,11 @@ An UpVote costs 0.003 BNB.
 
 UpVotes are paid visibility actions. They are not refundable and do not mean the platform endorses a campaign.
 
-## Post-graduation route fee
+## Post graduation route fee
 
 When users trade a graduated token through the MemeWarzone interface or routing path, the platform can earn a 0.05% route fee.
 
-This is a platform-route fee, not a permanent token tax.
+This is a platform route fee, not a permanent token tax.
 
 ## Why fees exist
 
