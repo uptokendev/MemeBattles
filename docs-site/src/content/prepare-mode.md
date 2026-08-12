@@ -5,7 +5,7 @@ description: What creators, recruiters, traders, squads, and communities can do 
 
 Prepare Mode opens on **May 12, 2026**.
 
-It is the pre-battle launch phase for MemeWarzone. It gives creators, recruiters, traders, squads, and communities time to get positioned before the full live campaign battlefield moves at speed.
+It is the pre battle launch phase for MemeWarzone. It gives creators, recruiters, traders, squads, and communities time to get positioned before the full live campaign battlefield moves at speed.
 
 Prepare Mode is not a waiting room. It is where the first campaigns, recruiter links, squads, War Room activity, launch plans, safety habits, and community momentum start forming.
 
@@ -15,8 +15,8 @@ During Prepare Mode:
 
 - creators prepare campaign pages and launch plans
 - recruiters reserve or confirm codes and start building squads
-- traders learn bonding-curve risk, fees, rewards, Leagues, and claims
-- squads organize around recruiter-connected growth
+- traders learn bonding curve risk, fees, rewards, Leagues, and claims
+- squads organize around recruiter connected growth
 - communities gather around official campaign links and War Room activity
 - users learn how to avoid fake claim links, fake support accounts, and lookalike domains
 
@@ -44,7 +44,7 @@ Do not treat it as:
 
 - a promise that every prepared campaign will succeed
 - a guarantee that early users will win rewards
-- a shortcut around anti-abuse checks
+- a shortcut around anti abuse checks
 - an endorsement of any specific campaign
 - a reason to trust random links, fake claim pages, or fake support accounts
 - financial advice
@@ -74,8 +74,8 @@ A prepared creator should be able to answer:
 2. Where are the official links?
 3. What is the launch plan?
 4. How will the community avoid fake links?
-5. What happens at the 50 BNB graduation threshold?
-6. What does the 80/20 graduation split mean?
+5. What happens at the active graduation target?
+6. How does the live distribution policy work after finalize?
 
 Read next: **[Create a Campaign](/creators/create-a-campaign)** and **[Creator Earnings](/creators/creator-earnings)**.
 
@@ -93,7 +93,7 @@ Recruiter preparation includes:
 - explaining Squad Pool participation to linked users
 - understanding attribution, link locking, routed rewards, and weekly claims
 
-Recruiters should understand that linked users become part of the recruiter-connected squad while attribution is active. Recruiter rewards and Squad Pool rewards are separate systems: recruiters earn through recruiter routing, while eligible squad members compete for Squad Pool rewards.
+Recruiters should understand that linked users become part of the recruiter connected squad while attribution is active. Recruiter rewards and Squad Pool rewards are separate systems: recruiters earn through recruiter routing, while eligible squad members compete for Squad Pool rewards.
 
 Recruiters do **not** receive an extra skim from Squad Pool distributions.
 
@@ -105,9 +105,9 @@ Traders can use Prepare Mode to understand the battlefield before capital is at 
 
 Trader preparation includes learning:
 
-- bonding-curve trading risk
+- bonding curve trading risk
 - how the 2.00% buy and sell fee works
-- how campaigns graduate at 50 BNB
+- how campaigns graduate under the active deployment policy
 - how UpVotes affect visibility
 - how League categories work
 - how Warzone BNB Airdrops work
@@ -115,7 +115,7 @@ Trader preparation includes learning:
 - how reward claims work
 - how to avoid fake claim links and impersonators
 
-Traders should not trade only because they expect a reward. Rewards depend on eligibility, caps, available pools, anti-abuse checks, and claim windows.
+Traders should not trade only because they expect a reward. Rewards depend on eligibility, caps, available pools, anti abuse checks, and claim windows.
 
 Read next: **[Trading Basics](/traders/trading-basics)** and **[Risk Disclosure](/security/risk-disclosure)**.
 
@@ -136,11 +136,11 @@ When full live deployment opens, prepared campaigns can move into the active cam
 That is when the battlefield becomes more active around:
 
 - live campaign deployment
-- bonding-curve buying and selling
+- bonding curve buying and selling
 - UpVote competition
 - graduation attempts
 - League standings
-- recruiter-linked activity
+- recruiter linked activity
 - Squad Pool scoring
 - Warzone BNB Airdrop eligibility
 - weekly reward epochs and claims
@@ -154,9 +154,9 @@ Before full live deployment, users should be able to answer these questions:
 | Role | Checklist |
 | --- | --- |
 | Creator | Is my campaign identity ready, are my links official, and do I understand graduation economics? |
-| Trader | Do I understand bonding-curve risk, fees, slippage, rewards, and claim safety? |
+| Trader | Do I understand bonding curve risk, fees, slippage, rewards, and claim safety? |
 | Recruiter | Do I understand attribution, link locking, routed rewards, squad formation, and claims? |
-| Squad member | Do I understand that Squad Pool rewards are contribution-based, capped, and claim-based? |
+| Squad member | Do I understand that Squad Pool rewards are contribution based, capped, and claim based? |
 | Everyone | Am I using only official MemeWarzone links and docs? |
 
 Official site:
