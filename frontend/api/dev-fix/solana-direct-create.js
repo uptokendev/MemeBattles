@@ -6,6 +6,7 @@ import { requireWalletActionAuth } from "../lib/walletActionAuth.js";
 import {
   TickerReservationError,
   canonicalClusterForChain,
+  isTickerReservationSchemaMissing,
   mapTickerReservationRow,
   normalizeTicker,
   refreshExpiredTickerReservations,
@@ -1228,6 +1229,12 @@ export async function solanaDirectCreateV4(req, res) {
       httpStatus: 400,
     });
   } catch (error) {
+    if (isTickerReservationSchemaMissing(error)) {
+      return json(res, 503, {
+        error: "Solana Direct create requires the canonical ticker reservation schema in Postgres.",
+        code: "SOLANA_DIRECT_RESERVATION_SCHEMA_MISSING",
+      });
+    }
     if (error instanceof SolanaDirectCreateError || error instanceof TickerReservationError || error?.httpStatus) {
       return json(res, error.httpStatus || 409, {
         error: String(error.message || error),
