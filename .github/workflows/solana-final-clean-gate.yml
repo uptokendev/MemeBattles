@@ -57,6 +57,7 @@ jobs:
           rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
           cargo test -p memewarzone_solana --lib
           rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+          rm -rf target
 
       - name: Enforce generated diff scope
         run: |
