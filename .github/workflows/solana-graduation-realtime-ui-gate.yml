@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/solana-graduation-realtime-ui-gate.yml
       - scripts/solana/finalize-graduation-realtime-ui.mjs
+      - scripts/solana/finalize-graduation-realtime-ui-v2.mjs
 
 permissions:
   contents: write
@@ -27,7 +28,7 @@ jobs:
             realtime-indexer/package-lock.json
 
       - name: Apply asserted graduation realtime/UI transform
-        run: node scripts/solana/finalize-graduation-realtime-ui.mjs
+        run: node scripts/solana/finalize-graduation-realtime-ui-v2.mjs
 
       - name: Assert source diff scope
         shell: bash
