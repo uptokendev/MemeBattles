@@ -12,15 +12,16 @@ function replaceOnce(before, after, label) {
 
 // The finalizer itself uses template literals to hold injected TSX. Escape the two
 // TSX template interpolations so they survive as source instead of executing while
-// the finalizer runs.
+// the finalizer runs. Match only the stable prefix so physical line breaks do not
+// affect the safety check.
 replaceOnce(
-  'description: `Minimum received: ${\\n',
-  'description: `Minimum received: \\${\\n',
+  'description: `Minimum received: ${',
+  'description: `Minimum received: \\${',
   "minimum received interpolation",
 );
 replaceOnce(
-  'description: `Tx: ${result.signature.slice(0, 12)}…`,',
-  'description: `Tx: \\${result.signature.slice(0, 12)}…`,',
+  'description: `Tx: ${',
+  'description: `Tx: \\${',
   "transaction signature interpolation",
 );
 
