@@ -45,6 +45,7 @@ import { withAdminOrOps, withInternalAuth, getAuthEnforceSnapshot } from "./lib/
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
 import { solanaDirectCreateV4 } from "./dev-fix/solana-direct-create.js";
 import { solanaTradeAuthorizationV1, solanaTradeStatus } from "./dev-fix/solana-trade-authorization-v1.js";
+import { solanaGraduationAuthorizationV1 } from "./dev-fix/solana-graduation-authorization-v1.js";
 import { solanaVoteIngest } from "./dev-fix/solana-vote-ingest.js";
 import {
   followedDrafts,
@@ -415,6 +416,7 @@ router.all("/drafts/:draftId/archive", wrap(draftArchive));
 router.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 router.all("/solana/direct-create", wrap(solanaDirectCreateV4));
 router.all("/solana/trade-authorize", wrap(solanaTradeAuthorizationV1));
+router.all("/solana/graduation-authorize", wrap(solanaGraduationAuthorizationV1));
 router.all("/solana/trade-status", wrap(solanaTradeStatus));
 router.all("/solana/vote-ingest", wrap(solanaVoteIngest));
 router.all("/drafts/:draftId/follow", wrap(signedDraftFollow));

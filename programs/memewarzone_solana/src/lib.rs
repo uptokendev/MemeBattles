@@ -68,6 +68,9 @@ pub use authorized_create::*;
 pub mod authorized_trade;
 pub use authorized_trade::*;
 
+pub mod graduation;
+pub use graduation::*;
+
 #[program]
 pub mod memewarzone_solana {
     use super::*;
@@ -350,6 +353,19 @@ pub mod memewarzone_solana {
     /// Exact tokens in → SOL out from sol vault. Gross refund from curve; fee retained in vault.
     pub fn sell_tokens(ctx: Context<SellTokens>, args: SellTokensArgs) -> Result<()> {
         sell_tokens_handler(ctx, args)
+    }
+
+    /// Starts an atomic graduation transaction and stages only the bounded DAMM v2 liquidity.
+    pub fn begin_graduation(
+        ctx: Context<BeginGraduation>,
+        args: BeginGraduationArgs,
+    ) -> Result<()> {
+        begin_graduation_handler(ctx, args)
+    }
+
+    /// Verifies the deterministic DAMM v2 pool + permanently locked position, then finalizes Campaign.
+    pub fn confirm_graduation(ctx: Context<ConfirmGraduation>) -> Result<()> {
+        confirm_graduation_handler(ctx)
     }
 }
 
@@ -1526,4 +1542,34 @@ pub enum LaunchpadError {
     InvalidTradeAuthorization,
     #[msg("Trade authorization deadline has expired.")]
     TradeAuthorizationExpired,
+    #[msg("Solana campaign graduation is paused.")]
+    GraduationPaused,
+    #[msg("Signed graduation authorization is missing, malformed, or does not match this transaction.")]
+    InvalidGraduationAuthorization,
+    #[msg("Signed graduation authorization has expired.")]
+    GraduationAuthorizationExpired,
+    #[msg("Signed native graduation target is invalid.")]
+    InvalidGraduationTarget,
+    #[msg("Campaign has not reached the signed native graduation target or exhausted the bonding curve.")]
+    GraduationThresholdNotMet,
+    #[msg("Graduation must create/lock Meteora DAMM v2 and confirm in the same Solana transaction.")]
+    GraduationAtomicityRequired,
+    #[msg("The deterministic Meteora DAMM v2 customizable pool is invalid.")]
+    InvalidMeteoraPool,
+    #[msg("The deterministic Meteora DAMM v2 position is invalid.")]
+    InvalidMeteoraPosition,
+    #[msg("The Meteora DAMM v2 pool already exists before graduation begins.")]
+    MeteoraPoolAlreadyExists,
+    #[msg("The Meteora DAMM v2 position already exists before graduation begins.")]
+    MeteoraPositionAlreadyExists,
+    #[msg("Meteora graduation liquidity was not permanently locked.")]
+    MeteoraLiquidityNotLocked,
+    #[msg("Graduation staging token account must be empty before liquidity is released.")]
+    GraduationStagingNotEmpty,
+    #[msg("Graduation liquidity amount resolved to zero.")]
+    GraduationLiquidityZero,
+    #[msg("Graduation assets did not reconcile with the deterministic Meteora pool.")]
+    GraduationAssetMismatch,
+    #[msg("Meteora initial pool price drifted beyond the allowed bonding-curve tolerance.")]
+    GraduationPriceDrift,
 }

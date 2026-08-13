@@ -2414,13 +2414,16 @@ const toSeconds = (ts: number): number => {
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
-  // Solana campaigns stay in Bonding until Solana graduation/P1 trading exists.
-  const contractGraduated = isSolanaPage ? false : contractGraduatedEarly;
+  // Solana switches stage only on the real on-chain graduated flag or the indexed
+  // CampaignGraduated event — never merely because progress reached 100%.
+  const contractGraduated = isSolanaPage
+    ? Boolean(solanaCurve?.graduated || rtStats?.graduated)
+    : contractGraduatedEarly;
   const verifiedMarketStage = isSolanaPage ? null : unifiedMarket.state?.marketStage;
   // Do NOT treat TOPAZ_PENDING alone as DEX UI — that broke bonding metrics when
   // handoff rows existed without a live pair. Require on-chain graduation or ACTIVE.
   const isDexStage = isSolanaPage
-    ? false
+    ? contractGraduated
     : contractGraduated ||
       verifiedMarketStage === "TOPAZ_ACTIVE" ||
       (verifiedMarketStage === "TOPAZ_DEGRADED" && contractGraduated);
@@ -2432,6 +2435,16 @@ const toSeconds = (ts: number): number => {
       contractGraduated ||
       (verifiedMarketStage === "TOPAZ_ACTIVE" &&
         (Boolean(unifiedMarket.state?.tradingEnabled) || Boolean(unifiedMarket.state?.pairAddress || onChainPair)));
+  const [solanaGraduationTransitionAt, setSolanaGraduationTransitionAt] = useState<number | null>(null);
+  const previousSolanaGraduatedRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!isSolanaPage) return;
+    const previous = previousSolanaGraduatedRef.current;
+    if (previous === false && contractGraduated) {
+      setSolanaGraduationTransitionAt(Date.now());
+    }
+    previousSolanaGraduatedRef.current = contractGraduated;
+  }, [isSolanaPage, contractGraduated]);
 
 
 
@@ -2541,6 +2554,10 @@ const toSeconds = (ts: number): number => {
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
+    if (isSolanaPage && rtStats?.graduationLiquidityNative != null && rtStats.graduationLiquidityNative > 0) {
+      // Initial DAMM v2 TVL is approximately two equal-value sides at handoff.
+      return `${formatCompact(rtStats.graduationLiquidityNative * 2)} ${nativeUnit}`;
+    }
     // On-chain Topaz pool liquidity only (2 × WBNB reserve). No external DEX APIs.
     if (topazMarket.liquidityBnb != null && Number.isFinite(topazMarket.liquidityBnb) && topazMarket.liquidityBnb > 0) {
       return `${formatCompact(topazMarket.liquidityBnb)} ${nativeUnit}`;
@@ -2565,8 +2582,8 @@ const toSeconds = (ts: number): number => {
 
 
   const stagePill = isSolanaPage
-    ? solanaCurve?.graduated
-      ? "Graduated · Solana"
+    ? contractGraduated
+      ? "Graduated · Meteora"
       : "Bonding · Solana"
     : isTopazTradingActive
       ? "Graduated · Topaz"
@@ -2584,6 +2601,14 @@ const toSeconds = (ts: number): number => {
 
         // ── Solana bonding quotes (exact SOL-in buy / exact tokens-in sell) ──
         if (isSolanaPage) {
+          if (contractGraduated) {
+            setEffectiveTokenWei(0n);
+            setEffectiveBnbWei(0n);
+            setQuoteWei(null);
+            setQuoteError("Graduated to Meteora DAMM v2. Loading the verified pool route…");
+            setQuoteLoading(false);
+            return;
+          }
           const solStr = String(tradeAmount || "").trim();
           if (!solStr || solStr === "0") {
             setEffectiveTokenWei(0n);
@@ -2993,13 +3018,20 @@ const toSeconds = (ts: number): number => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb, isSolanaPage, solanaCurve]);
+  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb, isSolanaPage, solanaCurve, contractGraduated]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
 
     // ── Solana bonding: exact SOL in (buy) / exact tokens in (sell) ─────────
     if (isSolanaPage) {
+      if (contractGraduated) {
+        toast({
+          title: "Meteora market active",
+          description: "This campaign has graduated. Bonding-curve trading is closed; the verified Meteora route is being loaded.",
+        });
+        return;
+      }
       try {
         setTradePending(true);
         const { getSolanaProvider } = await import("@/lib/solanaWallet");
@@ -3522,10 +3554,15 @@ const toSeconds = (ts: number): number => {
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
       <GraduationExplosion
         campaignAddress={campaign?.campaign}
-        active={isTopazTradingActive}
+        active={isSolanaPage ? false : isTopazTradingActive}
         transitionAt={
-          unifiedMarket.stageTransition?.to === "TOPAZ_ACTIVE" ? unifiedMarket.stageTransition.at : null
+          isSolanaPage
+            ? solanaGraduationTransitionAt
+            : unifiedMarket.stageTransition?.to === "TOPAZ_ACTIVE"
+              ? unifiedMarket.stageTransition.at
+              : null
         }
+        venueLabel={isSolanaPage ? "Meteora DAMM v2" : "Topaz"}
       />
       <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[220px]">
         <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[220px]">

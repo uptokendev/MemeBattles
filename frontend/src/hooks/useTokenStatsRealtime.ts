@@ -10,6 +10,12 @@ export type TokenStatsRealtime = {
   marketcapBnb: number | null; // native market cap (BNB or SOL; legacy field name)
   vol24hBnb: number; // native 24h volume (legacy field name)
   soldTokens: number | null;
+  graduated?: boolean;
+  dex?: string | null;
+  dexPool?: string | null;
+  dexPosition?: string | null;
+  graduationLiquidityNative?: number | null;
+  graduatedAt?: string | null;
   updatedAt?: string;
 };
 
@@ -116,6 +122,14 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
         marketcapBnb: num(data.marketcapBnb) ?? prev?.marketcapBnb ?? null,
         vol24hBnb: Number(num(data.vol24hBnb) ?? prev?.vol24hBnb ?? 0),
         soldTokens: prev?.soldTokens ?? null,
+        graduated: data.graduated === true ? true : prev?.graduated,
+        dex: data.dex != null ? String(data.dex) : prev?.dex ?? null,
+        dexPool: data.dexPool != null ? String(data.dexPool) : prev?.dexPool ?? null,
+        dexPosition: data.dexPosition != null ? String(data.dexPosition) : prev?.dexPosition ?? null,
+        graduationLiquidityNative:
+          num(data.graduationLiquiditySol) ?? prev?.graduationLiquidityNative ?? null,
+        graduatedAt:
+          data.graduatedAt != null ? String(data.graduatedAt) : prev?.graduatedAt ?? null,
         updatedAt: prev?.updatedAt,
       }));
     };
