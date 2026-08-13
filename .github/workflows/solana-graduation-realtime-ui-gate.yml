@@ -1,0 +1,71 @@
+name: Solana graduation realtime UI gate
+
+on:
+  push:
+    branches:
+      - agent/solana-graduation-meteora-work
+    paths:
+      - .github/workflows/solana-graduation-realtime-ui-gate.yml
+      - scripts/solana/finalize-graduation-realtime-ui.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  realtime-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            realtime-indexer/package-lock.json
+
+      - name: Apply asserted graduation realtime/UI transform
+        run: node scripts/solana/finalize-graduation-realtime-ui.mjs
+
+      - name: Assert source diff scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only > /tmp/grad-realtime-ui-files.txt
+          cat /tmp/grad-realtime-ui-files.txt
+          test "$(wc -l < /tmp/grad-realtime-ui-files.txt)" -eq 5
+          grep -qx 'realtime-indexer/src/solanaIndexer.ts' /tmp/grad-realtime-ui-files.txt
+          grep -qx 'realtime-indexer/src/server.ts' /tmp/grad-realtime-ui-files.txt
+          grep -qx 'frontend/src/hooks/useTokenStatsRealtime.ts' /tmp/grad-realtime-ui-files.txt
+          grep -qx 'frontend/src/components/token/GraduationExplosion.tsx' /tmp/grad-realtime-ui-files.txt
+          grep -qx 'frontend/src/pages/TokenDetails.tsx' /tmp/grad-realtime-ui-files.txt
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --no-audit --no-fund
+
+      - name: Frontend build
+        run: npm --prefix frontend run build
+
+      - name: Install realtime indexer dependencies
+        run: npm ci --prefix realtime-indexer --no-audit --no-fund
+
+      - name: Realtime indexer build
+        run: npm --prefix realtime-indexer run build
+
+      - name: Commit gated graduation realtime/UI source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            realtime-indexer/src/solanaIndexer.ts \
+            realtime-indexer/src/server.ts \
+            frontend/src/hooks/useTokenStatsRealtime.ts \
+            frontend/src/components/token/GraduationExplosion.tsx \
+            frontend/src/pages/TokenDetails.tsx
+          git commit -m "feat(solana): surface real Meteora graduation"
+          git pull --rebase origin agent/solana-graduation-meteora-work
+          git push origin HEAD:agent/solana-graduation-meteora-work
