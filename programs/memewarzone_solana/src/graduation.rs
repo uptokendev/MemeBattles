@@ -744,7 +744,10 @@ fn validate_price_tolerance(
     Ok(())
 }
 
-fn validate_generation_binding(campaign: &Campaign, generation: &GenerationConfig) -> Result<()> {
+fn validate_generation_binding(
+    campaign: &Campaign,
+    generation: &Account<'_, GenerationConfig>,
+) -> Result<()> {
     require_keys_eq!(
         campaign.generation_config,
         generation.key(),
