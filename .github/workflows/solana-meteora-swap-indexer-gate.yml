@@ -1,0 +1,83 @@
+name: Solana Meteora swap indexer gate
+
+on:
+  push:
+    branches:
+      - agent/solana-meteora-swap-indexer
+    paths:
+      - .github/workflows/solana-meteora-swap-indexer-gate.yml
+      - scripts/solana/finalize-meteora-swap-indexer.mjs
+      - realtime-indexer/src/meteoraSwapIndexer.ts
+
+permissions:
+  contents: write
+
+jobs:
+  meteora-swap-indexer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Install indexer dependencies and pin DAMM v2 decoder stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix realtime-indexer --no-audit --no-fund
+          npm install --prefix realtime-indexer --save-exact --no-audit --no-fund \
+            @coral-xyz/anchor@0.31.1 \
+            @meteora-ag/cp-amm-sdk@1.4.5 \
+            @solana/web3.js@1.95.4
+
+      - name: Verify official EvtSwap2 IDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd realtime-indexer
+          node --input-type=module <<'NODE'
+          import { BorshCoder, EventParser } from '@coral-xyz/anchor';
+          import { CpAmmIdl } from '@meteora-ag/cp-amm-sdk';
+          import { PublicKey } from '@solana/web3.js';
+          const events = Array.isArray(CpAmmIdl.events) ? CpAmmIdl.events : [];
+          const names = events.map((event) => String(event.name || '').replace(/_/g, '').toLowerCase());
+          if (!names.includes('evtswap2')) throw new Error('official DAMM v2 IDL is missing EvtSwap2');
+          new EventParser(
+            new PublicKey('cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'),
+            new BorshCoder(CpAmmIdl),
+          );
+          console.log('METEORA_EVT_SWAP2_IDL_PASS');
+          NODE
+
+      - name: Apply asserted startup transform
+        run: node scripts/solana/finalize-meteora-swap-indexer.mjs
+
+      - name: Realtime indexer build
+        run: npm --prefix realtime-indexer run build
+
+      - name: Assert intended diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only > /tmp/meteora-indexer-files.txt
+          cat /tmp/meteora-indexer-files.txt
+          test "$(wc -l < /tmp/meteora-indexer-files.txt)" -eq 3
+          grep -qx 'realtime-indexer/package.json' /tmp/meteora-indexer-files.txt
+          grep -qx 'realtime-indexer/package-lock.json' /tmp/meteora-indexer-files.txt
+          grep -qx 'realtime-indexer/src/main.ts' /tmp/meteora-indexer-files.txt
+
+      - name: Commit gated Meteora swap indexer integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add realtime-indexer/package.json realtime-indexer/package-lock.json realtime-indexer/src/main.ts
+          git commit -m "feat(solana): start persistent Meteora swap indexer"
+          git pull --rebase origin agent/solana-meteora-swap-indexer
+          git push origin HEAD:agent/solana-meteora-swap-indexer
