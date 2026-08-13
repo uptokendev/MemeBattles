@@ -1,0 +1,74 @@
+name: Solana Meteora trading UI gate
+
+on:
+  push:
+    branches:
+      - agent/solana-graduation-meteora-work
+    paths:
+      - .github/workflows/solana-meteora-trading-ui-gate.yml
+      - scripts/solana/finalize-meteora-trading-ui.mjs
+      - frontend/src/lib/solanaMeteoraTrade.ts
+
+permissions:
+  contents: write
+
+jobs:
+  meteora-trading-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies and pin DAMM v2 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix frontend --no-audit --no-fund
+          npm install --prefix frontend --save-exact --no-audit --no-fund \
+            @meteora-ag/cp-amm-sdk@1.4.5 \
+            bn.js@5.2.2
+
+      - name: Apply asserted Meteora trading UI transform
+        run: node scripts/solana/finalize-meteora-trading-ui.mjs
+
+      - name: Verify dependency pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const pkg = require('./frontend/package.json');
+          if (pkg.dependencies?.['@meteora-ag/cp-amm-sdk'] !== '1.4.5') throw new Error('cp-amm-sdk must be pinned to 1.4.5');
+          if (pkg.dependencies?.['bn.js'] !== '5.2.2') throw new Error('bn.js must be pinned to 5.2.2');
+          console.log('METEORA_DEPENDENCIES_PINNED');
+          NODE
+
+      - name: Frontend build
+        run: npm --prefix frontend run build
+
+      - name: Assert intended diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only > /tmp/meteora-ui-files.txt
+          cat /tmp/meteora-ui-files.txt
+          test "$(wc -l < /tmp/meteora-ui-files.txt)" -eq 3
+          grep -qx 'frontend/package.json' /tmp/meteora-ui-files.txt
+          grep -qx 'frontend/package-lock.json' /tmp/meteora-ui-files.txt
+          grep -qx 'frontend/src/pages/TokenDetails.tsx' /tmp/meteora-ui-files.txt
+
+      - name: Commit gated Meteora UI integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package.json frontend/package-lock.json frontend/src/pages/TokenDetails.tsx
+          git commit -m "feat(solana): trade graduated tokens on Meteora"
+          git pull --rebase origin agent/solana-graduation-meteora-work
+          git push origin HEAD:agent/solana-graduation-meteora-work
