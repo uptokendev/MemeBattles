@@ -710,7 +710,9 @@ function publicAccounts({ creatorWallet, onchain, pdas }) {
 async function handlePreflight(body, res) {
   const creatorWallet = validateCreatorWallet(body.creatorWallet);
   const chainId = Number(body.chainId || 101);
-  // Read policy without throwing creator cooldown/live-cap so the frontend can show the same rich arm dialog as BNB.\n  // Begin/authorize still enforce the limits again server-side to close races.\n  const runtime = await loadRuntime({ creatorWallet, chainId, skipCreatorLaunchLimits: true });
+  // Read policy without throwing creator cooldown/live-cap so the frontend can show the same rich arm dialog as BNB.
+  // Begin/authorize still enforce the limits again server-side to close races.
+  const runtime = await loadRuntime({ creatorWallet, chainId, skipCreatorLaunchLimits: true });
   if (body.graduationTargetUsdMicros != null && String(body.graduationTargetUsdMicros).trim()) {
     validateGraduationTarget(
       runtime.onchain.generation,
