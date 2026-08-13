@@ -29,7 +29,7 @@ use anchor_lang::{
 use anchor_spl::token::{
     self,
     spl_token::{self, state::Account as SplTokenAccount},
-    Burn, Transfer,
+    Burn, Token, Transfer,
 };
 
 use crate::{
@@ -190,7 +190,7 @@ pub struct BeginGraduation<'info> {
     /// CHECK: Instructions sysvar used for detached Ed25519 auth and atomic-order proof.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
     pub instructions: UncheckedAccount<'info>,
-    pub token_program: Program<'info, token::Token>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -241,7 +241,7 @@ pub struct ConfirmGraduation<'info> {
     pub meteora_token_vault: UncheckedAccount<'info>,
     /// CHECK: WSOL DAMM v2 vault, deterministic PDA and SPL state checked.
     pub meteora_native_vault: UncheckedAccount<'info>,
-    pub token_program: Program<'info, token::Token>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
