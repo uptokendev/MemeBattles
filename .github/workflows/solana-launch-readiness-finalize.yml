@@ -65,7 +65,9 @@ jobs:
           rustc +1.79.0 --version
 
       - name: Run Solana Rust unit tests
-        run: cargo +1.79.0 test --locked -p memewarzone_solana
+        run: |
+          cargo +1.79.0 test -p memewarzone_solana
+          rm -f Cargo.lock
 
       - name: Show launch-readiness diff
         run: |
