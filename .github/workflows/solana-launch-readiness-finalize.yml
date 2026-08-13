@@ -6,6 +6,7 @@ on:
       - agent/solana-launch-readiness
     paths:
       - scripts/solana_launch_readiness_finalize.py
+      - scripts/run_solana_launch_readiness_finalize.py
       - .github/workflows/solana-launch-readiness-finalize.yml
 
 permissions:
@@ -36,10 +37,12 @@ jobs:
             realtime-indexer/package-lock.json
 
       - name: Validate finalizer syntax
-        run: python3 -m py_compile scripts/solana_launch_readiness_finalize.py
+        run: |
+          python3 -m py_compile scripts/solana_launch_readiness_finalize.py
+          python3 -m py_compile scripts/run_solana_launch_readiness_finalize.py
 
       - name: Apply asserted source transforms
-        run: python3 scripts/solana_launch_readiness_finalize.py
+        run: python3 scripts/run_solana_launch_readiness_finalize.py
 
       - name: Verify patch hygiene
         run: git diff --check
