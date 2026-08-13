@@ -1,5 +1,6 @@
 name: Solana Meteora trading UI diagnostic
 
+# Diagnostic revision 2: reproduce against the latest transformer wrapper.
 on:
   push:
     branches:
