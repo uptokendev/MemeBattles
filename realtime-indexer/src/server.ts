@@ -362,7 +362,7 @@ app.get("/health", async (_req, res) => {
       ok: true,
       db: r.rows[0].ok,
       // Bump when shipping indexer loop fixes so deploy can be confirmed from /health.
-      indexerBuild: "lp-fees-harvest-action-2026-08-05",
+      indexerBuild: "solana-v4-trades-2026-08-13",
       normalScope: ENV.INDEXER_NORMAL_SCOPE,
     });
   } catch (e: any) {
@@ -613,8 +613,10 @@ app.get("/api/ably/token", async (req, res) => {
       return res.json(tokenRequest);
     }
 
-    const campaign = String(req.query.campaign || "").toLowerCase();
-    if (!/^0x[a-f0-9]{40}$/.test(campaign)) {
+    const campaignRaw = String(req.query.campaign || "").trim();
+    const isSolanaCampaign = chainId === 101 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(campaignRaw);
+    const campaign = isSolanaCampaign ? campaignRaw : campaignRaw.toLowerCase();
+    if (!isSolanaCampaign && !/^0x[a-f0-9]{40}$/.test(campaign)) {
       return res.status(400).json({ error: "Invalid campaign address" });
     }
 
@@ -2183,11 +2185,20 @@ async function handleTokenTrades(req: any, res: any) {
 
   if ((r.rowCount ?? 0) > 0) {
     res.json(r.rows);
-    // Still repair cursor in the background when history exists.
-    void import("./emptyTradeCursorRewind.js")
-      .then(({ rewindEmptyCampaignTradeCursor }) => rewindEmptyCampaignTradeCursor(chainId, campaign))
-      .catch(() => undefined);
+    // EVM history can still repair its cursor in the background. Solana uses the
+    // dedicated program-signature indexer and must never enter eth_getLogs recovery.
+    if (chainId !== 101) {
+      void import("./emptyTradeCursorRewind.js")
+        .then(({ rewindEmptyCampaignTradeCursor }) => rewindEmptyCampaignTradeCursor(chainId, campaign))
+        .catch(() => undefined);
+    }
     return;
+  }
+
+  if (chainId === 101) {
+    // Fast empty response while the Solana V4 indexer catches up. The frontend
+    // polls and subscribes to Ably, so this converges without blocking the page.
+    return res.json([]);
   }
 
   // Empty history: bounded ensure+backfill (paid RPC). Graduated tokens often need

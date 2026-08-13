@@ -28,6 +28,7 @@ import { resolveMarketIdentity, resolveMarketIdentityAcrossEvm } from "@/lib/mar
 import { getReadProvider } from "@/lib/readProvider";
 
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
 import { GraduationExplosion } from "@/components/token/GraduationExplosion";
@@ -72,7 +73,7 @@ import {
   saveLocalTopazTrades,
 } from "@/lib/localTopazTrades";
 import { fetchTopazTradeReports, reportTopazTrade } from "@/lib/topazTradeReports";
-import { mergeTradePoints, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
+import { mergeTradePoints, normalizeTradeTxHash, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -333,57 +334,87 @@ type TxRow = {
   txHash: string;
 };
 
-function parseRawOrDecimalWei(value: unknown, kind: "ether" | "token"): bigint {
-  if (typeof value === "bigint") return value;
-  const raw = String(value ?? "0").trim();
-  if (/^\d+$/.test(raw) && raw.length > (kind === "ether" ? 12 : 18)) {
+function parseRawOrDecimalUnits(rawValue: unknown, decimalValue: unknown, decimals: number): bigint {
+  if (typeof rawValue === "bigint") return rawValue;
+  const raw = String(rawValue ?? "").trim();
+  if (/^\d+$/.test(raw)) {
     try {
       return BigInt(raw);
     } catch {
-      return 0n;
+      // fall through
     }
   }
   try {
-    return kind === "ether" ? ethers.parseEther(raw || "0") : ethers.parseUnits(raw || "0", TOKEN_DECIMALS);
+    return ethers.parseUnits(String(decimalValue ?? "0"), decimals);
   } catch {
     return 0n;
   }
+}
+
+function tradeTimestampSeconds(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value > 1e12 ? value / 1000 : value);
+  const raw = String(value ?? "").trim();
+  if (!raw) return Math.floor(Date.now() / 1000);
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.floor(n > 1e12 ? n / 1000 : n) : Math.floor(Date.now() / 1000);
+  }
+  const ms = new Date(raw).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : Math.floor(Date.now() / 1000);
 }
 
 function mergeCurveTradePoints(prev: CurveTradePoint[], next: CurveTradePoint[]) {
   return mergeTradePoints(prev, next);
 }
 
-function confirmedRowsToCurvePoints(rows: any[], campaignAddress: string): CurveTradePoint[] {
-  const campaign = String(campaignAddress || "").toLowerCase();
+function confirmedRowsToCurvePoints(
+  rows: any[],
+  campaignAddress: string,
+  chainId: number,
+  tokenDecimals: number,
+): CurveTradePoint[] {
+  const solana = isSolanaChainId(chainId);
+  const campaign = solana ? String(campaignAddress || "").trim() : String(campaignAddress || "").toLowerCase();
+  const nativeDecimals = solana ? 9 : 18;
   return (Array.isArray(rows) ? rows : [])
     .map((row) => {
       const type = String(row?.side || row?.type || "").toLowerCase() === "sell" ? "sell" : "buy";
-      const tokensWei = parseRawOrDecimalWei(row?.token_amount ?? row?.tokensWei ?? row?.tokens, "token");
-      const nativeWei = parseRawOrDecimalWei(row?.bnb_amount ?? row?.nativeWei ?? row?.native, "ether");
-      const tokens = Number(ethers.formatUnits(tokensWei, TOKEN_DECIMALS));
-      const bnb = Number(ethers.formatEther(nativeWei));
+      const tokensWei = parseRawOrDecimalUnits(
+        row?.token_amount_raw ?? row?.tokensWei,
+        row?.token_amount ?? row?.tokens,
+        tokenDecimals,
+      );
+      const nativeWei = parseRawOrDecimalUnits(
+        row?.bnb_amount_raw ?? row?.nativeWei,
+        row?.bnb_amount ?? row?.native,
+        nativeDecimals,
+      );
+      const tokens = Number(ethers.formatUnits(tokensWei, tokenDecimals));
+      const native = Number(ethers.formatUnits(nativeWei, nativeDecimals));
+      const txHash = normalizeTradeTxHash(row?.tx_hash || row?.txHash);
       return {
         type,
-        from: String(row?.wallet || row?.trader || row?.from || "").toLowerCase(),
+        from: solana
+          ? String(row?.wallet || row?.trader || row?.from || "").trim()
+          : String(row?.wallet || row?.trader || row?.from || "").toLowerCase(),
         to: campaign,
         tokensWei,
         nativeWei,
-        pricePerToken: tokens > 0 ? bnb / tokens : 0,
-        timestamp: Number(row?.timestamp ?? row?.block_time ?? Math.floor(Date.now() / 1000)),
-        txHash: String(row?.tx_hash || row?.txHash || "").toLowerCase(),
+        pricePerToken: Number(row?.price_bnb ?? row?.pricePerToken) || (tokens > 0 ? native / tokens : 0),
+        timestamp: tradeTimestampSeconds(row?.timestamp ?? row?.block_time ?? row?.time),
+        txHash,
         blockNumber: Number(row?.block_number ?? row?.blockNumber ?? 0),
         logIndex: Number(row?.log_index ?? row?.logIndex ?? 0),
       } satisfies CurveTradePoint;
     })
-    .filter((point) => /^0x[a-f0-9]{64}$/i.test(point.txHash) && point.tokensWei > 0n && point.nativeWei >= 0n);
+    .filter((point) => Boolean(point.txHash) && point.tokensWei > 0n && point.nativeWei >= 0n);
 }
 
 function getExplorerBase(chainId?: number): string {
   const id = Number(chainId ?? 0);
+  if (id === 101) return "https://explorer.solana.com";
   if (id === 56) return "https://bscscan.com";
   if (id === 97) return "https://testnet.bscscan.com";
-  // Sensible default
   return "https://bscscan.com";
 }
 
@@ -1081,7 +1112,8 @@ const TokenDetails = () => {
         if (!Number.isFinite(n)) return `${raw} ${nativeUnit}`;
         if (n >= 1) return `${n.toFixed(4)} ${nativeUnit}`;
         if (n >= 0.01) return `${n.toFixed(6)} ${nativeUnit}`;
-        return `${n.toPrecision(4)} ${nativeUnit}`;
+        const pretty = raw.replace(/0+$/, "").replace(/\.$/, "");
+        return `${pretty || "0"} ${nativeUnit}`;
       }
       if (wei === 0n) return `0 ${nativeUnit}`;
       const raw = ethers.formatUnits(wei, 18);
@@ -1113,7 +1145,8 @@ const TokenDetails = () => {
         if (n > 0 && n < 1e-9) return `<0.000000001 ${nativeUnit}`;
         if (n >= 1) return `${n.toFixed(4)} ${nativeUnit}`;
         if (n >= 0.01) return `${n.toFixed(6)} ${nativeUnit}`;
-        return `${n.toPrecision(4)} ${nativeUnit}`;
+        const pretty = raw.replace(/0+$/, "").replace(/\.$/, "");
+        return `${pretty || "0"} ${nativeUnit}`;
       }
       if (wei === 0n) return `0 ${nativeUnit}`;
       const raw = ethers.formatEther(wei);
@@ -1228,6 +1261,10 @@ const TokenDetails = () => {
   const formatPriceBnb = (p?: number | null): string => {
     if (p == null || !Number.isFinite(p) || p < 0) return "—";
     if (p === 0) return `0 ${nativeUnit}`;
+    if (isSolanaPage && p > 0 && p < 0.01) {
+      const pretty = p.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+      return `${pretty || "0"} ${nativeUnit}`;
+    }
     if (p >= 1) return `${p.toFixed(2)} ${nativeUnit}`;
     if (p >= 0.01) return `${p.toFixed(6)} ${nativeUnit}`;
     if (p >= 1e-6) return `${p.toFixed(8)} ${nativeUnit}`;
@@ -1276,29 +1313,32 @@ const TokenDetails = () => {
     return `${weeks}w`;
   };
 
-  // Read curve trades for transactions + analytics (live mode)
-  // Hook returns CurveTrade[] (your "@/types/token" Transaction type)
-const resolvedCampaignAddress = useMemo(() => {
-  const value = String(campaign?.campaign || campaignAddr || "").trim().toLowerCase();
-  return /^0x[a-fA-F0-9]{40}$/.test(value) ? value : "";
-}, [campaign?.campaign, campaignAddr]);
+  // Read curve trades for transactions + analytics (BNB + Solana).
+  const resolvedCampaignAddress = useMemo(() => {
+    const raw = String(campaign?.campaign || campaignAddr || "").trim();
+    if (isSolanaPage) {
+      return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw) ? raw : "";
+    }
+    const value = raw.toLowerCase();
+    return /^0x[a-f0-9]{40}$/.test(value) ? value : "";
+  }, [campaign?.campaign, campaignAddr, isSolanaPage]);
 
-const hasValidCampaignAddress = Boolean(resolvedCampaignAddress);
-const localTradeStorageAddress = useMemo(
-  () =>
-    isSolanaPage
-      ? String(campaign?.campaign || campaignAddr || "").trim()
-      : resolvedCampaignAddress,
-  [campaign?.campaign, campaignAddr, isSolanaPage, resolvedCampaignAddress],
-);
+  const hasValidCampaignAddress = Boolean(resolvedCampaignAddress);
+  const localTradeStorageAddress = useMemo(
+    () =>
+      isSolanaPage
+        ? String(campaign?.campaign || campaignAddr || "").trim()
+        : resolvedCampaignAddress,
+    [campaign?.campaign, campaignAddr, isSolanaPage, resolvedCampaignAddress],
+  );
 
-const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(
-  hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
-  {
-    chainId: chainIdForStorage,
-    enabled: hasValidCampaignAddress && !isSolanaPage,
-  },
-);
+  const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(
+    hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+    {
+      chainId: chainIdForStorage,
+      enabled: hasValidCampaignAddress,
+    },
+  );
   const liveCurvePointsSafe = useMemo<CurveTradePoint[]>(
     () => (Array.isArray(liveCurvePoints) ? liveCurvePoints : []),
     [liveCurvePoints],
@@ -1317,10 +1357,16 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     const onConfirmed = (event: Event) => {
       const detail = (event as CustomEvent)?.detail || {};
       const kind = String(detail?.kind || "").toLowerCase();
-      const confirmedCampaign = String(detail?.campaignAddress || "").toLowerCase();
+      const confirmedRaw = String(detail?.campaignAddress || "").trim();
+      const confirmedCampaign = isSolanaPage ? confirmedRaw : confirmedRaw.toLowerCase();
       if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== resolvedCampaignAddress) return;
 
-      const points = confirmedRowsToCurvePoints(detail?.trades || [], resolvedCampaignAddress);
+      const points = confirmedRowsToCurvePoints(
+        detail?.trades || [],
+        resolvedCampaignAddress,
+        chainIdForStorage,
+        tokenDecimals,
+      );
       if (!points.length) return;
 
       setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, points));
@@ -1357,7 +1403,7 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
 
     window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
     return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
-  }, [hasValidCampaignAddress, resolvedCampaignAddress]);
+  }, [hasValidCampaignAddress, resolvedCampaignAddress, isSolanaPage, chainIdForStorage, tokenDecimals]);
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
   const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
@@ -1655,6 +1701,21 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     unifiedMarket.trades,
   ]);
 
+  const solanaSpotNative = useMemo(() => {
+    if (!isSolanaPage || !solanaCurve || solanaCurve.economicsVersion < 2) return null;
+    const decimals = Number(solanaCurve.tokenDecimals || 6);
+    const tokenScale = 10 ** decimals;
+    const soldWhole = Number(solanaCurve.soldTokens) / tokenScale;
+    const baseLamports = Number(solanaCurve.basePriceLamports);
+    const slopeRaw = Number(solanaCurve.priceSlopeLamports);
+    if (![soldWhole, baseLamports, slopeRaw].every(Number.isFinite)) return null;
+    const slopeLamports = solanaCurve.economicsVersion >= 3
+      ? (slopeRaw * soldWhole) / 1_000_000_000
+      : slopeRaw * soldWhole;
+    const spotSol = (baseLamports + slopeLamports) / 1_000_000_000;
+    return Number.isFinite(spotSol) && spotSol > 0 ? spotSol : null;
+  }, [isSolanaPage, solanaCurve]);
+
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
   hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
@@ -1678,6 +1739,7 @@ const toSeconds = (ts: number): number => {
 
     // End price: Topaz spot (post-grad) → realtime → curve price → latest trade.
     const endPrice =
+      (isSolanaPage && solanaSpotNative != null ? solanaSpotNative : undefined) ??
       (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice != null && metrics.currentPrice > 0n
@@ -1745,7 +1807,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [contractGraduatedEarly, marketTradePoints, metrics, rtStats?.lastPriceBnb, topazMarket.priceBnb]);
+  }, [contractGraduatedEarly, isSolanaPage, marketTradePoints, metrics, rtStats?.lastPriceBnb, solanaSpotNative, topazMarket.priceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -1763,10 +1825,16 @@ const toSeconds = (ts: number): number => {
     // Bonding source of truth = on-chain curve (sold * currentPrice), not Ably/rt
     // market_stats which can drift after Topaz-oriented indexer changes.
     let bondingMcapLabel: string | null = null;
-    if (!contractGraduatedEarly && metrics?.currentPrice != null && metrics?.sold != null) {
+    if (!contractGraduatedEarly && metrics?.sold != null) {
       try {
-        const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** BigInt(isSolanaPage ? tokenDecimals : 18);
-        bondingMcapLabel = formatBnbFromWei(mcWei);
+        if (isSolanaPage && solanaSpotNative != null) {
+          const soldWhole = Number(ethers.formatUnits(metrics.sold, tokenDecimals));
+          const mcapNative = soldWhole * solanaSpotNative;
+          bondingMcapLabel = Number.isFinite(mcapNative) ? `${formatCompact(mcapNative)} ${nativeUnit}` : null;
+        } else if (metrics.currentPrice != null) {
+          const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
+          bondingMcapLabel = formatBnbFromWei(mcWei);
+        }
       } catch {
         bondingMcapLabel = null;
       }
@@ -1802,11 +1870,13 @@ const toSeconds = (ts: number): number => {
       price:
         topazPrice != null && Number.isFinite(topazPrice) && topazPrice > 0
           ? formatPriceBnb(topazPrice)
-          : !contractGraduatedEarly && metrics?.currentPrice != null
-            ? formatPriceFromWei(metrics.currentPrice)
-            : rtPrice != null && Number.isFinite(rtPrice)
-              ? formatPriceBnb(rtPrice)
-              : formatPriceFromWei(metrics?.currentPrice ?? null),
+          : !contractGraduatedEarly && isSolanaPage && solanaSpotNative != null
+            ? formatPriceBnb(solanaSpotNative)
+            : !contractGraduatedEarly && metrics?.currentPrice != null
+              ? formatPriceFromWei(metrics.currentPrice)
+              : rtPrice != null && Number.isFinite(rtPrice)
+                ? formatPriceBnb(rtPrice)
+                : formatPriceFromWei(metrics?.currentPrice ?? null),
       liquidity:
         topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
           ? `${formatCompact(topazLiquidity)} ${nativeUnit}`
@@ -1815,56 +1885,47 @@ const toSeconds = (ts: number): number => {
       // Timeframe analytics (native volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, contractGraduatedEarly, curveReserveWei, metrics, summary, timeframeTiles, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb, nativeUnit]);
-  // Keep USD reference price available for UI conversions and ATH tracking.
-  // (Cached + throttled inside the hook.)
-  const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, metrics, nativeUnit, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
+  // Native/USD reference for TokenDetails conversions: BNB on EVM, SOL on Solana.
+  const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(!isSolanaPage);
+  const { price: liveSolUsdPrice, loading: solUsdLoading } = useSolUsdPrice(isSolanaPage);
+  const nativeUsdPrice = isSolanaPage ? liveSolUsdPrice : bnbUsdPrice;
+  const nativeUsdLoading = isSolanaPage ? solUsdLoading : bnbUsdLoading;
 
-// Normalize in case the hook returns a scaled value (e.g., 1e18-based).
-const bnbUsd = useMemo(() => {
-  if (bnbUsdPrice == null) return null;
-  const n = Number(bnbUsdPrice);
-  if (!Number.isFinite(n) || n <= 0) return null;
-
-  // BNB price in USD should never be anywhere near 100k+. If it is, it's almost certainly scaled.
-  if (n > 100_000) return n / 1e18;
-
-  return n;
-}, [bnbUsdPrice]);
+  const nativeUsd = useMemo(() => {
+    if (nativeUsdPrice == null) return null;
+    const n = Number(nativeUsdPrice);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (!isSolanaPage && n > 100_000) return n / 1e18;
+    return n;
+  }, [isSolanaPage, nativeUsdPrice]);
 
   const marketCapDisplay = useMemo(() => {
-    const bnbLabel = tokenData.marketCap;
-
-    if (displayDenom === "BNB") return bnbLabel;
-
-    // Prefer the same BNB figure already chosen for tokenData (on-chain for bonding).
-    const mcBnb =
-      parseBnbLabel(bnbLabel) ??
+    const nativeLabel = tokenData.marketCap;
+    if (displayDenom === "BNB") return nativeLabel;
+    const marketCapNative =
+      parseBnbLabel(nativeLabel) ??
       (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
         ? Number(rtStats.marketcapBnb)
         : null);
-    if (mcBnb == null) return "—";
+    if (marketCapNative == null) return "—";
+    if (!nativeUsd) return nativeUsdLoading ? "…" : "—";
+    return formatCompactUsd(marketCapNative * nativeUsd);
+  }, [displayDenom, nativeUsd, nativeUsdLoading, rtStats?.marketcapBnb, tokenData.marketCap]);
 
-    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
-
-    return formatCompactUsd(mcBnb * bnbUsd);
-  }, [displayDenom, tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
-
-  // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
   const marketCapUsdLabel = useMemo(() => {
-    const mcBnb =
+    const marketCapNative =
       parseBnbLabel(tokenData.marketCap) ??
       (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
         ? Number(rtStats.marketcapBnb)
         : null);
-    if (mcBnb == null) return null;
-    if (!bnbUsd) return null;
-    const usd = mcBnb * bnbUsd;
+    if (marketCapNative == null || !nativeUsd) return null;
+    const usd = marketCapNative * nativeUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
-  }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
+  }, [nativeUsd, rtStats?.marketcapBnb, tokenData.marketCap]);
 
   const priceDisplay = useMemo(() => {
-    // Prefer numeric spot sources first so micro prices never collapse via label truncation.
+    const fromSolanaSpot = isSolanaPage ? solanaSpotNative : null;
     const fromWei =
       metrics?.currentPrice != null && metrics.currentPrice > 0n
         ? Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18))
@@ -1877,10 +1938,9 @@ const bnbUsd = useMemo(() => {
       rtStats?.lastPriceBnb != null && Number.isFinite(rtStats.lastPriceBnb) && rtStats.lastPriceBnb > 0
         ? Number(rtStats.lastPriceBnb)
         : null;
-    const fromUnified =
-      unifiedMarket.summary?.last_price_bnb != null
-        ? Number(unifiedMarket.summary.last_price_bnb)
-        : null;
+    const fromUnified = unifiedMarket.summary?.last_price_bnb != null
+      ? Number(unifiedMarket.summary.last_price_bnb)
+      : null;
     const fromTrades = (() => {
       const pts = Array.isArray(marketTradePoints) ? marketTradePoints : [];
       for (let i = pts.length - 1; i >= 0; i -= 1) {
@@ -1890,7 +1950,8 @@ const bnbUsd = useMemo(() => {
       return null;
     })();
 
-    const priceBnb =
+    const priceNative =
+      fromSolanaSpot ??
       (contractGraduatedEarly ? fromTopaz : null) ??
       fromWei ??
       fromRt ??
@@ -1898,48 +1959,44 @@ const bnbUsd = useMemo(() => {
       fromTrades ??
       parseBnbLabel(tokenData.price);
 
-    if (priceBnb == null || !Number.isFinite(priceBnb) || priceBnb <= 0) {
+    if (priceNative == null || !Number.isFinite(priceNative) || priceNative <= 0) {
       return tokenData.price && tokenData.price !== "—" ? tokenData.price : "—";
     }
-
-    if (displayDenom === "BNB") return formatPriceBnb(priceBnb);
-
-    if (!bnbUsd) return bnbUsdLoading ? "…" : formatPriceBnb(priceBnb);
-    return formatCompactUsd(priceBnb * bnbUsd);
+    if (displayDenom === "BNB") return formatPriceBnb(priceNative);
+    if (!nativeUsd) return nativeUsdLoading ? "…" : formatPriceBnb(priceNative);
+    return formatCompactUsd(priceNative * nativeUsd);
   }, [
-    bnbUsd,
-    bnbUsdLoading,
     contractGraduatedEarly,
     displayDenom,
+    isSolanaPage,
     marketTradePoints,
     metrics?.currentPrice,
+    nativeUsd,
+    nativeUsdLoading,
     rtStats?.lastPriceBnb,
+    solanaSpotNative,
     tokenData.price,
     topazMarket.priceBnb,
     unifiedMarket.summary?.last_price_bnb,
   ]);
 
   const volumeDisplay = useMemo(() => {
-    const bnbLabel = tokenData.metrics[selectedTimeframe]?.volume ?? "—";
-
-    if (displayDenom === "BNB") return bnbLabel;
-
-    const volBnb = parseBnbLabel(bnbLabel);
-    if (volBnb == null) return "—";
-
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
-
-    return formatCompactUsd(volBnb * bnbUsdPrice);
-  }, [displayDenom, tokenData.metrics, selectedTimeframe, bnbUsdPrice, bnbUsdLoading]);
+    const nativeLabel = tokenData.metrics[selectedTimeframe]?.volume ?? "—";
+    if (displayDenom === "BNB") return nativeLabel;
+    const volumeNative = parseBnbLabel(nativeLabel);
+    if (volumeNative == null) return "—";
+    if (!nativeUsd) return nativeUsdLoading ? "…" : "—";
+    return formatCompactUsd(volumeNative * nativeUsd);
+  }, [displayDenom, nativeUsd, nativeUsdLoading, selectedTimeframe, tokenData.metrics]);
 
   const formatBnbOrUsd = useMemo(() => {
-    return (bnb: number | null | undefined): string => {
-      if (bnb == null || !Number.isFinite(bnb)) return "—";
-      if (displayDenom === "BNB") return `${formatCompact(bnb)} ${nativeUnit}`;
-      if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
-      return formatCompactUsd(bnb * bnbUsdPrice);
+    return (native: number | null | undefined): string => {
+      if (native == null || !Number.isFinite(native)) return "—";
+      if (displayDenom === "BNB") return `${formatCompact(native)} ${nativeUnit}`;
+      if (!nativeUsd) return nativeUsdLoading ? "…" : "—";
+      return formatCompactUsd(native * nativeUsd);
     };
-  }, [displayDenom, bnbUsdPrice, bnbUsdLoading, nativeUnit]);
+  }, [displayDenom, nativeUnit, nativeUsd, nativeUsdLoading]);
 
   const flywheel = useMemo(() => {
     if (isSolanaPage && solanaCurve) {
@@ -1954,7 +2011,13 @@ const bnbUsd = useMemo(() => {
         sellVolume: formatBnbOrUsd(sellVol),
         netFlow: formatBnbOrUsd(netFlow),
         feesEstimated: formatBnbOrUsd(fees),
-        buyers: String(solanaCurve.buyerCount),
+        buyers: String(
+          new Set(
+            marketTradePoints
+              .filter((point) => point.type === "buy" && point.from)
+              .map((point) => String(point.from).trim()),
+          ).size || Number(solanaCurve.buyerCount),
+        ),
         feeRate: `${(Number(solanaCurve.buyFeeBps) / 100).toFixed(2)}%`,
         lpRate: "—",
       };
@@ -1975,7 +2038,7 @@ const bnbUsd = useMemo(() => {
       feeRate: metrics ? `${(Number(metrics.protocolFeeBps) / 100).toFixed(2)}%` : "—",
       lpRate: metrics ? `${(Number(metrics.liquidityBps) / 100).toFixed(2)}%` : "—",
     };
-  }, [activity, metrics, formatBnbOrUsd, isSolanaPage, solanaCurve]);
+  }, [activity, metrics, formatBnbOrUsd, isSolanaPage, marketTradePoints, solanaCurve]);
 
   const holderDistribution = useMemo(() => {
     const shortAddr = (a: string) =>
@@ -1985,8 +2048,9 @@ const bnbUsd = useMemo(() => {
     // NOTE: This is a best-effort view and does not include transfers.
     const balances = new Map<string, bigint>();
 
-    for (const p of combinedCurvePointsSafe) {
-      const addr = (p.from || "").toLowerCase();
+    for (const p of marketTradePoints) {
+      const rawAddr = String(p.from || "").trim();
+      const addr = isSolanaPage ? rawAddr : rawAddr.toLowerCase();
       if (!addr) continue;
 
       const prev = balances.get(addr) ?? 0n;
@@ -2038,7 +2102,7 @@ const bnbUsd = useMemo(() => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [combinedCurvePointsSafe, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
+  }, [isSolanaPage, marketTradePoints, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
@@ -2157,12 +2221,15 @@ const bnbUsd = useMemo(() => {
             (state.graduationTargetUsdMicros * 1_000_000_000n) / priceScaled;
         }
 
-        // V2 marginal spot is lamports per WHOLE token. soldTokens is raw SPL units.
-        // V3 fixed-point slope will override this in the economics upgrade; keep V1/V2 dimensional math correct here.
+        // Marginal spot stored in CampaignMetrics is integer lamports. V3 keeps
+        // the precise sub-lamport component in solanaSpotNative for display/chart math.
         const tokenScale = 10n ** BigInt(state.tokenDecimals);
+        const slopeDenominator = state.economicsVersion >= 3
+          ? tokenScale * 1_000_000_000n
+          : tokenScale;
         const spot =
           state.basePriceLamports +
-          (state.priceSlopeLamports * state.soldTokens) / tokenScale;
+          (state.priceSlopeLamports * state.soldTokens) / slopeDenominator;
 
         setMetrics({
           sold: state.soldTokens,
