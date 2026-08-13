@@ -1,0 +1,58 @@
+name: Solana V3 deployment tooling
+
+on:
+  push:
+    branches:
+      - agent/solana-v3-deployment-tooling
+    paths:
+      - scripts/solana_v3_deployment_tooling_finalize.py
+      - .github/workflows/solana-v3-deployment-tooling.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v3-deployment-tooling
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply asserted V3 deployment-tooling transform
+        run: python3 scripts/solana_v3_deployment_tooling_finalize.py
+
+      - name: Syntax and hygiene checks
+        run: |
+          git diff --check
+          node --check tests/solana/devnet-protocol-state.cjs
+          node --check tests/solana/devnet-protocol-verify.cjs
+          node --check tests/solana/devnet-generation-manifest-diagnose.cjs
+          node --check tests/solana/verify-solana-devnet.cjs
+          node --check scripts/solana/prepare-devnet-deployment.mjs
+
+      - name: Assert historical V2 manifest remains intact
+        run: |
+          test -f config/solana/devnet-generation-v1.json
+          test -f config/solana/devnet-generation-v3.json
+          grep -q '"economicsVersion": 2' config/solana/devnet-generation-v1.json
+          grep -q '"economicsVersion": 3' config/solana/devnet-generation-v3.json
+
+      - name: Commit gated tooling changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tests/solana/devnet-protocol-state.cjs \
+            tests/solana/devnet-protocol-verify.cjs \
+            tests/solana/devnet-generation-manifest-diagnose.cjs \
+            tests/solana/verify-solana-devnet.cjs \
+            scripts/solana/prepare-devnet-deployment.mjs
+          git commit -m "fix(solana): point deployment tooling at V3 generation"
+          git push origin HEAD:agent/solana-v3-deployment-tooling
