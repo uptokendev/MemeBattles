@@ -425,6 +425,12 @@ function shortenAddress(addr?: string | null): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+function normalizeProfileAddressKey(address: unknown, chainId: number): string {
+  const raw = String(address ?? "").trim();
+  if (!raw) return "";
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
+}
+
 function formatTimeAgo(ts?: number | null): string {
   if (ts == null) return "—";
   const raw = Number(ts);
@@ -1541,14 +1547,14 @@ const TokenDetails = () => {
         "0xc49895ee36ad19aa5cb1405761f6272ad7be6357",
         "0xb989a99823ea96552c3e3198a40cdbf682edf1aa",
       ]
-        .map((value) => String(value || "").toLowerCase())
+        .map((value) => normalizeProfileAddressKey(value, chainIdNum))
         .filter(Boolean),
     );
 
     const uniq = Array.from(
       new Set(
         txs
-          .map((t) => (t.makerAddress ? String(t.makerAddress).toLowerCase() : ""))
+          .map((t) => normalizeProfileAddressKey(t.makerAddress, chainIdNum))
           .filter((addr) => addr && !protocolSkip.has(addr) && !makerProfileKnownRef.current.has(addr)),
       ),
     ).slice(0, 6);
@@ -3161,6 +3167,11 @@ const toSeconds = (ts: number): number => {
           console.warn("[TokenDetails] solana local trade history", histErr);
         }
 
+        setTradeAmount("0");
+        setQuoteWei(null);
+        setQuoteError(null);
+        setEffectiveTokenWei(0n);
+        setEffectiveBnbWei(0n);
         setSolanaBalanceTick((n) => n + 1);
       } catch (e: any) {
         console.error("[TokenDetails] Solana trade failed", e);
@@ -4155,7 +4166,7 @@ const toSeconds = (ts: number): number => {
                     </thead>
                     <tbody>
                       {txs.map((tx) => {
-                        const addr = (tx.makerAddress || "").toLowerCase();
+                        const addr = normalizeProfileAddressKey(tx.makerAddress, chainIdForStorage);
                         const prof = addr ? makerProfiles[addr] : null;
                         const avatar = prof?.avatarUrl || "/placeholder.svg";
                         const label = (prof?.displayName && prof.displayName.trim().length)
