@@ -1,15 +1,15 @@
 exit_code=1
 --- transformer ---
-file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587553415:8
+file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587725159:8
   if (count !== 1) throw new Error(`${label}: expected exactly one match, found ${count}`);
                          ^
 
-Error: clear empty Meteora quote: expected exactly one match, found 0
-    at replaceOnce (file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587553415:8:26)
-    at file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587553415:30:1
+Error: clear empty Meteora quote: expected exactly one match, found 2
+    at replaceOnce (file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587725159:8:26)
+    at file:///tmp/mw-finalize-meteora-trading-ui-fixed.mjs?v=1786587725159:30:1
     at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
     at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
-    at async file:///home/runner/work/MemeBattles/MemeBattles/scripts/solana/finalize-meteora-trading-ui-v2.mjs:35:1
+    at async file:///home/runner/work/MemeBattles/MemeBattles/scripts/solana/finalize-meteora-trading-ui-v2.mjs:63:1
 
 Node.js v20.20.2
 --- changed files ---
