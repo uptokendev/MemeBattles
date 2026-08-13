@@ -16,10 +16,7 @@ function replaceExactCount(before, after, expected, label) {
   script = script.split(before).join(after);
 }
 
-// TokenDetails' current empty-input reset is indented twelve spaces inside the
-// Solana branch. The original finalizer snapshot expected fourteen spaces in both
-// its before/after templates. Normalize those two template lines before executing
-// the otherwise fail-closed transform.
+// Normalize the indentation snapshot used by the original finalizer.
 replaceExactCount(
   "`              setEffectiveTokenWei(0n);\\n              setEffectiveBnbWei(0n);\\n              setQuoteWei(null);",
   "`            setEffectiveTokenWei(0n);\\n            setEffectiveBnbWei(0n);\\n            setQuoteWei(null);",
@@ -38,10 +35,21 @@ replaceOnce(
   "empty quote Meteora indentation",
 );
 
-// The finalizer itself uses a template literal to hold injected TSX. Escape the
-// two nested TSX template literals completely (opening backtick, interpolation,
-// and closing backtick) so the finalizer parses while the generated TSX remains
-// unchanged.
+// The four-line reset exists twice in current TokenDetails. The empty-input path
+// is uniquely followed by setQuoteLoading(false), so bind both finalizer templates
+// to that fifth line instead of weakening replaceOnce semantics.
+replaceOnce(
+  "`            setEffectiveTokenWei(0n);\\n            setEffectiveBnbWei(0n);\\n            setQuoteWei(null);\\n            setQuoteError(null);`",
+  "`            setEffectiveTokenWei(0n);\\n            setEffectiveBnbWei(0n);\\n            setQuoteWei(null);\\n            setQuoteError(null);\\n            setQuoteLoading(false);`",
+  "empty quote before uniqueness",
+);
+replaceOnce(
+  "`            setEffectiveTokenWei(0n);\\n            setEffectiveBnbWei(0n);\\n            setQuoteWei(null);\\n            setSolanaMeteoraQuote(null);\\n            setQuoteError(null);`",
+  "`            setEffectiveTokenWei(0n);\\n            setEffectiveBnbWei(0n);\\n            setQuoteWei(null);\\n            setSolanaMeteoraQuote(null);\\n            setQuoteError(null);\\n            setQuoteLoading(false);`",
+  "empty quote after uniqueness",
+);
+
+// Escape nested TSX template literals held inside the finalizer's outer template.
 replaceOnce(
   "description: `Minimum received: ${",
   "description: \\`Minimum received: \\${",
@@ -61,4 +69,4 @@ replaceOnce(
 const fixedPath = "/tmp/mw-finalize-meteora-trading-ui-fixed.mjs";
 fs.writeFileSync(fixedPath, script);
 await import(`${pathToFileURL(fixedPath).href}?v=${Date.now()}`);
-console.log("[meteora-trading-ui-v2] current TokenDetails drift normalized and nested TSX templates escaped");
+console.log("[meteora-trading-ui-v2] exact empty-input path bound; nested TSX templates escaped");
