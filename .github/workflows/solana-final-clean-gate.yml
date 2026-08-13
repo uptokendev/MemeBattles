@@ -1,0 +1,81 @@
+name: Solana final clean gate
+
+on:
+  push:
+    branches:
+      - agent/solana-launch-final-clean
+
+permissions:
+  contents: write
+
+jobs:
+  clean-gate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.4'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            realtime-indexer/package-lock.json
+            tools/solana-meteora-graduation/package-lock.json
+
+      - name: Pin npm
+        run: npm install --global npm@10.9.2
+
+      - name: Regenerate frontend lockfile
+        run: npm --prefix frontend install --package-lock-only --ignore-scripts
+
+      - name: Clean frontend install and build
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: Clean realtime indexer install and build
+        run: |
+          npm --prefix realtime-indexer ci
+          npm --prefix realtime-indexer run build
+
+      - name: Clean Meteora operator install and syntax check
+        run: |
+          npm --prefix tools/solana-meteora-graduation ci
+          node --check tools/solana-meteora-graduation/graduate.mjs
+          node --check frontend/api/dev-fix/solana-graduation-authorization-v1.js
+          node --check frontend/api/server.mjs
+
+      - name: Pin Rust 1.79 and run program tests
+        run: |
+          rustup toolchain install 1.79.0 --profile minimal
+          rustup override set 1.79.0
+          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+          cargo test -p memewarzone_solana --lib
+          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+
+      - name: Enforce generated diff scope
+        run: |
+          changed="$(git status --short | awk '{print $2}')"
+          unexpected="$(printf '%s\n' "$changed" | grep -v '^frontend/package-lock.json$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected generated changes:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+
+      - name: Commit generated frontend lockfile
+        run: |
+          if git diff --quiet -- frontend/package-lock.json; then
+            echo "frontend/package-lock.json already deterministic"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          git commit -m "chore(solana): lock Meteora frontend dependencies"
+          git push origin HEAD:agent/solana-launch-final-clean
