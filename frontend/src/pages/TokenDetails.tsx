@@ -526,6 +526,7 @@ const TokenDetails = () => {
       setTradeAmount("0");
       setQuoteWei(null);
       setQuoteError(null);
+      setSolanaMeteoraQuote(null);
       setEffectiveTokenWei(0n);
       setEffectiveBnbWei(0n);
       setTradeInputDenom(next === "sell" ? "TOKEN" : "BNB");
@@ -715,6 +716,7 @@ const TokenDetails = () => {
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
   /** Solana V4 campaign curve snapshot (quotes / vaults / lock). */
   const [solanaCurve, setSolanaCurve] = useState<import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null>(null);
+  const [solanaMeteoraQuote, setSolanaMeteoraQuote] = useState<import("@/lib/solanaMeteoraTrade").SolanaMeteoraQuote | null>(null);
   const [solanaBalanceTick, setSolanaBalanceTick] = useState(0);
 
   // Phantom/Solflare/Backpack accountChanged is separate from the EVM WalletContext.
@@ -2601,19 +2603,13 @@ const toSeconds = (ts: number): number => {
 
         // ── Solana bonding quotes (exact SOL-in buy / exact tokens-in sell) ──
         if (isSolanaPage) {
-          if (contractGraduated) {
-            setEffectiveTokenWei(0n);
-            setEffectiveBnbWei(0n);
-            setQuoteWei(null);
-            setQuoteError("Graduated to Meteora DAMM v2. Loading the verified pool route…");
-            setQuoteLoading(false);
-            return;
-          }
+          const meteoraStage = contractGraduated;
           const solStr = String(tradeAmount || "").trim();
           if (!solStr || solStr === "0") {
             setEffectiveTokenWei(0n);
             setEffectiveBnbWei(0n);
             setQuoteWei(null);
+            setSolanaMeteoraQuote(null);
             setQuoteError(null);
             setQuoteLoading(false);
             return;
@@ -2646,6 +2642,65 @@ const toSeconds = (ts: number): number => {
           } = await import("@/lib/solanaTradeV1");
 
           const dec = Number(curve?.tokenDecimals ?? 6);
+
+          if (meteoraStage) {
+            const mint = String(curve?.mint || campaign?.token || campaign?.campaign || "");
+            if (!mint) throw new Error("Solana launch mint is unavailable.");
+            const { quoteSolanaMeteoraExactIn, quoteSolanaMeteoraForDesiredOutput } = await import(
+              "@/lib/solanaMeteoraTrade"
+            );
+            const poolAddress = rtStats?.dexPool || null;
+            let q: import("@/lib/solanaMeteoraTrade").SolanaMeteoraQuote;
+            if (tradeTab === "buy") {
+              if (tradeInputDenom === "BNB") {
+                q = await quoteSolanaMeteoraExactIn({
+                  side: "buy",
+                  mint,
+                  tokenDecimals: dec,
+                  amountInRaw: parseSolLamports(solStr),
+                  slippagePct: SLIPPAGE_PCT,
+                  poolAddress,
+                });
+              } else {
+                q = await quoteSolanaMeteoraForDesiredOutput({
+                  side: "buy",
+                  mint,
+                  tokenDecimals: dec,
+                  desiredOutputRaw: parseTok(solStr, dec),
+                  slippagePct: SLIPPAGE_PCT,
+                  poolAddress,
+                });
+              }
+            } else if (tradeInputDenom === "BNB") {
+              q = await quoteSolanaMeteoraForDesiredOutput({
+                side: "sell",
+                mint,
+                tokenDecimals: dec,
+                desiredOutputRaw: parseSolLamports(solStr),
+                slippagePct: SLIPPAGE_PCT,
+                poolAddress,
+              });
+            } else {
+              q = await quoteSolanaMeteoraExactIn({
+                side: "sell",
+                mint,
+                tokenDecimals: dec,
+                amountInRaw: parseTok(solStr, dec),
+                slippagePct: SLIPPAGE_PCT,
+                poolAddress,
+              });
+            }
+            if (!cancelled) {
+              setSolanaMeteoraQuote(q);
+              setEffectiveTokenWei(tradeTab === "buy" ? q.amountOutRaw : q.amountInRaw);
+              setEffectiveBnbWei(tradeTab === "buy" ? q.amountInRaw : q.amountOutRaw);
+              setQuoteWei(tradeTab === "buy" ? q.amountInRaw : q.amountOutRaw);
+              setQuoteError(q.amountOutRaw <= 0n ? "Meteora quote returned zero output." : null);
+            }
+            return;
+          }
+          if (!cancelled) setSolanaMeteoraQuote(null);
+
           // BNB-parity V2 defaults (1B supply, base=1 lamport/whole token). Live curve overrides.
           const econ = Number(curve?.economicsVersion ?? 2);
           const basePrice = curve?.basePriceLamports ?? 1n;
@@ -3018,7 +3073,7 @@ const toSeconds = (ts: number): number => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb, isSolanaPage, solanaCurve, contractGraduated]);
+  }, [readProvider, campaign?.campaign, campaign?.token, chainIdForStorage, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, onChainLaunched, topazSlippageBps, unifiedMarket.state?.lastError, unifiedMarket.summary?.last_price_bnb, isSolanaPage, solanaCurve, contractGraduated, rtStats?.dexPool]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
@@ -3026,10 +3081,84 @@ const toSeconds = (ts: number): number => {
     // ── Solana bonding: exact SOL in (buy) / exact tokens in (sell) ─────────
     if (isSolanaPage) {
       if (contractGraduated) {
-        toast({
-          title: "Meteora market active",
-          description: "This campaign has graduated. Bonding-curve trading is closed; the verified Meteora route is being loaded.",
-        });
+        try {
+          setTradePending(true);
+          const quote = solanaMeteoraQuote;
+          if (!quote) throw new Error("Wait for the Meteora quote to load before submitting.");
+          const { getSolanaProvider } = await import("@/lib/solanaWallet");
+          const provider = getSolanaProvider();
+          const trader = String(provider?.publicKey?.toString?.() || "");
+          if (!trader) {
+            toast({
+              title: "Connect Solana wallet",
+              description: "Connect Phantom / Solflare / Backpack to trade on Meteora.",
+            });
+            window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+            return;
+          }
+          if (quote.side === "buy" && bnbBalanceWei != null && quote.amountInRaw > bnbBalanceWei) {
+            throw new Error("Insufficient SOL balance for this Meteora buy.");
+          }
+          if (quote.side === "sell" && tokenBalanceWei != null && quote.amountInRaw > tokenBalanceWei) {
+            throw new Error("Insufficient token balance for this Meteora sell.");
+          }
+          const mint = String(solanaCurve?.mint || campaign.token || campaign.campaign);
+          const { executeSolanaMeteoraSwap } = await import("@/lib/solanaMeteoraTrade");
+          toast({
+            title: quote.side === "buy" ? "Submitting Meteora buy" : "Submitting Meteora sell",
+            description: `Minimum received: ${
+              quote.side === "buy"
+                ? formatTokenFromWei(quote.minimumAmountOutRaw) + " " + tokenData.ticker
+                : formatBnbFromWei(quote.minimumAmountOutRaw)
+            }.`,
+          });
+          const result = await executeSolanaMeteoraSwap({
+            quote,
+            mint,
+            tokenDecimals: Number(solanaCurve?.tokenDecimals ?? 6),
+            walletAddress: trader,
+            poolAddress: rtStats?.dexPool || quote.pool,
+          });
+          toast({
+            title: quote.side === "buy" ? "Meteora buy confirmed" : "Meteora sell confirmed",
+            description: `Tx: ${result.signature.slice(0, 12)}…`,
+          });
+
+          try {
+            const tokenRaw = quote.side === "buy" ? quote.amountOutRaw : quote.amountInRaw;
+            const nativeRaw = quote.side === "buy" ? quote.amountInRaw : quote.amountOutRaw;
+            const decimals = Number(solanaCurve?.tokenDecimals ?? 6);
+            const tokenHuman = Number(ethers.formatUnits(tokenRaw > 0n ? tokenRaw : 1n, decimals));
+            const nativeHuman = Number(ethers.formatUnits(nativeRaw, 9));
+            const point: CurveTradePoint = {
+              type: quote.side,
+              from: trader,
+              to: mint,
+              tokensWei: tokenRaw,
+              nativeWei: nativeRaw,
+              pricePerToken: tokenHuman > 0 ? nativeHuman / tokenHuman : 0,
+              timestamp: Math.floor(Date.now() / 1000),
+              txHash: result.signature,
+              blockNumber: 0,
+              logIndex: SYNTHETIC_LOG_INDEX_MIN + (localTopazTrades.length % 1000),
+            };
+            const storageKey = String(solanaCurve?.campaignAddress || campaign.campaign || mint);
+            setLocalTopazTrades(appendLocalTopazTrade(chainIdForStorage, storageKey, point));
+          } catch (historyError) {
+            console.warn("[TokenDetails] Meteora optimistic trade history", historyError);
+          }
+          setSolanaMeteoraQuote(null);
+          setSolanaBalanceTick((value) => value + 1);
+        } catch (e: any) {
+          console.error("[TokenDetails] Meteora trade failed", e);
+          toast({
+            title: "Meteora trade failed",
+            description: String(e?.message || e || "Transaction failed."),
+            variant: "destructive",
+          });
+        } finally {
+          setTradePending(false);
+        }
         return;
       }
       try {
