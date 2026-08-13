@@ -25,6 +25,9 @@
     "job:cleanup-keep-factory": "tsx scripts/cleanupKeepFactory.ts --execute"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@meteora-ag/cp-amm-sdk": "1.4.5",
+    "@solana/web3.js": "1.95.4",
     "ably": "^2.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
