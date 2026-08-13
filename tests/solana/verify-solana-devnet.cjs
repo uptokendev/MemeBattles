@@ -11,7 +11,7 @@ const COMPAT_PRELOAD = path.join(__dirname, "web3-loader-compat.cjs");
 const IDENTITY_OUTPUT = path.join(ROOT, "deployments/solana-devnet.deployment-identity.json");
 const PROTOCOL_OUTPUT = path.join(ROOT, "deployments/solana-devnet.protocol-state.json");
 const CURRENT_OUTPUT = path.join(ROOT, "deployments/solana-devnet.current.json");
-const GENERATION_MANIFEST = path.join(ROOT, "config/solana/devnet-generation-v1.json");
+const GENERATION_MANIFEST = path.join(ROOT, "config/solana/devnet-generation-v3.json");
 
 function fail(message) {
   throw new Error(`[verify-solana-devnet] ${message}`);

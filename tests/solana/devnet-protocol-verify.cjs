@@ -11,7 +11,7 @@ const { AnchorProvider, BN, Program, Wallet } = anchor;
 
 const ROOT = path.resolve(__dirname, "../..");
 const DEFAULT_RPC = "https://api.devnet.solana.com";
-const DEFAULT_MANIFEST = path.join(ROOT, "config/solana/devnet-generation-v1.json");
+const DEFAULT_MANIFEST = path.join(ROOT, "config/solana/devnet-generation-v3.json");
 const DEFAULT_IDL = path.join(ROOT, "target/idl/memewarzone_solana.json");
 const DEFAULT_OUTPUT = path.join(ROOT, "deployments/solana-devnet.protocol-state.json");
 const DEFAULT_ANCHOR_TOML = path.join(ROOT, "Anchor.toml");
