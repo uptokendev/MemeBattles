@@ -1,0 +1,61 @@
+name: Solana graduation core gate
+
+on:
+  push:
+    branches:
+      - agent/solana-graduation-meteora-work
+    paths:
+      - .github/workflows/solana-graduation-gate.yml
+      - scripts/solana/finalize-graduation-branch.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  graduation-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust 1.79
+        uses: dtolnay/rust-toolchain@1.79.0
+
+      - name: Apply asserted program transform
+        run: node scripts/solana/finalize-graduation-branch.mjs
+
+      - name: Assert diff scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only > /tmp/grad-files.txt
+          cat /tmp/grad-files.txt
+          test "$(wc -l < /tmp/grad-files.txt)" -eq 2
+          grep -qx 'programs/memewarzone_solana/src/graduation.rs' /tmp/grad-files.txt
+          grep -qx 'programs/memewarzone_solana/src/lib.rs' /tmp/grad-files.txt
+
+      - name: Rust 1.79 unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+          cargo test -p memewarzone_solana --lib
+
+      - name: Commit gated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add programs/memewarzone_solana/src/graduation.rs programs/memewarzone_solana/src/lib.rs
+          git commit -m "feat(solana): wire atomic Meteora graduation"
+          git push origin HEAD:agent/solana-graduation-meteora-work
