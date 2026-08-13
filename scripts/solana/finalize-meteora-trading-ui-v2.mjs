@@ -20,8 +20,8 @@ replaceOnce(
   "minimum received template opening",
 );
 replaceOnce(
-  "            }.`\\n          });",
-  "            }.\\`\\n          });",
+  "            }.`,\\n          });",
+  "            }.\\`,\\n          });",
   "minimum received template closing",
 );
 replaceOnce(
