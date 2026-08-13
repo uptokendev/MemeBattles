@@ -1,0 +1,16 @@
+{
+  "name": "memewarzone-solana-meteora-graduation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "graduate": "node graduate.mjs",
+    "check": "node --check graduate.mjs"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.30.1",
+    "@meteora-ag/cp-amm-sdk": "1.4.5",
+    "@solana/spl-token": "0.4.8",
+    "@solana/web3.js": "1.95.4"
+  }
+}
