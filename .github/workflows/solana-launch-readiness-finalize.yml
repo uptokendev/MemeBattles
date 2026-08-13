@@ -1,0 +1,87 @@
+name: Solana launch-readiness finalize
+
+on:
+  push:
+    branches:
+      - agent/solana-launch-readiness
+    paths:
+      - scripts/solana_launch_readiness_finalize.py
+      - .github/workflows/solana-launch-readiness-finalize.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: solana-launch-readiness-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout launch-readiness branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-launch-readiness
+          fetch-depth: 0
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            realtime-indexer/package-lock.json
+
+      - name: Validate finalizer syntax
+        run: python3 -m py_compile scripts/solana_launch_readiness_finalize.py
+
+      - name: Apply asserted source transforms
+        run: python3 scripts/solana_launch_readiness_finalize.py
+
+      - name: Verify patch hygiene
+        run: git diff --check
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Install realtime-indexer dependencies
+        run: npm --prefix realtime-indexer ci
+
+      - name: Build realtime-indexer
+        run: npm --prefix realtime-indexer run build
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.79.0 --profile minimal
+          rustc +1.79.0 --version
+
+      - name: Run Solana Rust unit tests
+        run: cargo +1.79.0 test --locked -p memewarzone_solana
+
+      - name: Show launch-readiness diff
+        run: |
+          git status --short
+          git diff --stat
+
+      - name: Commit gated source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            realtime-indexer/src/server.ts \
+            frontend/src/pages/TokenDetails.tsx \
+            programs/memewarzone_solana/src/lib.rs \
+            programs/memewarzone_solana/src/authorized_trade.rs \
+            frontend/src/lib/solanaTradeV1.ts
+          if git diff --cached --quiet; then
+            echo "No gated source changes to commit."
+            exit 0
+          fi
+          git commit -m "fix(solana): complete launch-readiness parity"
+          git push origin HEAD:agent/solana-launch-readiness
