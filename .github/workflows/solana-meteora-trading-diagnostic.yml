@@ -1,0 +1,49 @@
+name: Solana Meteora trading UI diagnostic
+
+on:
+  push:
+    branches:
+      - agent/solana-graduation-meteora-work
+    paths:
+      - .github/workflows/solana-meteora-trading-diagnostic.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Reproduce transformer and capture exact failure
+        shell: bash
+        run: |
+          set -u
+          npm ci --prefix frontend --no-audit --no-fund >/tmp/mw-diag-install.log 2>&1
+          npm install --prefix frontend --save-exact --no-audit --no-fund \
+            @meteora-ag/cp-amm-sdk@1.4.5 bn.js@5.2.2 >>/tmp/mw-diag-install.log 2>&1
+          set +e
+          node scripts/solana/finalize-meteora-trading-ui-v2.mjs >/tmp/mw-meteora-transform.log 2>&1
+          code=$?
+          set -e
+          mkdir -p .ci-diagnostics
+          {
+            echo "exit_code=$code"
+            echo "--- transformer ---"
+            cat /tmp/mw-meteora-transform.log
+            echo "--- changed files ---"
+            git diff --name-only
+          } > .ci-diagnostics/meteora-trading-ui.txt
+          cat .ci-diagnostics/meteora-trading-ui.txt
+          git restore frontend/package.json frontend/package-lock.json frontend/src/pages/TokenDetails.tsx 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci-diagnostics/meteora-trading-ui.txt
+          git commit -m "ci(solana): record Meteora trading transformer diagnostic"
+          git pull --rebase origin agent/solana-graduation-meteora-work
+          git push origin HEAD:agent/solana-graduation-meteora-work
