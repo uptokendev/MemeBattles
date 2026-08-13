@@ -6,7 +6,7 @@ import process from "node:process";
 const PLACEHOLDER_PROGRAM_ID = "Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG";
 const PROGRAM_SOURCE = "programs/memewarzone_solana/src/lib.rs";
 const ANCHOR_TOML = "Anchor.toml";
-const GENERATION_MANIFEST = "config/solana/devnet-generation-v1.json";
+const GENERATION_MANIFEST = "config/solana/devnet-generation-v3.json";
 const DEFAULT_OUTPUT = "deployments/solana-devnet.prepared.json";
 
 function fail(message) {
