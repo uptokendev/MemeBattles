@@ -1,0 +1,99 @@
+name: Solana Meteora graduation operator gate
+
+on:
+  push:
+    branches:
+      - agent/solana-graduation-meteora-work
+    paths:
+      - .github/workflows/solana-meteora-operator-gate.yml
+      - tools/solana-meteora-graduation/package.json
+      - tools/solana-meteora-graduation/graduate.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  operator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install isolated operator dependencies
+        run: npm install --prefix tools/solana-meteora-graduation --no-audit --no-fund
+
+      - name: Operator syntax check
+        run: npm --prefix tools/solana-meteora-graduation run check
+
+      - name: Verify official SDK surface and pure math path
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tools/solana-meteora-graduation
+          node --input-type=module <<'NODE'
+          import { Connection, PublicKey } from '@solana/web3.js';
+          import BN from 'bn.js';
+          import {
+            ActivationType,
+            BaseFeeMode,
+            CollectFeeMode,
+            CpAmm,
+            getBaseFeeParams,
+            getSqrtPriceFromPrice,
+            MAX_SQRT_PRICE,
+            MIN_SQRT_PRICE,
+          } from '@meteora-ag/cp-amm-sdk';
+
+          const cp = new CpAmm(new Connection('http://127.0.0.1:8899', 'confirmed'));
+          if (typeof cp.createCustomPool !== 'function') throw new Error('createCustomPool is unavailable');
+          if (typeof cp.getLiquidityDelta !== 'function') throw new Error('getLiquidityDelta is unavailable');
+
+          const sqrtPrice = getSqrtPriceFromPrice('0.000000005', 6, 9);
+          const liquidity = cp.getLiquidityDelta({
+            maxAmountTokenA: new BN('1000000000000'),
+            maxAmountTokenB: new BN('5000000'),
+            sqrtPrice,
+            sqrtMinPrice: MIN_SQRT_PRICE,
+            sqrtMaxPrice: MAX_SQRT_PRICE,
+            collectFeeMode: CollectFeeMode.BothToken,
+          });
+          if (!BN.isBN(liquidity) || liquidity.lte(new BN(0))) throw new Error('liquidity math failed');
+
+          const baseFee = getBaseFeeParams({
+            baseFeeMode: BaseFeeMode.FeeTimeSchedulerLinear,
+            feeTimeSchedulerParam: {
+              startingFeeBps: 25,
+              endingFeeBps: 25,
+              numberOfPeriod: 0,
+              totalDuration: 0,
+            },
+          }, 9, ActivationType.Timestamp);
+          if (!Array.isArray(baseFee.data) || baseFee.data.length === 0) throw new Error('base-fee encoding failed');
+
+          const program = new PublicKey('cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG');
+          if (!program.toBase58().startsWith('cpam')) throw new Error('unexpected DAMM v2 program id');
+          console.log('SDK_SURFACE_PASS', liquidity.toString(), baseFee.data.length);
+          NODE
+
+      - name: Assert package lock only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          changed="$(git status --short | awk '{print $2}')"
+          test "$changed" = "tools/solana-meteora-graduation/package-lock.json"
+
+      - name: Commit deterministic operator lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/solana-meteora-graduation/package-lock.json
+          git commit -m "build(solana): lock Meteora graduation operator deps"
+          git pull --rebase origin agent/solana-graduation-meteora-work
+          git push origin HEAD:agent/solana-graduation-meteora-work
