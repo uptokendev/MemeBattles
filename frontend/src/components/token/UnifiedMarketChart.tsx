@@ -722,10 +722,23 @@ export function UnifiedMarketChart({
     const chart = chartRef.current;
     if (!series || !chart || data.length === 0) return;
     const previous = previousDataRef.current;
+    const sameCandle = (a: CandleRow | undefined, b: CandleRow | undefined) =>
+      Boolean(
+        a &&
+        b &&
+        Number(a.time) === Number(b.time) &&
+        a.open === b.open &&
+        a.high === b.high &&
+        a.low === b.low &&
+        a.close === b.close
+      );
+
     const onlyLatestChanged =
       previous.length > 0 &&
-      data.length >= previous.length &&
-      data.slice(0, -1).every((row, index) => Number(row.time) === Number(previous[index]?.time));
+      data.length === previous.length &&
+      data.slice(0, -1).every((row, index) =>
+        sameCandle(row, previous[index])
+      );
     if (onlyLatestChanged) series.update(data[data.length - 1] as any);
     else series.setData(data as any);
     previousDataRef.current = data;
