@@ -52,6 +52,8 @@ export type UnifiedMarketChartProps = {
   creatorAvatarUrl?: string | null;
   creatorDisplayName?: string | null;
   chainId?: number;
+  /** Live bonding-curve sold supply in raw token units. Used to anchor Solana market cap. */
+  currentBondingSoldRaw?: bigint | null;
   resolution: UnifiedChartResolution;
   onResolutionChange: (resolution: UnifiedChartResolution) => void;
   denomination?: UnifiedChartDenomination;
@@ -143,6 +145,7 @@ function tradeSeriesPoints(
   marketState: MarketState | null,
   graduationTimeSec: number,
   chainId: number,
+  currentBondingSoldRaw?: bigint | null,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
   const tokenDecimals = solana ? 6 : 18;
@@ -156,8 +159,35 @@ function tradeSeriesPoints(
 
   const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
   const marketAlreadyGraduated = isGraduatedStage(marketState);
-  let circulating = 0;
-  let peakCirc = 0;
+
+  // Solana bonding trade history can be partial (for example after page reload,
+  // RPC pagination, or indexer catch-up). Reconstruct the delta represented by
+  // the loaded trades, then anchor that history to the live on-chain sold
+  // supply. This makes the latest chart market cap use the same supply source
+  // as the TokenDetails headline while preserving the shape of trade history.
+  const liveBondingSupply =
+    solana && !marketAlreadyGraduated
+      ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
+      : 0;
+
+  const reconstructedFinalSupply =
+    solana && !marketAlreadyGraduated
+      ? sorted.reduce((supply, trade) => {
+          const amount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
+          return Math.max(
+            0,
+            supply + (trade.type === "sell" ? -amount : amount),
+          );
+        }, 0)
+      : 0;
+
+  const historySupplyOffset =
+    liveBondingSupply > 0
+      ? Math.max(0, liveBondingSupply - reconstructedFinalSupply)
+      : 0;
+
+  let circulating = historySupplyOffset;
+  let peakCirc = circulating;
   const points: ChartPoint[] = [];
 
   for (const trade of sorted) {
@@ -334,6 +364,7 @@ export function UnifiedMarketChart({
   creatorAvatarUrl,
   creatorDisplayName,
   chainId = 97,
+  currentBondingSoldRaw,
   resolution,
   onResolutionChange,
   denomination = "USD",
@@ -421,8 +452,18 @@ export function UnifiedMarketChart({
       marketState,
       graduationTimeSec,
       chainId,
+      currentBondingSoldRaw,
     );
-  }, [chainId, curvePoints, denomination, graduationTimeSec, marketState, metric, nativeUsd]);
+  }, [
+    chainId,
+    currentBondingSoldRaw,
+    curvePoints,
+    denomination,
+    graduationTimeSec,
+    marketState,
+    metric,
+    nativeUsd,
+  ]);
 
   const data = useMemo(() => {
     if (!seriesPoints.length && !(marketCandles || []).length) return [] as CandleRow[];

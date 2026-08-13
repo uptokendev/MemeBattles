@@ -2546,16 +2546,16 @@ const toSeconds = (ts: number): number => {
     }
 
     const usdLabel =
-      remainingBnbNum != null && bnbUsdPrice
-        ? formatCompactUsd(remainingBnbNum * bnbUsdPrice)
-        : bnbUsdLoading
+      remainingBnbNum != null && nativeUsd
+        ? formatCompactUsd(remainingBnbNum * nativeUsd)
+        : nativeUsdLoading
         ? "…"
         : "—";
 
     // Primary follows the denomination toggle; secondary shows the other denomination.
     if (displayDenom === "USD") return { primary: usdLabel, secondary: bnbLabel };
     return { primary: bnbLabel, secondary: usdLabel };
-  }, [remainingCurveWei, displayDenom, bnbUsdPrice, bnbUsdLoading, isSolanaPage]);
+  }, [remainingCurveWei, displayDenom, nativeUsd, nativeUsdLoading, isSolanaPage]);
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
@@ -2580,10 +2580,10 @@ const toSeconds = (ts: number): number => {
     const liqBnb = parseBnbLabel(bnbLabel);
     if (liqBnb == null) return "—";
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (!nativeUsd) return nativeUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(liqBnb * bnbUsdPrice);
-  }, [displayDenom, liquidityValue, bnbUsdPrice, bnbUsdLoading]);
+    return formatCompactUsd(liqBnb * nativeUsd);
+  }, [displayDenom, liquidityValue, nativeUsd, nativeUsdLoading]);
 ;
 
 
@@ -3941,6 +3941,7 @@ const toSeconds = (ts: number): number => {
                   creatorAvatarUrl={creatorProfile?.avatarUrl}
                   creatorDisplayName={creatorProfile?.displayName}
                   chainId={chainIdForStorage}
+                  currentBondingSoldRaw={isSolanaPage ? solanaCurve?.soldTokens ?? null : null}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}
