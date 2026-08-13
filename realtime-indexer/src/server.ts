@@ -362,7 +362,7 @@ app.get("/health", async (_req, res) => {
       ok: true,
       db: r.rows[0].ok,
       // Bump when shipping indexer loop fixes so deploy can be confirmed from /health.
-      indexerBuild: "solana-v4-trades-2026-08-13",
+      indexerBuild: "solana-v4-graduation-2026-08-13",
       normalScope: ENV.INDEXER_NORMAL_SCOPE,
     });
   } catch (e: any) {

@@ -59,7 +59,25 @@ type TokensSoldEvent = {
   netRaisedAfter: bigint;
 };
 
-type AnchorEvent = CampaignCreatedEvent | TokensBoughtEvent | TokensSoldEvent;
+type CampaignGraduatedEvent = {
+  kind: "CampaignGraduated";
+  campaign: string;
+  creator: string;
+  mint: string;
+  meteoraPool: string;
+  meteoraPosition: string;
+  liquidityTokens: bigint;
+  liquidityLamports: bigint;
+  finalizeFeeLamports: bigint;
+  creatorPayoutLamports: bigint;
+  burnedUnsoldCurveTokens: bigint;
+  burnedUnusedLiquidityTokens: bigint;
+  creatorReserveTokens: bigint;
+  finalSpotNanoLamports: bigint;
+  graduatedAt: bigint;
+};
+
+type AnchorEvent = CampaignCreatedEvent | TokensBoughtEvent | TokensSoldEvent | CampaignGraduatedEvent;
 type Decoder = (reader: EventReader) => AnchorEvent;
 
 class EventReader {
@@ -85,6 +103,21 @@ class EventReader {
     const value = this.data.readBigUInt64LE(this.offset);
     this.offset += 8;
     return value;
+  }
+
+  i64(): bigint {
+    if (this.offset + 8 > this.data.length) throw new Error("Anchor event i64 out of bounds");
+    const value = this.data.readBigInt64LE(this.offset);
+    this.offset += 8;
+    return value;
+  }
+
+  u128(): bigint {
+    if (this.offset + 16 > this.data.length) throw new Error("Anchor event u128 out of bounds");
+    const lo = this.data.readBigUInt64LE(this.offset);
+    const hi = this.data.readBigUInt64LE(this.offset + 8);
+    this.offset += 16;
+    return lo + (hi << 64n);
   }
 }
 
@@ -129,6 +162,23 @@ const EVENT_DECODERS = new Map<string, Decoder>([
     lamportsOut: r.u64(),
     soldTokensAfter: r.u64(),
     netRaisedAfter: r.u64(),
+  })],
+  [eventDiscriminator("CampaignGraduated"), (r) => ({
+    kind: "CampaignGraduated",
+    campaign: r.pubkey(),
+    creator: r.pubkey(),
+    mint: r.pubkey(),
+    meteoraPool: r.pubkey(),
+    meteoraPosition: r.pubkey(),
+    liquidityTokens: r.u64(),
+    liquidityLamports: r.u64(),
+    finalizeFeeLamports: r.u64(),
+    creatorPayoutLamports: r.u64(),
+    burnedUnsoldCurveTokens: r.u64(),
+    burnedUnusedLiquidityTokens: r.u64(),
+    creatorReserveTokens: r.u64(),
+    finalSpotNanoLamports: r.u128(),
+    graduatedAt: r.i64(),
   })],
 ]);
 
@@ -548,9 +598,86 @@ async function insertTrade(event: TokensBoughtEvent | TokensSoldEvent, signature
   await patchStats(campaign);
 }
 
+async function persistGraduation(
+  event: CampaignGraduatedEvent,
+  signature: string,
+  logIndex: number,
+  slot: number,
+  blockTime: Date,
+) {
+  const graduationMeta = {
+    dex: "meteora-damm-v2",
+    pool: event.meteoraPool,
+    position: event.meteoraPosition,
+    liquidityTokensRaw: event.liquidityTokens.toString(),
+    liquidityLamports: event.liquidityLamports.toString(),
+    finalizeFeeLamports: event.finalizeFeeLamports.toString(),
+    creatorPayoutLamports: event.creatorPayoutLamports.toString(),
+    burnedUnsoldCurveTokens: event.burnedUnsoldCurveTokens.toString(),
+    burnedUnusedLiquidityTokens: event.burnedUnusedLiquidityTokens.toString(),
+    creatorReserveTokens: event.creatorReserveTokens.toString(),
+    finalSpotNanoLamports: event.finalSpotNanoLamports.toString(),
+    graduatedAt: event.graduatedAt.toString(),
+    transactionSignature: signature,
+    slot,
+  };
+
+  await pool.query(
+    `insert into public.campaigns(
+       chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,is_active,meta
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10::jsonb)
+     on conflict (chain_id,campaign_address) do update set
+       token_address=coalesce(excluded.token_address, public.campaigns.token_address),
+       creator_address=coalesce(excluded.creator_address, public.campaigns.creator_address),
+       is_active=true,
+       meta=coalesce(public.campaigns.meta,'{}'::jsonb) || excluded.meta,
+       updated_at=now()`,
+    [
+      SOLANA_CHAIN_ID,
+      programId(),
+      event.campaign,
+      event.mint,
+      event.creator,
+      "Solana Launch",
+      "SOL",
+      slot,
+      blockTime,
+      JSON.stringify({ source: "solana-v4-graduation", solanaGraduation: graduationMeta }),
+    ],
+  );
+
+  await touchCampaignActivity(event.campaign, blockTime);
+  await insertActivityEvent({
+    eventType: "GRADUATED",
+    txHash: signature,
+    logIndex,
+    blockNumber: slot,
+    blockTime,
+    actor: event.creator,
+    campaign: event.campaign,
+    token: event.mint,
+    meta: graduationMeta,
+  });
+  await publishStats(SOLANA_CHAIN_ID, event.campaign, {
+    type: "stats_patch",
+    graduated: true,
+    dex: "meteora-damm-v2",
+    dexPool: event.meteoraPool,
+    dexPosition: event.meteoraPosition,
+    graduationLiquiditySol: toSol(event.liquidityLamports),
+    graduationLiquidityTokensRaw: event.liquidityTokens.toString(),
+    graduatedAt: blockTime.toISOString(),
+    txHash: signature,
+  });
+}
+
 async function handleEvent(event: AnchorEvent, signature: string, logIndex: number, slot: number, blockTime: Date) {
   if (event.kind === "CampaignCreated") {
     await upsertCampaign(event, slot, blockTime, signature, logIndex);
+    return;
+  }
+  if (event.kind === "CampaignGraduated") {
+    await persistGraduation(event, signature, logIndex, slot, blockTime);
     return;
   }
   await insertTrade(event, signature, logIndex, slot, blockTime);

@@ -13,10 +13,12 @@ export function GraduationExplosion({
   campaignAddress,
   active,
   transitionAt,
+  venueLabel = "Topaz",
 }: {
   campaignAddress?: string;
   active: boolean;
   transitionAt?: number | null;
+  venueLabel?: string;
 }) {
   const storageKey = useMemo(
     () => `mwz:graduation-explosion:${String(campaignAddress || "").toLowerCase()}`,
@@ -111,7 +113,7 @@ export function GraduationExplosion({
               THE REAL BATTLE STARTS NOW
             </p>
             <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-200 md:text-sm">
-              Trading continues on Topaz inside MemeWarzone
+              Trading continues on {venueLabel} inside MemeWarzone
             </p>
           </motion.div>
         </motion.div>
