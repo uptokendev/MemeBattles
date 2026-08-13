@@ -12,14 +12,18 @@ import {
 } from "lightweight-charts";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import type { MarketCandle, MarketState } from "@/lib/marketContinuityApi";
 import { buildCandles, type CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 import { fetchUserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
+import { isSolanaChainId } from "@/lib/chainConfig";
+import { isValidTradeTxHash } from "@/lib/tradeDedupe";
 
 export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 export type UnifiedChartMetric = "marketcap" | "price";
+// Kept for caller compatibility. On Solana, the non-USD/native denomination is rendered as SOL.
 export type UnifiedChartDenomination = "USD" | "BNB";
 
 const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [
@@ -44,12 +48,9 @@ export type UnifiedMarketChartProps = {
     initialDexPriceBnb?: string | null;
     pairAddress?: string | null;
   } | null;
-  /** Campaign creator wallet — buys/sells from this address get avatar markers. */
   creatorAddress?: string | null;
-  /** Optional preloaded creator avatar/name (Token Details already has these). */
   creatorAvatarUrl?: string | null;
   creatorDisplayName?: string | null;
-  /** Used to resolve profile + explorer links (default 97). */
   chainId?: number;
   resolution: UnifiedChartResolution;
   onResolutionChange: (resolution: UnifiedChartResolution) => void;
@@ -61,12 +62,11 @@ export type UnifiedMarketChartProps = {
 type CreatorTradePin = {
   id: string;
   timeSec: number;
-  /** Value on the active chart series (price or mcap) for Y placement. */
   value: number;
   side: "buy" | "sell";
   tokensWei: bigint;
   nativeWei: bigint;
-  priceBnb: number;
+  priceNative: number;
   mcapUsd: number | null;
   txHash: string;
   timestamp: number;
@@ -75,7 +75,6 @@ type CreatorTradePin = {
 type PlacedCreatorPin = CreatorTradePin & {
   x: number;
   y: number;
-  /** 0 = on the candle; higher = stacked upward (1h multi-trade buckets). */
   stackIndex: number;
   stackCount: number;
 };
@@ -93,20 +92,20 @@ function finite(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function tokensFromWei(value: bigint | null | undefined): number {
+function formatUnitsNumber(value: bigint | null | undefined, decimals: number): number {
   try {
-    const parsed = Number(ethers.formatUnits(value ?? 0n, 18));
+    const parsed = Number(ethers.formatUnits(value ?? 0n, decimals));
     return Number.isFinite(parsed) ? parsed : 0;
   } catch {
     return 0;
   }
 }
 
-function postBurnSupply(state: MarketState | null): number {
+function postBurnSupply(state: MarketState | null, tokenDecimals: number): number {
   try {
     const raw = state?.graduation?.postBurnTotalSupplyRaw;
     if (!raw || !/^\d+$/.test(raw)) return 0;
-    const parsed = Number(ethers.formatUnits(raw, 18));
+    const parsed = Number(ethers.formatUnits(raw, tokenDecimals));
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   } catch {
     return 0;
@@ -115,34 +114,39 @@ function postBurnSupply(state: MarketState | null): number {
 
 function isGraduatedStage(state: MarketState | null): boolean {
   const stage = String(state?.marketStage || "").toUpperCase();
-  return (
-    stage === "TOPAZ_ACTIVE" ||
-    stage === "TOPAZ_DEGRADED" ||
-    stage === "TOPAZ_PENDING" ||
-    stage === "GRADUATING"
-  );
+  return stage === "TOPAZ_ACTIVE" || stage === "TOPAZ_DEGRADED" || stage === "TOPAZ_PENDING" || stage === "GRADUATING";
 }
 
-function sameAddr(a?: string | null, b?: string | null): boolean {
-  const x = String(a || "").trim().toLowerCase();
-  const y = String(b || "").trim().toLowerCase();
-  return Boolean(x && y && x === y && /^0x[a-f0-9]{40}$/.test(x));
+function normalizedWallet(chainId: number, value?: string | null) {
+  const raw = String(value || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
 }
 
-/**
- * Single continuous series for bonding + Topaz:
- * - Price mode: each trade's price (launchpad-style OHLC).
- * - Mcap mode: price × supply, where supply is curve circulating before graduation
- *   and fixed post-burn (or peak circulating) after — not "sum of DEX trade sizes".
- */
+function validWallet(chainId: number, value?: string | null) {
+  const raw = normalizedWallet(chainId, value);
+  return isSolanaChainId(chainId)
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw)
+    : /^0x[a-f0-9]{40}$/.test(raw);
+}
+
+function sameAddr(chainId: number, a?: string | null, b?: string | null): boolean {
+  const x = normalizedWallet(chainId, a);
+  const y = normalizedWallet(chainId, b);
+  return Boolean(x && y && x === y && validWallet(chainId, x));
+}
+
 function tradeSeriesPoints(
   trades: CurveTradePoint[],
   metric: UnifiedChartMetric,
   denomination: UnifiedChartDenomination,
-  bnbUsd: number,
+  nativeUsd: number,
   marketState: MarketState | null,
   graduationTimeSec: number,
+  chainId: number,
 ): ChartPoint[] {
+  const solana = isSolanaChainId(chainId);
+  const tokenDecimals = solana ? 6 : 18;
+  const nativeDecimals = solana ? 9 : 18;
   const sorted = [...(trades || [])].sort(
     (a, b) =>
       (a.timestamp ?? 0) - (b.timestamp ?? 0) ||
@@ -150,24 +154,22 @@ function tradeSeriesPoints(
       Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0),
   );
 
-  const fixedGradSupply = postBurnSupply(marketState);
+  const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
   const marketAlreadyGraduated = isGraduatedStage(marketState);
   let circulating = 0;
   let peakCirc = 0;
   const points: ChartPoint[] = [];
 
   for (const trade of sorted) {
-    const priceBnb = finite(trade.pricePerToken);
+    const priceNative = finite(trade.pricePerToken);
     const timestampSec = Number(trade.timestamp || 0);
-    if (!priceBnb || !Number.isFinite(timestampSec) || timestampSec <= 0) continue;
+    if (!priceNative || !Number.isFinite(timestampSec) || timestampSec <= 0) continue;
 
-    const tokenAmount = tokensFromWei(trade.tokensWei);
+    const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
     const afterGrad =
       (graduationTimeSec > 0 && timestampSec >= graduationTimeSec) ||
       (marketAlreadyGraduated && graduationTimeSec <= 0 && fixedGradSupply > 0);
 
-    // Curve-phase circulating walk (bonding buys mint sold supply).
-    // After graduation we stop walking for mcap and use fixed supply.
     if (!afterGrad || fixedGradSupply <= 0) {
       circulating += trade.type === "sell" ? -tokenAmount : tokenAmount;
       circulating = Math.max(0, circulating);
@@ -181,32 +183,32 @@ function tradeSeriesPoints(
           ? peakCirc
           : Math.max(circulating, 0);
 
-    const valueBnb = metric === "marketcap" ? priceBnb * Math.max(supplyForMcap, 1e-18) : priceBnb;
-    const value = denomination === "USD" ? valueBnb * bnbUsd : valueBnb;
+    const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
+    const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
     if (!Number.isFinite(value) || value <= 0) continue;
 
-    const volumeBnb = tokensFromWei(trade.nativeWei);
+    const volumeNative = formatUnitsNumber(trade.nativeWei, nativeDecimals);
     points.push({
       ts: timestampSec * 1000,
       value,
-      volume: Number.isFinite(volumeBnb) ? volumeBnb : 0,
+      volume: Number.isFinite(volumeNative) ? volumeNative : 0,
       side: trade.type === "sell" ? "sell" : "buy",
-      wallet: String(trade.from || "").toLowerCase(),
+      wallet: normalizedWallet(chainId, trade.from),
     });
   }
   return points;
 }
 
-/** Server Topaz candles — price or mcap with fixed post-burn supply. */
-function topazCandles(
+function marketCandlesForChart(
   rows: MarketCandle[],
   state: MarketState | null,
   metric: UnifiedChartMetric,
   denomination: UnifiedChartDenomination,
-  bnbUsd: number,
+  nativeUsd: number,
+  tokenDecimals: number,
 ): CandleRow[] {
-  const supply = postBurnSupply(state);
-  const denomMul = denomination === "USD" ? bnbUsd : 1;
+  const supply = postBurnSupply(state, tokenDecimals);
+  const denomMul = denomination === "USD" ? nativeUsd : 1;
   const mcapMul = metric === "marketcap" ? (supply > 0 ? supply : 1) : 1;
 
   return (rows || [])
@@ -224,18 +226,13 @@ function topazCandles(
     })
     .filter(
       (row) =>
-        Number.isFinite(row.open) &&
-        row.open > 0 &&
-        Number.isFinite(row.high) &&
-        row.high > 0 &&
-        Number.isFinite(row.low) &&
-        row.low > 0 &&
-        Number.isFinite(row.close) &&
-        row.close > 0,
+        Number.isFinite(row.open) && row.open > 0 &&
+        Number.isFinite(row.high) && row.high > 0 &&
+        Number.isFinite(row.low) && row.low > 0 &&
+        Number.isFinite(row.close) && row.close > 0,
     );
 }
 
-/** Merge OHLC for the same bucket instead of last-write-wins (preserves buy+sell wicks). */
 function mergeCandleRows(primary: CandleRow[], secondary: CandleRow[]): CandleRow[] {
   const map = new Map<number, CandleRow>();
   const upsert = (candle: CandleRow) => {
@@ -253,22 +250,33 @@ function mergeCandleRows(primary: CandleRow[], secondary: CandleRow[]): CandleRo
       close: candle.close,
     });
   };
-  // Primary first (client continuous series), then server Topaz enriches wicks/close.
-  for (const c of primary) upsert(c);
-  for (const c of secondary) upsert(c);
+  for (const row of primary) upsert(row);
+  for (const row of secondary) upsert(row);
   return Array.from(map.values()).sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-function formatValue(value: number, metric: UnifiedChartMetric, denomination: UnifiedChartDenomination) {
+function trimFixed(value: number, decimals: number) {
+  if (!Number.isFinite(value)) return "";
+  return value.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatValue(
+  value: number,
+  metric: UnifiedChartMetric,
+  denomination: UnifiedChartDenomination,
+  nativeSymbol: string,
+) {
   if (!Number.isFinite(value)) return "";
   const prefix = denomination === "USD" ? "$" : "";
-  const suffix = denomination === "BNB" ? " BNB" : "";
+  const suffix = denomination === "USD" ? "" : ` ${nativeSymbol}`;
   const abs = Math.abs(value);
-  const digits = metric === "price" && abs < 1 ? 8 : 2;
   if (abs >= 1_000_000_000) return `${prefix}${(value / 1_000_000_000).toFixed(2)}B${suffix}`;
   if (abs >= 1_000_000) return `${prefix}${(value / 1_000_000).toFixed(2)}M${suffix}`;
   if (abs >= 1_000) return `${prefix}${(value / 1_000).toFixed(2)}K${suffix}`;
-  return `${prefix}${value.toFixed(digits)}${suffix}`;
+  if (metric === "price" && abs > 0 && abs < 0.01) {
+    return `${prefix}${trimFixed(value, nativeSymbol === "SOL" ? 12 : 10)}${suffix}`;
+  }
+  return `${prefix}${value.toFixed(metric === "price" && abs < 1 ? 8 : 2)}${suffix}`;
 }
 
 function nearestCandleTime(data: CandleRow[], targetSec: number): Time | null {
@@ -276,48 +284,43 @@ function nearestCandleTime(data: CandleRow[], targetSec: number): Time | null {
   let best = data[0];
   let bestDist = Math.abs(Number(best.time) - targetSec);
   for (const row of data) {
-    const d = Math.abs(Number(row.time) - targetSec);
-    if (d < bestDist) {
+    const distance = Math.abs(Number(row.time) - targetSec);
+    if (distance < bestDist) {
       best = row;
-      bestDist = d;
+      bestDist = distance;
     }
   }
   return best.time;
 }
 
 function shortenAddr(addr: string) {
-  const a = String(addr || "");
-  if (a.length < 12) return a;
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  const value = String(addr || "");
+  if (value.length < 12) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function formatTokenAmt(wei: bigint): string {
-  try {
-    const n = Number(ethers.formatUnits(wei, 18));
-    if (!Number.isFinite(n)) return "—";
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
-    if (n >= 1) return n.toFixed(2);
-    if (n >= 0.01) return n.toFixed(4);
-    return n.toFixed(6);
-  } catch {
-    return "—";
-  }
+function formatTokenAmt(raw: bigint, decimals: number): string {
+  const n = formatUnitsNumber(raw, decimals);
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  if (n >= 1) return n.toFixed(2);
+  if (n >= 0.01) return n.toFixed(4);
+  return trimFixed(n, 6) || "0";
 }
 
-function formatBnbAmt(wei: bigint): string {
-  try {
-    const n = Number(ethers.formatEther(wei));
-    if (!Number.isFinite(n)) return "—";
-    if (n >= 1) return `${n.toFixed(3)} BNB`;
-    if (n >= 0.001) return `${n.toFixed(4)} BNB`;
-    return `${n.toFixed(6)} BNB`;
-  } catch {
-    return "—";
-  }
+function formatNativeAmt(raw: bigint, decimals: number, symbol: string): string {
+  const n = formatUnitsNumber(raw, decimals);
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1) return `${n.toFixed(3)} ${symbol}`;
+  if (n >= 0.001) return `${n.toFixed(4)} ${symbol}`;
+  return `${trimFixed(n, symbol === "SOL" ? 9 : 8)} ${symbol}`;
 }
 
 function explorerTxUrl(chainId: number, txHash: string): string {
+  if (isSolanaChainId(chainId)) {
+    return `https://explorer.solana.com/tx/${encodeURIComponent(txHash)}?cluster=devnet`;
+  }
   const base = Number(chainId) === 56 ? "https://bscscan.com" : "https://testnet.bscscan.com";
   return `${base}/tx/${txHash}`;
 }
@@ -337,13 +340,16 @@ export function UnifiedMarketChart({
   loading,
   error,
 }: UnifiedMarketChartProps) {
+  const solana = isSolanaChainId(chainId);
+  const nativeSymbol = solana ? "SOL" : "BNB";
+  const tokenDecimals = solana ? 6 : 18;
+  const nativeDecimals = solana ? 9 : 18;
   const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markerPluginRef = useRef<ReturnType<typeof createSeriesMarkers> | null>(null);
-  const resizeRef = useRef<ResizeObserver | null>(null);
   const previousDataRef = useRef<CandleRow[]>([]);
   const initialRangeSetRef = useRef(false);
   const lastUsdRef = useRef(0);
@@ -353,7 +359,15 @@ export function UnifiedMarketChart({
   const [resolvedAvatar, setResolvedAvatar] = useState<string | null>(null);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const hideTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { price: liveBnbUsd } = useBnbUsdPrice(true);
+  const { price: liveBnbUsd } = useBnbUsdPrice(!solana);
+  const { price: liveSolUsd } = useSolUsdPrice(solana);
+  const liveNativeUsd = solana ? liveSolUsd : liveBnbUsd;
+
+  useEffect(() => {
+    if (liveNativeUsd && Number.isFinite(liveNativeUsd) && liveNativeUsd > 0) lastUsdRef.current = liveNativeUsd;
+  }, [liveNativeUsd]);
+  const nativeUsd = liveNativeUsd && liveNativeUsd > 0 ? liveNativeUsd : lastUsdRef.current;
+  const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
 
   const clearHideTooltipTimer = useCallback(() => {
     if (hideTooltipTimerRef.current) {
@@ -362,15 +376,11 @@ export function UnifiedMarketChart({
     }
   }, []);
 
-  const openCreatorTooltip = useCallback(
-    (pinId: string) => {
-      clearHideTooltipTimer();
-      setHoverPinId(pinId);
-    },
-    [clearHideTooltipTimer],
-  );
+  const openCreatorTooltip = useCallback((pinId: string) => {
+    clearHideTooltipTimer();
+    setHoverPinId(pinId);
+  }, [clearHideTooltipTimer]);
 
-  /** Delayed hide so the user can move from pin → popup (~1s). */
   const scheduleHideCreatorTooltip = useCallback(() => {
     clearHideTooltipTimer();
     hideTooltipTimerRef.current = setTimeout(() => {
@@ -379,11 +389,8 @@ export function UnifiedMarketChart({
     }, 1000);
   }, [clearHideTooltipTimer]);
 
-  useEffect(() => {
-    return () => clearHideTooltipTimer();
-  }, [clearHideTooltipTimer]);
+  useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);
 
-  // Mobile: tap outside pin/popup dismisses immediately.
   useEffect(() => {
     if (!hoverPinId) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -398,12 +405,6 @@ export function UnifiedMarketChart({
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [clearHideTooltipTimer, hoverPinId]);
 
-  useEffect(() => {
-    if (liveBnbUsd && Number.isFinite(liveBnbUsd) && liveBnbUsd > 0) lastUsdRef.current = liveBnbUsd;
-  }, [liveBnbUsd]);
-  const bnbUsd = liveBnbUsd && liveBnbUsd > 0 ? liveBnbUsd : lastUsdRef.current;
-  const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
-
   const graduationTimeSec = useMemo(() => {
     if (!graduationMarker?.time) return 0;
     const ms = new Date(graduationMarker.time).getTime();
@@ -411,51 +412,49 @@ export function UnifiedMarketChart({
   }, [graduationMarker?.time]);
 
   const seriesPoints = useMemo(() => {
-    if (!bnbUsd && denomination === "USD") return [] as ChartPoint[];
+    if (!nativeUsd && denomination === "USD") return [] as ChartPoint[];
     return tradeSeriesPoints(
       curvePoints,
       metric,
       denomination,
-      bnbUsd || 1,
+      nativeUsd || 1,
       marketState,
       graduationTimeSec,
+      chainId,
     );
-  }, [bnbUsd, curvePoints, denomination, graduationTimeSec, marketState, metric]);
+  }, [chainId, curvePoints, denomination, graduationTimeSec, marketState, metric, nativeUsd]);
 
   const data = useMemo(() => {
     if (!seriesPoints.length && !(marketCandles || []).length) return [] as CandleRow[];
-    // Cap gap-fill so sparse tokens don't draw a multi-hour flat runway into a spike.
     const maxGapFillBuckets = resolution === "5s" ? 6 : resolution === "1m" ? 3 : 2;
     const fromTrades = buildCandles(seriesPoints, intervalSeconds, {
       extendToNow: false,
       maxGapFillBuckets,
     }).candles as CandleRow[];
-    const fromServer = topazCandles(marketCandles, marketState, metric, denomination, bnbUsd || 1);
-    // Prefer continuous client series; server Topaz candles only enrich OHLC (no wipe).
+    // Solana post-grad Meteora candles are not wired yet; marketCandles is empty on that path.
+    const fromServer = marketCandlesForChart(
+      marketCandles,
+      marketState,
+      metric,
+      denomination,
+      nativeUsd || 1,
+      tokenDecimals,
+    );
     return mergeCandleRows(fromTrades, fromServer);
-  }, [bnbUsd, denomination, intervalSeconds, marketCandles, marketState, metric, resolution, seriesPoints]);
+  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
 
-  // Graduation only on built-in markers; creator trades use avatar HTML overlays.
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];
-    const t = nearestCandleTime(data, graduationTimeSec);
-    if (t == null) return [];
-    return [
-      {
-        time: t,
-        position: "aboveBar",
-        color: "#f59e0b",
-        shape: "arrowDown",
-        text: "Graduated",
-      },
-    ];
+    const time = nearestCandleTime(data, graduationTimeSec);
+    if (time == null) return [];
+    return [{ time, position: "aboveBar", color: "#f59e0b", shape: "arrowDown", text: "Graduated" }];
   }, [data, graduationTimeSec]);
 
   const creatorPins = useMemo((): CreatorTradePin[] => {
-    const creator = String(creatorAddress || "").trim().toLowerCase();
-    if (!creator || !/^0x[a-f0-9]{40}$/.test(creator) || !data.length) return [];
+    const creator = normalizedWallet(chainId, creatorAddress);
+    if (!validWallet(chainId, creator) || !data.length) return [];
 
-    const fixedGradSupply = postBurnSupply(marketState);
+    const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
     const marketGrad = isGraduatedStage(marketState);
     let circulating = 0;
     let peakCirc = 0;
@@ -468,11 +467,10 @@ export function UnifiedMarketChart({
     );
 
     for (const trade of sorted) {
-      const priceBnb = finite(trade.pricePerToken);
+      const priceNative = finite(trade.pricePerToken);
       const ts = Number(trade.timestamp || 0);
-      if (!priceBnb || ts <= 0) continue;
-
-      const tokenAmount = tokensFromWei(trade.tokensWei);
+      if (!priceNative || ts <= 0) continue;
+      const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
       const afterGrad =
         (graduationTimeSec > 0 && ts >= graduationTimeSec) ||
         (marketGrad && graduationTimeSec <= 0 && fixedGradSupply > 0);
@@ -487,22 +485,16 @@ export function UnifiedMarketChart({
           : afterGrad && peakCirc > 0
             ? peakCirc
             : Math.max(circulating, 0);
+      if (!sameAddr(chainId, trade.from, creator)) continue;
 
-      if (!sameAddr(trade.from, creator)) continue;
-
-      const valueBnb = metric === "marketcap" ? priceBnb * Math.max(supplyForMcap, 1e-18) : priceBnb;
-      const value = denomination === "USD" ? valueBnb * (bnbUsd || 1) : valueBnb;
+      const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
+      const value = denomination === "USD" ? valueNative * (nativeUsd || 1) : valueNative;
       if (!Number.isFinite(value) || value <= 0) continue;
-
       const candleTime = nearestCandleTime(data, ts);
       const timeSec = candleTime != null ? Number(candleTime) : ts;
       const side = trade.type === "sell" ? "sell" : "buy";
-      const txHash = String(trade.txHash || "").toLowerCase();
-      const mcapUsd =
-        denomination === "USD"
-          ? value
-          : priceBnb * Math.max(supplyForMcap, 0) * (bnbUsd || 0);
-
+      const txHash = String(trade.txHash || "").trim();
+      const mcapUsd = priceNative * Math.max(supplyForMcap, 0) * (nativeUsd || 0);
       pins.push({
         id: `${txHash || timeSec}:${side}:${trade.logIndex ?? 0}`,
         timeSec,
@@ -510,24 +502,14 @@ export function UnifiedMarketChart({
         side,
         tokensWei: trade.tokensWei ?? 0n,
         nativeWei: trade.nativeWei ?? 0n,
-        priceBnb,
+        priceNative,
         mcapUsd: Number.isFinite(mcapUsd) && mcapUsd > 0 ? mcapUsd : null,
         txHash,
         timestamp: ts,
       });
     }
-    // Cap density: keep latest 24 creator prints
     return pins.slice(-24);
-  }, [
-    bnbUsd,
-    creatorAddress,
-    curvePoints,
-    data,
-    denomination,
-    graduationTimeSec,
-    marketState,
-    metric,
-  ]);
+  }, [chainId, creatorAddress, curvePoints, data, denomination, graduationTimeSec, marketState, metric, nativeUsd, tokenDecimals]);
 
   creatorPinsRef.current = creatorPins;
 
@@ -538,7 +520,7 @@ export function UnifiedMarketChart({
       setResolvedName(creatorDisplayName?.trim() || null);
       return;
     }
-    const addr = String(creatorAddress || "").trim();
+    const addr = normalizedWallet(chainId, creatorAddress);
     if (!addr) {
       setResolvedAvatar(null);
       setResolvedName(null);
@@ -546,10 +528,10 @@ export function UnifiedMarketChart({
     }
     let cancelled = false;
     void fetchUserProfile(Number(chainId || 97), addr)
-      .then((p) => {
+      .then((profile) => {
         if (cancelled) return;
-        setResolvedAvatar(resolveImageUri(p?.avatarUrl || "") || null);
-        setResolvedName(p?.displayName?.trim() || creatorDisplayName?.trim() || null);
+        setResolvedAvatar(resolveImageUri(profile?.avatarUrl || "") || null);
+        setResolvedName(profile?.displayName?.trim() || creatorDisplayName?.trim() || null);
       })
       .catch(() => {
         if (!cancelled) {
@@ -569,49 +551,30 @@ export function UnifiedMarketChart({
       setPlacedPins([]);
       return;
     }
-    const pins = creatorPinsRef.current;
-    // First pass: chart coordinates
     const raw: Array<CreatorTradePin & { x: number; y: number }> = [];
-    for (const pin of pins) {
+    for (const pin of creatorPinsRef.current) {
       const x = chart.timeScale().timeToCoordinate(pin.timeSec as Time);
       const y = series.priceToCoordinate(pin.value);
       if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue;
       raw.push({ ...pin, x, y });
     }
 
-    // Group pins that share the same candle time (or nearly same X after zoom).
-    // On 1h / 4h many creator prints collapse to one bar — stack avatars upward like Pump.
-    const PIN_STACK_PX = 22;
-    const X_COLLIDE_PX = 12;
-    raw.sort((a, b) => a.x - b.x || a.timestamp - b.timestamp);
-
     const groups: Array<Array<(typeof raw)[number]>> = [];
+    raw.sort((a, b) => a.x - b.x || a.timestamp - b.timestamp);
     for (const pin of raw) {
       const last = groups[groups.length - 1];
-      if (last && Math.abs(last[0].x - pin.x) <= X_COLLIDE_PX) {
-        last.push(pin);
-      } else {
-        groups.push([pin]);
-      }
+      if (last && Math.abs(last[0].x - pin.x) <= 12) last.push(pin);
+      else groups.push([pin]);
     }
 
     const next: PlacedCreatorPin[] = [];
     for (const group of groups) {
-      // Chronological bottom→top within a stack (oldest closest to candle).
       group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
       const stackCount = group.length;
-      // Anchor Y: use highest value in the group so stack sits above the bar.
-      const anchorY = Math.min(...group.map((p) => p.y));
-      const anchorX = group.reduce((s, p) => s + p.x, 0) / stackCount;
+      const anchorY = Math.min(...group.map((pin) => pin.y));
+      const anchorX = group.reduce((sum, pin) => sum + pin.x, 0) / stackCount;
       group.forEach((pin, stackIndex) => {
-        next.push({
-          ...pin,
-          x: anchorX,
-          // stackIndex 0 on candle; 1,2,… step upward (smaller y)
-          y: anchorY - stackIndex * PIN_STACK_PX,
-          stackIndex,
-          stackCount,
-        });
+        next.push({ ...pin, x: anchorX, y: anchorY - stackIndex * 22, stackIndex, stackCount });
       });
     }
     setPlacedPins(next);
@@ -624,14 +587,8 @@ export function UnifiedMarketChart({
     const chart = createChart(element, {
       width: Math.max(10, rect.width || element.clientWidth || 10),
       height: Math.max(140, rect.height || element.clientHeight || 260),
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "rgba(255,255,255,0.75)",
-      },
-      grid: {
-        vertLines: { visible: false },
-        horzLines: { visible: true, color: "rgba(255,255,255,0.06)" },
-      },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "rgba(255,255,255,0.75)" },
+      grid: { vertLines: { visible: false }, horzLines: { visible: true, color: "rgba(255,255,255,0.06)" } },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
         visible: true,
@@ -652,17 +609,8 @@ export function UnifiedMarketChart({
         minBarSpacing: 3,
         lockVisibleTimeRangeOnResize: true,
       },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: false,
-      },
-      handleScale: {
-        mouseWheel: true,
-        pinch: true,
-        axisPressedMouseMove: { time: true, price: true },
-      },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#26a69a",
@@ -674,8 +622,8 @@ export function UnifiedMarketChart({
       lastValueVisible: true,
       priceFormat: {
         type: "custom",
-        minMove: metric === "price" ? 0.00000001 : 0.01,
-        formatter: (value: number) => formatValue(value, metric, denomination),
+        minMove: metric === "price" ? (solana ? 0.000000000001 : 0.00000001) : 0.01,
+        formatter: (value: number) => formatValue(value, metric, denomination, nativeSymbol),
       },
     });
     chartRef.current = chart;
@@ -685,7 +633,6 @@ export function UnifiedMarketChart({
     const onVisible = () => repositionCreatorPins();
     chart.timeScale().subscribeVisibleLogicalRangeChange(onVisible);
     chart.timeScale().subscribeVisibleTimeRangeChange(onVisible);
-
     const observer = new ResizeObserver(() => {
       const target = containerRef.current;
       if (!target || !chartRef.current) return;
@@ -697,11 +644,9 @@ export function UnifiedMarketChart({
       repositionCreatorPins();
     });
     observer.observe(element);
-    resizeRef.current = observer;
 
     return () => {
       observer.disconnect();
-      resizeRef.current = null;
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisible);
         chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisible);
@@ -715,35 +660,31 @@ export function UnifiedMarketChart({
       previousDataRef.current = [];
       initialRangeSetRef.current = false;
     };
-    // Chart shell once; series options update separately.
+    // Chart shell mounts once; series options update below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    chartRef.current?.applyOptions({
-      timeScale: { secondsVisible: intervalSeconds <= 60 },
-    });
+    chartRef.current?.applyOptions({ timeScale: { secondsVisible: intervalSeconds <= 60 } });
     seriesRef.current?.applyOptions({
       priceFormat: {
         type: "custom",
-        minMove: metric === "price" ? 0.00000001 : 0.01,
-        formatter: (value: number) => formatValue(value, metric, denomination),
+        minMove: metric === "price" ? (solana ? 0.000000000001 : 0.00000001) : 0.01,
+        formatter: (value: number) => formatValue(value, metric, denomination, nativeSymbol),
       },
     });
     initialRangeSetRef.current = false;
-  }, [denomination, intervalSeconds, metric]);
+  }, [denomination, intervalSeconds, metric, nativeSymbol, solana]);
 
   useEffect(() => {
     const series = seriesRef.current;
     const chart = chartRef.current;
     if (!series || !chart || data.length === 0) return;
-
     const previous = previousDataRef.current;
     const onlyLatestChanged =
       previous.length > 0 &&
       data.length >= previous.length &&
       data.slice(0, -1).every((row, index) => Number(row.time) === Number(previous[index]?.time));
-
     if (onlyLatestChanged) series.update(data[data.length - 1] as any);
     else series.setData(data as any);
     previousDataRef.current = data;
@@ -751,30 +692,25 @@ export function UnifiedMarketChart({
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;
       const visibleBars = Math.max(24, Math.min(180, Math.floor(width / 8)));
-      chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, data.length - visibleBars),
-        to: data.length + 4,
-      });
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, data.length - visibleBars), to: data.length + 4 });
       initialRangeSetRef.current = true;
     }
-    // Defer pin layout until after paint/layout.
     requestAnimationFrame(() => repositionCreatorPins());
   }, [data, repositionCreatorPins]);
 
   useEffect(() => {
-    if (!markerPluginRef.current) return;
-    markerPluginRef.current.setMarkers(graduationMarkers);
+    markerPluginRef.current?.setMarkers(graduationMarkers);
   }, [graduationMarkers]);
 
   useEffect(() => {
     repositionCreatorPins();
-  }, [creatorPins, repositionCreatorPins, metric, denomination]);
+  }, [creatorPins, denomination, metric, repositionCreatorPins]);
 
-  const hoverPin = hoverPinId ? placedPins.find((p) => p.id === hoverPinId) : null;
+  const hoverPin = hoverPinId ? placedPins.find((pin) => pin.id === hoverPinId) : null;
   const avatarSrc = resolvedAvatar || "/placeholder.svg";
   const displayName = resolvedName || shortenAddr(String(creatorAddress || ""));
-
   const hasData = data.length > 0;
+
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2 shrink-0">
@@ -782,35 +718,23 @@ export function UnifiedMarketChart({
           <button
             type="button"
             onClick={() => setMetric("marketcap")}
-            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${
-              metric === "marketcap"
-                ? "bg-orange-500/25 text-orange-300"
-                : "text-muted-foreground hover:text-orange-200"
-            }`}
+            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${metric === "marketcap" ? "bg-orange-500/25 text-orange-300" : "text-muted-foreground hover:text-orange-200"}`}
           >
             Market Cap
           </button>
           <button
             type="button"
             onClick={() => setMetric("price")}
-            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${
-              metric === "price"
-                ? "bg-orange-500/25 text-orange-300"
-                : "text-muted-foreground hover:text-orange-200"
-            }`}
+            className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${metric === "price" ? "bg-orange-500/25 text-orange-300" : "text-muted-foreground hover:text-orange-200"}`}
           >
-            Price
+            Price ({denomination === "USD" ? "USD" : nativeSymbol})
           </button>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {creatorAddress ? (
             <div className="hidden items-center gap-2 text-[9px] text-muted-foreground sm:flex">
               <span className="inline-flex items-center gap-1">
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  className="h-3.5 w-3.5 rounded-full border border-orange-400/80 object-cover"
-                />
+                <img src={avatarSrc} alt="" className="h-3.5 w-3.5 rounded-full border border-orange-400/80 object-cover" />
                 Creator trades
               </span>
             </div>
@@ -821,11 +745,7 @@ export function UnifiedMarketChart({
                 type="button"
                 key={item.key}
                 onClick={() => onResolutionChange(item.key)}
-                className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${
-                  resolution === item.key
-                    ? "border-orange-400/50 bg-orange-500/25 text-orange-300"
-                    : "border-border/60 text-muted-foreground hover:text-orange-200"
-                }`}
+                className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${resolution === item.key ? "border-orange-400/50 bg-orange-500/25 text-orange-300" : "border-border/60 text-muted-foreground hover:text-orange-200"}`}
               >
                 {item.key}
               </button>
@@ -833,51 +753,31 @@ export function UnifiedMarketChart({
           </div>
         </div>
       </div>
+
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
-        {/* Creator avatar pins + hover card. pointer-events only on pins/popup so chart pan still works. */}
         <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
           {placedPins.map((pin) => {
-            const isBuy = pin.side === "buy";
-            const ring = isBuy ? "border-orange-400" : "border-orange-500/90";
-            const glow = "shadow-[0_0_12px_rgba(249,115,22,0.55)]";
             const active = hoverPinId === pin.id;
             return (
               <button
                 key={pin.id}
                 type="button"
-                title={
-                  pin.stackCount > 1
-                    ? `Creator ${pin.side} (${pin.stackIndex + 1}/${pin.stackCount} in this bar)`
-                    : `Creator ${pin.side}`
-                }
-                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/80 p-0 transition-transform hover:z-30 hover:scale-125 ${ring} ${glow} ${
-                  active ? "z-30 scale-125" : ""
-                }`}
-                style={{
-                  left: pin.x,
-                  top: pin.y,
-                  // Higher stack = slightly higher z so the top avatar is easiest to hit
-                  zIndex: 10 + pin.stackIndex,
-                }}
+                title={`Creator ${pin.side}${pin.stackCount > 1 ? ` (${pin.stackIndex + 1}/${pin.stackCount} in this bar)` : ""}`}
+                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-orange-400 bg-black/80 p-0 shadow-[0_0_12px_rgba(249,115,22,0.55)] transition-transform hover:z-30 hover:scale-125 ${active ? "z-30 scale-125" : ""}`}
+                style={{ left: pin.x, top: pin.y, zIndex: 10 + pin.stackIndex }}
                 onMouseEnter={() => openCreatorTooltip(pin.id)}
                 onMouseLeave={scheduleHideCreatorTooltip}
                 onFocus={() => openCreatorTooltip(pin.id)}
                 onBlur={scheduleHideCreatorTooltip}
-                onClick={(e) => {
-                  // Mobile tap: open / toggle
-                  e.stopPropagation();
+                onClick={(event) => {
+                  event.stopPropagation();
                   clearHideTooltipTimer();
-                  setHoverPinId((cur) => (cur === pin.id ? null : pin.id));
+                  setHoverPinId((current) => current === pin.id ? null : pin.id);
                 }}
-                aria-label={`Creator ${pin.side}${pin.stackCount > 1 ? ` ${pin.stackIndex + 1} of ${pin.stackCount}` : ""}`}
+                aria-label={`Creator ${pin.side}`}
               >
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  className="h-full w-full rounded-full object-cover"
-                  draggable={false}
-                />
+                <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
               </button>
             );
           })}
@@ -888,73 +788,58 @@ export function UnifiedMarketChart({
               aria-label={`Creator ${hoverPin.side} details`}
               className="pointer-events-auto absolute z-30 w-[228px] -translate-x-1/2 rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
               style={{
-                left: Math.min(
-                  Math.max(hoverPin.x, 114),
-                  (overlayRef.current?.clientWidth || 400) - 114,
-                ),
+                left: Math.min(Math.max(hoverPin.x, 114), (overlayRef.current?.clientWidth || 400) - 114),
                 top: Math.max(8, hoverPin.y - 124),
               }}
               onMouseEnter={() => openCreatorTooltip(hoverPin.id)}
               onMouseLeave={scheduleHideCreatorTooltip}
             >
               <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-orange-300">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    hoverPin.side === "buy" ? "bg-orange-400" : "bg-orange-500"
-                  }`}
-                />
+                <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
                 Creator {hoverPin.side}
               </div>
               <div className="mb-2 flex items-center gap-2">
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  className="h-7 w-7 rounded-full border border-orange-400/40 object-cover"
-                />
+                <img src={avatarSrc} alt="" className="h-7 w-7 rounded-full border border-orange-400/40 object-cover" />
                 <div className="min-w-0">
                   <div className="truncate text-xs font-semibold text-white">{displayName}</div>
                   <div className="truncate text-[10px] text-orange-200/70">
-                    {hoverPin.side === "buy" ? "Bought" : "Sold"} by{" "}
-                    {shortenAddr(String(creatorAddress || ""))}
+                    {hoverPin.side === "buy" ? "Bought" : "Sold"} by {shortenAddr(String(creatorAddress || ""))}
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
-                  <div className="text-orange-200/55">BNB size</div>
-                  <div className="font-semibold text-white">{formatBnbAmt(hoverPin.nativeWei)}</div>
+                  <div className="text-orange-200/55">{nativeSymbol} size</div>
+                  <div className="font-semibold text-white">{formatNativeAmt(hoverPin.nativeWei, nativeDecimals, nativeSymbol)}</div>
                 </div>
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
                   <div className="text-orange-200/55">Token size</div>
-                  <div className="font-semibold text-white">{formatTokenAmt(hoverPin.tokensWei)}</div>
+                  <div className="font-semibold text-white">{formatTokenAmt(hoverPin.tokensWei, tokenDecimals)}</div>
                 </div>
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
                   <div className="text-orange-200/55">Market cap</div>
-                  <div className="font-semibold text-white">
-                    {hoverPin.mcapUsd != null
-                      ? formatValue(hoverPin.mcapUsd, "marketcap", "USD")
-                      : "—"}
-                  </div>
+                  <div className="font-semibold text-white">{hoverPin.mcapUsd != null ? formatValue(hoverPin.mcapUsd, "marketcap", "USD", nativeSymbol) : "—"}</div>
                 </div>
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5">
                   <div className="text-orange-200/55">Price</div>
                   <div className="font-semibold text-white">
                     {formatValue(
-                      denomination === "USD" ? hoverPin.priceBnb * (bnbUsd || 1) : hoverPin.priceBnb,
+                      denomination === "USD" ? hoverPin.priceNative * (nativeUsd || 1) : hoverPin.priceNative,
                       "price",
                       denomination,
+                      nativeSymbol,
                     )}
                   </div>
                 </div>
               </div>
-              {hoverPin.txHash?.startsWith("0x") && hoverPin.txHash.length === 66 ? (
+              {isValidTradeTxHash(hoverPin.txHash) ? (
                 <a
                   href={explorerTxUrl(Number(chainId || 97), hoverPin.txHash)}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-2 flex w-full items-center justify-center rounded-lg border border-orange-400/45 bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25 hover:text-orange-100"
                   onMouseEnter={() => openCreatorTooltip(hoverPin.id)}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
                 >
                   View tx
                 </a>
@@ -962,13 +847,10 @@ export function UnifiedMarketChart({
             </div>
           ) : null}
         </div>
+
         {!hasData && (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">
-            {loading
-              ? "Loading trade history…"
-              : error
-                ? error
-                : "No trades in the loaded window yet. Buys/sells appear as continuous candles once history is recovered."}
+            {loading ? "Loading trade history…" : error ? error : "No trades in the loaded window yet. Buys/sells appear as continuous candles once history is recovered."}
           </div>
         )}
       </div>

@@ -2,14 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import { apiFetch } from "@/lib/apiBase";
-import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/chainConfig";
+import {
+  getActiveChainId,
+  isEvmChainId,
+  isSolanaChainId,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
 import { loadCachedTradeHistory, saveCachedTradeHistory } from "@/lib/tradeHistoryCache";
-import { mergeTradePoints } from "@/lib/tradeDedupe";
+import {
+  isValidTradeTxHash,
+  mergeTradePoints,
+  normalizeTradeTxHash,
+} from "@/lib/tradeDedupe";
 
-// Prefer the same token/realtime base resolution as apiBase (TOKEN_API_BASE first).
-// Default matches the live devpostgrad indexer service.
 function resolveRealtimeApiBase(): string {
   const candidates = [
     import.meta.env.VITE_TOKEN_API_BASE,
@@ -29,14 +36,11 @@ function resolveRealtimeApiBase(): string {
 
 const API_BASE = resolveRealtimeApiBase();
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
-// Always light-poll trade history unless explicitly disabled. Session cache + Ably alone
-// caused Chrome vs Vivaldi divergence after buys (one browser painted local cache only).
-const ENABLE_TRADE_POLL =
-  String(import.meta.env.VITE_DISABLE_TRADE_POLL || "").trim() !== "1";
-// Browser eth_getLogs is optional recovery only — primary history comes from the Railway indexer.
+const ENABLE_TRADE_POLL = String(import.meta.env.VITE_DISABLE_TRADE_POLL || "").trim() !== "1";
 const ENABLE_ONCHAIN_TRADE_FALLBACK =
   String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1" &&
   String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() !== "1";
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 type RealtimeChannel = any;
 
@@ -44,66 +48,38 @@ export type CurveTradePoint = {
   type: "buy" | "sell";
   from: string;
   to: string;
-  tokensWei: bigint;
-  nativeWei: bigint;
-  pricePerToken: number; // BNB per token
-  timestamp: number; // unix seconds
+  tokensWei: bigint; // raw token units (name retained for existing callers)
+  nativeWei: bigint; // wei on BNB, lamports on Solana
+  pricePerToken: number; // native coin per whole token
+  timestamp: number;
   txHash: string;
-  blockNumber: number;
-  logIndex: number;
+  blockNumber: number; // EVM block / Solana slot
+  logIndex: number; // EVM log index / Anchor event index
 };
 
 type UseCurveTradesOptions = {
   enabled?: boolean;
   chainId?: number;
   limit?: number;
-  /** Safety net: periodically re-fetch snapshot to reconcile any missed messages. Disabled by default. */
   reconcileMs?: number;
 };
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 
+function normalizeAddress(chainId: number, value: unknown) {
+  const raw = String(value || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
+}
+
 function isTradeCampaignAddress(campaignAddress: string | undefined, chainId: number) {
-  const raw = String(campaignAddress || "").trim();
+  const raw = normalizeAddress(chainId, campaignAddress || "");
+  if (isSolanaChainId(chainId)) return SOLANA_ADDRESS_RE.test(raw);
   return isEvmChainId(chainId) && ethers.isAddress(raw);
 }
 
 function isAbortError(error: unknown): boolean {
   const candidate = error as any;
   return candidate?.name === "AbortError" || String(candidate?.message || candidate || "").toLowerCase().includes("aborted");
-}
-
-function mergeTrades(prev: CurveTradePoint[], next: CurveTradePoint[]) {
-  // Same rule as Token Details / War Room: one row per txHash (on-chain wins).
-  return mergeTradePoints(prev, next);
-}
-
-function toBigIntWei(amount: unknown, kind: "ether" | "token"): bigint {
-  if (typeof amount === "bigint") return amount;
-  const s = typeof amount === "string" ? amount : typeof amount === "number" ? String(amount) : "0";
-  const trimmed = s.trim();
-  if (/^\d+$/.test(trimmed) && trimmed.length > (kind === "ether" ? 12 : 18)) {
-    try {
-      return BigInt(trimmed);
-    } catch {
-      return 0n;
-    }
-  }
-  try {
-    if (kind === "ether") return ethers.parseEther(trimmed);
-    return ethers.parseUnits(trimmed, 18);
-  } catch {
-    return 0n;
-  }
-}
-
-function toNumber(amount: unknown): number {
-  if (typeof amount === "number") return amount;
-  if (typeof amount === "string") {
-    const n = Number(amount);
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
 }
 
 function toTimestampSec(v: unknown): number {
@@ -126,9 +102,25 @@ function toTimestampSec(v: unknown): number {
   }
 }
 
-function numberFromWei(wei: bigint, decimals = 18): number {
+function parseAmount(rawValue: unknown, decimalValue: unknown, decimals: number): bigint {
+  const raw = String(rawValue ?? "").trim();
+  if (/^\d+$/.test(raw)) {
+    try {
+      return BigInt(raw);
+    } catch {
+      // fall through
+    }
+  }
   try {
-    const n = Number(ethers.formatUnits(wei, decimals));
+    return ethers.parseUnits(String(decimalValue ?? "0"), decimals);
+  } catch {
+    return 0n;
+  }
+}
+
+function numberFromRaw(raw: bigint, decimals: number): number {
+  try {
+    const n = Number(ethers.formatUnits(raw, decimals));
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0;
@@ -136,16 +128,12 @@ function numberFromWei(wei: bigint, decimals = 18): number {
 }
 
 async function fetchIndexerTrades(campaignAddress: string, chainId: number, limit: number, signal?: AbortSignal) {
-  // Prefer relative /api/token/* through apiFetch so Netlify/proxy routing hits the
-  // Railway indexer (memebattles-production-dca0) instead of inventing browser RPCs.
-  const path = `/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-
-  // Hard-cap wait: empty-history backfill used to hang for 60–90s and blocked
-  // browser on-chain recovery entirely.
+  const campaign = normalizeAddress(chainId, campaignAddress);
+  const path = `/api/token/${encodeURIComponent(campaign)}/trades?chainId=${chainId}&limit=${limit}`;
   const timeout = new AbortController();
   const onParentAbort = () => timeout.abort();
   signal?.addEventListener("abort", onParentAbort, { once: true });
-  const timer = setTimeout(() => timeout.abort(), 5_000);
+  const timer = setTimeout(() => timeout.abort(), isSolanaChainId(chainId) ? 7_000 : 5_000);
   try {
     try {
       const r = await apiFetch(path, { method: "GET", signal: timeout.signal, cache: "no-store" as RequestCache });
@@ -159,7 +147,7 @@ async function fetchIndexerTrades(campaignAddress: string, chainId: number, limi
     }
 
     if (!API_BASE) return [];
-    const absolute = `${API_BASE}/api/token/${String(campaignAddress).toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
+    const absolute = `${API_BASE}/api/token/${encodeURIComponent(campaign)}/trades?chainId=${chainId}&limit=${limit}`;
     const r = await fetch(absolute, { method: "GET", signal: timeout.signal, cache: "no-store" });
     if (!r.ok) {
       const text = await r.text().catch(() => "");
@@ -181,7 +169,10 @@ async function fetchOnChainTradeSnapshot(
   limit: number,
   signal?: AbortSignal,
 ): Promise<CurveTradePoint[]> {
-  if (!ethers.isAddress(campaignAddress)) return [];
+  // Solana history comes from the dedicated program indexer; never send base58
+  // addresses through EVM getLogs recovery.
+  if (!isEvmChainId(chainId) || !ethers.isAddress(campaignAddress)) return [];
+
   const iface = new ethers.Interface(CAMPAIGN_ABI);
   const buyEvent = iface.getEvent("TokensPurchased");
   const sellEvent = iface.getEvent("TokensSold");
@@ -190,38 +181,14 @@ async function fetchOnChainTradeSnapshot(
   if (!buyTopic || !sellTopic) return [];
 
   const address = campaignAddress.toLowerCase();
-  // Deep lookback when the indexer is empty. publicnode serves ~5k-block windows well.
   const lookbackBlocks = 40_000;
-  const buyLogs = await scanContractLogs({
-    chainId,
-    address,
-    topics: [buyTopic],
-    lookbackBlocks,
-    chunkSize: 2_000,
-    signal,
-  });
-  const sellLogs = await scanContractLogs({
-    chainId,
-    address,
-    topics: [sellTopic],
-    lookbackBlocks,
-    chunkSize: 2_000,
-    signal,
-  });
-
+  const buyLogs = await scanContractLogs({ chainId, address, topics: [buyTopic], lookbackBlocks, chunkSize: 2_000, signal });
+  const sellLogs = await scanContractLogs({ chainId, address, topics: [sellTopic], lookbackBlocks, chunkSize: 2_000, signal });
   const allLogs = [...buyLogs, ...sellLogs]
-    .sort((a, b) => {
-      if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
-      return Number(a.index ?? 0) - Number(b.index ?? 0);
-    })
+    .sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0))
     .slice(-limit);
 
-  const timestamps = await getBlockTimestamps(
-    chainId,
-    allLogs.map((log) => Number(log.blockNumber || 0)),
-    signal,
-  );
-
+  const timestamps = await getBlockTimestamps(chainId, allLogs.map((log) => Number(log.blockNumber || 0)), signal);
   const out: CurveTradePoint[] = [];
   for (const log of allLogs) {
     if (signal?.aborted) break;
@@ -231,22 +198,20 @@ async function fetchOnChainTradeSnapshot(
       const isSell = parsed.name === "TokensSold";
       const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
       const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
-      const tokens = numberFromWei(tokensWei, 18);
-      const bnb = numberFromWei(nativeWei, 18);
-      const pricePerToken = tokens > 0 ? bnb / tokens : 0;
+      const tokens = numberFromRaw(tokensWei, 18);
+      const native = numberFromRaw(nativeWei, 18);
       const blockNumber = Number(log.blockNumber ?? 0);
       const timestamp = timestamps.get(blockNumber) || 0;
       if (!timestamp) continue;
-
       out.push({
         type: isSell ? "sell" : "buy",
         from: String(isSell ? parsed.args.seller : parsed.args.buyer).toLowerCase(),
         to: address,
         tokensWei,
         nativeWei,
-        pricePerToken,
+        pricePerToken: tokens > 0 ? native / tokens : 0,
         timestamp,
-        txHash: String(log.transactionHash || "").toLowerCase(),
+        txHash: normalizeTradeTxHash(log.transactionHash),
         blockNumber,
         logIndex: Number(log.index ?? 0),
       });
@@ -254,16 +219,15 @@ async function fetchOnChainTradeSnapshot(
       // ignore malformed logs
     }
   }
-
-  return out.filter((t) => /^0x[a-f0-9]{64}$/i.test(t.txHash) && t.blockNumber > 0 && t.timestamp > 0);
+  return out.filter((t) => isValidTradeTxHash(t.txHash) && t.blockNumber > 0 && t.timestamp > 0);
 }
 
 /**
  * Curve trades backed by:
- *  1) Snapshot: Railway realtime-indexer REST endpoint
- *  2) Explicit dev-only fallback: recent on-chain campaign logs
- *  3) Realtime: Ably channel updates
- *  4) Light HTTP poll (~12s) so browsers without Ably/session cache converge
+ *  1) Railway realtime-indexer REST snapshot (BNB + Solana)
+ *  2) EVM-only getLogs fallback
+ *  3) Ably token channel
+ *  4) Light HTTP polling for convergence
  */
 export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOptions) {
   const enabled = opts?.enabled ?? true;
@@ -279,70 +243,55 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   const inFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  // Keep multi-browser views close after a trade without hammering the indexer.
   const reconcileMs = opts?.reconcileMs ?? 5_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
   const applySnapshot = useCallback((rows: any[], options?: { replaceEmpty?: boolean }) => {
+    const tokenDecimals = isSolanaChainId(chainId) ? 6 : 18;
+    const nativeDecimals = isSolanaChainId(chainId) ? 9 : 18;
+    const target = normalizeAddress(chainId, campaignAddress || "");
+
     const next: CurveTradePoint[] = (rows || [])
       .map((r: any) => {
-        // Already-normalized CurveTradePoint (on-chain path).
-        if ((typeof r?.tokensWei === "bigint" || typeof r?.tokensWei === "string") && r?.txHash && r?.type) {
-          try {
-            return {
-              type: String(r.type || "").toLowerCase() === "sell" ? "sell" : "buy",
-              from: String(r.from || "").toLowerCase(),
-              to: String(r.to || campaignAddress || "").toLowerCase(),
-              tokensWei: typeof r.tokensWei === "bigint" ? r.tokensWei : BigInt(String(r.tokensWei || "0")),
-              nativeWei: typeof r.nativeWei === "bigint" ? r.nativeWei : BigInt(String(r.nativeWei || "0")),
-              pricePerToken: Number(r.pricePerToken || 0),
-              timestamp: Number(r.timestamp || 0),
-              txHash: String(r.txHash || "").toLowerCase(),
-              blockNumber: Number(r.blockNumber || 0),
-              logIndex: Number(r.logIndex || 0),
-            } satisfies CurveTradePoint;
-          } catch {
-            return null;
-          }
+        try {
+          const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
+          const txHash = normalizeTradeTxHash(r.tx_hash || r.txHash);
+          if (!txHash) return null;
+          const tokensWei =
+            r.tokensWei != null
+              ? BigInt(String(r.tokensWei))
+              : parseAmount(r.token_amount_raw, r.token_amount ?? r.tokens, tokenDecimals);
+          const nativeWei =
+            r.nativeWei != null
+              ? BigInt(String(r.nativeWei))
+              : parseAmount(r.bnb_amount_raw, r.bnb_amount ?? r.native, nativeDecimals);
+          const tokens = numberFromRaw(tokensWei, tokenDecimals);
+          const native = numberFromRaw(nativeWei, nativeDecimals);
+          const suppliedPrice = Number(r.price_bnb ?? r.pricePerToken ?? 0);
+          return {
+            type: side,
+            from: normalizeAddress(chainId, r.wallet || r.trader || r.from || ""),
+            to: normalizeAddress(chainId, r.to || target),
+            tokensWei,
+            nativeWei,
+            pricePerToken: Number.isFinite(suppliedPrice) && suppliedPrice > 0 ? suppliedPrice : tokens > 0 ? native / tokens : 0,
+            timestamp: toTimestampSec(r.block_time ?? r.timestamp ?? r.time),
+            txHash,
+            blockNumber: Number(r.block_number ?? r.blockNumber ?? 0),
+            logIndex: Number(r.log_index ?? r.logIndex ?? 0),
+          } satisfies CurveTradePoint;
+        } catch {
+          return null;
         }
-
-        const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
-        const txHash = String(r.tx_hash || r.txHash || "");
-        const logIndex = Number(r.log_index ?? r.logIndex ?? 0);
-        const blockNumber = Number(r.block_number ?? r.blockNumber ?? 0);
-        const ts = toTimestampSec(r.block_time ?? r.timestamp ?? r.time);
-        const tokensWei = toBigIntWei(r.token_amount ?? r.tokens ?? r.tokensWei, "token");
-        const nativeWei = toBigIntWei(r.bnb_amount ?? r.native ?? r.nativeWei, "ether");
-        const tokens = Number(ethers.formatUnits(tokensWei, 18));
-        const bnb = Number(ethers.formatEther(nativeWei));
-        const pricePerToken = toNumber(r.price_bnb ?? r.pricePerToken) || (tokens > 0 ? bnb / tokens : 0);
-
-        return {
-          type: side,
-          from: String(r.wallet || r.trader || r.from || "").toLowerCase(),
-          to: String(campaignAddress || "").toLowerCase(),
-          tokensWei,
-          nativeWei,
-          pricePerToken,
-          timestamp: ts,
-          txHash,
-          blockNumber,
-          logIndex,
-        } satisfies CurveTradePoint;
       })
-      .filter((t): t is CurveTradePoint => Boolean(t) && /^0x[a-f0-9]{64}$/i.test(String(t?.txHash || "")) && Number.isFinite(Number(t?.blockNumber)));
+      .filter((t): t is CurveTradePoint => Boolean(t) && isValidTradeTxHash(t?.txHash) && Number.isFinite(Number(t?.blockNumber)));
 
-    // Never wipe existing history with an empty fetch (RPC flakes / rate limits).
-    if (!next.length && !options?.replaceEmpty) {
-      return 0;
-    }
+    if (!next.length && !options?.replaceEmpty) return 0;
 
     setPoints((prev) => {
-      const merged = next.length ? mergeTrades(prev, next) : prev;
-      if (campaignAddress && merged.length) {
-        saveCachedTradeHistory(chainId, campaignAddress, merged);
-      }
+      const merged = next.length ? mergeTradePoints(prev, next) : prev;
+      if (campaignAddress && merged.length) saveCachedTradeHistory(chainId, campaignAddress, merged);
       return merged;
     });
     return next.length;
@@ -360,8 +309,6 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     inFlightRef.current = true;
     try {
       if (!initialLoadedRef.current) setLoading(true);
-
-      // 1) Indexer first (capped). Unblock the chart as soon as we have rows or a quick empty.
       let apiRows: any[] = [];
       try {
         apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
@@ -370,8 +317,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           applySnapshot(apiRows);
           setLoading(false);
           initialLoadedRef.current = true;
-          // Background reconcile only when forced — never block paint on eth_getLogs.
-          if (!forceOnChainReconcile) {
+          if (!forceOnChainReconcile || isSolanaChainId(chainId)) {
             setError(null);
             return;
           }
@@ -381,29 +327,21 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         console.warn("[useCurveTrades] indexer trade API failed", apiError);
       }
 
-      // 2) On-chain recovery only when indexer empty / forced. Keep loading false if we already
-      // painted cache so Token Details doesn't sit on "Loading trade history…" for 20s+.
-      if (!apiRows.length || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK) {
-        if (!apiRows.length) {
-          // Still show loading only when we have nothing to display yet.
-          setLoading((prev) => (initialLoadedRef.current ? false : prev));
-        }
+      if (isEvmChainId(chainId) && (!apiRows.length || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK)) {
         try {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           if (signal?.aborted) return;
           if (fallbackRows.length) applySnapshot(fallbackRows);
-        } catch (error) {
-          if (!isAbortError(error)) {
-            console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", error);
-          }
+        } catch (fallbackError) {
+          if (!isAbortError(fallbackError)) console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", fallbackError);
         }
       }
 
       setError(null);
       initialLoadedRef.current = true;
-    } catch (error: any) {
-      if (!isAbortError(error)) {
-        console.warn("[useCurveTrades] trade snapshot failed", error);
+    } catch (snapshotError: any) {
+      if (!isAbortError(snapshotError)) {
+        console.warn("[useCurveTrades] trade snapshot failed", snapshotError);
         setError(null);
         initialLoadedRef.current = true;
       }
@@ -415,11 +353,10 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   useEffect(() => {
     const ac = new AbortController();
-    const curr = canLoadTrades ? (campaignAddress || "").toLowerCase() : "";
+    const curr = canLoadTrades ? normalizeAddress(chainId, campaignAddress || "") : "";
     const prev = prevCampaignRef.current;
     if (curr !== prev) {
       prevCampaignRef.current = curr;
-      // Seed from session cache immediately so reload is not blank while network runs.
       const cached = curr ? loadCachedTradeHistory(chainId, curr) : [];
       setPoints(cached);
       setLoading(canLoadTrades && cached.length === 0);
@@ -428,14 +365,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     }
 
     void pullSnapshot(ac.signal);
-
-    // Poll trade history by default (or when VITE_ENABLE_TOKEN_POLLING=1).
     if (!canLoadTrades || (!ENABLE_TRADE_POLL && !ENABLE_TOKEN_POLLING)) return () => ac.abort();
-
-    const timer = setInterval(() => {
-      void pullSnapshot(ac.signal);
-    }, reconcileMs);
-
+    const timer = setInterval(() => void pullSnapshot(ac.signal), reconcileMs);
     return () => {
       clearInterval(timer);
       ac.abort();
@@ -444,47 +375,39 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   useEffect(() => {
     if (!canLoadTrades || !campaignAddress) return;
-    const current = campaignAddress.toLowerCase();
+    const current = normalizeAddress(chainId, campaignAddress);
     const onConfirmed = (event: Event) => {
       const detail = (event as CustomEvent)?.detail || {};
       const kind = String(detail?.kind || "").toLowerCase();
-      const confirmedCampaign = String(detail?.campaignAddress || "").toLowerCase();
+      const confirmedCampaign = normalizeAddress(chainId, detail?.campaignAddress || "");
       if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== current) return;
-      if (Array.isArray(detail?.trades) && detail.trades.length) {
-        applySnapshot(detail.trades);
-      }
-      // Indexer insert can lag a few seconds after wallet confirmation — retry briefly
-      // so the other browser (and this one) converge without waiting for the long poll.
+      if (Array.isArray(detail?.trades) && detail.trades.length) applySnapshot(detail.trades);
       void pullSnapshot();
       window.setTimeout(() => void pullSnapshot(), 1_500);
       window.setTimeout(() => void pullSnapshot(), 4_000);
       window.setTimeout(() => void pullSnapshot(), 8_000);
     };
-
     window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
     return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
-  }, [canLoadTrades, campaignAddress, applySnapshot, pullSnapshot]);
+  }, [canLoadTrades, campaignAddress, chainId, applySnapshot, pullSnapshot]);
 
   const ably = useAblyTokenChannel({ enabled: canLoadTrades, chainId, campaignAddress });
   useEffect(() => {
-    if (!canLoadTrades) return;
-    if (ably.missingBase || !ably.channel) return;
-
+    if (!canLoadTrades || ably.missingBase || !ably.channel) return;
+    const channel: RealtimeChannel = ably.channel;
     const onTrade = (msg: any) => {
       const data = msg?.data;
-      if (Array.isArray(data)) return applySnapshot(data);
-      if (data && typeof data === "object") return applySnapshot([data]);
+      if (Array.isArray(data)) applySnapshot(data);
+      else if (data && typeof data === "object") applySnapshot([data]);
     };
-
     try {
-      ably.channel.subscribe("trade", onTrade);
+      channel.subscribe("trade", onTrade);
     } catch {
-      // HTTP snapshot remains the source of truth when realtime is unavailable.
+      // HTTP polling remains authoritative when realtime is unavailable.
     }
-
     return () => {
       try {
-        ably.channel.unsubscribe("trade", onTrade);
+        channel.unsubscribe("trade", onTrade);
       } catch {
         // ignore
       }

@@ -1,4 +1,6 @@
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
+import { isSolanaChainId } from "@/lib/chainConfig";
+import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
 const PREFIX = "mwz:trade-history:v1:";
 const MAX = 120;
@@ -16,17 +18,27 @@ type Stored = {
   logIndex: number;
 };
 
-function key(chainId: number, campaign: string) {
-  return `${PREFIX}${Number(chainId)}:${String(campaign || "").toLowerCase()}`;
+function normalizeAddress(chainId: number, value: unknown) {
+  const raw = String(value || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
 }
 
-function toStored(p: CurveTradePoint): Stored | null {
-  const txHash = String(p.txHash || "").toLowerCase();
-  if (!/^0x[a-f0-9]{64}$/.test(txHash)) return null;
+function key(chainId: number, campaign: string) {
+  return `${PREFIX}${Number(chainId)}:${normalizeAddress(chainId, campaign)}`;
+}
+
+function storageFor(chainId: number): Storage | null {
+  if (typeof window === "undefined") return null;
+  return isSolanaChainId(chainId) ? window.localStorage : window.sessionStorage;
+}
+
+function toStored(p: CurveTradePoint, chainId: number): Stored | null {
+  const txHash = normalizeTradeTxHash(p.txHash);
+  if (!txHash) return null;
   return {
     type: p.type === "sell" ? "sell" : "buy",
-    from: String(p.from || "").toLowerCase(),
-    to: String(p.to || "").toLowerCase(),
+    from: normalizeAddress(chainId, p.from),
+    to: normalizeAddress(chainId, p.to),
     tokensWei: String(p.tokensWei ?? 0n),
     nativeWei: String(p.nativeWei ?? 0n),
     pricePerToken: Number(p.pricePerToken || 0),
@@ -37,17 +49,19 @@ function toStored(p: CurveTradePoint): Stored | null {
   };
 }
 
-function fromStored(s: Stored): CurveTradePoint | null {
+function fromStored(s: Stored, chainId: number): CurveTradePoint | null {
   try {
+    const txHash = normalizeTradeTxHash(s.txHash);
+    if (!txHash) return null;
     return {
       type: s.type === "sell" ? "sell" : "buy",
-      from: String(s.from || "").toLowerCase(),
-      to: String(s.to || "").toLowerCase(),
+      from: normalizeAddress(chainId, s.from),
+      to: normalizeAddress(chainId, s.to),
       tokensWei: BigInt(s.tokensWei || "0"),
       nativeWei: BigInt(s.nativeWei || "0"),
       pricePerToken: Number(s.pricePerToken || 0),
       timestamp: Number(s.timestamp || 0),
-      txHash: String(s.txHash || "").toLowerCase(),
+      txHash,
       blockNumber: Number(s.blockNumber || 0),
       logIndex: Number(s.logIndex || 0),
     };
@@ -57,31 +71,33 @@ function fromStored(s: Stored): CurveTradePoint | null {
 }
 
 export function loadCachedTradeHistory(chainId: number, campaign: string): CurveTradePoint[] {
-  if (typeof window === "undefined") return [];
+  const storage = storageFor(chainId);
+  if (!storage) return [];
   try {
-    const raw = window.sessionStorage.getItem(key(chainId, campaign));
+    const raw = storage.getItem(key(chainId, campaign));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Stored[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.map(fromStored).filter((x): x is CurveTradePoint => Boolean(x)).slice(-MAX);
+    return parsed.map((row) => fromStored(row, chainId)).filter((x): x is CurveTradePoint => Boolean(x)).slice(-MAX);
   } catch {
     return [];
   }
 }
 
 export function saveCachedTradeHistory(chainId: number, campaign: string, trades: CurveTradePoint[]) {
-  if (typeof window === "undefined") return;
+  const storage = storageFor(chainId);
+  if (!storage) return;
   try {
     const map = new Map<string, Stored>();
     for (const t of trades) {
-      const s = toStored(t);
+      const s = toStored(t, chainId);
       if (!s) continue;
       map.set(`${s.txHash}:${s.logIndex}`, s);
     }
     const rows = Array.from(map.values())
       .sort((a, b) => a.timestamp - b.timestamp || a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
       .slice(-MAX);
-    window.sessionStorage.setItem(key(chainId, campaign), JSON.stringify(rows));
+    storage.setItem(key(chainId, campaign), JSON.stringify(rows));
   } catch {
     // ignore
   }

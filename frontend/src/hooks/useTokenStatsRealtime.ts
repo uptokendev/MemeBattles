@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
 
 export type TokenStatsRealtime = {
-  lastPriceBnb: number | null;
-  marketcapBnb: number | null;
-  vol24hBnb: number;
+  lastPriceBnb: number | null; // native/token (BNB or SOL; legacy field name)
+  marketcapBnb: number | null; // native market cap (BNB or SOL; legacy field name)
+  vol24hBnb: number; // native 24h volume (legacy field name)
   soldTokens: number | null;
   updatedAt?: string;
 };
@@ -28,23 +28,27 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeCampaign(chainId: number, value: string) {
+  const raw = String(value || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
+}
+
 export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number, enabled = true) {
   const [stats, setStats] = useState<TokenStatsRealtime | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
 
-  // Use the page-provided chainId as-is (Token Details pins 97/56). Do not re-run
-  // getActiveChainId(wallet) or mainnet MM will poison testnet token stats.
   const cid = useMemo<SupportedChainId>(() => {
     const n = Number(chainId ?? 97);
-    if (n === 56 || n === 97) return n as SupportedChainId;
+    if (n === 56 || n === 97 || isSolanaChainId(n)) return n as SupportedChainId;
     return getActiveChainId(n);
   }, [chainId]);
 
   const url = useMemo(() => {
     if (!API_BASE || !campaignAddress) return "";
-    return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/summary?chainId=${cid}`;
+    const campaign = normalizeCampaign(cid, campaignAddress);
+    return `${API_BASE}/api/token/${encodeURIComponent(campaign)}/summary?chainId=${cid}`;
   }, [campaignAddress, cid]);
 
   const pull = useCallback(async (signal?: AbortSignal) => {
@@ -90,7 +94,6 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
     pull(ac.signal);
 
     if (!enabled || !campaignAddress || !ENABLE_TOKEN_POLLING) return () => ac.abort();
-
     const t = setInterval(() => pull(ac.signal), 60_000);
     return () => {
       clearInterval(t);
@@ -108,32 +111,21 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
       if (!data) return;
       if ((msg?.name || "") !== "stats_patch" && String(data.type || "") !== "stats_patch") return;
 
-      setStats((prev) => {
-        const next: TokenStatsRealtime = {
-          lastPriceBnb: num(data.lastPriceBnb) ?? prev?.lastPriceBnb ?? null,
-          marketcapBnb: num(data.marketcapBnb) ?? prev?.marketcapBnb ?? null,
-          vol24hBnb: Number(num(data.vol24hBnb) ?? prev?.vol24hBnb ?? 0),
-          soldTokens: prev?.soldTokens ?? null,
-          updatedAt: prev?.updatedAt,
-        };
-        return next;
-      });
+      setStats((prev) => ({
+        lastPriceBnb: num(data.lastPriceBnb) ?? prev?.lastPriceBnb ?? null,
+        marketcapBnb: num(data.marketcapBnb) ?? prev?.marketcapBnb ?? null,
+        vol24hBnb: Number(num(data.vol24hBnb) ?? prev?.vol24hBnb ?? 0),
+        soldTokens: prev?.soldTokens ?? null,
+        updatedAt: prev?.updatedAt,
+      }));
     };
 
     const onConn = (c: any) => {
       if (c?.current === "connected") pull();
     };
 
-    try {
-      ably.client.connection.on(onConn);
-    } catch {
-      // ignore
-    }
-    try {
-      ably.channel.subscribe("stats_patch", onStats);
-    } catch {
-      // ignore
-    }
+    try { ably.client.connection.on(onConn); } catch {}
+    try { ably.channel.subscribe("stats_patch", onStats); } catch {}
 
     return () => {
       try { ably.channel.unsubscribe("stats_patch", onStats); } catch {}

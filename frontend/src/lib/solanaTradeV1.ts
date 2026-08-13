@@ -136,12 +136,13 @@ export function checkedLinearCurveCost(
     const stepSum = (tokenAmount * (tokenAmount - 1n)) / 2n;
     return baseCost + slope * (supplyCost + stepSum);
   }
-  // V2: area(x) = x*base/scale + slope*x^2/(2*scale^2); cost = area(s+a)-area(s)
+  // V2: integer lamport slope. V3: fixed-point nano-lamport slope.
   const scale = 10n ** BigInt(Math.max(0, Math.min(18, tokenDecimals)));
   const a = tokenAmount;
   const s = startSupply;
   const linear = (a * basePrice) / scale;
-  const slopeTerm = (slope * (2n * s * a + a * a)) / (2n * scale * scale);
+  const slopeScale = economicsVersion >= 3 ? 1_000_000_000n : 1n;
+  const slopeTerm = (slope * (2n * s * a + a * a)) / (2n * scale * scale * slopeScale);
   return linear + slopeTerm;
 }
 
@@ -204,7 +205,53 @@ export function quoteBuyExactSolIn(input: {
   buyFeeBps: number;
   economicsVersion?: number;
   tokenDecimals?: number;
-}): { feeLamports: bigint; netLamports: bigint; tokensOut: bigint } {
+}): { feeLamports: bigint; netLamports: bigint; tokensOut: bigint; totalSpentLamports?: bigint } {
+  const economicsVersion = input.economicsVersion ?? 2;
+  const tokenDecimals = input.tokenDecimals ?? 6;
+
+  if (economicsVersion >= 3) {
+    if (input.lamportsIn <= 0n || input.basePrice <= 0n || input.sold >= input.curveSupply) {
+      return { feeLamports: 0n, netLamports: 0n, tokensOut: 0n, totalSpentLamports: 0n };
+    }
+    const scale = 10n ** BigInt(Math.max(0, Math.min(18, tokenDecimals)));
+    const remaining = input.curveSupply - input.sold;
+    let high = (input.lamportsIn * scale) / input.basePrice;
+    if (high > remaining) high = remaining;
+    let low = 0n;
+    while (low < high) {
+      const mid = low + (high - low + 1n) / 2n;
+      const curveCost = checkedLinearCurveCost(
+        input.basePrice,
+        input.slope,
+        input.sold,
+        mid,
+        economicsVersion,
+        tokenDecimals,
+      );
+      const fee = calculateFee(curveCost, input.buyFeeBps);
+      if (curveCost + fee <= input.lamportsIn) low = mid;
+      else high = mid - 1n;
+    }
+    if (low <= 0n) {
+      return { feeLamports: 0n, netLamports: 0n, tokensOut: 0n, totalSpentLamports: 0n };
+    }
+    const netLamports = checkedLinearCurveCost(
+      input.basePrice,
+      input.slope,
+      input.sold,
+      low,
+      economicsVersion,
+      tokenDecimals,
+    );
+    const feeLamports = calculateFee(netLamports, input.buyFeeBps);
+    return {
+      feeLamports,
+      netLamports,
+      tokensOut: low,
+      totalSpentLamports: netLamports + feeLamports,
+    };
+  }
+
   const feeLamports = calculateFee(input.lamportsIn, input.buyFeeBps);
   const netLamports = input.lamportsIn > feeLamports ? input.lamportsIn - feeLamports : 0n;
   const tokensOut = quoteBuyTokens(
@@ -213,10 +260,10 @@ export function quoteBuyExactSolIn(input: {
     input.sold,
     input.curveSupply,
     netLamports,
-    input.economicsVersion ?? 2,
-    input.tokenDecimals ?? 6,
+    economicsVersion,
+    tokenDecimals,
   );
-  return { feeLamports, netLamports, tokensOut };
+  return { feeLamports, netLamports, tokensOut, totalSpentLamports: input.lamportsIn };
 }
 
 /** Sell: exact tokens in → est. SOL out after sell fee. */

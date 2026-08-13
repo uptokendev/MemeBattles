@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "network": "solana-devnet",
+  "name": "memewarzone-solana-devnet-generation-v3-bnb-fixed-point",
+  "generationIdSeed": "memewarzone-solana-devnet-generation-v3-bnb-fixed-point",
+  "riskClusterIdSeed": "memewarzone-solana-devnet-acceptance-cluster-v1",
+  "settings": {
+    "clusterKind": 1,
+    "allowedGraduationTierMask": 1,
+    "economicsVersion": 3,
+    "curveKind": 1,
+    "tokenTotalSupply": "1000000000000000",
+    "tokenDecimals": 6,
+    "curveSupplyBps": 8400,
+    "liquidityTokenBps": 1400,
+    "basePriceLamports": "1",
+    "priceSlopeLamports": "850",
+    "buyFeeBps": 200,
+    "sellFeeBps": 200,
+    "finalizeFeeBps": 200,
+    "creatorPostFinalizeBps": 2000,
+    "liquidityPostFinalizeBps": 8000,
+    "dexAdapter": 1,
+    "tradeRouteProfileSeed": "memewarzone-solana-trade-route-profile-v1",
+    "finalizeRouteProfileSeed": "memewarzone-solana-finalize-route-profile-v1",
+    "treasuryProfileSeed": "memewarzone-solana-treasury-profile-v1",
+    "dexProfileSeed": "memewarzone-solana-meteora-damm-v2-profile-v1",
+    "oracleProfileSeed": "memewarzone-solana-oracle-profile-v1",
+    "activeCreation": true,
+    "supportEnabled": true,
+    "routeAuthorizationRequired": true,
+    "authorizedTradingRequired": true
+  },
+  "clusterProfile": {
+    "size": 1,
+    "riskLevel": 1,
+    "restricted": false
+  },
+  "pauseFlags": {
+    "paused": false,
+    "createPaused": false,
+    "buyPaused": true,
+    "sellPaused": true,
+    "graduationPaused": true,
+    "claimsPaused": true
+  },
+  "notes": {
+    "economics": "V3 BNB parity. basePriceLamports remains lamports per whole token. For economicsVersion=3 only, priceSlopeLamports is fixed-point nano-lamports per whole-token squared; 850 therefore equals 0.00000085 lamport/token^2, the native-unit equivalent of BNB LaunchCampaign priceSlope=850 wei/token^2.",
+    "immutability": "V1/V2 campaigns retain their stored economics. Activate this as a new GenerationConfig only after the V3 program and frontend quote tests pass.",
+    "dex": "Meteora DAMM v2 only."
+  }
+}

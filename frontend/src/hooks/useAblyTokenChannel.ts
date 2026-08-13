@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 import { isAddress } from "ethers";
-import { isEvmChainId } from "@/lib/chainConfig";
+import { isEvmChainId, isSolanaChainId } from "@/lib/chainConfig";
 
 // Token realtime belongs to the realtime-indexer Railway service.
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
@@ -10,6 +10,7 @@ const AUTH_PREFLIGHT_TIMEOUT_MS = 6_000;
 const AUTH_PREFLIGHT_SUCCESS_TTL_MS = 60_000;
 const AUTH_PREFLIGHT_FAILURE_TTL_MS = 15_000;
 const CLOSE_GRACE_MS = 15_000;
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function getAuthBase() {
   if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) {
@@ -24,8 +25,14 @@ function getAuthBase() {
   return "";
 }
 
-function isRealtimeCampaignAddress(chainId: number, campaign: string) {
+function normalizeCampaign(chainId: number, campaign: string) {
   const raw = String(campaign || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
+}
+
+function isRealtimeCampaignAddress(chainId: number, campaign: string) {
+  const raw = normalizeCampaign(chainId, campaign);
+  if (isSolanaChainId(chainId)) return SOLANA_ADDRESS_RE.test(raw);
   return isEvmChainId(chainId) && isAddress(raw);
 }
 
@@ -47,11 +54,12 @@ const CACHE = new Map<string, Entry>();
 const PREFLIGHT_CACHE = new Map<string, PreflightEntry>();
 
 function channelNameFor(chainId: number, campaign: string) {
-  return `token:${chainId}:${campaign.toLowerCase()}`;
+  return `token:${chainId}:${normalizeCampaign(chainId, campaign)}`;
 }
 
 function authUrlFor(chainId: number, campaign: string) {
-  return `${getAuthBase()}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`;
+  const normalized = normalizeCampaign(chainId, campaign);
+  return `${getAuthBase()}/api/ably/token?chainId=${chainId}&campaign=${encodeURIComponent(normalized)}`;
 }
 
 function authPreflight(authUrl: string): Promise<boolean> {
@@ -89,7 +97,8 @@ function authPreflight(authUrl: string): Promise<boolean> {
 }
 
 function acquire(chainId: number, campaign: string) {
-  const key = `${chainId}:${campaign.toLowerCase()}`;
+  const normalized = normalizeCampaign(chainId, campaign);
+  const key = `${chainId}:${normalized}`;
   const existing = CACHE.get(key);
   if (existing) {
     existing.refs += 1;
@@ -100,7 +109,7 @@ function acquire(chainId: number, campaign: string) {
     return existing;
   }
 
-  const authUrl = authUrlFor(chainId, campaign);
+  const authUrl = authUrlFor(chainId, normalized);
   const client = new Ably.Realtime({
     authUrl,
     authMethod: "GET",
@@ -108,7 +117,7 @@ function acquire(chainId: number, campaign: string) {
     suspendedRetryTimeout: 60_000,
   });
 
-  const chName = channelNameFor(chainId, campaign);
+  const chName = channelNameFor(chainId, normalized);
   const channel = client.channels.get(chName);
 
   try {
@@ -117,8 +126,6 @@ function acquire(chainId: number, campaign: string) {
     // ignore
   }
 
-  // Do not attach eagerly. The first real subscription attaches the channel.
-  // This avoids duplicate attach/close cycles when React remounts hooks.
   const entry: Entry = {
     key,
     client,
@@ -164,7 +171,7 @@ export function useAblyTokenChannel(opts: {
 
   const key = useMemo(() => {
     if (!canOpenChannel || !campaignAddress) return "";
-    return `${chainId}:${campaignAddress.toLowerCase()}`;
+    return `${chainId}:${normalizeCampaign(chainId, campaignAddress)}`;
   }, [canOpenChannel, chainId, campaignAddress]);
 
   const [entry, setEntry] = useState<Entry | null>(null);

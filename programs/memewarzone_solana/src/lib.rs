@@ -33,8 +33,10 @@ pub const GRADUATION_TARGET_30K_USD_MICROS: u64 = 30_000_000_000;
 pub const GRADUATION_TARGET_50K_USD_MICROS: u64 = 50_000_000_000;
 
 pub const ECONOMICS_VERSION_V1: u16 = 1;
-/// BNB-parity linear curve: base/slope priced per whole token (÷ 10^decimals), like LaunchCampaign WAD.
+/// Whole-token linear curve used by the legacy flat Devnet V2 generation.
 pub const ECONOMICS_VERSION_V2: u16 = 2;
+/// BNB-parity fixed-point curve. price_slope_lamports is nano-lamports per whole-token².
+pub const ECONOMICS_VERSION_V3: u16 = 3;
 pub const CURVE_KIND_LINEAR_V1: u8 = 1;
 pub const MAX_TOKEN_DECIMALS: u8 = 9;
 pub const BPS_DENOMINATOR: u16 = 10_000;
@@ -887,7 +889,8 @@ fn validate_generation_cluster_and_tiers(cluster_kind: u8, tier_mask: u8) -> Res
 fn validate_generation_economics(settings: &GenerationSettings) -> Result<()> {
     require!(
         settings.economics_version == ECONOMICS_VERSION_V1
-            || settings.economics_version == ECONOMICS_VERSION_V2,
+            || settings.economics_version == ECONOMICS_VERSION_V2
+            || settings.economics_version == ECONOMICS_VERSION_V3,
         LaunchpadError::InvalidGenerationEconomics
     );
     require!(
@@ -921,9 +924,11 @@ fn validate_generation_economics(settings: &GenerationSettings) -> Result<()> {
         settings.base_price_lamports > 0,
         LaunchpadError::InvalidGenerationEconomics
     );
-    // V1 required slope > 0 (legacy). V2 allows slope = 0 for flat early bonding
-    // (BNB-like: base dominates; slope optional for later steepness).
-    if settings.economics_version < ECONOMICS_VERSION_V2 {
+    // Preserve the already-deployed V2 flat generation, but all new BNB-parity
+    // V3 generations require a non-zero fixed-point slope (same invariant as BNB).
+    if settings.economics_version == ECONOMICS_VERSION_V1
+        || settings.economics_version >= ECONOMICS_VERSION_V3
+    {
         require!(
             settings.price_slope_lamports > 0,
             LaunchpadError::InvalidGenerationEconomics
@@ -1296,6 +1301,18 @@ mod tests {
         let global = test_global_config();
         let mut settings = test_generation_settings();
         settings.allowed_graduation_tier_mask |= 1 << 7;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_economics_v3_requires_fixed_point_slope() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.economics_version = ECONOMICS_VERSION_V3;
+        settings.price_slope_lamports = 850;
+        assert!(validate_generation_settings(&global, &settings).is_ok());
+
+        settings.price_slope_lamports = 0;
         assert!(validate_generation_settings(&global, &settings).is_err());
     }
 

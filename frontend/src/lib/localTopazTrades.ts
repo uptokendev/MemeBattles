@@ -1,5 +1,6 @@
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
-import { mergeTradePoints } from "@/lib/tradeDedupe";
+import { isSolanaChainId } from "@/lib/chainConfig";
+import { mergeTradePoints, normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
 const STORAGE_PREFIX = "mwz:local-topaz-trades:v1:";
 const MAX_TRADES = 40;
@@ -17,17 +18,29 @@ type StoredTrade = {
   logIndex: number;
 };
 
-function storageKey(chainId: number, campaignAddress: string) {
-  return `${STORAGE_PREFIX}${Number(chainId)}:${String(campaignAddress || "").toLowerCase()}`;
+function normalizeAddress(chainId: number, value: unknown) {
+  const raw = String(value || "").trim();
+  return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
 }
 
-function serialize(point: CurveTradePoint): StoredTrade | null {
-  const txHash = String(point.txHash || "").toLowerCase();
-  if (!/^0x[a-f0-9]{64}$/.test(txHash)) return null;
+function storageKey(chainId: number, campaignAddress: string) {
+  return `${STORAGE_PREFIX}${Number(chainId)}:${normalizeAddress(chainId, campaignAddress)}`;
+}
+
+function storageFor(chainId: number): Storage | null {
+  if (typeof window === "undefined") return null;
+  // Keep Solana optimistic history across reloads/tabs until the persistent
+  // indexer catches up. Preserve legacy EVM session behavior unchanged.
+  return isSolanaChainId(chainId) ? window.localStorage : window.sessionStorage;
+}
+
+function serialize(point: CurveTradePoint, chainId: number): StoredTrade | null {
+  const txHash = normalizeTradeTxHash(point.txHash);
+  if (!txHash) return null;
   return {
     type: point.type === "sell" ? "sell" : "buy",
-    from: String(point.from || "").toLowerCase(),
-    to: String(point.to || "").toLowerCase(),
+    from: normalizeAddress(chainId, point.from),
+    to: normalizeAddress(chainId, point.to),
     tokensWei: String(point.tokensWei ?? 0n),
     nativeWei: String(point.nativeWei ?? 0n),
     pricePerToken: Number(point.pricePerToken || 0),
@@ -38,18 +51,19 @@ function serialize(point: CurveTradePoint): StoredTrade | null {
   };
 }
 
-function deserialize(row: StoredTrade): CurveTradePoint | null {
+function deserialize(row: StoredTrade, chainId: number): CurveTradePoint | null {
   try {
-    if (!row?.txHash) return null;
+    const txHash = normalizeTradeTxHash(row?.txHash);
+    if (!txHash) return null;
     return {
       type: row.type === "sell" ? "sell" : "buy",
-      from: String(row.from || "").toLowerCase(),
-      to: String(row.to || "").toLowerCase(),
+      from: normalizeAddress(chainId, row.from),
+      to: normalizeAddress(chainId, row.to),
       tokensWei: BigInt(row.tokensWei || "0"),
       nativeWei: BigInt(row.nativeWei || "0"),
       pricePerToken: Number(row.pricePerToken || 0),
       timestamp: Number(row.timestamp || 0),
-      txHash: String(row.txHash).toLowerCase(),
+      txHash,
       blockNumber: Number(row.blockNumber || 0),
       logIndex: Number(row.logIndex || 0),
     };
@@ -59,15 +73,15 @@ function deserialize(row: StoredTrade): CurveTradePoint | null {
 }
 
 export function loadLocalTopazTrades(chainId: number, campaignAddress: string): CurveTradePoint[] {
-  if (typeof window === "undefined") return [];
+  const storage = storageFor(chainId);
+  if (!storage) return [];
   try {
-    const raw = window.sessionStorage.getItem(storageKey(chainId, campaignAddress));
+    const raw = storage.getItem(storageKey(chainId, campaignAddress));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as StoredTrade[];
     if (!Array.isArray(parsed)) return [];
-    // Re-merge so older session keys with multiple logIndex variants collapse.
     return mergeTradePoints(
-      parsed.map(deserialize).filter((row): row is CurveTradePoint => Boolean(row)),
+      parsed.map((row) => deserialize(row, chainId)).filter((row): row is CurveTradePoint => Boolean(row)),
     ).slice(-MAX_TRADES);
   } catch {
     return [];
@@ -75,14 +89,15 @@ export function loadLocalTopazTrades(chainId: number, campaignAddress: string): 
 }
 
 export function saveLocalTopazTrades(chainId: number, campaignAddress: string, trades: CurveTradePoint[]) {
-  if (typeof window === "undefined") return;
+  const storage = storageFor(chainId);
+  if (!storage) return;
   try {
     const deduped = mergeTradePoints(trades);
     const rows = deduped
-      .map(serialize)
+      .map((point) => serialize(point, chainId))
       .filter((row): row is StoredTrade => Boolean(row))
       .slice(-MAX_TRADES);
-    window.sessionStorage.setItem(storageKey(chainId, campaignAddress), JSON.stringify(rows));
+    storage.setItem(storageKey(chainId, campaignAddress), JSON.stringify(rows));
   } catch {
     // ignore quota / private mode
   }

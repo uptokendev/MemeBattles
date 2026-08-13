@@ -1,17 +1,18 @@
 import { pool } from "./db.js";
 
 /**
- * Public TokenDetails URLs use the ERC-20 token address (stable, human-facing).
- * All market / trade / candle tables are keyed by LaunchCampaign (bonding curve).
+ * Public TokenDetails URLs use the token address/mint (stable, human-facing).
+ * All market / trade / candle tables are keyed by the bonding campaign address.
  *
- * Resolve either address form to the canonical pair before querying.
+ * EVM addresses are normalized to lowercase. Solana base58 addresses are
+ * case-sensitive and MUST be preserved exactly.
  */
 
 export type MarketIdentity = {
   chainId: number;
-  /** LaunchCampaign / bonding-curve address (API + DB key). */
+  /** LaunchCampaign / Solana Campaign PDA (API + DB key). */
   campaignAddress: string;
-  /** ERC-20 token address (public URL id). */
+  /** ERC-20 token / SPL mint (public URL id). */
   tokenAddress: string;
   /** Which form the caller supplied. */
   matchedBy: "campaign" | "token";
@@ -19,12 +20,21 @@ export type MarketIdentity = {
   inputAddress: string;
 };
 
-function normalizeAddress(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+function normalizeAddress(chainId: number, value: unknown): string {
+  const raw = String(value ?? "").trim();
+  return chainId === 101 ? raw : raw.toLowerCase();
 }
 
 export function isEvmAddress(value: string): boolean {
   return /^0x[a-f0-9]{40}$/.test(value);
+}
+
+export function isSolanaAddress(value: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+}
+
+function isMarketAddress(chainId: number, value: string): boolean {
+  return chainId === 101 ? isSolanaAddress(value) : isEvmAddress(value);
 }
 
 /**
@@ -35,12 +45,12 @@ export async function resolveMarketIdentity(
   chainId: number,
   addressOrToken: string,
 ): Promise<MarketIdentity | null> {
-  const input = normalizeAddress(addressOrToken);
-  if (!Number.isInteger(chainId) || chainId <= 0 || !isEvmAddress(input)) {
+  const input = normalizeAddress(chainId, addressOrToken);
+  if (!Number.isInteger(chainId) || chainId <= 0 || !isMarketAddress(chainId, input)) {
     return null;
   }
 
-  // Prefer exact campaign match, then token match (token is the public URL id).
+  // Prefer exact campaign match, then token match (token/mint is the public URL id).
   const result = await pool.query(
     `select
        campaign_address,
@@ -61,29 +71,29 @@ export async function resolveMarketIdentity(
   const row = result.rows[0];
   if (!row) return null;
 
-  const campaignAddress = normalizeAddress(row.campaign_address);
-  const tokenAddress = normalizeAddress(row.token_address);
-  if (!isEvmAddress(campaignAddress)) return null;
+  const campaignAddress = normalizeAddress(chainId, row.campaign_address);
+  const tokenAddress = normalizeAddress(chainId, row.token_address);
+  if (!isMarketAddress(chainId, campaignAddress)) return null;
 
   return {
     chainId,
     campaignAddress,
-    tokenAddress: isEvmAddress(tokenAddress) ? tokenAddress : "",
+    tokenAddress: isMarketAddress(chainId, tokenAddress) ? tokenAddress : "",
     matchedBy: campaignAddress === input ? "campaign" : "token",
     inputAddress: input,
   };
 }
 
 /**
- * Like resolveMarketIdentity, but if the address is a valid EVM address and not
- * in DB yet, still return it as a provisional campaign address so legacy
- * campaign-only callers keep working during discovery lag.
+ * Like resolveMarketIdentity, but if the address is valid and not in DB yet,
+ * still return it as a provisional campaign address so legacy campaign-only
+ * callers keep working during discovery lag.
  */
 export async function resolveMarketIdentityOrPassthrough(
   chainId: number,
   addressOrToken: string,
 ): Promise<MarketIdentity> {
-  const input = normalizeAddress(addressOrToken);
+  const input = normalizeAddress(chainId, addressOrToken);
   const resolved = await resolveMarketIdentity(chainId, input);
   if (resolved) return resolved;
 
