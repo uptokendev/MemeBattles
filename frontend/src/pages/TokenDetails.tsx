@@ -2046,11 +2046,12 @@ const toSeconds = (ts: number): number => {
         netFlow: formatBnbOrUsd(netFlow),
         feesEstimated: formatBnbOrUsd(fees),
         buyers: String(
-          new Set(
-            marketTradePoints
-              .filter((point) => point.type === "buy" && point.from)
-              .map((point) => String(point.from).trim()),
-          ).size || Number(solanaCurve.buyerCount),
+          Number(solanaCurve.buyerCount) ||
+            new Set(
+              marketTradePoints
+                .filter((point) => point.type === "buy" && point.from)
+                .map((point) => String(point.from).trim()),
+            ).size,
         ),
         feeRate: `${(Number(solanaCurve.buyFeeBps) / 100).toFixed(2)}%`,
         lpRate: "—",
@@ -2101,7 +2102,11 @@ const toSeconds = (ts: number): number => {
     const holdersBal = holders.reduce((acc, x) => acc + x.bal, 0n);
 
     // Reserved token allocation intended for the LP at graduation.
-    const lpBal = metrics?.liquiditySupply ?? 0n;
+    // Solana stores this allocation directly in the Campaign PDA, while the
+    // EVM implementation exposes it through CampaignMetrics.
+    const lpBal = isSolanaPage
+      ? (solanaCurve?.liquidityTokenSupply ?? 0n)
+      : (metrics?.liquiditySupply ?? 0n);
 
     const totalBal = holdersBal + lpBal;
 
@@ -2121,7 +2126,14 @@ const toSeconds = (ts: number): number => {
         ? [
             {
               address: "liquidity-pool",
-              label: metrics?.launched || (metrics?.finalizedAt ?? 0n) > 0n ? "Liquidity pool" : "Reserved liquidity",
+              label:
+                isSolanaPage
+                  ? solanaCurve?.graduated
+                    ? "Liquidity pool"
+                    : "Reserved liquidity"
+                  : metrics?.launched || (metrics?.finalizedAt ?? 0n) > 0n
+                    ? "Liquidity pool"
+                    : "Reserved liquidity",
               pct: pct(lpBal),
               isLp: true as const,
             },
@@ -2136,7 +2148,15 @@ const toSeconds = (ts: number): number => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [isSolanaPage, marketTradePoints, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
+  }, [
+    isSolanaPage,
+    marketTradePoints,
+    metrics?.liquiditySupply,
+    metrics?.launched,
+    metrics?.finalizedAt,
+    solanaCurve?.liquidityTokenSupply,
+    solanaCurve?.graduated,
+  ]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)

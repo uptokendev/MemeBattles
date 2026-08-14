@@ -81,6 +81,10 @@ export type SolanaCampaignCurveState = {
   curveKind: number;
   tokenTotalSupply: bigint;
   curveTokenSupply: bigint;
+  /** Tokens reserved for the graduation liquidity pool. */
+  liquidityTokenSupply: bigint;
+  /** Additional protocol/creator reserve allocation. */
+  reserveTokenSupply: bigint;
   tokenDecimals: number;
   basePriceLamports: bigint;
   priceSlopeLamports: bigint;
@@ -199,8 +203,8 @@ export function decodeSolanaCampaignAccount(
   const curveKind = takeU8();
   const tokenTotalSupply = takeU64();
   const curveTokenSupply = takeU64();
-  takeU64(); // liquidity_token_supply
-  takeU64(); // reserve_token_supply
+  const liquidityTokenSupply = takeU64();
+  const reserveTokenSupply = takeU64();
   const tokenDecimals = takeU8();
   takeU16(); // curve_supply_bps
   takeU16(); // liquidity_token_bps
@@ -247,6 +251,8 @@ export function decodeSolanaCampaignAccount(
     curveKind,
     tokenTotalSupply,
     curveTokenSupply,
+    liquidityTokenSupply,
+    reserveTokenSupply,
     tokenDecimals,
     basePriceLamports,
     priceSlopeLamports,
