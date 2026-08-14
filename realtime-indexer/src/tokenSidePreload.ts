@@ -228,12 +228,18 @@ const patchedCampaigns = wrap(async (req, res) => {
          c.created_at_chain,
          c.graduated_at_chain,
          c.is_active,
+         c.meta,
+         coalesce(cms.market_stage, c.market_stage) as market_stage,
+         coalesce(cms.dex_pair_address, c.meta->'solanaGraduation'->>'pool') as dex_pool,
+         c.meta->'solanaGraduation'->>'position' as dex_position,
          ts.marketcap_bnb,
          ts.last_price_bnb,
          ts.vol_24h_bnb,
          coalesce(va.votes_24h, 0) as votes_24h,
          coalesce(va.votes_all_time, 0) as votes_all_time
        from public.campaigns c
+       left join public.campaign_market_state cms
+         on cms.chain_id = c.chain_id and cms.campaign_address = c.campaign_address
        left join public.token_stats ts
          on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
        left join public.vote_aggregates va
@@ -254,6 +260,13 @@ const patchedCampaigns = wrap(async (req, res) => {
 
     const items = result.rows.map((row: any) => {
       const rowChainId = Number(row.chain_id);
+      const marketStage = String(row.market_stage || "").trim();
+      const isDexTrading = Boolean(
+        row.graduated_at_chain ||
+          row.dex_pool ||
+          row.dex_position ||
+          (marketStage && !["BONDING", "LIVE", "ENDED"].includes(marketStage.toUpperCase())),
+      );
       return {
         chainId: rowChainId,
         campaignAddress: outputAddress(row.campaign_address, rowChainId),
@@ -264,9 +277,12 @@ const patchedCampaigns = wrap(async (req, res) => {
         logoUri: row.logo_uri ?? null,
         createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
         graduatedAtChain: row.graduated_at_chain ? String(row.graduated_at_chain) : null,
-        isDexTrading: Boolean(row.graduated_at_chain),
+        marketStage: marketStage || null,
+        dexPool: row.dex_pool ? outputAddress(row.dex_pool, rowChainId) : null,
+        dexPosition: row.dex_position ? outputAddress(row.dex_position, rowChainId) : null,
+        isDexTrading,
         isActive: Boolean(row.is_active),
-        status: row.graduated_at_chain ? "graduated" : row.is_active ? "live" : "ended",
+        status: isDexTrading ? "graduated" : row.is_active ? "live" : "ended",
         marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
         lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
         vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
