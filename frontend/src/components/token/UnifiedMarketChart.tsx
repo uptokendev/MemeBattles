@@ -11,8 +11,6 @@ import {
   type Time,
 } from "lightweight-charts";
 import { ethers } from "ethers";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import type { MarketCandle, MarketState } from "@/lib/marketContinuityApi";
 import { buildCandles, type CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
@@ -60,6 +58,8 @@ export type UnifiedMarketChartProps = {
   currentBondingSoldRaw?: bigint | null;
   /** Canonical Solana curve pricing parameters from the live campaign account. */
   solanaCurvePricing?: SolanaCurvePricingState | null;
+  /** Page-level native/USD price. Must be shared with headline metrics. */
+  nativeUsdPrice?: number | null;
   resolution: UnifiedChartResolution;
   onResolutionChange: (resolution: UnifiedChartResolution) => void;
   denomination?: UnifiedChartDenomination;
@@ -349,6 +349,14 @@ function formatValue(
   if (metric === "price" && abs > 0 && abs < 0.01) {
     return `${prefix}${trimFixed(value, nativeSymbol === "SOL" ? 12 : 10)}${suffix}`;
   }
+
+  // Native-denominated bonding market caps are often well below 1 SOL/BNB.
+  // Showing only two decimals makes 0.0338 SOL look like 0.03 SOL and creates
+  // a false mismatch with the headline metric.
+  if (metric === "marketcap" && denomination !== "USD" && abs > 0 && abs < 1) {
+    return `${trimFixed(value, nativeSymbol === "SOL" ? 6 : 5)}${suffix}`;
+  }
+
   return `${prefix}${value.toFixed(metric === "price" && abs < 1 ? 8 : 2)}${suffix}`;
 }
 
@@ -409,6 +417,7 @@ export function UnifiedMarketChart({
   chainId = 97,
   currentBondingSoldRaw,
   solanaCurvePricing,
+  nativeUsdPrice,
   resolution,
   onResolutionChange,
   denomination = "USD",
@@ -430,21 +439,22 @@ export function UnifiedMarketChart({
   const markerPluginRef = useRef<ReturnType<typeof createSeriesMarkers> | null>(null);
   const previousDataRef = useRef<CandleRow[]>([]);
   const initialRangeSetRef = useRef(false);
-  const lastUsdRef = useRef(0);
   const creatorPinsRef = useRef<CreatorTradePin[]>([]);
   const [placedPins, setPlacedPins] = useState<PlacedCreatorPin[]>([]);
   const [hoverPinId, setHoverPinId] = useState<string | null>(null);
   const [resolvedAvatar, setResolvedAvatar] = useState<string | null>(null);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const hideTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { price: liveBnbUsd } = useBnbUsdPrice(!solana);
-  const { price: liveSolUsd } = useSolUsdPrice(solana);
-  const liveNativeUsd = solana ? liveSolUsd : liveBnbUsd;
+  // TokenDetails owns native/USD conversion for the page. Using that
+  // exact value here guarantees headline metrics and chart candles cannot
+  // diverge because two hook instances hold different cached prices.
+  const nativeUsd =
+    nativeUsdPrice != null &&
+    Number.isFinite(Number(nativeUsdPrice)) &&
+    Number(nativeUsdPrice) > 0
+      ? Number(nativeUsdPrice)
+      : 0;
 
-  useEffect(() => {
-    if (liveNativeUsd && Number.isFinite(liveNativeUsd) && liveNativeUsd > 0) lastUsdRef.current = liveNativeUsd;
-  }, [liveNativeUsd]);
-  const nativeUsd = liveNativeUsd && liveNativeUsd > 0 ? liveNativeUsd : lastUsdRef.current;
   const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
 
   const clearHideTooltipTimer = useCallback(() => {
@@ -764,16 +774,35 @@ export function UnifiedMarketChart({
   }, []);
 
   useEffect(() => {
-    chartRef.current?.applyOptions({ timeScale: { secondsVisible: intervalSeconds <= 60 } });
+    chartRef.current?.applyOptions({
+      timeScale: { secondsVisible: intervalSeconds <= 60 },
+    });
+  }, [intervalSeconds]);
+
+  useEffect(() => {
     seriesRef.current?.applyOptions({
       priceFormat: {
         type: "custom",
-        minMove: metric === "price" ? (solana ? 0.000000000001 : 0.00000001) : 0.01,
-        formatter: (value: number) => formatValue(value, metric, denomination, nativeSymbol),
+        minMove:
+          metric === "price"
+            ? (solana ? 0.000000000001 : 0.00000001)
+            : denomination === "USD"
+              ? 0.01
+              : solana
+                ? 0.000001
+                : 0.00001,
+        formatter: (value: number) =>
+          formatValue(value, metric, denomination, nativeSymbol),
       },
     });
+  }, [denomination, metric, nativeSymbol, solana]);
+
+  // Only a timeframe change changes candle bucketing/x-axis structure.
+  // USD/SOL and Market Cap/Price are y-axis transformations and must keep
+  // the user's current horizontal viewport.
+  useEffect(() => {
     initialRangeSetRef.current = false;
-  }, [denomination, intervalSeconds, metric, nativeSymbol, solana]);
+  }, [intervalSeconds]);
 
   useEffect(() => {
     const series = seriesRef.current;
