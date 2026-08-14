@@ -25,7 +25,7 @@ import TournamentDetails from "./pages/TournamentDetails";
 import Create from "./pages/Create";
 import SponsorshipApplication from "./pages/SponsorshipApplication";
 import ProfilePage from "./pages/ProfilePage";
-import TokenDetails from "./pages/TokenDetails";
+import TokenDetailsEntry from "./pages/TokenDetailsEntry";
 import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
 import Live from "./pages/Live";
@@ -182,7 +182,7 @@ function AppShellLayout({
           <Route path="/squads" element={<SquadLeaderboard />} />
           <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
           <Route path="/r/:code" element={<RecruiterReferral />} />
-          <Route path="/token/:campaignAddress" element={<ScheduledTokenAccessRoute><TokenDetails /><TokenSafetyRouteOverlay /></ScheduledTokenAccessRoute>} />
+          <Route path="/token/:campaignAddress" element={<ScheduledTokenAccessRoute><TokenDetailsEntry /><TokenSafetyRouteOverlay /></ScheduledTokenAccessRoute>} />
           <Route path="/playbook" element={<Playbook />} />
           <Route path="/docs" element={<Playbook />} />
           <Route path="/status" element={<Status />} />
