@@ -13,11 +13,53 @@ import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 import TokenDetails from "./TokenDetails";
 import SolanaGraduatedTokenDetails from "./SolanaGraduatedTokenDetails";
 
+const SOLANA_ROUTE_CACHE_PREFIX = "mwz:solana-token-route:v1:";
+const SOLANA_ROUTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type SolanaRouteCache = {
+  campaignAddress: string;
+  graduated: boolean;
+  updatedAt: number;
+};
+
 function tokenIdMatches(candidate?: string | null, routeId?: string | null): boolean {
   const left = String(candidate || "").trim();
   const right = String(routeId || "").trim();
   if (!left || !right) return false;
   return left === right || left.toLowerCase() === right.toLowerCase();
+}
+
+function routeCacheKey(routeId: string): string {
+  return `${SOLANA_ROUTE_CACHE_PREFIX}${routeId}`;
+}
+
+function readRouteCache(routeId: string): SolanaRouteCache | null {
+  if (typeof window === "undefined" || !routeId) return null;
+  try {
+    const raw = window.localStorage.getItem(routeCacheKey(routeId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SolanaRouteCache>;
+    const campaignAddress = String(parsed.campaignAddress || "").trim();
+    const updatedAt = Number(parsed.updatedAt || 0);
+    if (!campaignAddress || !Number.isFinite(updatedAt)) return null;
+    if (Date.now() - updatedAt > SOLANA_ROUTE_CACHE_TTL_MS) return null;
+    return {
+      campaignAddress,
+      graduated: parsed.graduated === true,
+      updatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeRouteCache(routeId: string, cache: SolanaRouteCache) {
+  if (typeof window === "undefined" || !routeId || !cache.campaignAddress) return;
+  try {
+    window.localStorage.setItem(routeCacheKey(routeId), JSON.stringify(cache));
+  } catch {
+    // Best-effort only.
+  }
 }
 
 const TokenDetailsEntry = () => {
@@ -31,11 +73,37 @@ const TokenDetailsEntry = () => {
     () => forcedChainId === SOLANA_CHAIN_ID || isSolanaTokenRouteId(routeId),
     [forcedChainId, routeId],
   );
+  const initialCache = useMemo(
+    () => (isSolanaRoute ? readRouteCache(routeId) : null),
+    [isSolanaRoute, routeId],
+  );
 
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [campaignResolved, setCampaignResolved] = useState<boolean>(!isSolanaRoute);
   const [curve, setCurve] = useState<SolanaCampaignCurveState | null>(null);
   const [curveResolved, setCurveResolved] = useState<boolean>(!isSolanaRoute);
+  const [cachedCampaignAddress, setCachedCampaignAddress] = useState<string>(initialCache?.campaignAddress || "");
+  const [stickyGraduated, setStickyGraduated] = useState<boolean>(initialCache?.graduated === true);
+
+  useEffect(() => {
+    if (!isSolanaRoute) {
+      setCampaign(null);
+      setCampaignResolved(true);
+      setCurve(null);
+      setCurveResolved(true);
+      setCachedCampaignAddress("");
+      setStickyGraduated(false);
+      return;
+    }
+
+    const cache = readRouteCache(routeId);
+    setCampaign(null);
+    setCurve(null);
+    setCampaignResolved(Boolean(cache?.campaignAddress));
+    setCurveResolved(Boolean(cache?.campaignAddress));
+    setCachedCampaignAddress(cache?.campaignAddress || "");
+    setStickyGraduated(cache?.graduated === true);
+  }, [isSolanaRoute, routeId]);
 
   useEffect(() => {
     if (!isSolanaRoute || !routeId) {
@@ -45,7 +113,7 @@ const TokenDetailsEntry = () => {
     }
 
     let cancelled = false;
-    setCampaignResolved(false);
+    setCampaignResolved(Boolean(cachedCampaignAddress));
 
     (async () => {
       try {
@@ -54,9 +122,12 @@ const TokenDetailsEntry = () => {
         const match =
           campaigns.find((item) => tokenIdMatches(item.token, routeId) || tokenIdMatches(item.campaign, routeId)) ??
           null;
-        setCampaign(match);
+        if (match) {
+          setCampaign(match);
+          if (match.campaign) setCachedCampaignAddress(String(match.campaign).trim());
+        }
       } catch {
-        if (!cancelled) setCampaign(null);
+        // Keep any previously resolved identity instead of clearing it.
       } finally {
         if (!cancelled) setCampaignResolved(true);
       }
@@ -65,11 +136,11 @@ const TokenDetailsEntry = () => {
     return () => {
       cancelled = true;
     };
-  }, [fetchCampaigns, isSolanaRoute, routeId]);
+  }, [cachedCampaignAddress, fetchCampaigns, isSolanaRoute, routeId]);
 
   const curveLookupAddress = useMemo(
-    () => String(campaign?.campaign || routeId || "").trim(),
-    [campaign?.campaign, routeId],
+    () => String(campaign?.campaign || cachedCampaignAddress || routeId || "").trim(),
+    [cachedCampaignAddress, campaign?.campaign, routeId],
   );
 
   useEffect(() => {
@@ -80,14 +151,19 @@ const TokenDetailsEntry = () => {
     }
 
     let cancelled = false;
-    setCurveResolved(false);
+    setCurveResolved(Boolean(curve?.campaignAddress || cachedCampaignAddress));
 
     (async () => {
       try {
         const nextCurve = await fetchSolanaCampaignCurveState(curveLookupAddress);
-        if (!cancelled) setCurve(nextCurve);
+        if (cancelled) return;
+        if (nextCurve) {
+          setCurve(nextCurve);
+          setCachedCampaignAddress(String(nextCurve.campaignAddress || "").trim());
+          if (nextCurve.graduated) setStickyGraduated(true);
+        }
       } catch {
-        if (!cancelled) setCurve(null);
+        // Preserve the last known curve identity; a temporary fetch miss must not de-graduate the route.
       } finally {
         if (!cancelled) setCurveResolved(true);
       }
@@ -96,11 +172,11 @@ const TokenDetailsEntry = () => {
     return () => {
       cancelled = true;
     };
-  }, [curveLookupAddress, isSolanaRoute]);
+  }, [cachedCampaignAddress, curve?.campaignAddress, curveLookupAddress, isSolanaRoute]);
 
   const resolvedCampaignAddress = useMemo(
-    () => String(campaign?.campaign || curve?.campaignAddress || "").trim(),
-    [campaign?.campaign, curve?.campaignAddress],
+    () => String(campaign?.campaign || curve?.campaignAddress || cachedCampaignAddress || "").trim(),
+    [cachedCampaignAddress, campaign?.campaign, curve?.campaignAddress],
   );
 
   const { stats } = useTokenStatsRealtime(
@@ -109,7 +185,39 @@ const TokenDetailsEntry = () => {
     isSolanaRoute && Boolean(resolvedCampaignAddress),
   );
 
+  const indexedGraduated = stats?.graduated === true;
+  const indexedDexReady = Boolean(stats?.dexPool || stats?.dexPosition || stats?.dex);
+  const graduated = Boolean(
+    stickyGraduated ||
+      curve?.graduated ||
+      (indexedGraduated && (indexedDexReady || Boolean(resolvedCampaignAddress))),
+  );
+
+  useEffect(() => {
+    if (!isSolanaRoute || !routeId) return;
+    if (graduated) setStickyGraduated(true);
+
+    const campaignAddressToCache = String(resolvedCampaignAddress || cachedCampaignAddress || curveLookupAddress || "").trim();
+    if (!campaignAddressToCache) return;
+    writeRouteCache(routeId, {
+      campaignAddress: campaignAddressToCache,
+      graduated,
+      updatedAt: Date.now(),
+    });
+  }, [
+    cachedCampaignAddress,
+    curveLookupAddress,
+    graduated,
+    isSolanaRoute,
+    resolvedCampaignAddress,
+    routeId,
+  ]);
+
   if (!isSolanaRoute) return <TokenDetails />;
+
+  if (graduated) {
+    return <SolanaGraduatedTokenDetails routeId={routeId} campaign={campaign} initialCurve={curve} />;
+  }
 
   if (!campaignResolved || !curveResolved) {
     return (
@@ -119,10 +227,7 @@ const TokenDetailsEntry = () => {
     );
   }
 
-  const graduated = Boolean(curve?.graduated || stats?.graduated);
-  if (!graduated) return <TokenDetails />;
-
-  return <SolanaGraduatedTokenDetails routeId={routeId} campaign={campaign} initialCurve={curve} />;
+  return <TokenDetails />;
 };
 
 export default TokenDetailsEntry;

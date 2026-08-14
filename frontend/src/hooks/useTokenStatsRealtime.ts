@@ -34,6 +34,11 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function str(v: unknown): string | null {
+  const value = String(v ?? "").trim();
+  return value ? value : null;
+}
+
 function normalizeCampaign(chainId: number, value: string) {
   const raw = String(value || "").trim();
   return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
@@ -82,6 +87,12 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
         marketcapBnb: num(row.marketcap_bnb),
         vol24hBnb: Number(num(row.vol_24h_bnb) ?? 0),
         soldTokens: num(row.sold_tokens),
+        graduated: row.graduated === true ? true : false,
+        dex: str(row.dex),
+        dexPool: str(row.dexPool ?? row.dex_pool),
+        dexPosition: str(row.dexPosition ?? row.dex_position),
+        graduationLiquidityNative: num(row.graduationLiquiditySol ?? row.graduation_liquidity_sol ?? row.graduationLiquidityNative),
+        graduatedAt: str(row.graduatedAt ?? row.graduated_at),
         updatedAt: String(row.updated_at ?? ""),
       });
       setError(null);
