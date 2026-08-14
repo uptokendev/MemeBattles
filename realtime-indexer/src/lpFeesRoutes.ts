@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
+import { harvestSolanaLpFees, listSolanaLpFees } from "./solanaLpFees.js";
 
 const LOCKER_ABI = [
   "function poolInfo(address) view returns (address campaign,address creator,address creatorFeeRecipient,address pool,address token0,address token1,uint256 lockedLpAmount,uint16 creatorFeeBps,uint16 protocolFeeBps,bool registered)",
@@ -417,16 +418,14 @@ export function registerLpFeesRoutes(app: express.Application) {
         return;
       }
 
-      // Solana / non-EVM: no PermanentLpLocker dashboard — empty success, not 401.
       if (chainId === 101 || chainId === 102) {
-        res.status(200).json({
-          ok: true,
-          chainId,
-          lockerAddress: null,
-          items: [],
-          note: "LP fee dashboard is BNB-only.",
-          updatedAt: new Date().toISOString(),
+        const payload = await listSolanaLpFees({
+          pool,
+          creator: String(creatorFilter || req.query.creator || "").trim() || null,
+          campaign: String(campaignFilter || req.query.campaign || "").trim() || null,
+          limit,
         });
+        res.status(200).json(payload);
         return;
       }
 
@@ -555,13 +554,32 @@ export function registerLpFeesRoutes(app: express.Application) {
   app.post(
     "/api/dashboard/lp-fees/harvest",
     wrap(async (req, res) => {
+      const chainId = Number(req.body?.chainId ?? 97);
+      // Solana harvest is permissionless like BNB locker.harvest(): anyone may
+      // trigger it. The operator key only signs the Meteora claim; 80% still
+      // belongs to the campaign creator once the split ix is live.
+      if (chainId === 101 || chainId === 102) {
+        try {
+          const result = await harvestSolanaLpFees({
+            pool,
+            campaign: String(req.body?.campaign || req.body?.campaignAddress || "").trim() || null,
+            pair: String(req.body?.pair || req.body?.pool || req.body?.pairAddress || "").trim() || null,
+          });
+          res.status(200).json(result);
+        } catch (error: any) {
+          res.status(Number(error?.status || 500)).json({
+            ok: false,
+            error: String(error?.message || "Solana LP harvest failed"),
+          });
+        }
+        return;
+      }
+
       const auth = authorizeOpsWrite(req);
       if (!auth.ok) {
         res.status(auth.status).json({ ok: false, error: auth.error });
         return;
       }
-
-      const chainId = Number(req.body?.chainId ?? 97);
       const pairAddress = toAddr(req.body?.pair || req.body?.pool || req.body?.pairAddress);
       if (!pairAddress) {
         res.status(400).json({ ok: false, error: "pair (Topaz pool) address is required." });

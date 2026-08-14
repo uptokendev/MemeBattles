@@ -14,9 +14,11 @@ import { useWallet } from "@/contexts/WalletContext";
 import {
   fetchLpFeePools,
   harvestLpFeesWithWallet,
+  harvestSolanaLpFees,
   hasUnharvestedFees,
   type LpFeePoolRow,
 } from "@/lib/lpFeeHarvest";
+import { isSolanaChainId } from "@/lib/chainConfig";
 
 const BATTLE_FEATURES_ENABLED = false;
 
@@ -115,9 +117,11 @@ export default function CommandCenterCoins() {
         creatorAddress: walletAddress,
         limit: 50,
       });
+      const solana = isSolanaChainId(Number(chainId));
       const next: Record<string, LpFeePoolRow> = {};
       for (const row of items) {
-        const key = String(row.campaignAddress || "").toLowerCase();
+        const raw = String(row.campaignAddress || "");
+        const key = solana ? raw : raw.toLowerCase();
         if (key) next[key] = row;
       }
       setLpFeeByCampaign(next);
@@ -132,30 +136,40 @@ export default function CommandCenterCoins() {
 
   const handleClaimLpFees = useCallback(
     async (campaignAddress: string) => {
-      const key = String(campaignAddress || "").toLowerCase();
-      const row = lpFeeByCampaign[key];
-      const pair = String(row?.pairAddress || "").toLowerCase();
+      const solana = isSolanaChainId(Number(chainId));
+      const key = solana ? String(campaignAddress || "") : String(campaignAddress || "").toLowerCase();
+      const row = lpFeeByCampaign[key] || lpFeeByCampaign[campaignAddress];
+      const pair = String(row?.pairAddress || "");
       if (!pair) {
-        toast.error("No Topaz pool registered for this coin yet.");
-        return;
-      }
-      if (!wallet.signer || !wallet.account) {
-        toast.error("Connect wallet to claim LP fees.");
-        try {
-          window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
-        } catch {
-          // ignore
-        }
+        toast.error(solana ? "No Meteora pool registered for this coin yet." : "No Topaz pool registered for this coin yet.");
         return;
       }
       setClaimingCampaign(key);
       try {
-        const result = await harvestLpFeesWithWallet({
-          chainId: Number(chainId || 97),
-          pairAddress: pair,
-          signer: wallet.signer,
-        });
-        toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 10)}…`);
+        if (solana) {
+          const result = await harvestSolanaLpFees({
+            chainId: Number(chainId || 101),
+            campaignAddress: key,
+            pairAddress: pair,
+          });
+          toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 12)}…`);
+        } else {
+          if (!wallet.signer || !wallet.account) {
+            toast.error("Connect wallet to claim LP fees.");
+            try {
+              window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+            } catch {
+              // ignore
+            }
+            return;
+          }
+          const result = await harvestLpFeesWithWallet({
+            chainId: Number(chainId || 97),
+            pairAddress: pair.toLowerCase(),
+            signer: wallet.signer,
+          });
+          toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 10)}…`);
+        }
         await refreshLpFees();
       } catch (err: any) {
         toast.error(String(err?.shortMessage || err?.reason || err?.message || "Harvest failed"));

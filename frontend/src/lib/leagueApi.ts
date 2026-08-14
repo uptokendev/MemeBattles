@@ -728,7 +728,14 @@ export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Prom
     const onChain = await fetchOnChainLeagueSummaryBudgeted(options.chainId as SupportedChainId, options.period);
     return mergeOnChainLeagueFallback(futureSummary, onChain);
   }
-  if (options.chain === "solana") return solanaPendingSummary(options.chain, options.period, options.epochOffset);
+  if (options.chain === "solana") {
+    const pending = solanaPendingSummary(options.chain, options.period, options.epochOffset);
+    pending.prize = {
+      ...pending.prize,
+      warning: "Solana standings request failed. Retry — BNB boards are not reused.",
+    };
+    return pending;
+  }
 
   const legacySummary = await loadLegacySummary(options);
   if (!summaryNeedsOnChainFallback(legacySummary)) return legacySummary;

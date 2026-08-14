@@ -23,14 +23,104 @@ function solanaVoteTreasury() {
     process.env.VITE_SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_VOTE_TREASURY_ADDRESS_101,
     process.env.VOTE_TREASURY_ADDRESS_101,
-    // Devnet convenience: protocol operator if dedicated treasury not set
-    process.env.SOLANA_VOTE_TREASURY_FALLBACK || "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9",
   ];
   for (const c of candidates) {
     const v = String(c || "").trim();
     if (v && isSolanaAddress(v)) return v;
   }
   return "";
+}
+
+const MEMO_PROGRAMS = new Set([
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+  "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",
+]);
+
+function decodeIxData(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  try {
+    return Buffer.from(text, "base64").toString("utf8");
+  } catch {
+    // fall through
+  }
+  try {
+    const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    const bytes = [0];
+    for (const ch of text) {
+      const idx = alphabet.indexOf(ch);
+      if (idx < 0) return text;
+      let carry = idx;
+      for (let i = 0; i < bytes.length; i += 1) {
+        const n = bytes[i] * 58 + carry;
+        bytes[i] = n & 255;
+        carry = n >> 8;
+      }
+      while (carry > 0) {
+        bytes.push(carry & 255);
+        carry >>= 8;
+      }
+    }
+    return Buffer.from(bytes.reverse()).toString("utf8");
+  } catch {
+    return text;
+  }
+}
+
+function extractUpvoteMemoCampaign(tx) {
+  const message = tx?.transaction?.message;
+  const keys = (message?.accountKeys || []).map((k) =>
+    typeof k === "string" ? k : String(k?.pubkey || k || ""),
+  );
+  const instructions = message?.instructions || [];
+  for (const ix of instructions) {
+    const program =
+      typeof ix.programId === "string"
+        ? ix.programId
+        : keys[Number(ix.programIdIndex ?? -1)] || "";
+    if (!MEMO_PROGRAMS.has(program)) continue;
+    const memo = decodeIxData(ix.data);
+    const match = memo.match(/mwz-upvote:([1-9A-HJ-NP-Za-km-z]{32,44})/);
+    if (match?.[1]) return match[1];
+  }
+  for (const line of tx?.meta?.logMessages || []) {
+    const match = String(line).match(/mwz-upvote:([1-9A-HJ-NP-Za-km-z]{32,44})/);
+    if (match?.[1]) return match[1];
+  }
+  return "";
+}
+
+async function fetchSolUsdMicros() {
+  const override = String(process.env.SOLANA_GRADUATION_SOL_USD_MICROS || process.env.SOLANA_VOTE_SOL_USD_MICROS || "").trim();
+  if (override && /^\d+$/.test(override) && BigInt(override) > 0n) return BigInt(override);
+  const sources = [
+    async () => {
+      const response = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+        { headers: { accept: "application/json" } },
+      );
+      if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
+      const body = await response.json();
+      return Number(body?.solana?.usd);
+    },
+    async () => {
+      const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", {
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`Binance HTTP ${response.status}`);
+      const body = await response.json();
+      return Number(body?.price);
+    },
+  ];
+  for (const source of sources) {
+    try {
+      const price = await source();
+      if (Number.isFinite(price) && price > 0) return BigInt(Math.round(price * 1_000_000));
+    } catch {
+      // next oracle
+    }
+  }
+  return 0n;
 }
 
 function minVoteLamports() {
@@ -196,10 +286,28 @@ export async function solanaVoteIngest(req, res) {
       });
     }
 
-    const minLamports = minVoteLamports();
-    if (transfer.amountLamports < minLamports) {
+    const memoCampaign = extractUpvoteMemoCampaign(tx);
+    if (!memoCampaign || memoCampaign !== campaignAddress) {
       return json(res, 400, {
-        error: `Vote amount too small (min ${minLamports} lamports).`,
+        error: "Vote transaction must include a memo binding this campaign (mwz-upvote:<campaign>).",
+        code: "SOLANA_VOTE_CAMPAIGN_UNBOUND",
+      });
+    }
+
+    const usdMicros = await fetchSolUsdMicros();
+    if (usdMicros <= 0n) {
+      return json(res, 503, {
+        error: "SOL/USD oracle is unavailable; cannot confirm the $3 vote.",
+        code: "SOLANA_VOTE_ORACLE_UNAVAILABLE",
+      });
+    }
+    const targetLamports = (BigInt(UPVOTE_USD_TARGET) * 1_000_000n * 1_000_000_000n + usdMicros - 1n) / usdMicros;
+    const minAccepted = (targetLamports * 90n) / 100n;
+    const floor = minVoteLamports();
+    const required = minAccepted > floor ? minAccepted : floor;
+    if (transfer.amountLamports < required) {
+      return json(res, 400, {
+        error: `Vote must be about $${UPVOTE_USD_TARGET} in SOL (paid ${transfer.amountLamports} lamports, need >= ${required}).`,
         code: "SOLANA_VOTE_AMOUNT_TOO_SMALL",
       });
     }

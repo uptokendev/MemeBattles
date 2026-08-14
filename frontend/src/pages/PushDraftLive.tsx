@@ -368,6 +368,11 @@ export default function PushDraftLive() {
             { duration: 12_000 },
           );
         }
+        if (mode === "scheduled") {
+          toast.success("Solana campaign is linked. Trading stays closed until the scheduled open time.");
+          navigate(`/prepare/${draft.slug}`);
+          return;
+        }
         navigate(tokenPath);
         return;
       }
@@ -442,11 +447,12 @@ export default function PushDraftLive() {
       }
 
       const livePath = `/token/${encodeURIComponent(created.mintAddress || created.campaignAddress)}?chainId=${Number(draft.chainId) || 101}`;
-      toast.success(
-        mode === "scheduled"
-          ? "Solana campaign deployed (V4). Opening token page — trading opens at the scheduled time (P1)."
-          : "Solana campaign deployed (V4). Opening token page — bonding buy/sell lands in parity P1.",
-      );
+      if (mode === "scheduled") {
+        toast.success("Solana campaign deployed. Trading stays closed until the scheduled open time.");
+        navigate(`/prepare/${draft.slug}`);
+        return;
+      }
+      toast.success("Solana campaign deployed. Opening the token page.");
       navigate(livePath);
     } catch (error: any) {
       const message = String(error?.message || error || "Solana deploy failed.");

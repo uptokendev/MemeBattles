@@ -4,6 +4,7 @@ import { Clock3, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchPublicCampaignLifecycleDrafts, timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 
@@ -29,6 +30,7 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
   const { campaignAddress = "" } = useParams();
   const location = useLocation();
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const [draft, setDraft] = useState<CampaignDraftLifecycle | null>(null);
   const [loading, setLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -63,7 +65,9 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
 
   const launchAt = timestampSeconds(draft?.scheduledLaunchAt);
   const restricted = Boolean(draft && launchAt && launchAt > Math.floor(nowMs / 1000));
-  const isCreator = sameAddress(wallet.account, draft?.creatorWallet);
+  const isCreator =
+    sameAddress(wallet.account, draft?.creatorWallet) ||
+    sameAddress(solanaWallet.solanaAccount, draft?.creatorWallet);
 
   useEffect(() => {
     if (!restricted) return;

@@ -7,7 +7,7 @@ import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { RadarLoader } from "@/components/ui/RadarLoader";
 import { useWallet } from "@/contexts/WalletContext";
-import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, isAllowedChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import {
   LEAGUES,
   calculatePaidPlaces,
@@ -405,7 +405,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     let cancelled = false;
     setLoading(true);
     setError(undefined);
-    loadLeagueSummary({ chain, chainId: activeBnbChainId, period, epochOffset })
+    loadLeagueSummary({
+      chain,
+      chainId: chain === "solana" ? SOLANA_CHAIN_ID : activeBnbChainId,
+      period,
+      epochOffset,
+    })
       .then((next) => { if (!cancelled) setSummary(next); })
       .catch((err) => {
         console.error("[League] failed to load command center", err);
@@ -420,9 +425,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   const isSolana = chain === "solana";
   const selectedCard = summary?.leagues.find((league) => league.key === selectedLeagueKey);
-  const rows = useMemo(() => (isSolana ? [] : selectedCard?.rows ?? []), [isSolana, selectedCard]);
-  const selectedPrize = isSolana ? undefined : selectedCard?.prize;
-  const summaryPrize = isSolana ? undefined : summary?.prize;
+  const rows = useMemo(() => selectedCard?.rows ?? [], [selectedCard]);
+  const selectedPrize = selectedCard?.prize;
+  const summaryPrize = summary?.prize;
   // Hub prize uses total epoch league-fee pot; selected category pot is secondary.
   const hubPrizeRaw = getPrizeRaw(summaryPrize) !== "0" ? getPrizeRaw(summaryPrize) : getPrizeRaw(selectedPrize);
   const categoryPrizeRaw = getPrizeRaw(selectedPrize);
@@ -450,9 +455,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd)
           : 0;
   // Hub "active paid places": use the strongest field size this epoch (any league with entrants).
-  const maxLeagueEntrants = isSolana
-    ? 0
-    : Math.max(
+  const maxLeagueEntrants = Math.max(
         0,
         ...(summary?.leagues || []).map((card) => Math.max(Number(card.entrants || 0), Array.isArray(card.rows) ? card.rows.length : 0)),
         rows.length,
@@ -466,11 +469,11 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const previewRanks = payoutCurve.filter(
     (row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces,
   );
-  const selectedStatus = isSolana ? "pending" : selectedCard?.status;
+  const selectedStatus = selectedCard?.status || (isSolana ? "live" : undefined);
   const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
   const showCapNotification = !isSolana && period === "monthly" && capReached;
   const solanaPendingCopy =
-    "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
+    "Solana standings are live and separate from BNB. Prize claims stay closed until the SOL league pot is funded.";
   const trendMetrics = summary?.trendMetrics;
   const trendBasis = String(trendMetrics?.basis || "live_epoch").replace(/frontend_empty|insufficient_history/gi, "live_epoch");
   const hallOfFame = summary?.hallOfFame;
@@ -549,14 +552,14 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
             <div className="mt-2 font-retro text-xl">
               {isSolana
-                ? "SOL pending"
+                ? "Claims pending"
                 : displayPrizeBnb > 0
                   ? formatBnb(displayPrizeBnb)
                   : "No fees yet"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               {isSolana
-                ? "Solana prize feed pending."
+                ? "Standings are live. SOL prize claims stay closed until the league pot is funded."
                 : displayPrizeBnb > 0
                   ? rawGeneratedUsd > 0
                     ? `≈ ${formatUsd(rawGeneratedUsd)} · league fee share this epoch`
@@ -697,7 +700,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 Current #1s
               </div>
               <div className="mt-4 space-y-2">
-                {!isSolana && summary?.currentLeaders.length ? (
+                {summary?.currentLeaders.length ? (
                   summary.currentLeaders.map((leader) => (
                     <button
                       key={leader.leagueKey}
@@ -712,7 +715,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                   ))
                 ) : (
                   <div className="text-sm text-muted-foreground">
-                    {isSolana ? "Solana leaders pending." : "No leaders yet."}
+                    {isSolana ? "No Solana leaders in this epoch yet." : "No leaders yet."}
                   </div>
                 )}
               </div>

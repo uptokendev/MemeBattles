@@ -77,12 +77,12 @@ export async function fetchLpFeePools(input: {
   limit?: number;
 }): Promise<{ lockerAddress: string | null; items: LpFeePoolRow[] }> {
   const chainId = Number(input.chainId || 97);
-  // LP locker is BNB-only. Solana (101/102) and other chains have no EVM fee dashboard.
-  if (chainId === 101 || chainId === 102 || !Number.isFinite(chainId) || chainId <= 0) {
+  if (!Number.isFinite(chainId) || chainId <= 0) {
     return { lockerAddress: null, items: [] };
   }
   const creator = String(input.creatorAddress || "").trim();
-  if (creator && !/^0x[a-fA-F0-9]{40}$/.test(creator)) {
+  const solana = chainId === 101 || chainId === 102;
+  if (!solana && creator && !/^0x[a-fA-F0-9]{40}$/.test(creator)) {
     return { lockerAddress: null, items: [] };
   }
 
@@ -93,8 +93,10 @@ export async function fetchLpFeePools(input: {
     chainId: String(chainId),
     limit: String(input.limit ?? 50),
   });
-  if (input.campaignAddress) qs.set("campaign", String(input.campaignAddress).toLowerCase());
-  if (creator) qs.set("creator", creator.toLowerCase());
+  if (input.campaignAddress) {
+    qs.set("campaign", solana ? String(input.campaignAddress) : String(input.campaignAddress).toLowerCase());
+  }
+  if (creator) qs.set("creator", solana ? creator : creator.toLowerCase());
 
   const res = await fetch(`${base}/api/dashboard/lp-fees?${qs.toString()}`, {
     cache: "no-store",
@@ -105,9 +107,12 @@ export async function fetchLpFeePools(input: {
 
   let items = Array.isArray(json?.items) ? (json.items as LpFeePoolRow[]) : [];
   // Server already filters by creator when provided; keep a client guard for mixed responses.
-  const creatorKey = creator.toLowerCase();
-  if (creatorKey) {
-    items = items.filter((it) => String(it.creatorAddress || "").toLowerCase() === creatorKey);
+  if (creator) {
+    items = items.filter((it) =>
+      solana
+        ? String(it.creatorAddress || "") === creator
+        : String(it.creatorAddress || "").toLowerCase() === creator.toLowerCase(),
+    );
   }
   return {
     lockerAddress: json?.lockerAddress ? String(json.lockerAddress).toLowerCase() : null,
@@ -125,6 +130,33 @@ export function hasUnharvestedFees(row: LpFeePoolRow): boolean {
  * Creator / user harvest path: connected wallet pays gas, fees push to creator (80%) + treasury (20%).
  * Anyone may call harvest(); only the fee recipient receives the creator share.
  */
+export async function harvestSolanaLpFees(input: {
+  chainId: number;
+  campaignAddress?: string | null;
+  pairAddress?: string | null;
+}): Promise<{ txHash: string; pairAddress: string }> {
+  const chainId = Number(input.chainId || 101);
+  const base = getTokenIndexerBase();
+  if (!base) throw new Error("Token indexer URL is not configured.");
+  const res = await fetch(`${base}/api/dashboard/lp-fees/harvest`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      chainId,
+      campaign: input.campaignAddress || null,
+      campaignAddress: input.campaignAddress || null,
+      pair: input.pairAddress || null,
+      pairAddress: input.pairAddress || null,
+    }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(String(json?.error || `Solana LP harvest failed (${res.status})`));
+  return {
+    txHash: String(json?.txHash || ""),
+    pairAddress: String(json?.pairAddress || input.pairAddress || ""),
+  };
+}
+
 export async function harvestLpFeesWithWallet(input: {
   chainId: number;
   pairAddress: string;

@@ -75,6 +75,11 @@ async function batchWallets(client, batch) {
 
 async function main() {
   const chainId = envInt("AIRDROP_CHAIN_ID", 56, { min: 1, max: 1_000_000 });
+  if (chainId === 101 || chainId === 102) {
+    throw new Error(
+      "Solana weekly airdrop is not on the BNB merkle/vault runner. Use the Solana payout rails (airdrop_trader / airdrop_creator) instead of AIRDROP_CHAIN_ID=101.",
+    );
+  }
   const drawSecret = requireEnv("AIRDROP_DRAW_SEED_SECRET");
   const distributorAddress = requireEnv(`REWARD_DISTRIBUTOR_ADDRESS_${chainId}`);
   const dryRun = envBool("AIRDROP_DRY_RUN", false);

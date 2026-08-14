@@ -20,6 +20,22 @@ const CATEGORY_SET = new Set([
 // Accept old period spellings for backward compatibility.
 const PERIOD_SET = new Set(["weekly", "monthly", "all", "all_time", "alltime"]);
 
+function isSolanaLeagueChain(chainId) {
+  return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function sqlWalletNeq(left, right, solana) {
+  return solana ? `(${left} IS DISTINCT FROM ${right})` : `(lower(${left}) <> lower(${right}))`;
+}
+
+function sqlDistinctWallet(expr, solana) {
+  return solana ? `COUNT(DISTINCT ${expr})` : `COUNT(DISTINCT lower(${expr}))`;
+}
+
+function sqlWalletGroup(expr, solana) {
+  return solana ? expr : `lower(${expr})`;
+}
+
 function clampInt(v, lo, hi, def) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -850,7 +866,7 @@ export default async function handler(req, res) {
       const params = [chainId, epochStartIso, rangeEndIso, limit];
       // Mainnet keeps the 25 unique non-creator buyer bar. Testnet (97) uses 0 so a real
       // graduation still ranks even when only creator/few wallets participated.
-      const minUniqueBuyers = chainId === 97 ? 0 : 25;
+      const minUniqueBuyers = chainId === 97 || isSolanaLeagueChain(chainId) ? 0 : 25;
 
       const { rows } = await pool.query(
         `
@@ -869,7 +885,7 @@ export default async function handler(req, res) {
             c.graduated_block,
             EXTRACT(EPOCH FROM (c.graduated_at_chain - c.created_at_chain))::bigint AS duration_seconds,
             (
-              SELECT COUNT(DISTINCT lower(t.wallet))
+              SELECT ${sqlDistinctWallet("t.wallet", isSolanaLeagueChain(chainId))}
               FROM curve_trades t
               WHERE t.chain_id = c.chain_id
                 AND t.campaign_address = c.campaign_address
@@ -878,7 +894,7 @@ export default async function handler(req, res) {
                 AND (c.graduated_block IS NULL OR c.graduated_block = 0 OR t.block_number <= c.graduated_block)
                 AND (
                   c.creator_address IS NULL
-                  OR lower(t.wallet) <> lower(c.creator_address)
+                  OR ${sqlWalletNeq("t.wallet", "c.creator_address", isSolanaLeagueChain(chainId))}
                 )
             ) AS unique_buyers
           FROM campaigns c
@@ -936,7 +952,7 @@ export default async function handler(req, res) {
                 AND t.side = 'buy'
                 AND t.block_number >= c.created_block
                 AND (c.graduated_block IS NULL OR t.block_number <= c.graduated_block)
-                AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
+                AND (c.creator_address IS NULL OR ${sqlWalletNeq("t.wallet", "c.creator_address", isSolanaLeagueChain(chainId))})
             ) AS unique_buyers,
             (
               SELECT COALESCE(SUM(t.bnb_amount_raw::numeric), 0)::numeric(78,0)
@@ -946,7 +962,7 @@ export default async function handler(req, res) {
                 AND t.side = 'buy'
                 AND t.block_number >= c.created_block
                 AND (c.graduated_block IS NULL OR t.block_number <= c.graduated_block)
-                AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
+                AND (c.creator_address IS NULL OR ${sqlWalletNeq("t.wallet", "c.creator_address", isSolanaLeagueChain(chainId))})
             ) AS buy_total_raw
           FROM campaigns c
           WHERE c.chain_id = $1
@@ -1135,7 +1151,7 @@ export default async function handler(req, res) {
         `
         WITH filtered AS (
           SELECT
-            lower(t.wallet) AS wallet,
+            ${sqlWalletGroup("t.wallet", isSolanaLeagueChain(chainId))} AS wallet,
             t.side,
             t.bnb_amount_raw::numeric AS bnb_raw
           FROM public.curve_trades t
@@ -1146,9 +1162,9 @@ export default async function handler(req, res) {
             AND t.wallet IS NOT NULL
             AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
             AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
-            AND lower(t.wallet) <> lower(c.campaign_address)
-            AND (c.creator_address IS NULL OR lower(t.wallet) <> lower(c.creator_address))
-            AND (c.fee_recipient_address IS NULL OR lower(t.wallet) <> lower(c.fee_recipient_address))
+            AND ${sqlWalletNeq("t.wallet", "c.campaign_address", isSolanaLeagueChain(chainId))}
+            AND (c.creator_address IS NULL OR ${sqlWalletNeq("t.wallet", "c.creator_address", isSolanaLeagueChain(chainId))})
+            AND (c.fee_recipient_address IS NULL OR ${sqlWalletNeq("t.wallet", "c.fee_recipient_address", isSolanaLeagueChain(chainId))})
         ),
         agg AS (
           SELECT

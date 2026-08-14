@@ -52,17 +52,32 @@ function formatNativeAmount(weiOrLamports: bigint, decimals: number): string {
 }
 
 async function fetchSolUsd(): Promise<number | null> {
-  try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-      { cache: "no-store" },
-    );
-    const json = await res.json();
-    const p = Number(json?.solana?.usd);
-    return Number.isFinite(p) && p > 0 ? p : null;
-  } catch {
-    return null;
+  const sources = [
+    async () => {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+        { cache: "no-store" },
+      );
+      const json = await res.json();
+      return Number(json?.solana?.usd);
+    },
+    async () => {
+      const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      return Number(json?.price);
+    },
+  ];
+  for (const source of sources) {
+    try {
+      const p = await source();
+      if (Number.isFinite(p) && p > 0) return p;
+    } catch {
+      // try next oracle
+    }
   }
+  return null;
 }
 
 type Props = {
@@ -421,6 +436,13 @@ export function UpvoteDialog({
     const tx = new web3.Transaction();
     tx.feePayer = from;
     tx.recentBlockhash = latest.blockhash;
+    tx.add(
+      new web3.TransactionInstruction({
+        keys: [{ pubkey: from, isSigner: true, isWritable: false }],
+        programId: new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+        data: Buffer.from(`mwz-upvote:${campaignAddress}`, "utf8"),
+      }),
+    );
     tx.add(
       web3.SystemProgram.transfer({
         fromPubkey: from,

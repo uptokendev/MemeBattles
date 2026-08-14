@@ -519,17 +519,31 @@ export default async function handler(req, res) {
   const chain = normChain(q.chain);
   const period = normPeriod(q.period);
   const epochOffset = normEpochOffset(q.epochOffset, period);
-  const chainId = clampInt(q.chainId ?? 97, 1, 999999, 97);
+  const chainId =
+    chain === "solana"
+      ? clampInt(q.chainId ?? 101, 1, 999999, 101)
+      : clampInt(q.chainId ?? 97, 1, 999999, 97);
   const limit = clampInt(q.limit ?? 10, 1, 50, 10);
   // Default OFF for first paint. Pass includeHistory=1 for hall-of-fame / trends.
   const includeHistory =
     String(q.includeHistory ?? q.history ?? '0').trim() === '1' ||
     String(q.includeHistory ?? '').toLowerCase() === 'true';
 
-  if (chain === 'solana') return json(res, 200, buildPendingSummary({ chain, period, epochOffset }));
-
   try {
-    return json(res, 200, await aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory }));
+    const payload = await aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory });
+    if (chain === "solana" && payload) {
+      payload.prize = {
+        ...(payload.prize || {}),
+        warning: "Solana standings are live. Prize claims stay closed until the SOL league pot is funded.",
+      };
+      if (Array.isArray(payload.leagues)) {
+        payload.leagues = payload.leagues.map((league) => ({
+          ...league,
+          warning: league?.warning || "Standings only. SOL claims open after league payouts are live.",
+        }));
+      }
+    }
+    return json(res, 200, payload);
   } catch (error) {
     console.error('[api/league/summary]', error);
     return json(res, 500, { error: 'Server error' });
