@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
+import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad, type CampaignInfo } from "@/lib/launchpadClient";
 import {
   fetchSolanaCampaignCurveState,
@@ -117,14 +118,46 @@ const TokenDetailsEntry = () => {
 
     (async () => {
       try {
-        const campaigns = await fetchCampaigns();
+        const [campaigns, rawCampaignJson] = await Promise.all([
+          fetchCampaigns(),
+          (async () => {
+            try {
+              const res = await apiFetch(
+                `/api/campaigns?chainId=${encodeURIComponent(String(SOLANA_CHAIN_ID))}&limit=500&status=all`,
+                { cache: "no-store" as RequestCache },
+              );
+              return await res.json().catch(() => null);
+            } catch {
+              return null;
+            }
+          })(),
+        ]);
         if (cancelled) return;
+
         const match =
           campaigns.find((item) => tokenIdMatches(item.token, routeId) || tokenIdMatches(item.campaign, routeId)) ??
           null;
         if (match) {
           setCampaign(match);
           if (match.campaign) setCachedCampaignAddress(String(match.campaign).trim());
+        }
+
+        const rawItems = Array.isArray(rawCampaignJson?.items) ? rawCampaignJson.items : [];
+        const rawMatch = rawItems.find((item: any) =>
+          tokenIdMatches(item?.tokenAddress ?? item?.token_address ?? item?.token, routeId) ||
+          tokenIdMatches(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign, routeId),
+        );
+        const rawCampaignAddress = String(
+          rawMatch?.campaignAddress ?? rawMatch?.campaign_address ?? rawMatch?.campaign ?? "",
+        ).trim();
+        if (rawCampaignAddress) setCachedCampaignAddress(rawCampaignAddress);
+        if (
+          rawMatch?.isDexTrading === true ||
+          rawMatch?.is_dex_trading === true ||
+          Boolean(rawMatch?.graduatedAtChain ?? rawMatch?.graduated_at_chain ?? rawMatch?.graduatedAt ?? rawMatch?.graduated_at) ||
+          String(rawMatch?.status || "").trim().toLowerCase() === "graduated"
+        ) {
+          setStickyGraduated(true);
         }
       } catch {
         // Keep any previously resolved identity instead of clearing it.
