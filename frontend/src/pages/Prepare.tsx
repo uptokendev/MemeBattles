@@ -376,144 +376,132 @@ function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="mwz-card max-h-[92vh] w-full max-w-5xl overflow-auto border-orange-400/50 bg-black/95 p-4 md:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-[0.22em] text-orange-300">
-              // Dynamic share card
+    <div className="fixed inset-0 z-[80] overflow-y-auto overscroll-contain bg-black/75 p-2 backdrop-blur-sm sm:p-4">
+      <div className="flex min-h-[100dvh] items-center justify-center sm:min-h-[calc(100dvh-2rem)]">
+        <div className="relative flex max-h-[96dvh] w-full max-w-2xl flex-col overflow-hidden border border-orange-400/50 bg-black/95">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/50 px-3 py-3 sm:px-4">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.22em] text-orange-300 sm:text-xs">
+                // Dynamic share card
+              </div>
+              <h3 className="mt-1 font-retro text-xl uppercase tracking-[0.08em] text-foreground sm:text-2xl">
+                Share on X
+              </h3>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Save the share card, open X, then attach the PNG — same pattern as trade P&amp;L cards.
+              </p>
             </div>
-            <h3 className="mt-1 font-retro text-3xl uppercase tracking-[0.08em] text-foreground">
-              Share on X
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              X cannot auto-attach images from a website button. Save the share card, open
-              your post, then attach the PNG — same pattern as trade P&amp;L cards.
-            </p>
+
+            <button type="button" onClick={onClose} className="mwz-button h-9 w-9 shrink-0">
+              <X className="mx-auto h-4 w-4" />
+            </button>
           </div>
 
-          <button onClick={onClose} className="mwz-button h-9 w-9">
-            <X className="mx-auto h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-border/70 bg-black/50">
-          <img src={pngUrl} alt="Generated Prepare Mode share card" className="w-full" />
-        </div>
-
-        <div className="mt-4 rounded-lg border border-orange-400/40 bg-orange-500/10 p-4">
-          <div className="text-xs uppercase tracking-[0.18em] text-orange-300">
-            Fast path (recommended)
+          <div className="relative flex shrink-0 items-center justify-center overflow-hidden border-b border-border/70 bg-black/50">
+            <img
+              src={pngUrl}
+              alt="Generated Prepare Mode share card"
+              className="max-h-[28vh] w-full object-contain sm:max-h-[32vh]"
+            />
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Downloads your share card, then opens X with the Warzone message and promotion
-            page link. You only attach the image in X and hit Post.
-          </p>
-          <Button
-            type="button"
-            onClick={() => void guidedShare()}
-            disabled={Boolean(busy)}
-            className="mwz-button mwz-button-orange mt-3 w-full font-retro sm:w-auto"
-          >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            {busy === "guided" ? "Preparing…" : "1 · Download card & open X"}
-          </Button>
-        </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div
-            className={`rounded-lg border p-4 ${
-              downloaded ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
-            }`}
-          >
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                1
-              </span>
-              Save the card
+          <div className="shrink-0 border-b border-orange-400/40 bg-orange-500/10 px-3 py-3 sm:px-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-orange-300 sm:text-xs">
+              Fast path (recommended)
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Downloads a PNG of this preview to your device (usually Downloads folder).
+            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+              Downloads the card, then opens X with your message. Attach the PNG in X and Post.
             </p>
             <Button
               type="button"
-              onClick={() => void downloadCard()}
+              onClick={() => void guidedShare()}
               disabled={Boolean(busy)}
-              className="mwz-button mt-3 w-full font-retro text-xs"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {busy === "download" ? "Saving…" : downloaded ? "Download again" : "Download share card"}
-            </Button>
-            {downloaded ? (
-              <p className="mt-2 text-[11px] text-emerald-300">Saved ✓ — continue to step 2</p>
-            ) : null}
-          </div>
-
-          <div
-            className={`rounded-lg border p-4 ${
-              openedX ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
-            }`}
-          >
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                2
-              </span>
-              Open X
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Opens compose with your message + promotion page link (not the raw image URL).
-            </p>
-            <Button
-              type="button"
-              onClick={openXOnly}
-              disabled={Boolean(busy)}
-              className="mwz-button mt-3 w-full font-retro text-xs"
+              className="mwz-button mwz-button-orange mt-2 w-full font-retro"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              {busy === "open-x" ? "Opening…" : "Open X compose"}
+              {busy === "guided" ? "Preparing…" : "1 · Download card & open X"}
             </Button>
-            {openedX ? (
-              <p className="mt-2 text-[11px] text-emerald-300">Compose opened ✓ — finish step 3 in X</p>
-            ) : null}
           </div>
 
-          <div className="rounded-lg border border-border/70 bg-black/40 p-4">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                3
-              </span>
-              Attach in X
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+            <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+              <div
+                className={`rounded-lg border p-3 ${
+                  downloaded ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    1
+                  </span>
+                  Save the card
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => void downloadCard()}
+                  disabled={Boolean(busy)}
+                  className="mwz-button mt-2 w-full font-retro text-xs"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {busy === "download" ? "Saving…" : downloaded ? "Download again" : "Download share card"}
+                </Button>
+              </div>
+
+              <div
+                className={`rounded-lg border p-3 ${
+                  openedX ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    2
+                  </span>
+                  Open X
+                </div>
+                <Button
+                  type="button"
+                  onClick={openXOnly}
+                  disabled={Boolean(busy)}
+                  className="mwz-button mt-2 w-full font-retro text-xs"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {busy === "open-x" ? "Opening…" : "Open X compose"}
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-black/40 p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    3
+                  </span>
+                  Attach in X
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  In X: media button → pick the PNG → Post.
+                </p>
+              </div>
             </div>
-            <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
-              <li>In the X post, click the <strong className="text-foreground">image / media</strong> button</li>
-              <li>Choose the share card you just downloaded</li>
-              <li>Check the text, then <strong className="text-foreground">Post</strong></li>
-            </ol>
-            <p className="mt-3 text-[11px] leading-relaxed text-orange-200/90">
-              Phone tip: the fast path may open a share sheet — pick <strong>X</strong> so the
-              image is attached automatically.
-            </p>
-          </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-border/50 pt-4">
-          <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
-            <Share2 className="mr-2 h-4 w-4" />
-            Copy page link
-          </Button>
-          <Button
-            type="button"
-            onClick={async () => {
-              await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
-              toast.message("PNG link copied — for Discord/Telegram previews only, not for X media.", {
-                duration: 6_000,
-              });
-            }}
-            className="mwz-button font-retro text-xs"
-          >
-            <ImageDown className="mr-2 h-4 w-4" />
-            Copy PNG link
-          </Button>
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+              <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
+                <Share2 className="mr-2 h-4 w-4" />
+                Copy page link
+              </Button>
+              <Button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
+                  toast.message("PNG link copied — for Discord/Telegram previews only, not for X media.", {
+                    duration: 6_000,
+                  });
+                }}
+                className="mwz-button font-retro text-xs"
+              >
+                <ImageDown className="mr-2 h-4 w-4" />
+                Copy PNG link
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
