@@ -2467,12 +2467,12 @@ const toSeconds = (ts: number): number => {
   }, [campaign, marketTradePoints, tokenData.marketCap, metrics, isSolanaPage, tokenDecimals]);
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
-  // Prefer verified backend state; retain on-chain graduation while market API is still rolling out.
-  // Solana switches stage only on the real on-chain graduated flag or the indexed
-  // CampaignGraduated event — never merely because progress reached 100%.
+  // Solana DEX stage is only the on-chain graduated flag — never progress, indexer
+  // inference, or localStorage. Eligibility is curve_closed, not graduated.
   const contractGraduated = isSolanaPage
-    ? Boolean(solanaCurve?.graduated || rtStats?.graduated)
+    ? Boolean(solanaCurve?.graduated)
     : contractGraduatedEarly;
+  const solanaCurveClosed = Boolean(isSolanaPage && solanaCurve?.curveClosed && !solanaCurve?.graduated);
   const verifiedMarketStage = isSolanaPage ? null : unifiedMarket.state?.marketStage;
   // Do NOT treat TOPAZ_PENDING alone as DEX UI — that broke bonding metrics when
   // handoff rows existed without a live pair. Require on-chain graduation or ACTIVE.
@@ -2638,7 +2638,9 @@ const toSeconds = (ts: number): number => {
   const stagePill = isSolanaPage
     ? contractGraduated
       ? "Graduated · Meteora"
-      : "Bonding · Solana"
+      : solanaCurveClosed
+        ? "Graduating · Solana"
+        : "Bonding · Solana"
     : isTopazTradingActive
       ? "Graduated · Topaz"
       : isDexStage
@@ -3083,6 +3085,13 @@ const toSeconds = (ts: number): number => {
         toast({
           title: "Meteora market active",
           description: "This campaign has graduated. Bonding-curve trading is closed; the verified Meteora route is being loaded.",
+        });
+        return;
+      }
+      if (solanaCurveClosed) {
+        toast({
+          title: "Threshold reached · awaiting Meteora",
+          description: "Bonding buy/sell is closed. Graduation is being submitted.",
         });
         return;
       }
@@ -4314,8 +4323,10 @@ const toSeconds = (ts: number): number => {
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <h3 className="text-sm font-semibold">Graduation progress</h3>
                   <span className="text-xs text-muted-foreground">
-                    {curveProgress.matured
-                      ? "Matured"
+                    {contractGraduated
+                      ? "Graduated"
+                      : solanaCurveClosed || curveProgress.matured
+                        ? "Eligible"
                       : curveProgress.pct > 0 && curveProgress.pct < 0.01
                         ? `${curveProgress.pct.toFixed(6)}%`
                         : `${curveProgress.pct.toFixed(2)}%`}
@@ -4479,6 +4490,7 @@ const toSeconds = (ts: number): number => {
                       tradePending ||
                       approvePending ||
                       quoteLoading ||
+                      solanaCurveClosed ||
                       (isSolanaPage
                         ? effectiveBnbWei <= 0n
                         : (isDexStage && !isTopazTradingActive) ||
@@ -4488,7 +4500,7 @@ const toSeconds = (ts: number): number => {
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : isDexStage ? "Buy on Topaz" : "Buy"}
+                    {tradePending ? "Processing..." : solanaCurveClosed ? "Threshold reached · awaiting Meteora" : isDexStage ? "Buy on Topaz" : "Buy"}
                   </Button>
                 </TabsContent>
 
@@ -4612,6 +4624,7 @@ const toSeconds = (ts: number): number => {
                       tradePending ||
                       approvePending ||
                       quoteLoading ||
+                      solanaCurveClosed ||
                       (isSolanaPage
                         ? effectiveTokenWei <= 0n
                         : (isDexStage && !isTopazTradingActive) ||
@@ -4621,7 +4634,7 @@ const toSeconds = (ts: number): number => {
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : isDexStage ? "Sell on Topaz" : "Sell"}
+                    {tradePending ? "Processing..." : solanaCurveClosed ? "Threshold reached · awaiting Meteora" : isDexStage ? "Sell on Topaz" : "Sell"}
                   </Button>
                 </TabsContent>
               </Tabs>

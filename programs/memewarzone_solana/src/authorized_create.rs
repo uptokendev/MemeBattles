@@ -153,6 +153,8 @@ pub struct Campaign {
     pub asset_initialization_version: u16,
     pub mint_authority_revoked: bool,
     pub graduated: bool,
+    /// Sticky eligibility lock. Set on the threshold-crossing buy. Not `graduated`.
+    pub curve_closed: bool,
     pub bump: u8,
     pub mint_bump: u8,
     pub token_vault_bump: u8,
@@ -862,6 +864,7 @@ fn write_campaign_body<'info>(
         asset_initialization_version: ASSET_INITIALIZATION_VERSION,
         mint_authority_revoked: false,
         graduated: false,
+        curve_closed: false,
         bump: ctx.bumps.campaign,
         mint_bump: ctx.bumps.mint,
         token_vault_bump: ctx.bumps.token_vault,

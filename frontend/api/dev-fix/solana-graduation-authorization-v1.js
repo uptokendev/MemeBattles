@@ -155,6 +155,7 @@ function decodeCampaignGraduationFields(data) {
     soldTokens: buf.readBigUInt64LE(662),
     netRaisedLamports: buf.readBigUInt64LE(670),
     graduated: buf.readUInt8(713) === 1,
+    curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
   };
 }
 

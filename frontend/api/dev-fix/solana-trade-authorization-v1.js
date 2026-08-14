@@ -27,7 +27,9 @@ import {
   TOKEN_PROGRAM_ID,
   createEd25519Signer,
   decodeCampaignAccount,
+  decodeCampaignCurveFields,
   findProgramAddressSync,
+  nativeTargetLamportsFromUsd,
   publicKeyBytes,
   publicKeyString,
   sha256,
@@ -39,7 +41,7 @@ import {
 } from "./solana-v4-primitives.js";
 
 const TRADE_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_TRADE_V1", "utf8");
-const TRADE_AUTH_SCHEMA_VERSION = 1;
+const TRADE_AUTH_SCHEMA_VERSION = 2;
 const TRADE_SIDE_BUY = 1;
 const TRADE_SIDE_SELL = 2;
 const DEFAULT_AUTH_TTL_SECONDS = 5 * 60;
@@ -265,6 +267,7 @@ function buildTradeAuthorizationDigest({
   minOut,
   deadline,
   nonce,
+  nativeTargetLamports,
 }) {
   return sha256(
     TRADE_AUTH_DOMAIN,
@@ -278,7 +281,60 @@ function buildTradeAuthorizationDigest({
     u64(minOut, "minOut"),
     i64(deadline, "deadline"),
     Buffer.from(nonce),
+    u64(nativeTargetLamports, "nativeTargetLamports"),
   );
+}
+
+async function fetchSolUsdMicros() {
+  const override = String(process.env.SOLANA_GRADUATION_SOL_USD_MICROS || "").trim();
+  if (override) {
+    const value = BigInt(override);
+    if (value <= 0n) throw new Error("SOLANA_GRADUATION_SOL_USD_MICROS must be > 0");
+    return value;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      { headers: { accept: "application/json" }, signal: controller.signal },
+    );
+    if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
+    const body = await response.json();
+    const price = Number(body?.solana?.usd);
+    if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid SOL/USD response");
+    const micros = BigInt(Math.round(price * 1_000_000));
+    if (micros <= 0n) throw new Error("Invalid SOL/USD micro price");
+    return micros;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadCampaignCurve(rpcUrl, campaignAddress) {
+  const info = await rpcCall(rpcUrl, "getAccountInfo", [
+    campaignAddress,
+    { encoding: "base64", commitment: "confirmed" },
+  ]);
+  const dataB64 = info?.value?.data?.[0];
+  if (!dataB64) {
+    throw new SolanaTradeAuthorizationError("Campaign account was not found on-chain.", {
+      code: "SOLANA_CAMPAIGN_MISSING",
+      httpStatus: 409,
+    });
+  }
+  return decodeCampaignCurveFields(Buffer.from(dataB64, "base64"));
+}
+
+function assertCurveOpen(curve, nativeTargetLamports) {
+  const soldOut = curve.soldTokens >= curve.curveTokenSupply;
+  const raiseMet = nativeTargetLamports > 0n && curve.netRaisedLamports >= nativeTargetLamports;
+  if (curve.graduated || curve.curveClosed || soldOut || raiseMet) {
+    throw new SolanaTradeAuthorizationError(
+      "Bonding curve is closed after the graduation threshold. Awaiting Meteora.",
+      { code: "SOLANA_CURVE_CLOSED", httpStatus: 409 },
+    );
+  }
 }
 
 /**
@@ -552,6 +608,20 @@ export async function solanaTradeAuthorizationV1(req, res) {
       ? publicKeyString(body.traderTokenAccount, "traderTokenAccount")
       : findAssociatedTokenAddress(traderAddress, mintAddress).publicKey;
 
+    const curve = await loadCampaignCurve(rpcUrl, resolvedCampaign);
+    let eligibilityTargetLamports = 0n;
+    try {
+      const oraclePriceUsdMicros = await fetchSolUsdMicros();
+      eligibilityTargetLamports = nativeTargetLamportsFromUsd(
+        curve.graduationTargetUsdMicros,
+        oraclePriceUsdMicros,
+      );
+    } catch (error) {
+      console.warn("[solana-trade-v1] native target oracle unavailable", error?.message || error);
+    }
+    assertCurveOpen(curve, eligibilityTargetLamports);
+    const signedNativeTargetLamports = side === TRADE_SIDE_BUY ? eligibilityTargetLamports : 0n;
+
     const digest = buildTradeAuthorizationDigest({
       programId,
       campaign: resolvedCampaign,
@@ -562,6 +632,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
       minOut,
       deadline,
       nonce,
+      nativeTargetLamports: signedNativeTargetLamports,
     });
     const signature = signer.sign(digest);
 
@@ -582,6 +653,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
         minOut: minOut.toString(),
         deadline: deadline.toString(),
         nonce: Array.from(nonce),
+        nativeTargetLamports: signedNativeTargetLamports.toString(),
       },
       accounts: {
         trader: traderAddress,

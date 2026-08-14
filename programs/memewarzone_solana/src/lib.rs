@@ -1572,4 +1572,6 @@ pub enum LaunchpadError {
     GraduationAssetMismatch,
     #[msg("Meteora initial pool price drifted beyond the allowed bonding-curve tolerance.")]
     GraduationPriceDrift,
+    #[msg("Bonding curve is closed after the graduation threshold. Awaiting Meteora.")]
+    CurveClosed,
 }

@@ -633,3 +633,27 @@ export function decodeCampaignAccount(data) {
   // Lenient path: assume standard Anchor 8-byte discriminator prefix.
   return readCore(8);
 }
+
+/** Curve / graduation fields. Offsets include the 8-byte Anchor discriminator. */
+export function decodeCampaignCurveFields(data) {
+  const buf = Buffer.from(data);
+  if (buf.length < 714) {
+    throw new RangeError(`Campaign account data too short for curve fields (${buf.length} < 714)`);
+  }
+  return {
+    graduationTargetUsdMicros: buf.readBigUInt64LE(408),
+    economicsVersion: buf.readUInt16LE(417),
+    curveTokenSupply: buf.readBigUInt64LE(428),
+    soldTokens: buf.readBigUInt64LE(662),
+    netRaisedLamports: buf.readBigUInt64LE(670),
+    graduated: buf.readUInt8(713) === 1,
+    curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
+  };
+}
+
+export function nativeTargetLamportsFromUsd(graduationTargetUsdMicros, oraclePriceUsdMicros) {
+  const target = BigInt(graduationTargetUsdMicros);
+  const price = BigInt(oraclePriceUsdMicros);
+  if (price <= 0n) throw new RangeError("oraclePriceUsdMicros must be > 0");
+  return (target * 1_000_000_000n + price - 1n) / price;
+}

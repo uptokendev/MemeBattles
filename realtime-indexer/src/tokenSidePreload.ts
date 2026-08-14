@@ -22,7 +22,7 @@ const SOLANA_CHAIN_ID = 101;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_PATCHED_ROUTES = Symbol.for("memewarzone.solanaPayoutRoutesRegistered");
-const NON_DEX_MARKET_STAGES = new Set(["BONDING", "LIVE", "ENDED"]);
+
 
 function isSolanaChain(chainId: number) {
   return chainId === SOLANA_CHAIN_ID;
@@ -64,11 +64,6 @@ function toInt(value: unknown, fallback: number) {
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
-}
-
-function isDexTradingMarketStage(stage: unknown) {
-  const normalized = String(stage ?? "").trim();
-  return Boolean(normalized && !NON_DEX_MARKET_STAGES.has(normalized.toUpperCase()));
 }
 
 function readBearerToken(req: Request): string {
@@ -382,10 +377,6 @@ const patchedTokenSummary = wrap(async (req, res) => {
          when campaign_state.graduated_at_chain is not null
            or campaign_state.dex_pool is not null
            or campaign_state.dex_position is not null
-           or (
-             campaign_state.market_stage is not null
-             and upper(campaign_state.market_stage) not in ('BONDING', 'LIVE', 'ENDED')
-           )
          then true
          else false
        end as graduated,
@@ -424,8 +415,7 @@ const patchedTokenSummary = wrap(async (req, res) => {
     row.graduated === true ||
       row.graduated_at ||
       dexPool ||
-      dexPosition ||
-      isDexTradingMarketStage(marketStage),
+      dexPosition,
   );
 
   return res.json({

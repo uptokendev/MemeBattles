@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "graduate": "node graduate.mjs",
-    "check": "node --check graduate.mjs"
+    "keeper": "node keeper.mjs",
+    "check": "node --check graduate.mjs && node --check keeper.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.30.1",

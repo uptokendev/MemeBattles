@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad, type CampaignInfo } from "@/lib/launchpadClient";
 import {
@@ -14,31 +13,13 @@ import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 import TokenDetails from "./TokenDetails";
 import SolanaGraduatedTokenDetails from "./SolanaGraduatedTokenDetails";
 
-const SOLANA_ROUTE_CACHE_PREFIX = "mwz:solana-token-route:v1:";
+const SOLANA_ROUTE_CACHE_PREFIX = "mwz:solana-token-route:v2:";
 const SOLANA_ROUTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type SolanaRouteCache = {
   campaignAddress: string;
-  graduated: boolean;
   updatedAt: number;
 };
-
-function isDexLikeMarketStage(value: unknown): boolean {
-  const stage = String(value ?? "").trim();
-  return Boolean(stage && !["BONDING", "LIVE", "ENDED"].includes(stage.toUpperCase()));
-}
-
-function isGraduatedMarketSnapshot(snapshot: any): boolean {
-  return (
-    snapshot?.graduated === true ||
-    snapshot?.isDexTrading === true ||
-    snapshot?.is_dex_trading === true ||
-    Boolean(snapshot?.dexPool ?? snapshot?.dex_pool ?? snapshot?.dexPosition ?? snapshot?.dex_position ?? snapshot?.dex) ||
-    isDexLikeMarketStage(snapshot?.marketStage ?? snapshot?.market_stage) ||
-    Boolean(snapshot?.graduatedAtChain ?? snapshot?.graduated_at_chain ?? snapshot?.graduatedAt ?? snapshot?.graduated_at) ||
-    String(snapshot?.status || "").trim().toLowerCase() === "graduated"
-  );
-}
 
 function tokenIdMatches(candidate?: string | null, routeId?: string | null): boolean {
   const left = String(candidate || "").trim();
@@ -61,11 +42,7 @@ function readRouteCache(routeId: string): SolanaRouteCache | null {
     const updatedAt = Number(parsed.updatedAt || 0);
     if (!campaignAddress || !Number.isFinite(updatedAt)) return null;
     if (Date.now() - updatedAt > SOLANA_ROUTE_CACHE_TTL_MS) return null;
-    return {
-      campaignAddress,
-      graduated: parsed.graduated === true,
-      updatedAt,
-    };
+    return { campaignAddress, updatedAt };
   } catch {
     return null;
   }
@@ -101,7 +78,6 @@ const TokenDetailsEntry = () => {
   const [curve, setCurve] = useState<SolanaCampaignCurveState | null>(null);
   const [curveResolved, setCurveResolved] = useState<boolean>(!isSolanaRoute);
   const [cachedCampaignAddress, setCachedCampaignAddress] = useState<string>(initialCache?.campaignAddress || "");
-  const [stickyGraduated, setStickyGraduated] = useState<boolean>(initialCache?.graduated === true);
 
   useEffect(() => {
     if (!isSolanaRoute) {
@@ -110,7 +86,6 @@ const TokenDetailsEntry = () => {
       setCurve(null);
       setCurveResolved(true);
       setCachedCampaignAddress("");
-      setStickyGraduated(false);
       return;
     }
 
@@ -120,7 +95,6 @@ const TokenDetailsEntry = () => {
     setCampaignResolved(Boolean(cache?.campaignAddress));
     setCurveResolved(Boolean(cache?.campaignAddress));
     setCachedCampaignAddress(cache?.campaignAddress || "");
-    setStickyGraduated(cache?.graduated === true);
   }, [isSolanaRoute, routeId]);
 
   useEffect(() => {
@@ -168,9 +142,6 @@ const TokenDetailsEntry = () => {
           rawMatch?.campaignAddress ?? rawMatch?.campaign_address ?? rawMatch?.campaign ?? "",
         ).trim();
         if (rawCampaignAddress) setCachedCampaignAddress(rawCampaignAddress);
-        if (isGraduatedMarketSnapshot(rawMatch)) {
-          setStickyGraduated(true);
-        }
       } catch {
         // Keep any previously resolved identity instead of clearing it.
       } finally {
@@ -182,34 +153,6 @@ const TokenDetailsEntry = () => {
       cancelled = true;
     };
   }, [cachedCampaignAddress, fetchCampaigns, isSolanaRoute, routeId]);
-
-  useEffect(() => {
-    if (!isSolanaRoute || !routeId || stickyGraduated) return;
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await apiFetch(`/api/token/${encodeURIComponent(routeId)}/summary`, {
-          cache: "no-store" as RequestCache,
-        });
-        const summary = await res.json().catch(() => null);
-        if (cancelled || !summary) return;
-
-        const summaryCampaignAddress = String(
-          summary?.campaignAddress ?? summary?.campaign_address ?? summary?.campaign ?? "",
-        ).trim();
-        if (summaryCampaignAddress) setCachedCampaignAddress(summaryCampaignAddress);
-        if (isGraduatedMarketSnapshot(summary)) setStickyGraduated(true);
-      } catch {
-        // Summary is best-effort; keep the current route state if this read is temporarily unavailable.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isSolanaRoute, routeId, stickyGraduated]);
 
   const curveLookupAddress = useMemo(
     () => String(campaign?.campaign || cachedCampaignAddress || routeId || "").trim(),
@@ -226,69 +169,49 @@ const TokenDetailsEntry = () => {
     let cancelled = false;
     setCurveResolved(Boolean(curve?.campaignAddress || cachedCampaignAddress));
 
-    (async () => {
+    const loadCurve = async () => {
       try {
         const nextCurve = await fetchSolanaCampaignCurveState(curveLookupAddress);
         if (cancelled) return;
         if (nextCurve) {
           setCurve(nextCurve);
           setCachedCampaignAddress(String(nextCurve.campaignAddress || "").trim());
-          if (nextCurve.graduated) setStickyGraduated(true);
         }
       } catch {
-        // Preserve the last known curve identity; a temporary fetch miss must not de-graduate the route.
+        // Preserve the last known curve identity.
       } finally {
         if (!cancelled) setCurveResolved(true);
       }
-    })();
+    };
+
+    void loadCurve();
+    const pollMs = curve?.curveClosed && !curve?.graduated ? 5_000 : 0;
+    const timer = pollMs ? window.setInterval(() => void loadCurve(), pollMs) : 0;
 
     return () => {
       cancelled = true;
+      if (timer) window.clearInterval(timer);
     };
-  }, [cachedCampaignAddress, curve?.campaignAddress, curveLookupAddress, isSolanaRoute]);
+  }, [cachedCampaignAddress, curve?.campaignAddress, curve?.curveClosed, curve?.graduated, curveLookupAddress, isSolanaRoute]);
 
   const resolvedCampaignAddress = useMemo(
     () => String(campaign?.campaign || curve?.campaignAddress || cachedCampaignAddress || "").trim(),
     [cachedCampaignAddress, campaign?.campaign, curve?.campaignAddress],
   );
 
-  const { stats } = useTokenStatsRealtime(
-    resolvedCampaignAddress || undefined,
-    SOLANA_CHAIN_ID,
-    isSolanaRoute && Boolean(resolvedCampaignAddress),
-  );
-
-  const indexedDexReady = Boolean(stats?.dexPool || stats?.dexPosition || stats?.dex);
-  const indexedGraduated =
-    stats?.graduated === true ||
-    indexedDexReady ||
-    isDexLikeMarketStage((stats as any)?.marketStage ?? (stats as any)?.market_stage) ||
-    Boolean((stats as any)?.graduatedAtChain ?? (stats as any)?.graduated_at_chain ?? (stats as any)?.graduatedAt ?? (stats as any)?.graduated_at);
-  const graduated = Boolean(stickyGraduated || curve?.graduated || indexedGraduated);
-
   useEffect(() => {
     if (!isSolanaRoute || !routeId) return;
-    if (graduated) setStickyGraduated(true);
-
     const campaignAddressToCache = String(resolvedCampaignAddress || cachedCampaignAddress || curveLookupAddress || "").trim();
     if (!campaignAddressToCache) return;
     writeRouteCache(routeId, {
       campaignAddress: campaignAddressToCache,
-      graduated,
       updatedAt: Date.now(),
     });
-  }, [
-    cachedCampaignAddress,
-    curveLookupAddress,
-    graduated,
-    isSolanaRoute,
-    resolvedCampaignAddress,
-    routeId,
-  ]);
+  }, [cachedCampaignAddress, curveLookupAddress, isSolanaRoute, resolvedCampaignAddress, routeId]);
 
   if (!isSolanaRoute) return <TokenDetails />;
 
-  if (graduated) {
+  if (curve?.graduated === true) {
     return <SolanaGraduatedTokenDetails routeId={routeId} campaign={campaign} initialCurve={curve} />;
   }
 

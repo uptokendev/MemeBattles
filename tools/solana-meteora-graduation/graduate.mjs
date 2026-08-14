@@ -88,6 +88,7 @@ function decodeCampaign(buf) {
     soldTokens: bigintAt(buf, 662),
     netRaisedLamports: bigintAt(buf, 670),
     graduated: buf.readUInt8(713) === 1,
+    curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
   };
 }
 

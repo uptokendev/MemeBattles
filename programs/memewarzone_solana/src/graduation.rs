@@ -1203,6 +1203,7 @@ mod tests {
             asset_initialization_version: 1,
             mint_authority_revoked: true,
             graduated: false,
+            curve_closed: false,
             bump: 255,
             mint_bump: 254,
             token_vault_bump: 253,

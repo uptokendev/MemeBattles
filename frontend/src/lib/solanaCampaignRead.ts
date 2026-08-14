@@ -98,6 +98,7 @@ export type SolanaCampaignCurveState = {
   totalSellVolumeLamports: bigint;
   buyerCount: bigint;
   graduated: boolean;
+  curveClosed: boolean;
 };
 
 function readU64LE(view: DataView, offset: number): bigint {
@@ -233,6 +234,9 @@ export function decodeSolanaCampaignAccount(
   takeU16(); // asset_initialization_version
   takeU8(); // mint_authority_revoked
   const graduated = takeU8() !== 0;
+  // New layout is 719+ bytes with curve_closed at 714. Old 718-byte accounts
+  // store bump there — do not treat that as closed.
+  const curveClosed = data.length >= 719 ? takeU8() !== 0 : false;
 
   const campaignIdHex = Array.from(campaignId)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -266,6 +270,7 @@ export function decodeSolanaCampaignAccount(
     totalSellVolumeLamports,
     buyerCount,
     graduated,
+    curveClosed,
   };
 }
 
@@ -288,7 +293,7 @@ export async function fetchSolanaCampaignCurveState(
     const info = await connection.getAccountInfo(new web3.PublicKey(addr), "confirmed");
     if (!info?.data) return null;
     const data = info.data instanceof Uint8Array ? info.data : new Uint8Array(info.data);
-    // SPL mint account is 82 bytes — never a V4 Campaign PDA (~718 bytes).
+    // SPL mint account is 82 bytes — never a V4 Campaign PDA (~719 bytes).
     if (data.length < 200) {
       return null;
     }

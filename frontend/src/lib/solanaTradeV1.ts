@@ -32,6 +32,7 @@ export type SolanaTradeAuthResponse = {
     minOut: string;
     deadline: string;
     nonce: number[];
+    nativeTargetLamports?: string;
   };
   accounts: {
     trader: string;
@@ -91,8 +92,10 @@ function encodeTradeIxData(
   minOut: string,
   deadline: string,
   nonce: number[],
+  nativeTargetLamports?: string,
 ): Uint8Array {
   const parts = [discriminator, u64le(amountIn), u64le(minOut), i64le(deadline), Uint8Array.from(nonce)];
+  if (nativeTargetLamports != null) parts.push(u64le(nativeTargetLamports));
   let total = 0;
   for (const p of parts) total += p.length;
   const out = new Uint8Array(total);
@@ -316,6 +319,12 @@ export function mapSolanaTradeError(err: unknown): string {
   if (/TradingNotOpen|launch_at/i.test(msg)) {
     return "Trading is not open yet (launch timer).";
   }
+  if (/SOLANA_CURVE_CLOSED|CurveClosed|awaiting Meteora/i.test(msg)) {
+    return "Threshold reached · awaiting Meteora. Bonding buy/sell is closed.";
+  }
+  if (/AlreadyGraduated/i.test(msg)) {
+    return "This campaign has graduated. Bonding-curve trading is closed.";
+  }
   if (/SlippageExceeded/i.test(msg)) {
     return "Slippage exceeded — retry with a higher slippage or smaller size.";
   }
@@ -426,6 +435,7 @@ export async function submitSolanaTradeV1(
     auth.createArgs.minOut,
     auth.createArgs.deadline,
     auth.createArgs.nonce,
+    isBuy ? auth.createArgs.nativeTargetLamports || "0" : undefined,
   );
 
   const a = auth.accounts;

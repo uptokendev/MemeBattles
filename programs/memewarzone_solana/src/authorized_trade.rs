@@ -30,7 +30,7 @@ use crate::{
 };
 
 pub const TRADE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_TRADE_V1";
-pub const TRADE_AUTH_SCHEMA_VERSION: u16 = 1;
+pub const TRADE_AUTH_SCHEMA_VERSION: u16 = 2;
 pub const TRADE_AUTH_SEED: &[u8] = b"trade-auth";
 pub const TRADE_SIDE_BUY: u8 = 1;
 pub const TRADE_SIDE_SELL: u8 = 2;
@@ -49,6 +49,8 @@ pub struct BuyTokensArgs {
     pub min_tokens_out: u64,
     pub deadline: i64,
     pub nonce: [u8; 32],
+    /// Route-signed native graduation target. 0 = sold-out close only.
+    pub native_target_lamports: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
@@ -603,6 +605,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             sol_vault_key,
         )?;
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
+        require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
         require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
         require!(
             campaign.curve_kind == CURVE_KIND_LINEAR_V1,
@@ -627,6 +630,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
                 args.min_tokens_out,
                 args.deadline,
                 &args.nonce,
+                args.native_target_lamports,
             );
             verify_detached_trade_authorization(
                 &ctx.accounts.instructions.to_account_info(),
@@ -718,6 +722,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             args.min_tokens_out,
             args.deadline,
             &args.nonce,
+            args.native_target_lamports,
         );
         create_trade_auth_account(
             &ctx.accounts.trader.to_account_info(),
@@ -783,6 +788,14 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             .checked_add(1)
             .ok_or(LaunchpadError::MathOverflow)?;
     }
+    if should_close_curve(
+        campaign.sold_tokens,
+        campaign.curve_token_supply,
+        campaign.net_raised_lamports,
+        args.native_target_lamports,
+    ) {
+        campaign.curve_closed = true;
+    }
     let sold_after = campaign.sold_tokens;
     let net_after = campaign.net_raised_lamports;
     let mut cursor = std::io::Cursor::new(&mut data[..]);
@@ -837,6 +850,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             sol_vault_key,
         )?;
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
+        require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
         require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
         require!(
             campaign.curve_kind == CURVE_KIND_LINEAR_V1,
@@ -861,6 +875,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
                 args.min_lamports_out,
                 args.deadline,
                 &args.nonce,
+                0,
             );
             verify_detached_trade_authorization(
                 &ctx.accounts.instructions.to_account_info(),
@@ -903,6 +918,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             args.min_lamports_out,
             args.deadline,
             &args.nonce,
+            0,
         );
         create_trade_auth_account(
             &ctx.accounts.trader.to_account_info(),
@@ -1035,6 +1051,16 @@ fn validate_trade_accounts(
     Ok(())
 }
 
+pub(crate) fn should_close_curve(
+    sold_tokens: u64,
+    curve_token_supply: u64,
+    net_raised_lamports: u64,
+    native_target_lamports: u64,
+) -> bool {
+    sold_tokens >= curve_token_supply
+        || (native_target_lamports > 0 && net_raised_lamports >= native_target_lamports)
+}
+
 fn build_trade_authorization_digest(
     program_id: Pubkey,
     campaign: Pubkey,
@@ -1045,8 +1071,9 @@ fn build_trade_authorization_digest(
     min_out: u64,
     deadline: i64,
     nonce: &[u8; 32],
+    native_target_lamports: u64,
 ) -> [u8; 32] {
-    let mut message = Vec::with_capacity(256);
+    let mut message = Vec::with_capacity(264);
     message.extend_from_slice(TRADE_AUTH_DOMAIN);
     message.extend_from_slice(&TRADE_AUTH_SCHEMA_VERSION.to_le_bytes());
     message.extend_from_slice(program_id.as_ref());
@@ -1058,6 +1085,7 @@ fn build_trade_authorization_digest(
     message.extend_from_slice(&min_out.to_le_bytes());
     message.extend_from_slice(&deadline.to_le_bytes());
     message.extend_from_slice(nonce.as_ref());
+    message.extend_from_slice(&native_target_lamports.to_le_bytes());
     hash(&message).to_bytes()
 }
 
@@ -1329,5 +1357,27 @@ mod tests {
             bump: 1,
         };
         assert!(validate_trade_risk_profile(&risk, trader).is_err());
+    }
+
+    #[test]
+    fn raise_target_overshoot_closes_curve_without_graduating() {
+        assert!(should_close_curve(1_000, 1_000_000, 6_000_000, 5_868_940));
+        assert!(!should_close_curve(1_000, 1_000_000, 5_000_000, 5_868_940));
+    }
+
+    #[test]
+    fn sold_out_closes_curve_without_native_target() {
+        assert!(should_close_curve(1_000_000, 1_000_000, 1, 0));
+        assert!(!should_close_curve(999_999, 1_000_000, 1, 0));
+    }
+
+    #[test]
+    fn zero_native_target_does_not_close_on_raise() {
+        assert!(!should_close_curve(1, 1_000_000, u64::MAX, 0));
+    }
+
+    #[test]
+    fn new_campaign_account_is_719_bytes() {
+        assert_eq!(8 + Campaign::INIT_SPACE, 719);
     }
 }
