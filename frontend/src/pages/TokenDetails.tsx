@@ -3281,6 +3281,29 @@ const toSeconds = (ts: number): number => {
               title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
               description: `Tx: ${result.signature.slice(0, 12)}…`,
             });
+            try {
+              const tokensOut = tradeTab === "buy" ? quote.amountOutRaw : amountIn;
+              const nativeAmt = tradeTab === "buy" ? amountIn : quote.amountOutRaw;
+              const tokenHuman = Number(ethers.formatUnits(tokensOut > 0n ? tokensOut : 1n, decimals));
+              const solHuman = Number(ethers.formatUnits(nativeAmt > 0n ? nativeAmt : 0n, 9));
+              const pricePerToken = tokenHuman > 0 ? solHuman / tokenHuman : 0;
+              const point: CurveTradePoint = {
+                type: tradeTab === "buy" ? "buy" : "sell",
+                from: trader,
+                to: mint,
+                tokensWei: tokensOut,
+                nativeWei: nativeAmt,
+                pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+                timestamp: Math.floor(Date.now() / 1000),
+                txHash: result.signature,
+                blockNumber: 0,
+                logIndex: SYNTHETIC_LOG_INDEX_MIN,
+              };
+              const next = appendLocalTopazTrade(chainIdForStorage, campaignPda || mint, point);
+              setLocalTopazTrades(next);
+            } catch {
+              // Chart point is best-effort.
+            }
             setTradeAmount("0");
             setQuoteWei(null);
             setSolanaBalanceTick((n) => n + 1);
@@ -4476,18 +4499,25 @@ const toSeconds = (ts: number): number => {
                         : `${curveProgress.pct.toFixed(2)}%`}
                   </span>
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-snug mb-2">
-                  Graduates when <span className="text-foreground/80">tokens sold</span> hit the curve
-                  supply <span className="text-foreground/80">or</span> {nativeUnit} raised hits the target
-                  (testnet ${isSolanaPage ? "6" : "target"} can be tiny, so {nativeUnit} % can look large).
-                  {isSolanaPage && solanaCurve ? (
-                    <>
-                      {" "}Curve: {formatTokenFromWei(solanaCurve.soldTokens)} /{" "}
-                      {formatTokenFromWei(solanaCurve.curveTokenSupply)} sold ·{" "}
-                      {formatBnbFromWei(solanaCurve.netRaisedLamports)} net raised.
-                    </>
-                  ) : null}
-                </p>
+                {contractGraduated ? (
+                  <p className="text-[10px] text-muted-foreground leading-snug mb-2">
+                    This token has graduated. Bonding is closed. Trading continues on the same page
+                    {isSolanaPage ? " via Meteora" : " via Topaz"}.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground leading-snug mb-2">
+                    Graduates when <span className="text-foreground/80">tokens sold</span> hit the curve
+                    supply <span className="text-foreground/80">or</span> {nativeUnit} raised hits the target
+                    (testnet ${isSolanaPage ? "6" : "target"} can be tiny, so {nativeUnit} % can look large).
+                    {isSolanaPage && solanaCurve ? (
+                      <>
+                        {" "}Curve: {formatTokenFromWei(solanaCurve.soldTokens)} /{" "}
+                        {formatTokenFromWei(solanaCurve.curveTokenSupply)} sold ·{" "}
+                        {formatBnbFromWei(solanaCurve.netRaisedLamports)} net raised.
+                      </>
+                    ) : null}
+                  </p>
+                )}
 
                 <div className="mt-3 h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
                   <div
@@ -4496,6 +4526,7 @@ const toSeconds = (ts: number): number => {
                   />
                 </div>
 
+                {contractGraduated ? null : (
                 <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="text-muted-foreground">Tokens sold</p>
@@ -4522,6 +4553,7 @@ const toSeconds = (ts: number): number => {
                     <p className="mt-1 font-mono text-foreground">{remainingCurveLabel.primary}</p>
                   </div>
                 </div>
+                )}
               </div>
 
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
@@ -4598,7 +4630,13 @@ const toSeconds = (ts: number): number => {
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
+                      isSolanaPage ? (
+                        quoteWei != null ? (
+                          <p>Meteora execution · min received protected by {SLIPPAGE_PCT}% slippage.</p>
+                        ) : (
+                          <p>Enter an amount to quote on Meteora.</p>
+                        )
+                      ) : (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
                         <p>
                           Topaz execution · min received protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.
                           {tradeTab === "buy" && effectiveTokenWei > 0n
@@ -4635,7 +4673,7 @@ const toSeconds = (ts: number): number => {
                       approvePending ||
                       quoteLoading ||
                       (isSolanaPage
-                        ? effectiveBnbWei <= 0n && !solanaCurveClosed
+                        ? effectiveBnbWei <= 0n && !solanaCurveClosed && !contractGraduated
                         : (isDexStage && !isTopazTradingActive) ||
                           (tradeInputDenom === "BNB"
                             ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
@@ -4643,7 +4681,7 @@ const toSeconds = (ts: number): number => {
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : solanaCurveClosed ? "Buy on Meteora" : isDexStage ? "Buy on Topaz" : "Buy"}
+                    {tradePending ? "Processing..." : isSolanaPage && (contractGraduated || solanaCurveClosed) ? "Buy on Meteora" : isDexStage ? "Buy on Topaz" : "Buy"}
                   </Button>
                 </TabsContent>
 
@@ -4742,7 +4780,13 @@ const toSeconds = (ts: number): number => {
 
                   <div className="text-center text-xs text-muted-foreground">
                     {isDexStage ? (
-                      (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
+                      isSolanaPage ? (
+                        quoteWei != null ? (
+                          <p>Meteora execution · min received protected by {SLIPPAGE_PCT}% slippage.</p>
+                        ) : (
+                          <p>Enter an amount to quote on Meteora.</p>
+                        )
+                      ) : (isTopazTradingActive || onChainLaunched) && quoteWei != null ? (
                         <p>
                           Topaz execution · min received protected by {(topazSlippageBps / 100).toFixed(2)}% slippage.
                           {` Est. ${formatBnbFromWei(quoteWei)}.`}
@@ -4768,7 +4812,7 @@ const toSeconds = (ts: number): number => {
                       approvePending ||
                       quoteLoading ||
                       (isSolanaPage
-                        ? effectiveTokenWei <= 0n && !solanaCurveClosed
+                        ? effectiveTokenWei <= 0n && !solanaCurveClosed && !contractGraduated
                         : (isDexStage && !isTopazTradingActive) ||
                           (tradeInputDenom === "BNB"
                             ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n
@@ -4776,7 +4820,7 @@ const toSeconds = (ts: number): number => {
                     }
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
-                    {tradePending ? "Processing..." : solanaCurveClosed ? "Sell on Meteora" : isDexStage ? "Sell on Topaz" : "Sell"}
+                    {tradePending ? "Processing..." : isSolanaPage && (contractGraduated || solanaCurveClosed) ? "Sell on Meteora" : isDexStage ? "Sell on Topaz" : "Sell"}
                   </Button>
                 </TabsContent>
               </Tabs>

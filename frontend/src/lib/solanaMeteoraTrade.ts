@@ -250,7 +250,7 @@ export async function executeSolanaMeteoraSwap(input: {
   const wallet = new PublicKey(storedWallet);
   const inputMint = new PublicKey(input.quote.inputMint);
   const outputMint = new PublicKey(input.quote.outputMint);
-  const transaction = await market.cpAmm.swap({
+  const built = await market.cpAmm.swap({
     payer: wallet,
     pool: market.pool,
     inputTokenMint: inputMint,
@@ -263,8 +263,19 @@ export async function executeSolanaMeteoraSwap(input: {
     tokenBMint: market.poolState.tokenBMint,
     tokenAProgram: TOKEN_PROGRAM_ID,
     tokenBProgram: TOKEN_PROGRAM_ID,
+    referralTokenAccount: null,
     poolState: market.poolState,
   });
+  const builder = built as {
+    transaction?: () => Promise<Transaction> | Transaction;
+    build?: () => Promise<Transaction> | Transaction;
+  };
+  const transaction =
+    typeof builder.transaction === "function"
+      ? await builder.transaction()
+      : typeof builder.build === "function"
+        ? await builder.build()
+        : (built as Transaction);
   const signature = await sendWalletTransaction(market.connection, transaction, wallet);
   return { signature, quote: input.quote };
 }

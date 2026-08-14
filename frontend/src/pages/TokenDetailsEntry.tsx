@@ -12,7 +12,6 @@ import { requestSolanaGraduationHandoff } from "@/lib/solanaGraduationHandoff";
 import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 
 import TokenDetails from "./TokenDetails";
-import SolanaGraduatedTokenDetails from "./SolanaGraduatedTokenDetails";
 
 const SOLANA_ROUTE_CACHE_PREFIX = "mwz:solana-token-route:v2:";
 const SOLANA_ROUTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -214,10 +213,6 @@ const TokenDetailsEntry = () => {
   }, [cachedCampaignAddress, curveLookupAddress, isSolanaRoute, resolvedCampaignAddress, routeId]);
 
   if (!isSolanaRoute) return <TokenDetails />;
-
-  if (curve?.graduated === true) {
-    return <SolanaGraduatedTokenDetails routeId={routeId} campaign={campaign} initialCurve={curve} />;
-  }
 
   if (!campaignResolved || !curveResolved) {
     return (
