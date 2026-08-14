@@ -626,6 +626,11 @@ async function persistGraduation(
   slot: number,
   blockTime: Date,
 ) {
+  const graduatedAtChain =
+    event.graduatedAt > 0n
+      ? new Date(Number(event.graduatedAt) * 1000)
+      : blockTime;
+
   const graduationMeta = {
     dex: "meteora-damm-v2",
     pool: event.meteoraPool,
@@ -645,12 +650,20 @@ async function persistGraduation(
 
   await pool.query(
     `insert into public.campaigns(
-       chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,is_active,meta
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10::jsonb)
+       chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,
+       created_block,created_at_chain,is_active,launched,bonding_active,support_enabled,
+       indexing_enabled,graduated_block,graduated_at_chain,meta
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,false,true,false,true,true,$10,$11,$12::jsonb)
      on conflict (chain_id,campaign_address) do update set
        token_address=coalesce(excluded.token_address, public.campaigns.token_address),
        creator_address=coalesce(excluded.creator_address, public.campaigns.creator_address),
-       is_active=true,
+       is_active=false,
+       launched=true,
+       bonding_active=false,
+       support_enabled=true,
+       indexing_enabled=true,
+       graduated_block=greatest(coalesce(public.campaigns.graduated_block, 0), excluded.graduated_block),
+       graduated_at_chain=coalesce(public.campaigns.graduated_at_chain, excluded.graduated_at_chain),
        meta=coalesce(public.campaigns.meta,'{}'::jsonb) || excluded.meta,
        updated_at=now()`,
     [
@@ -662,7 +675,9 @@ async function persistGraduation(
       "Solana Launch",
       "SOL",
       slot,
-      blockTime,
+      graduatedAtChain,
+      slot,
+      graduatedAtChain,
       JSON.stringify({ source: "solana-v4-graduation", solanaGraduation: graduationMeta }),
     ],
   );
@@ -687,7 +702,7 @@ async function persistGraduation(
     dexPosition: event.meteoraPosition,
     graduationLiquiditySol: toSol(event.liquidityLamports),
     graduationLiquidityTokensRaw: event.liquidityTokens.toString(),
-    graduatedAt: blockTime.toISOString(),
+    graduatedAt: graduatedAtChain.toISOString(),
     txHash: signature,
   });
 }
