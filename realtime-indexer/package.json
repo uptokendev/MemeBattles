@@ -22,7 +22,8 @@
     "job:reconcile-graduations-once": "node --enable-source-maps dist/jobs/reconcileGraduationsOnce.js",
     "job:reconcile-graduations-once:dev": "tsx src/jobs/reconcileGraduationsOnce.ts",
     "job:cleanup-keep-factory:dry": "tsx scripts/cleanupKeepFactory.ts --dry-run",
-    "job:cleanup-keep-factory": "tsx scripts/cleanupKeepFactory.ts --execute"
+    "job:cleanup-keep-factory": "tsx scripts/cleanupKeepFactory.ts --execute",
+    "job:backfill-solana-trade-state": "node --enable-source-maps dist/jobs/backfillSolanaTradeCurveState.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",

@@ -704,6 +704,100 @@ async function handleEvent(event: AnchorEvent, signature: string, logIndex: numb
   await insertTrade(event, signature, logIndex, slot, blockTime);
 }
 
+export async function backfillSolanaTradeCurveState(limit = 500) {
+  const rows = await pool.query(
+    `select campaign_address, tx_hash, log_index
+       from public.curve_trades
+      where chain_id=$1
+        and sold_tokens_after_raw is null
+      order by block_number asc, log_index asc
+      limit $2`,
+    [SOLANA_CHAIN_ID, Math.max(1, Math.min(5000, Number(limit || 500)))],
+  );
+
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows.rows) {
+    const signature = String(row.tx_hash || "").trim();
+    const campaign = String(row.campaign_address || "").trim();
+    const logIndex = Number(row.log_index);
+
+    if (!signature || !campaign || !Number.isInteger(logIndex) || logIndex < 0) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const tx = await getTransaction(signature);
+      const events = decodeEvents(tx?.meta?.logMessages);
+      const event = events[logIndex];
+
+      if (
+        !event ||
+        (event.kind !== "TokensBought" && event.kind !== "TokensSold") ||
+        event.campaign !== campaign
+      ) {
+        console.warn("[solana-backfill] event mismatch", {
+          signature,
+          campaign,
+          logIndex,
+          decodedKind: event?.kind ?? null,
+          decodedCampaign:
+            event && "campaign" in event ? event.campaign : null,
+          decodedEvents: events.length,
+        });
+        skipped += 1;
+        continue;
+      }
+
+      const result = await pool.query(
+        `update public.curve_trades
+            set sold_tokens_after_raw=$4
+          where chain_id=$1
+            and tx_hash=$2
+            and log_index=$3
+            and sold_tokens_after_raw is null
+          returning tx_hash`,
+        [
+          SOLANA_CHAIN_ID,
+          signature,
+          logIndex,
+          event.soldTokensAfter.toString(),
+        ],
+      );
+
+      if ((result.rowCount ?? 0) > 0) updated += 1;
+      else skipped += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("[solana-backfill] failed", {
+        signature,
+        campaign,
+        logIndex,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const remaining = await pool.query(
+    `select count(*)::int as count
+       from public.curve_trades
+      where chain_id=$1
+        and sold_tokens_after_raw is null`,
+    [SOLANA_CHAIN_ID],
+  );
+
+  return {
+    scanned: rows.rowCount ?? 0,
+    updated,
+    skipped,
+    failed,
+    remaining: Number(remaining.rows[0]?.count ?? 0),
+  };
+}
+
 export async function runSolanaIndexerOnce() {
   const head = await getHeadSlot();
   const currentState = await getState();
