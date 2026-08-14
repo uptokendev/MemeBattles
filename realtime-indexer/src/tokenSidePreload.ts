@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { ablyRest, tokenChannel, warroomChannel } from "./ably.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
+import { resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 import { startSolanaIndexerLoop } from "./solanaIndexer.js";
 import { registerSolanaOpsRoutes } from "./solanaOpsRoutes.js";
 import { registerRewardOpsRoutes } from "./rewardOpsRoutes.js";
@@ -21,6 +22,7 @@ const SOLANA_CHAIN_ID = 101;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_PATCHED_ROUTES = Symbol.for("memewarzone.solanaPayoutRoutesRegistered");
+const NON_DEX_MARKET_STAGES = new Set(["BONDING", "LIVE", "ENDED"]);
 
 function isSolanaChain(chainId: number) {
   return chainId === SOLANA_CHAIN_ID;
@@ -62,6 +64,11 @@ function toInt(value: unknown, fallback: number) {
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function isDexTradingMarketStage(stage: unknown) {
+  const normalized = String(stage ?? "").trim();
+  return Boolean(normalized && !NON_DEX_MARKET_STAGES.has(normalized.toUpperCase()));
 }
 
 function readBearerToken(req: Request): string {
@@ -257,7 +264,6 @@ const patchedCampaigns = wrap(async (req, res) => {
        limit $4`,
       [chainId, search, cursor, limit],
     );
-
     const items = result.rows.map((row: any) => {
       const rowChainId = Number(row.chain_id);
       const marketStage = String(row.market_stage || "").trim();
@@ -309,6 +315,132 @@ const patchedCampaigns = wrap(async (req, res) => {
       warning: "Campaign feed is temporarily unavailable.",
     });
   }
+});
+
+const patchedTokenSummary = wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
+  const campaign = identity.campaignAddress;
+
+  const result = await pool.query(
+    `with campaign_state as (
+       select
+         c.chain_id,
+         c.campaign_address,
+         c.graduated_at_chain,
+         c.meta,
+         coalesce(cms.market_stage, c.market_stage) as market_stage,
+         coalesce(cms.dex_pair_address, c.meta->'solanaGraduation'->>'pool') as dex_pool,
+         c.meta->'solanaGraduation'->>'position' as dex_position
+       from public.campaigns c
+       left join public.campaign_market_state cms
+         on cms.chain_id = c.chain_id and cms.campaign_address = c.campaign_address
+       where c.chain_id = $1 and c.campaign_address = $2
+       limit 1
+     ),
+     stored as (
+       select *
+       from public.token_stats
+       where chain_id = $1 and campaign_address = $2
+     ),
+     latest as (
+       select price_bnb, block_time
+       from public.curve_trades
+       where chain_id = $1 and campaign_address = $2
+       order by block_number desc, log_index desc
+       limit 1
+     ),
+     agg as (
+       select
+         count(*)::int as trade_count,
+         coalesce(sum(case when side = 'buy' then token_amount else 0 end), 0) -
+           coalesce(sum(case when side = 'sell' then token_amount else 0 end), 0) as sold_tokens,
+         coalesce(sum(case when block_time >= now() - interval '24 hours' then bnb_amount else 0 end), 0) as vol_24h_bnb,
+         max(block_time) as last_trade_at
+       from public.curve_trades
+       where chain_id = $1 and campaign_address = $2
+     )
+     select
+       $1::int as chain_id,
+       $2::text as campaign_address,
+       case when coalesce(agg.trade_count, 0) > 0 then latest.price_bnb else stored.last_price_bnb end as last_price_bnb,
+       case when coalesce(agg.trade_count, 0) > 0 then agg.sold_tokens else stored.sold_tokens end as sold_tokens,
+       stored.reserve_bnb,
+       case
+         when coalesce(agg.trade_count, 0) > 0 and latest.price_bnb is not null then latest.price_bnb * agg.sold_tokens
+         else stored.marketcap_bnb
+       end as marketcap_bnb,
+       case when coalesce(agg.trade_count, 0) > 0 then agg.vol_24h_bnb else stored.vol_24h_bnb end as vol_24h_bnb,
+       stored.change_5m,
+       stored.change_1h,
+       stored.change_24h,
+       case
+         when coalesce(agg.trade_count, 0) > 0 then greatest(coalesce(stored.updated_at, to_timestamp(0)), coalesce(agg.last_trade_at, to_timestamp(0)))
+         else stored.updated_at
+       end as updated_at,
+       case
+         when campaign_state.graduated_at_chain is not null
+           or campaign_state.dex_pool is not null
+           or campaign_state.dex_position is not null
+           or (
+             campaign_state.market_stage is not null
+             and upper(campaign_state.market_stage) not in ('BONDING', 'LIVE', 'ENDED')
+           )
+         then true
+         else false
+       end as graduated,
+       coalesce(
+         campaign_state.meta->'solanaGraduation'->>'dex',
+         case
+           when campaign_state.dex_pool is not null or campaign_state.dex_position is not null then 'meteora-damm-v2'
+           else null
+         end
+       ) as dex,
+       campaign_state.market_stage,
+       campaign_state.dex_pool,
+       campaign_state.dex_position,
+       case
+         when campaign_state.meta->'solanaGraduation'->>'liquidityLamports' is not null then
+           (campaign_state.meta->'solanaGraduation'->>'liquidityLamports')::numeric / 1000000000::numeric
+         else null
+       end as graduation_liquidity_sol,
+       campaign_state.graduated_at_chain as graduated_at
+     from agg
+     left join stored on true
+     left join latest on true
+     left join campaign_state on true
+     where campaign_state.chain_id is not null or stored.chain_id is not null or coalesce(agg.trade_count, 0) > 0`,
+    [chainId, campaign],
+  );
+
+  const row = result.rows?.[0];
+  if (!row) return res.json(null);
+
+  const rowChainId = Number(row.chain_id || chainId);
+  const marketStage = String(row.market_stage || "").trim();
+  const dexPool = row.dex_pool ? outputAddress(row.dex_pool, rowChainId) : null;
+  const dexPosition = row.dex_position ? outputAddress(row.dex_position, rowChainId) : null;
+  const graduated = Boolean(
+    row.graduated === true ||
+      row.graduated_at ||
+      dexPool ||
+      dexPosition ||
+      isDexTradingMarketStage(marketStage),
+  );
+
+  return res.json({
+    ...row,
+    market_stage: marketStage || null,
+    dex_pool: dexPool,
+    dex_position: dexPosition,
+    graduated,
+    dex:
+      row.dex != null
+        ? String(row.dex)
+        : graduated && (isSolanaChain(rowChainId) || dexPool || dexPosition)
+          ? "meteora-damm-v2"
+          : null,
+  });
 });
 
 const walletRewardSummary = wrap(async (req, res) => {
@@ -458,6 +590,9 @@ express.application.get = function patchedGet(this: any, path: any, ...handlers:
   }
   if (path === "/api/campaigns") {
     return originalGet.call(this, path, patchedCampaigns);
+  }
+  if (path === "/api/token/:campaign/summary") {
+    return originalGet.call(this, path, patchedTokenSummary);
   }
   if (path === "/internal/rewards/claims") {
     return originalGet.call(this, path, patchedSolanaClaims, ...handlers);

@@ -23,6 +23,11 @@ type SolanaRouteCache = {
   updatedAt: number;
 };
 
+function isDexLikeMarketStage(value: unknown): boolean {
+  const stage = String(value ?? "").trim();
+  return Boolean(stage && !["BONDING", "LIVE", "ENDED"].includes(stage.toUpperCase()));
+}
+
 function tokenIdMatches(candidate?: string | null, routeId?: string | null): boolean {
   const left = String(candidate || "").trim();
   const right = String(routeId || "").trim();
@@ -154,6 +159,8 @@ const TokenDetailsEntry = () => {
         if (
           rawMatch?.isDexTrading === true ||
           rawMatch?.is_dex_trading === true ||
+          Boolean(rawMatch?.dexPool ?? rawMatch?.dex_pool ?? rawMatch?.dexPosition ?? rawMatch?.dex_position ?? rawMatch?.dex) ||
+          isDexLikeMarketStage(rawMatch?.marketStage ?? rawMatch?.market_stage) ||
           Boolean(rawMatch?.graduatedAtChain ?? rawMatch?.graduated_at_chain ?? rawMatch?.graduatedAt ?? rawMatch?.graduated_at) ||
           String(rawMatch?.status || "").trim().toLowerCase() === "graduated"
         ) {
@@ -218,13 +225,9 @@ const TokenDetailsEntry = () => {
     isSolanaRoute && Boolean(resolvedCampaignAddress),
   );
 
-  const indexedGraduated = stats?.graduated === true;
   const indexedDexReady = Boolean(stats?.dexPool || stats?.dexPosition || stats?.dex);
-  const graduated = Boolean(
-    stickyGraduated ||
-      curve?.graduated ||
-      (indexedGraduated && (indexedDexReady || Boolean(resolvedCampaignAddress))),
-  );
+  const indexedGraduated = stats?.graduated === true || indexedDexReady;
+  const graduated = Boolean(stickyGraduated || curve?.graduated || indexedGraduated);
 
   useEffect(() => {
     if (!isSolanaRoute || !routeId) return;

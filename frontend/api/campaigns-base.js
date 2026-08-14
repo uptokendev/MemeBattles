@@ -6,6 +6,19 @@ import { badMethod, getQuery, json } from "../server/http.js";
 // we treat this as the system default for progress/ETA on the homepage.
 const DEFAULT_GRAD_TARGET_BNB = 50;
 const SOLANA_CHAIN_IDS = new Set([101, 102]);
+const NON_DEX_MARKET_STAGES = new Set(["BONDING", "LIVE", "ENDED"]);
+const DEX_MARKET_STAGE_SQL = "coalesce(cms.market_stage, c.market_stage)";
+const DEX_POOL_SQL = "coalesce(cms.dex_pair_address, c.meta->'solanaGraduation'->>'pool')";
+const DEX_POSITION_SQL = "c.meta->'solanaGraduation'->>'position'";
+const DEX_TRADING_SQL = `(
+  c.graduated_at_chain is not null
+  or ${DEX_POOL_SQL} is not null
+  or ${DEX_POSITION_SQL} is not null
+  or (
+    ${DEX_MARKET_STAGE_SQL} is not null
+    and upper(${DEX_MARKET_STAGE_SQL}) not in ('BONDING', 'LIVE', 'ENDED')
+  )
+)`;
 
 function toInt(v, fallback) {
   const n = Number(v);
@@ -54,6 +67,25 @@ function normalizeOutputAddress(value, chainId) {
   return SOLANA_CHAIN_IDS.has(Number(chainId)) ? raw : raw.toLowerCase();
 }
 
+function normalizeMarketStage(value) {
+  const stage = String(value ?? "").trim();
+  return stage || null;
+}
+
+function isDexTradingMarketStage(stage) {
+  return Boolean(stage && !NON_DEX_MARKET_STAGES.has(String(stage).trim().toUpperCase()));
+}
+
+function deriveDexTradingState(row, chainId) {
+  const marketStage = normalizeMarketStage(row.market_stage);
+  const dexPool = row.dex_pool ? normalizeOutputAddress(row.dex_pool, chainId) : null;
+  const dexPosition = row.dex_position ? normalizeOutputAddress(row.dex_position, chainId) : null;
+  const isDexTrading = Boolean(
+    row.graduated_at_chain || dexPool || dexPosition || isDexTradingMarketStage(marketStage),
+  );
+  return { marketStage, dexPool, dexPosition, isDexTrading };
+}
+
 function solanaFieldsFromMeta(meta, chainId) {
   if (!SOLANA_CHAIN_IDS.has(Number(chainId))) return null;
   const solana = meta && typeof meta === "object" ? meta.solana : null;
@@ -79,6 +111,7 @@ function mapCampaignRow(row, gradTargetBnb) {
   const campaignAddress = normalizeOutputAddress(row.campaign_address, chainId);
   const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
   const solana = solanaFieldsFromMeta(row.meta, chainId);
+  const { marketStage, dexPool, dexPosition, isDexTrading } = deriveDexTradingState(row, chainId);
 
   return {
     chainId,
@@ -93,11 +126,14 @@ function mapCampaignRow(row, gradTargetBnb) {
     extraLink: row.extra_link ?? null,
     createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
     graduatedAtChain: graduatedAt,
-    isDexTrading: Boolean(graduatedAt),
+    marketStage,
+    dexPool,
+    dexPosition,
+    isDexTrading,
 
     // canonical status (useful for UI)
     isActive: Boolean(row.is_active),
-    status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
+    status: isDexTrading ? "graduated" : row.is_active ? "live" : "ended",
 
     // stats, present in rich mode and null/zero in basic fallback mode
     lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
@@ -150,11 +186,11 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
   }
 
   if (effectiveStatus === "live") {
-    where += " and c.is_active = true and c.graduated_at_chain is null";
+    where += ` and c.is_active = true and not ${DEX_TRADING_SQL}`;
   } else if (effectiveStatus === "graduated") {
-    where += " and c.graduated_at_chain is not null";
+    where += ` and ${DEX_TRADING_SQL}`;
   } else if (effectiveStatus === "ended") {
-    where += " and c.is_active = false and c.graduated_at_chain is null";
+    where += ` and c.is_active = false and not ${DEX_TRADING_SQL}`;
   }
 
   const orderBy = (() => {
@@ -186,6 +222,9 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        c.graduated_at_chain,
        c.is_active,
        c.meta,
+       ${DEX_MARKET_STAGE_SQL} as market_stage,
+       ${DEX_POOL_SQL} as dex_pool,
+       ${DEX_POSITION_SQL} as dex_position,
        null::numeric as last_price_bnb,
        null::numeric as sold_tokens,
        null::numeric as marketcap_bnb,
@@ -200,6 +239,8 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        null::numeric as progress_pct,
        null::numeric as eta_sec
      from public.campaigns c
+     left join public.campaign_market_state cms
+       on cms.chain_id = c.chain_id and cms.campaign_address = c.campaign_address
      left join lateral (
        select d.logo_url as draft_logo_url
          from public.campaign_drafts d
@@ -311,6 +352,9 @@ export default async function handler(req, res) {
           c.graduated_at_chain,
           c.is_active,
           c.meta,
+          ${DEX_MARKET_STAGE_SQL} as market_stage,
+          ${DEX_POOL_SQL} as dex_pool,
+          ${DEX_POSITION_SQL} as dex_position,
           ts.last_price_bnb,
           ts.sold_tokens,
           ts.marketcap_bnb,
@@ -318,6 +362,8 @@ export default async function handler(req, res) {
           va.votes_24h,
           va.votes_all_time
         from public.campaigns c
+        left join public.campaign_market_state cms
+          on cms.chain_id = c.chain_id and cms.campaign_address = c.campaign_address
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
         left join lateral (
@@ -371,13 +417,13 @@ export default async function handler(req, res) {
           ))
           and (
             $4::text = 'all'
-            or ($4::text = 'live' and c.is_active = true)
-            or ($4::text = 'graduated' and c.graduated_at_chain is not null)
-            or ($4::text = 'ended' and c.is_active = false and c.graduated_at_chain is null)
+            or ($4::text = 'live' and c.is_active = true and not ${DEX_TRADING_SQL})
+            or ($4::text = 'graduated' and ${DEX_TRADING_SQL})
+            or ($4::text = 'ended' and c.is_active = false and not ${DEX_TRADING_SQL})
           )
           and (
             $5::text <> 'dex'
-            or c.graduated_at_chain is not null
+            or ${DEX_TRADING_SQL}
           )
       ),
       rt as (
