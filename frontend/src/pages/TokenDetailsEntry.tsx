@@ -28,6 +28,18 @@ function isDexLikeMarketStage(value: unknown): boolean {
   return Boolean(stage && !["BONDING", "LIVE", "ENDED"].includes(stage.toUpperCase()));
 }
 
+function isGraduatedMarketSnapshot(snapshot: any): boolean {
+  return (
+    snapshot?.graduated === true ||
+    snapshot?.isDexTrading === true ||
+    snapshot?.is_dex_trading === true ||
+    Boolean(snapshot?.dexPool ?? snapshot?.dex_pool ?? snapshot?.dexPosition ?? snapshot?.dex_position ?? snapshot?.dex) ||
+    isDexLikeMarketStage(snapshot?.marketStage ?? snapshot?.market_stage) ||
+    Boolean(snapshot?.graduatedAtChain ?? snapshot?.graduated_at_chain ?? snapshot?.graduatedAt ?? snapshot?.graduated_at) ||
+    String(snapshot?.status || "").trim().toLowerCase() === "graduated"
+  );
+}
+
 function tokenIdMatches(candidate?: string | null, routeId?: string | null): boolean {
   const left = String(candidate || "").trim();
   const right = String(routeId || "").trim();
@@ -156,14 +168,7 @@ const TokenDetailsEntry = () => {
           rawMatch?.campaignAddress ?? rawMatch?.campaign_address ?? rawMatch?.campaign ?? "",
         ).trim();
         if (rawCampaignAddress) setCachedCampaignAddress(rawCampaignAddress);
-        if (
-          rawMatch?.isDexTrading === true ||
-          rawMatch?.is_dex_trading === true ||
-          Boolean(rawMatch?.dexPool ?? rawMatch?.dex_pool ?? rawMatch?.dexPosition ?? rawMatch?.dex_position ?? rawMatch?.dex) ||
-          isDexLikeMarketStage(rawMatch?.marketStage ?? rawMatch?.market_stage) ||
-          Boolean(rawMatch?.graduatedAtChain ?? rawMatch?.graduated_at_chain ?? rawMatch?.graduatedAt ?? rawMatch?.graduated_at) ||
-          String(rawMatch?.status || "").trim().toLowerCase() === "graduated"
-        ) {
+        if (isGraduatedMarketSnapshot(rawMatch)) {
           setStickyGraduated(true);
         }
       } catch {
@@ -177,6 +182,34 @@ const TokenDetailsEntry = () => {
       cancelled = true;
     };
   }, [cachedCampaignAddress, fetchCampaigns, isSolanaRoute, routeId]);
+
+  useEffect(() => {
+    if (!isSolanaRoute || !routeId || stickyGraduated) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/token/${encodeURIComponent(routeId)}/summary`, {
+          cache: "no-store" as RequestCache,
+        });
+        const summary = await res.json().catch(() => null);
+        if (cancelled || !summary) return;
+
+        const summaryCampaignAddress = String(
+          summary?.campaignAddress ?? summary?.campaign_address ?? summary?.campaign ?? "",
+        ).trim();
+        if (summaryCampaignAddress) setCachedCampaignAddress(summaryCampaignAddress);
+        if (isGraduatedMarketSnapshot(summary)) setStickyGraduated(true);
+      } catch {
+        // Summary is best-effort; keep the current route state if this read is temporarily unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSolanaRoute, routeId, stickyGraduated]);
 
   const curveLookupAddress = useMemo(
     () => String(campaign?.campaign || cachedCampaignAddress || routeId || "").trim(),
@@ -226,7 +259,11 @@ const TokenDetailsEntry = () => {
   );
 
   const indexedDexReady = Boolean(stats?.dexPool || stats?.dexPosition || stats?.dex);
-  const indexedGraduated = stats?.graduated === true || indexedDexReady;
+  const indexedGraduated =
+    stats?.graduated === true ||
+    indexedDexReady ||
+    isDexLikeMarketStage((stats as any)?.marketStage ?? (stats as any)?.market_stage) ||
+    Boolean((stats as any)?.graduatedAtChain ?? (stats as any)?.graduated_at_chain ?? (stats as any)?.graduatedAt ?? (stats as any)?.graduated_at);
   const graduated = Boolean(stickyGraduated || curve?.graduated || indexedGraduated);
 
   useEffect(() => {
