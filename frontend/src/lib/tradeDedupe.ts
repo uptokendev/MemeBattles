@@ -50,6 +50,18 @@ function tradeQuality(point: CurveTradePoint): number {
     // ignore
   }
   if (Number(point.pricePerToken || 0) > 0) score += 2;
+
+  // For Solana bonding history, post-trade sold supply is authoritative
+  // curve state. Prefer rows carrying it over otherwise equivalent cached,
+  // optimistic or secondary API representations of the same transaction.
+  if (point.soldTokensAfterRaw != null) {
+    try {
+      if (point.soldTokensAfterRaw >= 0n) score += 40;
+    } catch {
+      // ignore malformed state
+    }
+  }
+
   if (!isSyntheticLogIndex(point.logIndex)) {
     score += Math.min(50, Math.max(0, Number(point.logIndex) || 0) % 50);
   }

@@ -401,6 +401,14 @@ function confirmedRowsToCurvePoints(
         tokensWei,
         nativeWei,
         pricePerToken: Number(row?.price_bnb ?? row?.pricePerToken) || (tokens > 0 ? native / tokens : 0),
+        soldTokensAfterRaw:
+          row?.sold_tokens_after_raw != null &&
+          String(row.sold_tokens_after_raw).trim() !== ""
+            ? BigInt(String(row.sold_tokens_after_raw))
+            : row?.soldTokensAfterRaw != null &&
+                String(row.soldTokensAfterRaw).trim() !== ""
+              ? BigInt(String(row.soldTokensAfterRaw))
+              : null,
         timestamp: tradeTimestampSeconds(row?.timestamp ?? row?.block_time ?? row?.time),
         txHash,
         blockNumber: Number(row?.block_number ?? row?.blockNumber ?? 0),
@@ -416,6 +424,26 @@ function getExplorerBase(chainId?: number): string {
   if (id === 56) return "https://bscscan.com";
   if (id === 97) return "https://testnet.bscscan.com";
   return "https://bscscan.com";
+}
+
+function formatTinyUsdPrice(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+
+  if (value >= 0.01) {
+    return `$${value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+  }
+
+  // Keep enough significant digits for micro-priced launch tokens.
+  // Example: 4.43e-7 => $0.000000443
+  const decimals = Math.min(
+    14,
+    Math.max(8, Math.ceil(-Math.log10(value)) + 3),
+  );
+
+  return `$${value
+    .toFixed(decimals)
+    .replace(/0+$/, "")
+    .replace(/\.$/, "")}`;
 }
 
 function shortenAddress(addr?: string | null): string {
@@ -1970,7 +1998,7 @@ const toSeconds = (ts: number): number => {
     }
     if (displayDenom === "BNB") return formatPriceBnb(priceNative);
     if (!nativeUsd) return nativeUsdLoading ? "…" : formatPriceBnb(priceNative);
-    return formatCompactUsd(priceNative * nativeUsd);
+    return formatTinyUsdPrice(priceNative * nativeUsd);
   }, [
     contractGraduatedEarly,
     displayDenom,

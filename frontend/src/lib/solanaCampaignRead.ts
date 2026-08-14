@@ -36,8 +36,36 @@ export function solanaMarginalSpotSol(
   curve: SolanaCurvePricingState,
   soldTokensRaw: bigint,
 ): number {
-  const lamports = solanaMarginalSpotLamports(curve, soldTokensRaw);
-  return Number(lamports) / 1_000_000_000;
+  const decimals = Math.max(0, Number(curve.tokenDecimals || 0));
+  const tokenScale = 10 ** decimals;
+
+  const soldWhole = Number(soldTokensRaw) / tokenScale;
+  const baseLamports = Number(curve.basePriceLamports);
+  const slopeRaw = Number(curve.priceSlopeLamports);
+
+  if (
+    !Number.isFinite(soldWhole) ||
+    !Number.isFinite(baseLamports) ||
+    !Number.isFinite(slopeRaw)
+  ) {
+    return 0;
+  }
+
+  // V3 slope is expressed per 1e9 whole tokens.
+  // Keep this calculation in Number space because fractional lamports are
+  // economically meaningful here. BigInt division would floor e.g.
+  // 0.886 lamports to 0 and materially understate market cap.
+  const slopeLamports =
+    Number(curve.economicsVersion || 0) >= 3
+      ? (slopeRaw * soldWhole) / 1_000_000_000
+      : slopeRaw * soldWhole;
+
+  const spotSol =
+    (baseLamports + slopeLamports) / 1_000_000_000;
+
+  return Number.isFinite(spotSol) && spotSol > 0
+    ? spotSol
+    : 0;
 }
 
 export type SolanaCampaignCurveState = {
