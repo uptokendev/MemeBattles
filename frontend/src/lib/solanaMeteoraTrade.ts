@@ -128,6 +128,46 @@ async function exactInQuote(
   };
 }
 
+export type SolanaMeteoraPoolSnapshot = {
+  pool: string;
+  tokenVault: string;
+  nativeVault: string;
+  tokenReserveRaw: bigint;
+  nativeReserveRaw: bigint;
+  priceSol: number;
+  liquiditySol: number;
+};
+
+/** Live DAMM v2 reserves → spot SOL/token and 2× SOL-side liquidity. */
+export async function fetchSolanaMeteoraPoolSnapshot(input: {
+  mint: string;
+  tokenDecimals: number;
+  poolAddress?: string | null;
+}): Promise<SolanaMeteoraPoolSnapshot> {
+  const market = await loadVerifiedMarket(input);
+  const tokenIsA = market.poolState.tokenAMint.equals(market.mint);
+  const tokenVault = tokenIsA ? market.poolState.tokenAVault : market.poolState.tokenBVault;
+  const nativeVault = tokenIsA ? market.poolState.tokenBVault : market.poolState.tokenAVault;
+  const [tokenBal, nativeBal] = await Promise.all([
+    market.connection.getTokenAccountBalance(tokenVault),
+    market.connection.getTokenAccountBalance(nativeVault),
+  ]);
+  const tokenReserveRaw = BigInt(tokenBal.value.amount || "0");
+  const nativeReserveRaw = BigInt(nativeBal.value.amount || "0");
+  const tokenWhole = Number(tokenBal.value.uiAmount ?? 0);
+  const nativeWhole = Number(nativeBal.value.uiAmount ?? 0);
+  const priceSol = tokenWhole > 0 ? nativeWhole / tokenWhole : 0;
+  return {
+    pool: market.pool.toBase58(),
+    tokenVault: tokenVault.toBase58(),
+    nativeVault: nativeVault.toBase58(),
+    tokenReserveRaw,
+    nativeReserveRaw,
+    priceSol: Number.isFinite(priceSol) && priceSol > 0 ? priceSol : 0,
+    liquiditySol: Number.isFinite(nativeWhole) && nativeWhole > 0 ? nativeWhole * 2 : 0,
+  };
+}
+
 /**
  * Quote an exact-input DAMM v2 trade.
  * Buy input is SOL lamports; sell input is launch-token base units.

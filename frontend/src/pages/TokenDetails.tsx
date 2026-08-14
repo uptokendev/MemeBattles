@@ -34,6 +34,7 @@ import { UnifiedMarketChart } from "@/components/token/UnifiedMarketChart";
 import { GraduationExplosion } from "@/components/token/GraduationExplosion";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
 import { useTopazMarket } from "@/hooks/useTopazMarket";
+import { useSolanaMeteoraMarket } from "@/hooks/useSolanaMeteoraMarket";
 import {
   ensureTopazSellAllowance,
   executeTopazBuy,
@@ -771,6 +772,13 @@ const TokenDetails = () => {
   const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
   /** V4 tokens use on-chain decimals (default 6); EVM launchpad tokens use 18. */
   const tokenDecimals = isSolanaPage ? Number(solanaCurve?.tokenDecimals ?? 6) : TOKEN_DECIMALS;
+  const solanaMeteora = useSolanaMeteoraMarket({
+    mint: isSolanaPage ? String(solanaCurve?.mint || campaign?.token || "") : "",
+    tokenDecimals,
+    campaignTokenVault: solanaCurve?.tokenVault ?? null,
+    enabled: isSolanaPage && Boolean(solanaCurve?.graduated),
+    refreshToken: solanaBalanceTick,
+  });
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
   /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
@@ -1761,6 +1769,27 @@ const { stats: rtStats } = useTokenStatsRealtime(
   chainIdForStorage,
   hasValidCampaignAddress,
 );
+
+  const lastMarketTradePrice = useMemo(() => {
+    const points = Array.isArray(marketTradePoints) ? marketTradePoints : [];
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      const price = Number((points[i] as { pricePerToken?: number })?.pricePerToken ?? 0);
+      if (Number.isFinite(price) && price > 0) return price;
+    }
+    return null;
+  }, [marketTradePoints]);
+
+  const solanaDexPrice = useMemo(() => {
+    if (!isSolanaPage || !solanaCurve?.graduated) return null;
+    const fromPool = solanaMeteora.spot?.priceSol;
+    if (fromPool != null && Number.isFinite(fromPool) && fromPool > 0) return fromPool;
+    if (lastMarketTradePrice != null) return lastMarketTradePrice;
+    const fromRt = rtStats?.lastPriceBnb;
+    if (fromRt != null && Number.isFinite(fromRt) && fromRt > 0) return fromRt;
+    return null;
+  }, [isSolanaPage, lastMarketTradePrice, rtStats?.lastPriceBnb, solanaCurve?.graduated, solanaMeteora.spot?.priceSol]);
+
+  const solanaLivePrice = solanaDexPrice ?? solanaSpotNative;
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   // If it looks like milliseconds, convert to seconds.
@@ -1776,9 +1805,9 @@ const toSeconds = (ts: number): number => {
       "24h": 24 * 60 * 60,
     };
 
-    // End price: Topaz spot (post-grad) → realtime → curve price → latest trade.
+    // End price: live DEX spot (post-grad) → bonding curve spot → realtime → latest trade.
     const endPrice =
-      (isSolanaPage && solanaSpotNative != null ? solanaSpotNative : undefined) ??
+      (isSolanaPage && solanaLivePrice != null ? solanaLivePrice : undefined) ??
       (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice != null && metrics.currentPrice > 0n
@@ -1846,7 +1875,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [contractGraduatedEarly, isSolanaPage, marketTradePoints, metrics, rtStats?.lastPriceBnb, solanaSpotNative, topazMarket.priceBnb]);
+  }, [contractGraduatedEarly, isSolanaPage, marketTradePoints, metrics, rtStats?.lastPriceBnb, solanaLivePrice, topazMarket.priceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -1863,9 +1892,25 @@ const toSeconds = (ts: number): number => {
 
     // Bonding source of truth = on-chain curve (sold * currentPrice), not Ably/rt
     // market_stats which can drift after Topaz-oriented indexer changes.
+    // Graduated Solana: live Meteora/last-trade price × circulating (same walk as the chart).
     let bondingMcapLabel: string | null = null;
-    if (!contractGraduatedEarly && metrics?.sold != null) {
-      try {
+    let solanaDexMcapLabel: string | null = null;
+    try {
+      if (isSolanaPage && solanaCurve?.graduated && solanaLivePrice != null) {
+        let circulating = 0n;
+        for (const point of marketTradePoints) {
+          const delta = point.tokensWei ?? 0n;
+          circulating = (point.type ?? "buy") === "sell" ? circulating - delta : circulating + delta;
+          if (circulating < 0n) circulating = 0n;
+        }
+        const sold = solanaCurve.soldTokens ?? metrics?.sold ?? 0n;
+        const supplyRaw = circulating > 0n ? circulating : sold;
+        const supplyWhole = Number(ethers.formatUnits(supplyRaw, tokenDecimals));
+        const mcapNative = supplyWhole * solanaLivePrice;
+        solanaDexMcapLabel = Number.isFinite(mcapNative) && mcapNative > 0
+          ? `${formatCompact(mcapNative)} ${nativeUnit}`
+          : null;
+      } else if (!contractGraduatedEarly && metrics?.sold != null) {
         if (isSolanaPage && solanaSpotNative != null) {
           const soldWhole = Number(ethers.formatUnits(metrics.sold, tokenDecimals));
           const mcapNative = soldWhole * solanaSpotNative;
@@ -1874,14 +1919,16 @@ const toSeconds = (ts: number): number => {
           const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
           bondingMcapLabel = formatBnbFromWei(mcWei);
         }
-      } catch {
-        bondingMcapLabel = null;
       }
+    } catch {
+      bondingMcapLabel = null;
+      solanaDexMcapLabel = null;
     }
     const statsMcap =
       stats?.marketCap && stats.marketCap !== "—" && stats.marketCap !== "-"
         ? stats.marketCap
         : null;
+    const onChainHolderCount = solanaMeteora.holders?.totalHolders;
 
     return {
       image: resolveImageUri(campaign?.logoURI) || "/placeholder.svg",
@@ -1893,9 +1940,11 @@ const toSeconds = (ts: number): number => {
       hasDiscord: Boolean(campaign?.discord && campaign.discord.length > 0),
       hasOtherLink: Boolean(campaign?.extraLink && campaign.extraLink.length > 0),
 
-      // Graduated: Topaz spot. Bonding: on-chain mcap first, then summary, then realtime.
+      // Graduated Solana: live Meteora spot. Graduated BNB: Topaz. Bonding: on-chain curve.
       marketCap:
-        topazMarketCap != null && Number.isFinite(topazMarketCap) && topazMarketCap > 0
+        solanaDexMcapLabel
+          ? solanaDexMcapLabel
+          : topazMarketCap != null && Number.isFinite(topazMarketCap) && topazMarketCap > 0
           ? `${formatCompact(topazMarketCap)} ${nativeUnit}`
           : !contractGraduatedEarly && bondingMcapLabel
             ? bondingMcapLabel
@@ -1905,26 +1954,31 @@ const toSeconds = (ts: number): number => {
                 ? `${formatCompact(rtMarketCap)} ${nativeUnit}`
                 : "—",
       volume: window24h && window24h !== "—" ? window24h : stats?.volume ?? "—",
-      holders: stats?.holders ?? "—",
+      holders:
+        onChainHolderCount != null && onChainHolderCount > 0
+          ? String(onChainHolderCount)
+          : stats?.holders ?? "—",
       price:
-        topazPrice != null && Number.isFinite(topazPrice) && topazPrice > 0
+        isSolanaPage && solanaLivePrice != null
+          ? formatPriceBnb(solanaLivePrice)
+          : topazPrice != null && Number.isFinite(topazPrice) && topazPrice > 0
           ? formatPriceBnb(topazPrice)
-          : !contractGraduatedEarly && isSolanaPage && solanaSpotNative != null
-            ? formatPriceBnb(solanaSpotNative)
-            : !contractGraduatedEarly && metrics?.currentPrice != null
-              ? formatPriceFromWei(metrics.currentPrice)
-              : rtPrice != null && Number.isFinite(rtPrice)
-                ? formatPriceBnb(rtPrice)
-                : formatPriceFromWei(metrics?.currentPrice ?? null),
+          : !contractGraduatedEarly && metrics?.currentPrice != null
+            ? formatPriceFromWei(metrics.currentPrice)
+            : rtPrice != null && Number.isFinite(rtPrice)
+              ? formatPriceBnb(rtPrice)
+              : formatPriceFromWei(metrics?.currentPrice ?? null),
       liquidity:
-        topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
+        isSolanaPage && solanaMeteora.spot && solanaMeteora.spot.liquiditySol > 0
+          ? `${formatCompact(solanaMeteora.spot.liquiditySol)} ${nativeUnit}`
+          : topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
           ? `${formatCompact(topazLiquidity)} ${nativeUnit}`
           : formatBnbFromWei(curveReserveWei),
 
       // Timeframe analytics (native volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, metrics, nativeUnit, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, marketTradePoints, metrics, nativeUnit, solanaCurve, solanaLivePrice, solanaMeteora.holders, solanaMeteora.spot, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
   // Native/USD reference for TokenDetails conversions: BNB on EVM, SOL on Solana.
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(!isSolanaPage);
   const { price: liveSolUsdPrice, loading: solUsdLoading } = useSolUsdPrice(isSolanaPage);
@@ -1964,7 +2018,7 @@ const toSeconds = (ts: number): number => {
   }, [nativeUsd, rtStats?.marketcapBnb, tokenData.marketCap]);
 
   const priceDisplay = useMemo(() => {
-    const fromSolanaSpot = isSolanaPage ? solanaSpotNative : null;
+    const fromSolanaSpot = isSolanaPage ? solanaLivePrice : null;
     const fromWei =
       metrics?.currentPrice != null && metrics.currentPrice > 0n
         ? Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18))
@@ -2013,7 +2067,7 @@ const toSeconds = (ts: number): number => {
     nativeUsd,
     nativeUsdLoading,
     rtStats?.lastPriceBnb,
-    solanaSpotNative,
+    solanaLivePrice,
     tokenData.price,
     topazMarket.priceBnb,
     unifiedMarket.summary?.last_price_bnb,
@@ -2081,6 +2135,13 @@ const toSeconds = (ts: number): number => {
   }, [activity, metrics, formatBnbOrUsd, isSolanaPage, marketTradePoints, solanaCurve]);
 
   const holderDistribution = useMemo(() => {
+    if (isSolanaPage && solanaCurve?.graduated && solanaMeteora.holders) {
+      return {
+        ...solanaMeteora.holders,
+        source: "onchain" as const,
+      };
+    }
+
     const shortAddr = (a: string) =>
       a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 
@@ -2152,6 +2213,7 @@ const toSeconds = (ts: number): number => {
       othersPct: pct(othersBal),
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
+      source: "bonding" as const,
     };
   }, [
     isSolanaPage,
@@ -2161,6 +2223,7 @@ const toSeconds = (ts: number): number => {
     metrics?.finalizedAt,
     solanaCurve?.liquidityTokenSupply,
     solanaCurve?.graduated,
+    solanaMeteora.holders,
   ]);
 
 
@@ -2630,6 +2693,9 @@ const toSeconds = (ts: number): number => {
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
+    if (isSolanaPage && solanaMeteora.spot && solanaMeteora.spot.liquiditySol > 0) {
+      return `${formatCompact(solanaMeteora.spot.liquiditySol)} ${nativeUnit}`;
+    }
     if (isSolanaPage && rtStats?.graduationLiquidityNative != null && rtStats.graduationLiquidityNative > 0) {
       // Initial DAMM v2 TVL is approximately two equal-value sides at handoff.
       return `${formatCompact(rtStats.graduationLiquidityNative * 2)} ${nativeUnit}`;
@@ -4090,38 +4156,36 @@ const toSeconds = (ts: number): number => {
               </div>
               <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:justify-end">
                 <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end">
-                  {/* Bonding-only % change chips; graduated stage uses resolution inside UnifiedMarketChart. */}
-                  {!isDexStage &&
-                    Object.entries(tokenData.metrics).map(([key, data]) => {
-                      const ch = (data as any).change as number | null;
-                      return (
-                        <Button
-                          key={key}
-                          type="button"
-                          variant={selectedTimeframe === key ? "secondary" : "ghost"}
-                          size="sm"
-                          className="h-7 rounded-lg px-2.5 text-[10px] md:text-[11px]"
-                          onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
+                  {Object.entries(tokenData.metrics).map(([key, data]) => {
+                    const ch = (data as any).change as number | null;
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant={selectedTimeframe === key ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-7 rounded-lg px-2.5 text-[10px] md:text-[11px]"
+                        onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
+                      >
+                        <span className="text-muted-foreground mr-1.5">{key}</span>
+                        <span
+                          className={
+                            ch == null
+                              ? "text-muted-foreground"
+                              : ch > 0
+                              ? "text-emerald-400"
+                              : ch < 0
+                              ? "text-red-400"
+                              : "text-muted-foreground"
+                          }
                         >
-                          <span className="text-muted-foreground mr-1.5">{key}</span>
-                          <span
-                            className={
-                              ch == null
-                                ? "text-muted-foreground"
-                                : ch > 0
-                                ? "text-emerald-400"
-                                : ch < 0
-                                ? "text-red-400"
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {ch == null
-                              ? "—"
-                              : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
-                          </span>
-                        </Button>
-                      );
-                    })}
+                          {ch == null
+                            ? "—"
+                            : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
+                        </span>
+                      </Button>
+                    );
+                  })}
 
                   {/* Always available — memecoin traders price mcap in USD by default. */}
                   <div className="inline-flex items-center gap-0 rounded-lg border border-border/40 bg-muted/25 p-1 shrink-0">
@@ -4146,7 +4210,7 @@ const toSeconds = (ts: number): number => {
 
                 <AthBar
                   currentLabel={marketCapUsdLabel ?? undefined}
-                  storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
+                  storageKey={`ath:${String(chainIdForStorage)}:${isSolanaPage ? String((campaignAddress ?? campaign?.campaign ?? "")) : String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
                   className="w-full md:w-auto md:max-w-[320px]"
                 />
 
@@ -4292,7 +4356,11 @@ const toSeconds = (ts: number): number => {
                     <AccordionContent className="pb-4">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs text-muted-foreground">{holderDistribution.totalHolders} holders</span>
-                        <span className="text-xs text-muted-foreground">Estimated from bonding-curve trades</span>
+                        <span className="text-xs text-muted-foreground">
+                          {holderDistribution.source === "onchain"
+                            ? "On-chain token accounts"
+                            : "Estimated from bonding-curve trades"}
+                        </span>
                       </div>
 
                       {holderDistribution.top.length ? (
