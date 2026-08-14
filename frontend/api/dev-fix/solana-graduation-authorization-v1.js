@@ -201,30 +201,48 @@ async function fetchSolUsdMicros() {
   if (priceCache.priceUsdMicros > 0n && Date.now() - priceCache.at < PRICE_CACHE_MS) {
     return priceCache.priceUsdMicros;
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-      { headers: { accept: "application/json" }, signal: controller.signal },
-    );
-    if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
-    const body = await response.json();
-    const price = Number(body?.solana?.usd);
-    if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid SOL/USD response");
-    const micros = BigInt(Math.round(price * 1_000_000));
-    if (micros <= 0n) throw new Error("Invalid SOL/USD micro price");
-    priceCache = { priceUsdMicros: micros, at: Date.now() };
-    return micros;
-  } catch (error) {
-    throw new SolanaGraduationAuthorizationError("SOL/USD graduation oracle is unavailable.", {
-      code: "SOLANA_GRADUATION_ORACLE_UNAVAILABLE",
-      httpStatus: 503,
-      cause: error,
-    });
-  } finally {
-    clearTimeout(timer);
+  const sources = [
+    async (signal) => {
+      const response = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+        { headers: { accept: "application/json" }, signal },
+      );
+      if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
+      const body = await response.json();
+      return Number(body?.solana?.usd);
+    },
+    async (signal) => {
+      const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", {
+        headers: { accept: "application/json" },
+        signal,
+      });
+      if (!response.ok) throw new Error(`Binance HTTP ${response.status}`);
+      const body = await response.json();
+      return Number(body?.price);
+    },
+  ];
+  let lastError = null;
+  for (const source of sources) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const price = await source(controller.signal);
+      if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid SOL/USD response");
+      const micros = BigInt(Math.round(price * 1_000_000));
+      if (micros <= 0n) throw new Error("Invalid SOL/USD micro price");
+      priceCache = { priceUsdMicros: micros, at: Date.now() };
+      return micros;
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw new SolanaGraduationAuthorizationError("SOL/USD graduation oracle is unavailable.", {
+    code: "SOLANA_GRADUATION_ORACLE_UNAVAILABLE",
+    httpStatus: 503,
+    cause: lastError,
+  });
 }
 
 function ceilDiv(numerator, denominator) {

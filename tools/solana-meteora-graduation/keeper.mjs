@@ -45,7 +45,32 @@ function decodeFlags(data) {
   return {
     graduated: buf.readUInt8(713) === 1,
     curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
+    soldTokens: buf.length >= 670 ? buf.readBigUInt64LE(662) : 0n,
+    curveTokenSupply: buf.length >= 436 ? buf.readBigUInt64LE(428) : 0n,
+    netRaisedLamports: buf.length >= 678 ? buf.readBigUInt64LE(670) : 0n,
+    graduationTargetUsdMicros: buf.length >= 416 ? buf.readBigUInt64LE(408) : 0n,
   };
+}
+
+async function fetchSolUsdMicros() {
+  const override = String(process.env.SOLANA_GRADUATION_SOL_USD_MICROS || "").trim();
+  if (override) return BigInt(override);
+  const response = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+    { headers: { accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
+  const body = await response.json();
+  const price = Number(body?.solana?.usd);
+  if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid SOL/USD");
+  return BigInt(Math.round(price * 1_000_000));
+}
+
+function raiseTargetMet(flags, solUsdMicros) {
+  if (flags.soldTokens >= flags.curveTokenSupply && flags.curveTokenSupply > 0n) return true;
+  if (!solUsdMicros || solUsdMicros <= 0n || flags.graduationTargetUsdMicros <= 0n) return false;
+  const nativeTarget = (flags.graduationTargetUsdMicros * 1_000_000_000n + solUsdMicros - 1n) / solUsdMicros;
+  return flags.netRaisedLamports >= nativeTarget;
 }
 
 function runGraduate(campaign) {
@@ -80,7 +105,15 @@ async function scanOnce(connection, campaigns) {
       skipped += 1;
       continue;
     }
-    if (!flags.curveClosed) {
+    let eligible = flags.curveClosed;
+    if (!eligible) {
+      try {
+        eligible = raiseTargetMet(flags, await fetchSolUsdMicros());
+      } catch (error) {
+        console.warn("[keeper] oracle unavailable", error instanceof Error ? error.message : error);
+      }
+    }
+    if (!eligible) {
       console.log("[keeper] still bonding", campaign);
       skipped += 1;
       continue;

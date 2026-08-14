@@ -618,6 +618,12 @@ export async function solanaTradeAuthorizationV1(req, res) {
       );
     } catch (error) {
       console.warn("[solana-trade-v1] native target oracle unavailable", error?.message || error);
+      if (side === TRADE_SIDE_BUY && curve.graduationTargetUsdMicros > 0n) {
+        throw new SolanaTradeAuthorizationError("SOL/USD oracle is required to authorize a bonding buy.", {
+          code: "SOLANA_GRADUATION_ORACLE_UNAVAILABLE",
+          httpStatus: 503,
+        });
+      }
     }
     assertCurveOpen(curve, eligibilityTargetLamports);
     const signedNativeTargetLamports = side === TRADE_SIDE_BUY ? eligibilityTargetLamports : 0n;

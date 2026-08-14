@@ -410,6 +410,26 @@ async function cmdUnpauseTrade(options) {
   log("NOTE: Do not run devnet:bootstrap until after pause-trade — bootstrap re-applies manifest pauses.");
 }
 
+async function cmdUnpauseGraduation(options) {
+  const ctx = await connect(options);
+  ctx.options = options;
+  await setPauseFlags(
+    ctx,
+    {
+      paused: false,
+      createPaused: false,
+      buyPaused: false,
+      sellPaused: false,
+      graduationPaused: false,
+      claimsPaused: true,
+    },
+    "unpause-graduation",
+  );
+  log("");
+  log("Graduation is open. Create/buy/sell stay open. Claims stay paused.");
+  log("Keeper can now submit begin+Meteora+confirm.");
+}
+
 async function cmdPauseTrade(options) {
   const ctx = await connect(options);
   ctx.options = options;
@@ -552,6 +572,7 @@ Commands:
   status                 On-chain pause flags + IDL trade ixs + full checklist
   checklist              Print checklist only (no keypair / no RPC)
   unpause-trade          Open buy/sell (keep graduation + claims paused)
+  unpause-graduation     Open graduation (keep create/buy/sell open; claims paused)
   pause-trade            Re-pause buy/sell (safe default)
   sync-creator <wallet>  CreatorProfile + RiskProfile for Push Live
   sync-risk <wallet>     RiskProfile only (buyer wallets)
@@ -585,6 +606,10 @@ async function main() {
     case "unpause-trade":
     case "unpause":
       await cmdUnpauseTrade(options);
+      return;
+    case "unpause-graduation":
+    case "unpause-grad":
+      await cmdUnpauseGraduation(options);
       return;
     case "pause-trade":
     case "pause":

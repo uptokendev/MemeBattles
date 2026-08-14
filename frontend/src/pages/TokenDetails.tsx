@@ -2477,7 +2477,17 @@ const toSeconds = (ts: number): number => {
   const contractGraduated = isSolanaPage
     ? Boolean(solanaCurve?.graduated)
     : contractGraduatedEarly;
-  const solanaCurveClosed = Boolean(isSolanaPage && solanaCurve?.curveClosed && !solanaCurve?.graduated);
+  const solanaCurveClosed = Boolean(
+    isSolanaPage &&
+      !solanaCurve?.graduated &&
+      (solanaCurve?.curveClosed ||
+        (metrics?.graduationNativeTarget != null &&
+          metrics.graduationNativeTarget > 0n &&
+          (curveReserveWei ?? 0n) >= metrics.graduationNativeTarget) ||
+        (metrics?.curveSupply != null &&
+          metrics.curveSupply > 0n &&
+          (metrics?.sold ?? 0n) >= metrics.curveSupply)),
+  );
   useEffect(() => {
     if (!isSolanaPage || !solanaCurveClosed) return;
     const campaignPda = String(solanaCurve?.campaignAddress || campaign?.campaign || "").trim();

@@ -4,12 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import anchor from "@coral-xyz/anchor";
 import {
+  AddressLookupTableProgram,
   ComputeBudgetProgram,
   Connection,
   Ed25519Program,
   Keypair,
   PublicKey,
   SystemProgram,
+  Transaction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
@@ -184,18 +186,55 @@ function assertPk(actual, expected, label) {
   }
 }
 
-async function loadLookupTables(connection) {
+function collectInstructionKeys(instructions) {
+  const seen = new Set();
+  const keys = [];
+  for (const ix of instructions) {
+    for (const key of [ix.programId, ...(ix.keys || []).map((meta) => meta.pubkey)]) {
+      const encoded = key.toBase58();
+      if (seen.has(encoded)) continue;
+      seen.add(encoded);
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+async function sendLegacy(connection, payer, ixs) {
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const tx = new Transaction({ feePayer: payer.publicKey, recentBlockhash: latest.blockhash }).add(...ixs);
+  tx.sign(payer);
+  const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+  const confirmation = await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+  if (confirmation.value.err) fail(`lookup table update failed: ${JSON.stringify(confirmation.value.err)}`);
+}
+
+async function loadLookupTables(connection, operator, instructions) {
   const raw = String(process.env.SOLANA_GRADUATION_ALT_ADDRESS || "").trim();
   if (!raw) return [];
-  const addresses = raw.split(",").map((v) => v.trim()).filter(Boolean);
-  const tables = [];
-  for (const value of addresses) {
-    const address = asPk(value, "SOLANA_GRADUATION_ALT_ADDRESS");
-    const result = await connection.getAddressLookupTable(address);
-    if (!result.value) fail(`address lookup table not found: ${address.toBase58()}`);
-    tables.push(result.value);
+  const address = asPk(raw.split(",")[0], "SOLANA_GRADUATION_ALT_ADDRESS");
+  let result = await connection.getAddressLookupTable(address);
+  if (!result.value) fail(`address lookup table not found: ${address.toBase58()}`);
+  const present = new Set(result.value.state.addresses.map((item) => item.toBase58()));
+  const missing = collectInstructionKeys(instructions).filter((key) => !present.has(key.toBase58()));
+  for (let i = 0; i < missing.length; i += 20) {
+    const chunk = missing.slice(i, i + 20);
+    console.log("extending ALT with", chunk.length, "accounts");
+    await sendLegacy(connection, operator, [
+      AddressLookupTableProgram.extendLookupTable({
+        payer: operator.publicKey,
+        authority: operator.publicKey,
+        lookupTable: address,
+        addresses: chunk,
+      }),
+    ]);
   }
-  return tables;
+  if (missing.length) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    result = await connection.getAddressLookupTable(address);
+    if (!result.value) fail(`address lookup table disappeared: ${address.toBase58()}`);
+  }
+  return [result.value];
 }
 
 async function main() {
@@ -398,7 +437,7 @@ async function main() {
     confirmIx,
   ];
   const latest = await connection.getLatestBlockhash("confirmed");
-  const lookupTables = await loadLookupTables(connection);
+  const lookupTables = await loadLookupTables(connection, operator, instructions);
   const message = new TransactionMessage({
     payerKey: operator.publicKey,
     recentBlockhash: latest.blockhash,
