@@ -15,7 +15,7 @@ function fail(message) {
 function parseArgs(argv) {
   const campaigns = [];
   let once = false;
-  let intervalMs = 20_000;
+  let intervalMs = 2_000;
   for (const raw of argv) {
     if (raw === "--once") {
       once = true;

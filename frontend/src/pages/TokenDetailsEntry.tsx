@@ -8,6 +8,7 @@ import {
   fetchSolanaCampaignCurveState,
   type SolanaCampaignCurveState,
 } from "@/lib/solanaCampaignRead";
+import { requestSolanaGraduationHandoff } from "@/lib/solanaGraduationHandoff";
 import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 
 import TokenDetails from "./TokenDetails";
@@ -176,6 +177,9 @@ const TokenDetailsEntry = () => {
         if (nextCurve) {
           setCurve(nextCurve);
           setCachedCampaignAddress(String(nextCurve.campaignAddress || "").trim());
+          if (nextCurve.curveClosed && !nextCurve.graduated) {
+            void requestSolanaGraduationHandoff(nextCurve.campaignAddress || curveLookupAddress);
+          }
         }
       } catch {
         // Preserve the last known curve identity.
@@ -185,7 +189,7 @@ const TokenDetailsEntry = () => {
     };
 
     void loadCurve();
-    const pollMs = curve?.curveClosed && !curve?.graduated ? 5_000 : 0;
+    const pollMs = curve?.curveClosed && !curve?.graduated ? 1_500 : 0;
     const timer = pollMs ? window.setInterval(() => void loadCurve(), pollMs) : 0;
 
     return () => {

@@ -22,6 +22,7 @@ import {
   type SolanaMeteoraQuote,
   type SolanaMeteoraSide,
 } from "@/lib/solanaMeteoraTrade";
+import { peekPendingSolanaDexTrade, takePendingSolanaDexTrade } from "@/lib/solanaGraduationHandoff";
 import { getSolanaTokenBalanceRaw } from "@/lib/solanaTradeV1";
 import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
@@ -128,6 +129,7 @@ const SolanaGraduatedTokenDetails = ({
   const [solBalanceLamports, setSolBalanceLamports] = useState<bigint | null>(null);
   const [tokenBalanceRaw, setTokenBalanceRaw] = useState<bigint | null>(null);
   const [balanceTick, setBalanceTick] = useState(0);
+  const [handoffStarted, setHandoffStarted] = useState(false);
 
   const curveLookupAddress = useMemo(
     () => String(campaign?.campaign || initialCurve?.campaignAddress || routeId || "").trim(),
@@ -323,6 +325,59 @@ const SolanaGraduatedTokenDetails = ({
     const nextRaw = tab === "buy" ? buySpendableLamports : tokenBalanceRaw ?? 0n;
     setAmount(nextRaw > 0n ? rawToInputString(nextRaw, quoteInputDecimals) : "");
   }, [buySpendableLamports, quoteInputDecimals, tab, tokenBalanceRaw]);
+
+  useEffect(() => {
+    if (handoffStarted || !curveState?.graduated || !curveState.mint) return;
+    const pending = peekPendingSolanaDexTrade(curveState.campaignAddress);
+    if (!pending) return;
+    setTab(pending.side);
+    if (pending.displayAmount) setAmount(pending.displayAmount);
+    if (!isSolanaConnected || !solanaAccount) return;
+
+    const queued = takePendingSolanaDexTrade(curveState.campaignAddress);
+    if (!queued) return;
+    setHandoffStarted(true);
+
+    (async () => {
+      try {
+        setSubmitting(true);
+        const amountInRaw = BigInt(queued.amountInRaw);
+        if (amountInRaw <= 0n) return;
+        toast({
+          title: queued.side === "buy" ? "Submitting Meteora buy" : "Submitting Meteora sell",
+          description: "Sending the trade you placed during graduation.",
+        });
+        const nextQuote = await quoteSolanaMeteoraExactIn({
+          side: queued.side,
+          mint: queued.mint || curveState.mint,
+          tokenDecimals: queued.tokenDecimals || tokenDecimals,
+          amountInRaw,
+          slippagePct: SLIPPAGE_PCT,
+        });
+        const result = await executeSolanaMeteoraSwap({
+          quote: nextQuote,
+          mint: queued.mint || curveState.mint,
+          tokenDecimals: queued.tokenDecimals || tokenDecimals,
+          walletAddress: solanaAccount,
+          poolAddress: nextQuote.pool,
+        });
+        setLastSignature(result.signature);
+        setAmount("");
+        setQuote(null);
+        setBalanceTick((value) => value + 1);
+        toast({
+          title: queued.side === "buy" ? "Meteora buy confirmed" : "Meteora sell confirmed",
+          description: shortenAddress(result.signature),
+        });
+      } catch (error) {
+        const message = friendlyError(error);
+        setQuoteError(message);
+        toast({ title: "Queued trade waiting", description: message });
+      } finally {
+        setSubmitting(false);
+      }
+    })();
+  }, [curveState, handoffStarted, isSolanaConnected, solanaAccount, toast, tokenDecimals]);
 
   const handlePrimaryAction = useCallback(async () => {
     if (!isSolanaConnected) {
