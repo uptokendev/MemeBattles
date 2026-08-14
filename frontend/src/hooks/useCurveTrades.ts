@@ -50,7 +50,14 @@ export type CurveTradePoint = {
   to: string;
   tokensWei: bigint; // raw token units (name retained for existing callers)
   nativeWei: bigint; // wei on BNB, lamports on Solana
+  /**
+   * Average execution price of the fill.
+   * Kept for EVM compatibility and legacy Solana rows.
+   * Solana bonding charts must prefer soldTokensAfterRaw + curve pricing.
+   */
   pricePerToken: number; // native coin per whole token
+  /** Authoritative post-trade curve sold supply, in raw token units. */
+  soldTokensAfterRaw?: bigint | null;
   timestamp: number;
   txHash: string;
   blockNumber: number; // EVM block / Solana slot
@@ -276,6 +283,12 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
             tokensWei,
             nativeWei,
             pricePerToken: Number.isFinite(suppliedPrice) && suppliedPrice > 0 ? suppliedPrice : tokens > 0 ? native / tokens : 0,
+            soldTokensAfterRaw:
+              r.sold_tokens_after_raw != null && String(r.sold_tokens_after_raw).trim() !== ""
+                ? BigInt(String(r.sold_tokens_after_raw))
+                : r.soldTokensAfterRaw != null && String(r.soldTokensAfterRaw).trim() !== ""
+                  ? BigInt(String(r.soldTokensAfterRaw))
+                  : null,
             timestamp: toTimestampSec(r.block_time ?? r.timestamp ?? r.time),
             txHash,
             blockNumber: Number(r.block_number ?? r.blockNumber ?? 0),

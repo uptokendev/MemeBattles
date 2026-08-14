@@ -12,6 +12,7 @@ type Stored = {
   tokensWei: string;
   nativeWei: string;
   pricePerToken: number;
+  soldTokensAfterRaw?: string | null;
   timestamp: number;
   txHash: string;
   blockNumber: number;
@@ -42,6 +43,10 @@ function toStored(p: CurveTradePoint, chainId: number): Stored | null {
     tokensWei: String(p.tokensWei ?? 0n),
     nativeWei: String(p.nativeWei ?? 0n),
     pricePerToken: Number(p.pricePerToken || 0),
+    soldTokensAfterRaw:
+      p.soldTokensAfterRaw != null
+        ? String(p.soldTokensAfterRaw)
+        : null,
     timestamp: Number(p.timestamp || 0),
     txHash,
     blockNumber: Number(p.blockNumber || 0),
@@ -60,6 +65,10 @@ function fromStored(s: Stored, chainId: number): CurveTradePoint | null {
       tokensWei: BigInt(s.tokensWei || "0"),
       nativeWei: BigInt(s.nativeWei || "0"),
       pricePerToken: Number(s.pricePerToken || 0),
+      soldTokensAfterRaw:
+        s.soldTokensAfterRaw != null && String(s.soldTokensAfterRaw).trim() !== ""
+          ? BigInt(String(s.soldTokensAfterRaw))
+          : null,
       timestamp: Number(s.timestamp || 0),
       txHash,
       blockNumber: Number(s.blockNumber || 0),

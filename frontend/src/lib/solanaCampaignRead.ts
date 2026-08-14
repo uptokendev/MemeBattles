@@ -6,6 +6,40 @@
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
+export type SolanaCurvePricingState = {
+  economicsVersion: number;
+  tokenDecimals: number;
+  basePriceLamports: bigint;
+  priceSlopeLamports: bigint;
+};
+
+export function solanaMarginalSpotLamports(
+  curve: SolanaCurvePricingState,
+  soldTokensRaw: bigint,
+): bigint {
+  const decimals = Math.max(0, Number(curve.tokenDecimals || 0));
+  const tokenScale = 10n ** BigInt(decimals);
+  const slopeDenominator =
+    Number(curve.economicsVersion || 0) >= 3
+      ? tokenScale * 1_000_000_000n
+      : tokenScale;
+
+  if (slopeDenominator <= 0n) return curve.basePriceLamports;
+
+  return (
+    curve.basePriceLamports +
+    (curve.priceSlopeLamports * soldTokensRaw) / slopeDenominator
+  );
+}
+
+export function solanaMarginalSpotSol(
+  curve: SolanaCurvePricingState,
+  soldTokensRaw: bigint,
+): number {
+  const lamports = solanaMarginalSpotLamports(curve, soldTokensRaw);
+  return Number(lamports) / 1_000_000_000;
+}
+
 export type SolanaCampaignCurveState = {
   campaignAddress: string;
   creator: string;

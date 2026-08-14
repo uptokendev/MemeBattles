@@ -19,6 +19,10 @@ import { buildCandles, type CurveTradePoint as ChartPoint } from "@/lib/chart/bu
 import { fetchUserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
 import { isSolanaChainId } from "@/lib/chainConfig";
+import {
+  solanaMarginalSpotSol,
+  type SolanaCurvePricingState,
+} from "@/lib/solanaCampaignRead";
 import { isValidTradeTxHash } from "@/lib/tradeDedupe";
 
 export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
@@ -52,8 +56,10 @@ export type UnifiedMarketChartProps = {
   creatorAvatarUrl?: string | null;
   creatorDisplayName?: string | null;
   chainId?: number;
-  /** Live bonding-curve sold supply in raw token units. Used to anchor Solana market cap. */
+  /** Live bonding-curve sold supply. Used only as a fallback for legacy rows. */
   currentBondingSoldRaw?: bigint | null;
+  /** Canonical Solana curve pricing parameters from the live campaign account. */
+  solanaCurvePricing?: SolanaCurvePricingState | null;
   resolution: UnifiedChartResolution;
   onResolutionChange: (resolution: UnifiedChartResolution) => void;
   denomination?: UnifiedChartDenomination;
@@ -137,6 +143,30 @@ function sameAddr(chainId: number, a?: string | null, b?: string | null): boolea
   return Boolean(x && y && x === y && validWallet(chainId, x));
 }
 
+function authoritativeSolanaTradeState(
+  trade: CurveTradePoint,
+  pricing?: SolanaCurvePricingState | null,
+): { priceNative: number; supplyWhole: number } | null {
+  if (!pricing || trade.soldTokensAfterRaw == null) return null;
+
+  const soldRaw = trade.soldTokensAfterRaw;
+  if (soldRaw < 0n) return null;
+
+  const priceNative = solanaMarginalSpotSol(pricing, soldRaw);
+  const supplyWhole = formatUnitsNumber(soldRaw, pricing.tokenDecimals);
+
+  if (
+    !Number.isFinite(priceNative) ||
+    priceNative <= 0 ||
+    !Number.isFinite(supplyWhole) ||
+    supplyWhole < 0
+  ) {
+    return null;
+  }
+
+  return { priceNative, supplyWhole };
+}
+
 function tradeSeriesPoints(
   trades: CurveTradePoint[],
   metric: UnifiedChartMetric,
@@ -146,9 +176,13 @@ function tradeSeriesPoints(
   graduationTimeSec: number,
   chainId: number,
   currentBondingSoldRaw?: bigint | null,
+  solanaCurvePricing?: SolanaCurvePricingState | null,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
-  const tokenDecimals = solana ? 6 : 18;
+  const tokenDecimals =
+    solana
+      ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
+      : 18;
   const nativeDecimals = solana ? 9 : 18;
   const sorted = [...(trades || [])].sort(
     (a, b) =>
@@ -191,7 +225,14 @@ function tradeSeriesPoints(
   const points: ChartPoint[] = [];
 
   for (const trade of sorted) {
-    const priceNative = finite(trade.pricePerToken);
+    const authoritative =
+      solana
+        ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
+        : null;
+
+    const priceNative =
+      authoritative?.priceNative ?? finite(trade.pricePerToken);
+
     const timestampSec = Number(trade.timestamp || 0);
     if (!priceNative || !Number.isFinite(timestampSec) || timestampSec <= 0) continue;
 
@@ -207,11 +248,13 @@ function tradeSeriesPoints(
     }
 
     const supplyForMcap =
-      afterGrad && fixedGradSupply > 0
-        ? fixedGradSupply
-        : afterGrad && peakCirc > 0
-          ? peakCirc
-          : Math.max(circulating, 0);
+      !afterGrad && authoritative
+        ? authoritative.supplyWhole
+        : afterGrad && fixedGradSupply > 0
+          ? fixedGradSupply
+          : afterGrad && peakCirc > 0
+            ? peakCirc
+            : Math.max(circulating, 0);
 
     const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
     const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
@@ -365,6 +408,7 @@ export function UnifiedMarketChart({
   creatorDisplayName,
   chainId = 97,
   currentBondingSoldRaw,
+  solanaCurvePricing,
   resolution,
   onResolutionChange,
   denomination = "USD",
@@ -373,7 +417,10 @@ export function UnifiedMarketChart({
 }: UnifiedMarketChartProps) {
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
-  const tokenDecimals = solana ? 6 : 18;
+  const tokenDecimals =
+    solana
+      ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
+      : 18;
   const nativeDecimals = solana ? 9 : 18;
   const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -453,10 +500,12 @@ export function UnifiedMarketChart({
       graduationTimeSec,
       chainId,
       currentBondingSoldRaw,
+      solanaCurvePricing,
     );
   }, [
     chainId,
     currentBondingSoldRaw,
+    solanaCurvePricing,
     curvePoints,
     denomination,
     graduationTimeSec,
@@ -508,7 +557,14 @@ export function UnifiedMarketChart({
     );
 
     for (const trade of sorted) {
-      const priceNative = finite(trade.pricePerToken);
+      const authoritative =
+        solana
+          ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
+          : null;
+
+      const priceNative =
+        authoritative?.priceNative ?? finite(trade.pricePerToken);
+
       const ts = Number(trade.timestamp || 0);
       if (!priceNative || ts <= 0) continue;
       const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
@@ -521,11 +577,13 @@ export function UnifiedMarketChart({
         peakCirc = Math.max(peakCirc, circulating);
       }
       const supplyForMcap =
-        afterGrad && fixedGradSupply > 0
-          ? fixedGradSupply
-          : afterGrad && peakCirc > 0
-            ? peakCirc
-            : Math.max(circulating, 0);
+        !afterGrad && authoritative
+          ? authoritative.supplyWhole
+          : afterGrad && fixedGradSupply > 0
+            ? fixedGradSupply
+            : afterGrad && peakCirc > 0
+              ? peakCirc
+              : Math.max(circulating, 0);
       if (!sameAddr(chainId, trade.from, creator)) continue;
 
       const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
@@ -550,7 +608,7 @@ export function UnifiedMarketChart({
       });
     }
     return pins.slice(-24);
-  }, [chainId, creatorAddress, curvePoints, data, denomination, graduationTimeSec, marketState, metric, nativeUsd, tokenDecimals]);
+  }, [chainId, creatorAddress, curvePoints, data, denomination, graduationTimeSec, marketState, metric, nativeUsd, solana, solanaCurvePricing, tokenDecimals]);
 
   creatorPinsRef.current = creatorPins;
 
@@ -720,28 +778,22 @@ export function UnifiedMarketChart({
   useEffect(() => {
     const series = seriesRef.current;
     const chart = chartRef.current;
-    if (!series || !chart || data.length === 0) return;
-    const previous = previousDataRef.current;
-    const sameCandle = (a: CandleRow | undefined, b: CandleRow | undefined) =>
-      Boolean(
-        a &&
-        b &&
-        Number(a.time) === Number(b.time) &&
-        a.open === b.open &&
-        a.high === b.high &&
-        a.low === b.low &&
-        a.close === b.close
-      );
+    if (!series || !chart) return;
 
-    const onlyLatestChanged =
-      previous.length > 0 &&
-      data.length === previous.length &&
-      data.slice(0, -1).every((row, index) =>
-        sameCandle(row, previous[index])
-      );
-    if (onlyLatestChanged) series.update(data[data.length - 1] as any);
-    else series.setData(data as any);
-    previousDataRef.current = data;
+    // The trade history is intentionally capped at a small number of rows.
+    // Replacing the complete series is cheap and, unlike incremental update(),
+    // is deterministic when:
+    //   - a previously missing trade arrives in an older bucket,
+    //   - 1m -> 5m -> 1m rebuckets the same trades,
+    //   - USD/SOL changes every OHLC value,
+    //   - an indexer reconciliation changes historical state.
+    series.setData(data as any);
+
+    if (data.length === 0) {
+      initialRangeSetRef.current = false;
+      setPlacedPins([]);
+      return;
+    }
 
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;

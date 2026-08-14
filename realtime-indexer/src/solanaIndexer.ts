@@ -526,11 +526,30 @@ async function insertTrade(event: TokensBoughtEvent | TokensSoldEvent, signature
   const nativeAmount = toSol(nativeRaw);
   const priceNative = tokenAmount > 0 ? nativeAmount / tokenAmount : null;
 
+  // A replay of an already indexed Solana trade is a backfill operation only.
+  // Persist the authoritative post-trade curve state from the Anchor event,
+  // then stop so candles/volume/activity are never counted twice.
+  const backfilled = await pool.query(
+    `update public.curve_trades
+        set sold_tokens_after_raw=$4
+      where chain_id=$1 and tx_hash=$2 and log_index=$3
+      returning tx_hash`,
+    [
+      SOLANA_CHAIN_ID,
+      signature,
+      logIndex,
+      event.soldTokensAfter.toString(),
+    ],
+  );
+
+  if ((backfilled.rowCount ?? 0) > 0) return;
+
   const inserted = await pool.query(
     `insert into public.curve_trades(
        chain_id,campaign_address,tx_hash,log_index,block_number,block_time,
-       side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb,
+       sold_tokens_after_raw
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      on conflict (chain_id,tx_hash,log_index) do nothing
      returning tx_hash`,
     [
@@ -547,6 +566,7 @@ async function insertTrade(event: TokensBoughtEvent | TokensSoldEvent, signature
       tokenAmount,
       nativeAmount,
       priceNative,
+      event.soldTokensAfter.toString(),
     ],
   );
 
@@ -586,6 +606,7 @@ async function insertTrade(event: TokensBoughtEvent | TokensSoldEvent, signature
     token_amount: tokenAmount,
     bnb_amount: nativeAmount,
     price_bnb: priceNative,
+    sold_tokens_after_raw: event.soldTokensAfter.toString(),
   };
   await publishTrade(SOLANA_CHAIN_ID, campaign, realtimeRow);
 

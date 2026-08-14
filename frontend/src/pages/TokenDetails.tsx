@@ -3942,6 +3942,7 @@ const toSeconds = (ts: number): number => {
                   creatorDisplayName={creatorProfile?.displayName}
                   chainId={chainIdForStorage}
                   currentBondingSoldRaw={isSolanaPage ? solanaCurve?.soldTokens ?? null : null}
+                  solanaCurvePricing={isSolanaPage ? solanaCurve : null}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}

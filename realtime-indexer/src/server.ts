@@ -2175,7 +2175,10 @@ async function handleTokenTrades(req: any, res: any) {
   const r = await pool.query(
     `select
        tx_hash, log_index, block_number, block_time,
-       side, wallet, token_amount, bnb_amount, price_bnb
+       side, wallet,
+       token_amount_raw, bnb_amount_raw,
+       token_amount, bnb_amount, price_bnb,
+       sold_tokens_after_raw
      from public.curve_trades
      where chain_id=$1 and campaign_address=$2
      order by block_number desc, log_index desc
@@ -2233,7 +2236,10 @@ async function handleTokenTrades(req: any, res: any) {
   const r2 = await pool.query(
     `select
        tx_hash, log_index, block_number, block_time,
-       side, wallet, token_amount, bnb_amount, price_bnb
+       side, wallet,
+       token_amount_raw, bnb_amount_raw,
+       token_amount, bnb_amount, price_bnb,
+       sold_tokens_after_raw
      from public.curve_trades
      where chain_id=$1 and campaign_address=$2
      order by block_number desc, log_index desc
