@@ -58,6 +58,12 @@ export type UnifiedMarketChartProps = {
   currentBondingSoldRaw?: bigint | null;
   /** Canonical Solana curve pricing parameters from the live campaign account. */
   solanaCurvePricing?: SolanaCurvePricingState | null;
+  /** When true, freeze mcap supply and treat non-curve prints as DEX. */
+  solanaGraduated?: boolean;
+  /** Same live native price the TokenDetails headline uses. */
+  livePriceNative?: number | null;
+  /** Same circulating supply the TokenDetails headline uses (whole tokens). */
+  liveSupplyWhole?: number | null;
   /** Page-level native/USD price. Must be shared with headline metrics. */
   nativeUsdPrice?: number | null;
   resolution: UnifiedChartResolution;
@@ -143,6 +149,19 @@ function sameAddr(chainId: number, a?: string | null, b?: string | null): boolea
   return Boolean(x && y && x === y && validWallet(chainId, x));
 }
 
+function isSolanaDexPrint(
+  trade: CurveTradePoint,
+  graduated: boolean,
+  graduationTimeSec: number,
+): boolean {
+  if (trade.venue === "dex") return true;
+  if (trade.venue === "curve") return false;
+  if (trade.soldTokensAfterRaw != null) return false;
+  if (!graduated) return false;
+  const ts = Number(trade.timestamp || 0);
+  return graduationTimeSec > 0 && ts >= graduationTimeSec;
+}
+
 function authoritativeSolanaTradeState(
   trade: CurveTradePoint,
   pricing?: SolanaCurvePricingState | null,
@@ -177,6 +196,9 @@ function tradeSeriesPoints(
   chainId: number,
   currentBondingSoldRaw?: bigint | null,
   solanaCurvePricing?: SolanaCurvePricingState | null,
+  solanaGraduated?: boolean,
+  livePriceNative?: number | null,
+  liveSupplyWhole?: number | null,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
   const tokenDecimals =
@@ -192,13 +214,16 @@ function tradeSeriesPoints(
   );
 
   const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
-  const marketAlreadyGraduated = isGraduatedStage(marketState);
+  const marketAlreadyGraduated = isGraduatedStage(marketState) || Boolean(solana && solanaGraduated);
+  const frozenSolanaSupply =
+    solana && Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
+      ? Number(liveSupplyWhole)
+      : formatUnitsNumber(currentBondingSoldRaw, tokenDecimals);
 
   // Solana bonding trade history can be partial (for example after page reload,
   // RPC pagination, or indexer catch-up). Reconstruct the delta represented by
-  // the loaded trades, then anchor that history to the live on-chain sold
-  // supply. This makes the latest chart market cap use the same supply source
-  // as the TokenDetails headline while preserving the shape of trade history.
+  // the loaded *curve* trades only — DEX fills must not grow circulating.
+  const bondingTrades = sorted.filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
   const liveBondingSupply =
     solana && !marketAlreadyGraduated
       ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
@@ -206,7 +231,7 @@ function tradeSeriesPoints(
 
   const reconstructedFinalSupply =
     solana && !marketAlreadyGraduated
-      ? sorted.reduce((supply, trade) => {
+      ? bondingTrades.reduce((supply, trade) => {
           const amount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
           return Math.max(
             0,
@@ -225,8 +250,9 @@ function tradeSeriesPoints(
   const points: ChartPoint[] = [];
 
   for (const trade of sorted) {
+    const dexPrint = solana && isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec);
     const authoritative =
-      solana
+      solana && !dexPrint
         ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
         : null;
 
@@ -238,18 +264,21 @@ function tradeSeriesPoints(
 
     const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
     const afterGrad =
+      dexPrint ||
       (graduationTimeSec > 0 && timestampSec >= graduationTimeSec) ||
-      (marketAlreadyGraduated && graduationTimeSec <= 0 && fixedGradSupply > 0);
+      (!solana && marketAlreadyGraduated && graduationTimeSec <= 0 && fixedGradSupply > 0);
 
-    if (!afterGrad || fixedGradSupply <= 0) {
+    if (!afterGrad) {
       circulating += trade.type === "sell" ? -tokenAmount : tokenAmount;
       circulating = Math.max(0, circulating);
       peakCirc = Math.max(peakCirc, circulating);
     }
 
     const supplyForMcap =
-      !afterGrad && authoritative
-        ? authoritative.supplyWhole
+      afterGrad && solana && frozenSolanaSupply > 0
+        ? frozenSolanaSupply
+        : !afterGrad && authoritative
+          ? authoritative.supplyWhole
         : afterGrad && fixedGradSupply > 0
           ? fixedGradSupply
           : afterGrad && peakCirc > 0
@@ -269,6 +298,25 @@ function tradeSeriesPoints(
       wallet: normalizedWallet(chainId, trade.from),
     });
   }
+
+  const tipPrice = finite(livePriceNative);
+  const tipSupply = finite(liveSupplyWhole) ?? (frozenSolanaSupply > 0 ? frozenSolanaSupply : null);
+  if (tipPrice && (metric === "price" || (tipSupply && tipSupply > 0))) {
+    const valueNative = metric === "marketcap" ? tipPrice * Math.max(tipSupply || 0, 1e-18) : tipPrice;
+    const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
+    if (Number.isFinite(value) && value > 0) {
+      const lastTs = points.length ? points[points.length - 1].ts : 0;
+      const tipTs = Math.max(lastTs + 1, Date.now());
+      points.push({
+        ts: tipTs,
+        value,
+        volume: 0,
+        side: "buy",
+        wallet: "",
+      });
+    }
+  }
+
   return points;
 }
 
@@ -417,6 +465,9 @@ export function UnifiedMarketChart({
   chainId = 97,
   currentBondingSoldRaw,
   solanaCurvePricing,
+  solanaGraduated = false,
+  livePriceNative = null,
+  liveSupplyWhole = null,
   nativeUsdPrice,
   resolution,
   onResolutionChange,
@@ -494,10 +545,22 @@ export function UnifiedMarketChart({
   }, [clearHideTooltipTimer, hoverPinId]);
 
   const graduationTimeSec = useMemo(() => {
-    if (!graduationMarker?.time) return 0;
-    const ms = new Date(graduationMarker.time).getTime();
-    return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0;
-  }, [graduationMarker?.time]);
+    if (graduationMarker?.time) {
+      const ms = new Date(graduationMarker.time).getTime();
+      if (Number.isFinite(ms) && ms > 0) return Math.floor(ms / 1000);
+    }
+    if (!solanaGraduated) return 0;
+    const dexTimes = (curvePoints || [])
+      .filter((trade) => trade.venue === "dex")
+      .map((trade) => Number(trade.timestamp || 0))
+      .filter((ts) => Number.isFinite(ts) && ts > 0);
+    if (dexTimes.length) return Math.min(...dexTimes);
+    const lastCurve = (curvePoints || [])
+      .filter((trade) => trade.soldTokensAfterRaw != null && !String(trade.txHash || "").startsWith("solana-seed-"))
+      .map((trade) => Number(trade.timestamp || 0))
+      .filter((ts) => Number.isFinite(ts) && ts > 0);
+    return lastCurve.length ? Math.max(...lastCurve) + 1 : 0;
+  }, [curvePoints, graduationMarker?.time, solanaGraduated]);
 
   const seriesPoints = useMemo(() => {
     if (!nativeUsd && denomination === "USD") return [] as ChartPoint[];
@@ -511,11 +574,17 @@ export function UnifiedMarketChart({
       chainId,
       currentBondingSoldRaw,
       solanaCurvePricing,
+      solanaGraduated,
+      livePriceNative,
+      liveSupplyWhole,
     );
   }, [
     chainId,
     currentBondingSoldRaw,
     solanaCurvePricing,
+    solanaGraduated,
+    livePriceNative,
+    liveSupplyWhole,
     curvePoints,
     denomination,
     graduationTimeSec,
@@ -556,6 +625,10 @@ export function UnifiedMarketChart({
 
     const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
     const marketGrad = isGraduatedStage(marketState);
+    const frozenSolanaSupply =
+      solana && Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
+        ? Number(liveSupplyWhole)
+        : 0;
     let circulating = 0;
     let peakCirc = 0;
     const pins: CreatorTradePin[] = [];
@@ -567,8 +640,9 @@ export function UnifiedMarketChart({
     );
 
     for (const trade of sorted) {
+      const dexPrint = solana && isSolanaDexPrint(trade, solanaGraduated, graduationTimeSec);
       const authoritative =
-        solana
+        solana && !dexPrint
           ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
           : null;
 
@@ -579,21 +653,24 @@ export function UnifiedMarketChart({
       if (!priceNative || ts <= 0) continue;
       const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
       const afterGrad =
+        dexPrint ||
         (graduationTimeSec > 0 && ts >= graduationTimeSec) ||
-        (marketGrad && graduationTimeSec <= 0 && fixedGradSupply > 0);
-      if (!afterGrad || fixedGradSupply <= 0) {
+        (!solana && marketGrad && graduationTimeSec <= 0 && fixedGradSupply > 0);
+      if (!afterGrad) {
         circulating += trade.type === "sell" ? -tokenAmount : tokenAmount;
         circulating = Math.max(0, circulating);
         peakCirc = Math.max(peakCirc, circulating);
       }
       const supplyForMcap =
-        !afterGrad && authoritative
-          ? authoritative.supplyWhole
-          : afterGrad && fixedGradSupply > 0
-            ? fixedGradSupply
-            : afterGrad && peakCirc > 0
-              ? peakCirc
-              : Math.max(circulating, 0);
+        afterGrad && solana && frozenSolanaSupply > 0
+          ? frozenSolanaSupply
+          : !afterGrad && authoritative
+            ? authoritative.supplyWhole
+            : afterGrad && fixedGradSupply > 0
+              ? fixedGradSupply
+              : afterGrad && peakCirc > 0
+                ? peakCirc
+                : Math.max(circulating, 0);
       if (!sameAddr(chainId, trade.from, creator)) continue;
 
       const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
@@ -618,7 +695,7 @@ export function UnifiedMarketChart({
       });
     }
     return pins.slice(-24);
-  }, [chainId, creatorAddress, curvePoints, data, denomination, graduationTimeSec, marketState, metric, nativeUsd, solana, solanaCurvePricing, tokenDecimals]);
+  }, [chainId, creatorAddress, curvePoints, data, denomination, graduationTimeSec, liveSupplyWhole, marketState, metric, nativeUsd, solana, solanaCurvePricing, solanaGraduated, tokenDecimals]);
 
   creatorPinsRef.current = creatorPins;
 

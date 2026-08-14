@@ -58,6 +58,8 @@ export type CurveTradePoint = {
   pricePerToken: number; // native coin per whole token
   /** Authoritative post-trade curve sold supply, in raw token units. */
   soldTokensAfterRaw?: bigint | null;
+  /** Solana prints: curve fill vs DAMM v2 swap. Omitted on EVM. */
+  venue?: "curve" | "dex";
   timestamp: number;
   txHash: string;
   blockNumber: number; // EVM block / Solana slot

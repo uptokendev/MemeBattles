@@ -72,6 +72,7 @@ import {
 } from "@/components/token/CrypticPumpListing";
 import { RadarLoader } from "@/components/ui/RadarLoader";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import { solanaMarginalSpotSol } from "@/lib/solanaCampaignRead";
 import { fetchPublicCampaignLifecycleDrafts } from "@/lib/scheduledLaunchApi";
 import {
   appendLocalTopazTrade,
@@ -1651,7 +1652,8 @@ const TokenDetails = () => {
         const dec = Number(solanaCurve.tokenDecimals || 6);
         const tokens = Number(ethers.formatUnits(solanaCurve.soldTokens, dec));
         const sol = Number(ethers.formatUnits(solanaCurve.netRaisedLamports, 9));
-        const price = tokens > 0 ? sol / tokens : 0;
+        const marginal = solanaMarginalSpotSol(solanaCurve, solanaCurve.soldTokens);
+        const price = marginal > 0 ? marginal : tokens > 0 ? sol / tokens : 0;
         return [
           {
             type: "buy" as const,
@@ -1660,12 +1662,30 @@ const TokenDetails = () => {
             tokensWei: solanaCurve.soldTokens,
             nativeWei: solanaCurve.netRaisedLamports,
             pricePerToken: Number.isFinite(price) ? price : 0,
+            soldTokensAfterRaw: solanaCurve.soldTokens,
+            venue: "curve" as const,
             timestamp: Math.floor(Date.now() / 1000) - 600,
             txHash: `solana-seed-${solanaCurve.campaignAddress.slice(0, 16)}`,
             blockNumber: 1,
             logIndex: SYNTHETIC_LOG_INDEX_MIN + 2,
           },
         ];
+      }
+      if (isSolanaPage && solanaCurve?.graduated && bonding.length) {
+        const lastCurveTs = bonding.reduce((max, point) => {
+          if (point.soldTokensAfterRaw == null) return max;
+          if (String(point.txHash || "").startsWith("solana-seed-")) return max;
+          const ts = Number(point.timestamp || 0);
+          return ts > max ? ts : max;
+        }, 0);
+        return bonding.map((point) => {
+          if (point.venue === "dex" || point.venue === "curve") return point;
+          if (point.soldTokensAfterRaw != null) return { ...point, venue: "curve" as const };
+          if (!lastCurveTs || Number(point.timestamp || 0) > lastCurveTs) {
+            return { ...point, venue: "dex" as const };
+          }
+          return point;
+        });
       }
       return bonding;
     }
@@ -1772,12 +1792,17 @@ const { stats: rtStats } = useTokenStatsRealtime(
 
   const lastMarketTradePrice = useMemo(() => {
     const points = Array.isArray(marketTradePoints) ? marketTradePoints : [];
-    for (let i = points.length - 1; i >= 0; i -= 1) {
-      const price = Number((points[i] as { pricePerToken?: number })?.pricePerToken ?? 0);
-      if (Number.isFinite(price) && price > 0) return price;
-    }
-    return null;
-  }, [marketTradePoints]);
+    const preferDex = Boolean(solanaCurve?.graduated);
+    const pick = (filterDex: boolean) => {
+      for (let i = points.length - 1; i >= 0; i -= 1) {
+        if (filterDex && points[i]?.venue !== "dex") continue;
+        const price = Number(points[i]?.pricePerToken ?? 0);
+        if (Number.isFinite(price) && price > 0) return price;
+      }
+      return null;
+    };
+    return (preferDex ? pick(true) : null) ?? pick(false);
+  }, [marketTradePoints, solanaCurve?.graduated]);
 
   const solanaDexPrice = useMemo(() => {
     if (!isSolanaPage || !solanaCurve?.graduated) return null;
@@ -1790,6 +1815,28 @@ const { stats: rtStats } = useTokenStatsRealtime(
   }, [isSolanaPage, lastMarketTradePrice, rtStats?.lastPriceBnb, solanaCurve?.graduated, solanaMeteora.spot?.priceSol]);
 
   const solanaLivePrice = solanaDexPrice ?? solanaSpotNative;
+
+  const solanaSoldWhole = useMemo(() => {
+    if (!isSolanaPage) return null;
+    const sold = solanaCurve?.soldTokens ?? metrics?.sold ?? 0n;
+    if (sold <= 0n) return null;
+    const whole = Number(ethers.formatUnits(sold, tokenDecimals));
+    return Number.isFinite(whole) && whole > 0 ? whole : null;
+  }, [isSolanaPage, metrics?.sold, solanaCurve?.soldTokens, tokenDecimals]);
+
+  const solanaGraduationMarker = useMemo(() => {
+    if (!isSolanaPage || !solanaCurve?.graduated) return null;
+    const fromStats = rtStats?.graduatedAt ? Date.parse(rtStats.graduatedAt) : NaN;
+    const fromDex = (marketTradePoints || [])
+      .filter((point) => point.venue === "dex")
+      .map((point) => Number(point.timestamp || 0) * 1000)
+      .filter((ms) => Number.isFinite(ms) && ms > 0);
+    const ms =
+      (Number.isFinite(fromStats) && fromStats > 0 ? fromStats : 0) ||
+      (fromDex.length ? Math.min(...fromDex) : 0);
+    if (!ms) return null;
+    return { time: new Date(ms).toISOString() };
+  }, [isSolanaPage, marketTradePoints, rtStats?.graduatedAt, solanaCurve?.graduated]);
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   // If it looks like milliseconds, convert to seconds.
@@ -1890,35 +1937,23 @@ const toSeconds = (ts: number): number => {
     const topazLiquidity = contractGraduatedEarly ? topazMarket.liquidityBnb : null;
     const window24h = timeframeTiles?.["24h"]?.volume;
 
-    // Bonding source of truth = on-chain curve (sold * currentPrice), not Ably/rt
-    // market_stats which can drift after Topaz-oriented indexer changes.
-    // Graduated Solana: live Meteora/last-trade price × circulating (same walk as the chart).
+    // Bonding and graduated Solana share one valuation: live price × curve sold.
+    // DEX buys must not grow circulating or the headline drifts from the chart.
     let bondingMcapLabel: string | null = null;
     let solanaDexMcapLabel: string | null = null;
     try {
-      if (isSolanaPage && solanaCurve?.graduated && solanaLivePrice != null) {
-        let circulating = 0n;
-        for (const point of marketTradePoints) {
-          const delta = point.tokensWei ?? 0n;
-          circulating = (point.type ?? "buy") === "sell" ? circulating - delta : circulating + delta;
-          if (circulating < 0n) circulating = 0n;
-        }
-        const sold = solanaCurve.soldTokens ?? metrics?.sold ?? 0n;
-        const supplyRaw = circulating > 0n ? circulating : sold;
-        const supplyWhole = Number(ethers.formatUnits(supplyRaw, tokenDecimals));
+      if (isSolanaPage && solanaLivePrice != null) {
+        const sold = solanaCurve?.soldTokens ?? metrics?.sold ?? 0n;
+        const supplyWhole = Number(ethers.formatUnits(sold, tokenDecimals));
         const mcapNative = supplyWhole * solanaLivePrice;
-        solanaDexMcapLabel = Number.isFinite(mcapNative) && mcapNative > 0
+        const label = Number.isFinite(mcapNative) && mcapNative > 0
           ? `${formatCompact(mcapNative)} ${nativeUnit}`
           : null;
-      } else if (!contractGraduatedEarly && metrics?.sold != null) {
-        if (isSolanaPage && solanaSpotNative != null) {
-          const soldWhole = Number(ethers.formatUnits(metrics.sold, tokenDecimals));
-          const mcapNative = soldWhole * solanaSpotNative;
-          bondingMcapLabel = Number.isFinite(mcapNative) ? `${formatCompact(mcapNative)} ${nativeUnit}` : null;
-        } else if (metrics.currentPrice != null) {
-          const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
-          bondingMcapLabel = formatBnbFromWei(mcWei);
-        }
+        if (solanaCurve?.graduated) solanaDexMcapLabel = label;
+        else bondingMcapLabel = label;
+      } else if (!contractGraduatedEarly && metrics?.sold != null && metrics.currentPrice != null) {
+        const mcWei = (metrics.currentPrice * metrics.sold) / 10n ** 18n;
+        bondingMcapLabel = formatBnbFromWei(mcWei);
       }
     } catch {
       bondingMcapLabel = null;
@@ -3360,6 +3395,7 @@ const toSeconds = (ts: number): number => {
                 tokensWei: tokensOut,
                 nativeWei: nativeAmt,
                 pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+                venue: "dex",
                 timestamp: Math.floor(Date.now() / 1000),
                 txHash: result.signature,
                 blockNumber: 0,
@@ -3421,6 +3457,8 @@ const toSeconds = (ts: number): number => {
             tokensWei: tokensOut,
             nativeWei: nativeAmt,
             pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+            soldTokensAfterRaw: solanaCurve?.soldTokens ?? null,
+            venue: "curve",
             timestamp: Math.floor(Date.now() / 1000),
             txHash: result.signature,
             blockNumber: 0,
@@ -4224,13 +4262,16 @@ const toSeconds = (ts: number): number => {
                   curvePoints={marketTradePoints}
                   marketCandles={unifiedMarket.candles}
                   marketState={unifiedMarket.state}
-                  graduationMarker={unifiedMarket.graduationMarker}
+                  graduationMarker={unifiedMarket.graduationMarker || solanaGraduationMarker}
                   creatorAddress={campaign?.creator}
                   creatorAvatarUrl={creatorProfile?.avatarUrl}
                   creatorDisplayName={creatorProfile?.displayName}
                   chainId={chainIdForStorage}
                   currentBondingSoldRaw={isSolanaPage ? solanaCurve?.soldTokens ?? null : null}
                   solanaCurvePricing={isSolanaPage ? solanaCurve : null}
+                  solanaGraduated={Boolean(isSolanaPage && solanaCurve?.graduated)}
+                  livePriceNative={isSolanaPage ? solanaLivePrice : null}
+                  liveSupplyWhole={isSolanaPage ? solanaSoldWhole : null}
                   nativeUsdPrice={nativeUsd}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}

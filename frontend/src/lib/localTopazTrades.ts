@@ -12,6 +12,8 @@ type StoredTrade = {
   tokensWei: string;
   nativeWei: string;
   pricePerToken: number;
+  soldTokensAfterRaw?: string | null;
+  venue?: "curve" | "dex";
   timestamp: number;
   txHash: string;
   blockNumber: number;
@@ -44,6 +46,9 @@ function serialize(point: CurveTradePoint, chainId: number): StoredTrade | null 
     tokensWei: String(point.tokensWei ?? 0n),
     nativeWei: String(point.nativeWei ?? 0n),
     pricePerToken: Number(point.pricePerToken || 0),
+    soldTokensAfterRaw:
+      point.soldTokensAfterRaw != null ? String(point.soldTokensAfterRaw) : null,
+    venue: point.venue === "dex" || point.venue === "curve" ? point.venue : undefined,
     timestamp: Number(point.timestamp || 0),
     txHash,
     logIndex: Number(point.logIndex || 0),
@@ -62,6 +67,11 @@ function deserialize(row: StoredTrade, chainId: number): CurveTradePoint | null 
       tokensWei: BigInt(row.tokensWei || "0"),
       nativeWei: BigInt(row.nativeWei || "0"),
       pricePerToken: Number(row.pricePerToken || 0),
+      soldTokensAfterRaw:
+        row.soldTokensAfterRaw != null && String(row.soldTokensAfterRaw).trim() !== ""
+          ? BigInt(String(row.soldTokensAfterRaw))
+          : null,
+      venue: row.venue === "dex" || row.venue === "curve" ? row.venue : undefined,
       timestamp: Number(row.timestamp || 0),
       txHash,
       blockNumber: Number(row.blockNumber || 0),
