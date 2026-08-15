@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { CpAmm } from "@meteora-ag/cp-amm-sdk";
 import {
   Connection,
@@ -18,6 +19,9 @@ const SOLANA_CHAIN_ID = 101;
 const CREATOR_FEE_BPS = 8000;
 const PROTOCOL_FEE_BPS = 2000;
 const BPS = 10_000;
+/** Existing funded operator / test treasury (graduation, votes, harvest 20%). */
+const DEFAULT_SOLANA_OPERATOR = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 function solanaRpcUrl(): string {
   return String(process.env.SOLANA_RPC_URL || process.env.SOLANA_RPC || "https://api.devnet.solana.com").trim();
@@ -27,7 +31,7 @@ function protocolTreasury(operator: PublicKey): PublicKey {
   const raw = String(
     process.env.SOLANA_PROTOCOL_TREASURY_ADDRESS ||
       process.env.SOLANA_VOTE_TREASURY_ADDRESS ||
-      "",
+      DEFAULT_SOLANA_OPERATOR,
   ).trim();
   if (raw) {
     try {
@@ -97,38 +101,90 @@ function mintDecimals(mint: PublicKey, tokenMint: PublicKey, tokenDecimals: numb
   return 6;
 }
 
-function parseOperatorKey(): Keypair | null {
-  const raw = String(
-    process.env.SOLANA_HARVEST_OPERATOR_SECRET ||
-      process.env.SOLANA_TREASURY_OPERATOR_SECRET ||
-      process.env.SOLANA_OPERATOR_SECRET ||
-      "",
-  ).trim();
-  if (!raw) return null;
+function operatorSecretCandidates(): string[] {
+  return [
+    process.env.SOLANA_HARVEST_OPERATOR_SECRET,
+    process.env.SOLANA_TREASURY_OPERATOR_SECRET,
+    process.env.SOLANA_OPERATOR_SECRET,
+    process.env.SOLANA_OPERATOR_KEYPAIR,
+    process.env.SOLANA_GRADUATION_OPERATOR_KEYPAIR,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function decodeBase58(raw: string): Uint8Array {
+  const bytes = [0];
+  for (const ch of raw) {
+    const val = BASE58_ALPHABET.indexOf(ch);
+    if (val < 0) throw new Error("invalid base58");
+    let carry = val;
+    for (let i = 0; i < bytes.length; i += 1) {
+      carry += bytes[i] * 58;
+      bytes[i] = carry & 255;
+      carry >>= 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 255);
+      carry >>= 8;
+    }
+  }
+  for (const ch of raw) {
+    if (ch !== "1") break;
+    bytes.push(0);
+  }
+  return Uint8Array.from(bytes.reverse());
+}
+
+function keypairFromBytes(bytes: Uint8Array): Keypair {
+  if (bytes.length === 64) return Keypair.fromSecretKey(bytes);
+  if (bytes.length === 32) return Keypair.fromSeed(bytes);
+  throw new Error(`secret length must be 32 or 64 bytes, got ${bytes.length}`);
+}
+
+function parseSecretMaterial(raw: string): Keypair | null {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return null;
+  const looksLikePath =
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("~") ||
+    trimmed.endsWith(".json") ||
+    trimmed.includes("\\");
+  if (looksLikePath) {
+    try {
+      const filePath = trimmed.startsWith("~")
+        ? trimmed.replace(/^~(?=$|[/\\])/, process.env.HOME || "")
+        : trimmed;
+      if (fs.existsSync(filePath)) {
+        return parseSecretMaterial(fs.readFileSync(filePath, "utf8"));
+      }
+    } catch {
+      // fall through to in-place parse
+    }
+  }
   try {
-    if (raw.startsWith("[")) {
-      return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw)));
+    if (trimmed.startsWith("[")) {
+      const arr = JSON.parse(trimmed);
+      if (!Array.isArray(arr)) return null;
+      return keypairFromBytes(Uint8Array.from(arr));
     }
-    const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    const bytes = [0];
-    for (const ch of raw) {
-      const idx = alphabet.indexOf(ch);
-      if (idx < 0) return null;
-      let carry = idx;
-      for (let i = 0; i < bytes.length; i += 1) {
-        const n = bytes[i] * 58 + carry;
-        bytes[i] = n & 255;
-        carry >>= 8;
-      }
-      while (carry > 0) {
-        bytes.push(carry & 255);
-        carry >>= 8;
-      }
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+      return keypairFromBytes(Uint8Array.from(Buffer.from(trimmed, "hex")));
     }
-    return Keypair.fromSecretKey(Uint8Array.from(bytes.reverse()));
+    return keypairFromBytes(decodeBase58(trimmed));
   } catch {
     return null;
   }
+}
+
+function parseOperatorKey(): { keypair: Keypair | null; configured: boolean; invalid: boolean } {
+  const candidates = operatorSecretCandidates();
+  if (!candidates.length) return { keypair: null, configured: false, invalid: false };
+  for (const raw of candidates) {
+    const keypair = parseSecretMaterial(raw);
+    if (keypair) return { keypair, configured: true, invalid: false };
+  }
+  return { keypair: null, configured: true, invalid: true };
 }
 
 function toBigInt(value: unknown): bigint {
@@ -165,7 +221,9 @@ export async function listSolanaLpFees(input: {
   ];
   if (input.campaign) {
     params.push(input.campaign);
-    clauses.push(`c.campaign_address = $${params.length}`);
+    clauses.push(
+      `(c.campaign_address = $${params.length} or c.token_address = $${params.length} or lower(c.campaign_address) = lower($${params.length}))`,
+    );
   }
   if (input.creator) {
     params.push(input.creator);
@@ -282,19 +340,27 @@ export async function harvestSolanaLpFees(input: {
   campaign?: string | null;
   pair?: string | null;
 }) {
-  const operator = parseOperatorKey();
-  if (!operator) {
-    throw Object.assign(new Error("Solana harvest operator key is not configured (SOLANA_HARVEST_OPERATOR_SECRET)."), {
-      status: 503,
-    });
+  const parsed = parseOperatorKey();
+  if (!parsed.keypair) {
+    throw Object.assign(
+      new Error(
+        parsed.invalid
+          ? "Solana harvest operator key is set but could not be parsed. Use a JSON byte array, Phantom base58 secret, hex seed, or a keypair file path in SOLANA_HARVEST_OPERATOR_SECRET / SOLANA_OPERATOR_SECRET / SOLANA_OPERATOR_KEYPAIR on the realtime-indexer — not the web-dashboard. This must be the HuKfoF… operator wallet that owns the Meteora position NFT. SOLANA_ROUTE_SIGNER_SECRET_KEY is a different wallet and is ignored."
+          : "Solana harvest operator key is not configured on the realtime-indexer. Set SOLANA_HARVEST_OPERATOR_SECRET (or SOLANA_OPERATOR_SECRET / SOLANA_OPERATOR_KEYPAIR) on the indexer service — not the web-dashboard. SOLANA_ROUTE_SIGNER_SECRET_KEY is a different wallet and is ignored.",
+      ),
+      { status: 503 },
+    );
   }
+  const operator = parsed.keypair;
   const treasury = protocolTreasury(operator.publicKey);
 
   const clauses = ["c.chain_id = $1", "c.graduated_at_chain is not null"];
   const params: unknown[] = [SOLANA_CHAIN_ID];
   if (input.campaign) {
     params.push(input.campaign);
-    clauses.push(`c.campaign_address = $${params.length}`);
+    clauses.push(
+      `(c.campaign_address = $${params.length} or c.token_address = $${params.length} or lower(c.campaign_address) = lower($${params.length}))`,
+    );
   }
   if (input.pair) {
     params.push(input.pair);

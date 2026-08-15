@@ -408,7 +408,13 @@ export default async function handler(req, res) {
            limit 1
         ) dl on true
         left join public.vote_aggregates va
-          on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
+          on va.chain_id = c.chain_id
+         and (
+           va.campaign_address = c.campaign_address
+           or (c.token_address is not null and va.campaign_address = c.token_address)
+           or lower(va.campaign_address) = lower(c.campaign_address)
+           or (c.token_address is not null and lower(va.campaign_address) = lower(c.token_address))
+         )
         where c.chain_id = $1
           and ($3::text is null or (
             c.name ilike $3

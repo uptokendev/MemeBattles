@@ -8,6 +8,7 @@ import { ContinuousMarketChartPanel } from "@/components/token/ContinuousMarketC
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
+import { isSolanaAddress } from "@/lib/address";
 import { getActiveChainId, getChainLabel } from "@/lib/chainConfig";
 
 function shortenAddress(value?: string | null) {
@@ -108,7 +109,10 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const draftDescription = String(rich.draftDescription || "No promotion description has been added yet.");
   const founderNote = String(rich.draftFounderNote || "No founder note has been added yet.");
   const draftStatus = formatStatus(rich.draftStatus || (isScheduledDraft ? "scheduled" : "draft"));
-  const rowChainId = getActiveChainId(Number(rich.chainId || 97));
+  const inferredChainId = Number(rich.chainId);
+  const rowChainId = isSolanaAddress(campaign.campaign)
+    ? 101
+    : getActiveChainId(Number.isFinite(inferredChainId) && inferredChainId > 0 ? inferredChainId : 97);
   const chainLabel = getChainLabel(rowChainId) || `Chain ${rowChainId || "unknown"}`;
   const draftFollows = formatCompactNumber(rich.draftFollowCount);
   const draftOptIns = formatCompactNumber(rich.draftOptInCount);

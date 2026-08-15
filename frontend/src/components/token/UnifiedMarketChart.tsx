@@ -21,7 +21,8 @@ import {
   solanaMarginalSpotSol,
   type SolanaCurvePricingState,
 } from "@/lib/solanaCampaignRead";
-import { isValidTradeTxHash } from "@/lib/tradeDedupe";
+import { isValidTradeTxHash, normalizeTradeTxHash } from "@/lib/tradeDedupe";
+import { timestampSec } from "@/lib/chart/normalizeTrade";
 
 export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 export type UnifiedChartMetric = "marketcap" | "price";
@@ -38,6 +39,12 @@ const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [
   { key: "4h", seconds: 14400 },
   { key: "1d", seconds: 86400 },
 ];
+
+/** Pump-style: chunky, readable bodies — not hairlines, not one-bar-full-width. */
+const DESIRED_BAR_PX = 12;
+const MIN_BAR_SPACING = 7;
+const MIN_VISIBLE_SLOTS = 28;
+const MAX_VISIBLE_SLOTS = 140;
 
 export type UnifiedMarketChartProps = {
   curvePoints: CurveTradePoint[];
@@ -71,6 +78,8 @@ export type UnifiedMarketChartProps = {
   denomination?: UnifiedChartDenomination;
   loading?: boolean;
   error?: string | null;
+  /** Stable market id so live-clock overrides reset when the token changes. */
+  marketKey?: string;
 };
 
 type CreatorTradePin = {
@@ -186,6 +195,11 @@ function authoritativeSolanaTradeState(
   return { priceNative, supplyWhole };
 }
 
+function bucketStartUnix(sec: number, intervalSec: number): number {
+  if (!intervalSec || intervalSec <= 0) return sec;
+  return Math.floor(sec / intervalSec) * intervalSec;
+}
+
 function tradeSeriesPoints(
   trades: CurveTradePoint[],
   metric: UnifiedChartMetric,
@@ -197,8 +211,9 @@ function tradeSeriesPoints(
   currentBondingSoldRaw?: bigint | null,
   solanaCurvePricing?: SolanaCurvePricingState | null,
   solanaGraduated?: boolean,
-  livePriceNative?: number | null,
   liveSupplyWhole?: number | null,
+  intervalSec = 60,
+  clockOverrides?: Record<string, number>,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
   const tokenDecimals =
@@ -206,12 +221,19 @@ function tradeSeriesPoints(
       ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
       : 18;
   const nativeDecimals = solana ? 9 : 18;
-  const sorted = [...(trades || [])].sort(
-    (a, b) =>
-      (a.timestamp ?? 0) - (b.timestamp ?? 0) ||
-      (a.blockNumber ?? 0) - (b.blockNumber ?? 0) ||
-      Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0),
-  );
+  const sorted = [...(trades || [])]
+    .map((trade) => {
+      const tx = normalizeTradeTxHash(trade.txHash);
+      const overrideSec = tx ? Number(clockOverrides?.[tx] || 0) : 0;
+      const ts = overrideSec > 0 ? overrideSec : timestampSec(trade.timestamp);
+      return { trade, ts };
+    })
+    .sort(
+      (a, b) =>
+        a.ts - b.ts ||
+        (a.trade.blockNumber ?? 0) - (b.trade.blockNumber ?? 0) ||
+        Number(a.trade.logIndex ?? 0) - Number(b.trade.logIndex ?? 0),
+    );
 
   const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
   const marketAlreadyGraduated = isGraduatedStage(marketState) || Boolean(solana && solanaGraduated);
@@ -223,7 +245,9 @@ function tradeSeriesPoints(
   // Solana bonding trade history can be partial (for example after page reload,
   // RPC pagination, or indexer catch-up). Reconstruct the delta represented by
   // the loaded *curve* trades only — DEX fills must not grow circulating.
-  const bondingTrades = sorted.filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
+  const bondingTrades = sorted
+    .map((row) => row.trade)
+    .filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
   const liveBondingSupply =
     solana && !marketAlreadyGraduated
       ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
@@ -248,8 +272,11 @@ function tradeSeriesPoints(
   let circulating = historySupplyOffset;
   let peakCirc = circulating;
   const points: ChartPoint[] = [];
+  let prevTimeSec = 0;
+  let prevBlock = 0;
 
-  for (const trade of sorted) {
+  for (const row of sorted) {
+    const trade = row.trade;
     const dexPrint = solana && isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec);
     const authoritative =
       solana && !dexPrint
@@ -259,13 +286,30 @@ function tradeSeriesPoints(
     const priceNative =
       authoritative?.priceNative ?? finite(trade.pricePerToken);
 
-    const timestampSec = Number(trade.timestamp || 0);
-    if (!priceNative || !Number.isFinite(timestampSec) || timestampSec <= 0) continue;
+    let tradeTimeSec = row.ts;
+    const block = Number(trade.blockNumber || 0);
+    // Same reported clock + a much later slot/block means the indexer reused a
+    // stale block_time. Advance by the chain gap so yesterday/today cannot share a 1m bar.
+    if (
+      tradeTimeSec > 0 &&
+      prevTimeSec > 0 &&
+      block > prevBlock &&
+      bucketStartUnix(tradeTimeSec, intervalSec) === bucketStartUnix(prevTimeSec, intervalSec)
+    ) {
+      const secPerBlock = solana ? 0.4 : 3;
+      const gapSec = (block - prevBlock) * secPerBlock;
+      if (gapSec >= intervalSec) {
+        tradeTimeSec = prevTimeSec + Math.max(intervalSec, Math.round(gapSec));
+      }
+    }
+    if (!priceNative || tradeTimeSec <= 0) continue;
+    prevTimeSec = tradeTimeSec;
+    if (block > 0) prevBlock = block;
 
     const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
     const afterGrad =
       dexPrint ||
-      (graduationTimeSec > 0 && timestampSec >= graduationTimeSec) ||
+      (graduationTimeSec > 0 && tradeTimeSec >= graduationTimeSec) ||
       (!solana && marketAlreadyGraduated && graduationTimeSec <= 0 && fixedGradSupply > 0);
 
     if (!afterGrad) {
@@ -291,7 +335,7 @@ function tradeSeriesPoints(
 
     const volumeNative = formatUnitsNumber(trade.nativeWei, nativeDecimals);
     points.push({
-      ts: timestampSec * 1000,
+      ts: tradeTimeSec * 1000,
       value,
       volume: Number.isFinite(volumeNative) ? volumeNative : 0,
       side: trade.type === "sell" ? "sell" : "buy",
@@ -299,25 +343,49 @@ function tradeSeriesPoints(
     });
   }
 
-  const tipPrice = finite(livePriceNative);
-  const tipSupply = finite(liveSupplyWhole) ?? (frozenSolanaSupply > 0 ? frozenSolanaSupply : null);
-  if (tipPrice && (metric === "price" || (tipSupply && tipSupply > 0))) {
-    const valueNative = metric === "marketcap" ? tipPrice * Math.max(tipSupply || 0, 1e-18) : tipPrice;
-    const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
-    if (Number.isFinite(value) && value > 0) {
-      const lastTs = points.length ? points[points.length - 1].ts : 0;
-      const tipTs = Math.max(lastTs + 1, Date.now());
-      points.push({
-        ts: tipTs,
-        value,
-        volume: 0,
-        side: "buy",
-        wallet: "",
-      });
-    }
-  }
-
   return points;
+}
+
+/** Paint live headline price onto the open interval only — never invent a new bar. */
+function applyLiveMarkToOpenBucket(
+  candles: CandleRow[],
+  liveValue: number | null,
+  intervalSec: number,
+): CandleRow[] {
+  if (!candles.length || liveValue == null || !Number.isFinite(liveValue) || liveValue <= 0) return candles;
+  if (!intervalSec || intervalSec <= 0) return candles;
+  const last = candles[candles.length - 1];
+  const lastTime = Number(last.time);
+  const nowBucket = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+  if (!Number.isFinite(lastTime) || lastTime !== nowBucket) return candles;
+  if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
+  return [
+    ...candles.slice(0, -1),
+    {
+      ...last,
+      high: Math.max(last.high, liveValue),
+      low: Math.min(last.low, liveValue),
+      close: liveValue,
+    },
+  ];
+}
+
+function formatTickLabel(time: Time, intervalSec: number): string {
+  const sec =
+    typeof time === "number"
+      ? time
+      : time && typeof time === "object" && "year" in time
+        ? Math.floor(Date.UTC(time.year, time.month - 1, time.day) / 1000)
+        : 0;
+  if (!sec) return "";
+  const date = new Date(sec * 1000);
+  if (intervalSec >= 86400) {
+    return `${date.getDate()} ${date.toLocaleString(undefined, { month: "short" })}`;
+  }
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  if (intervalSec <= 60) return `${hh}:${mm}`;
+  return `${date.getDate()} ${hh}:${mm}`;
 }
 
 function marketCandlesForChart(
@@ -467,6 +535,7 @@ export function UnifiedMarketChart({
   denomination = "USD",
   loading,
   error,
+  marketKey,
 }: UnifiedMarketChartProps) {
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
@@ -500,6 +569,64 @@ export function UnifiedMarketChart({
       : 0;
 
   const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
+  const bookKey = marketKey || String(chainId);
+  const seenTxRef = useRef<Set<string>>(new Set());
+  const hydratedRef = useRef(false);
+  const [clockOverrides, setClockOverrides] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    seenTxRef.current = new Set();
+    hydratedRef.current = false;
+    setClockOverrides({});
+  }, [bookKey]);
+
+  useEffect(() => {
+    const newcomers: CurveTradePoint[] = [];
+    for (const trade of curvePoints) {
+      const tx = normalizeTradeTxHash(trade.txHash);
+      if (!tx) continue;
+      if (!seenTxRef.current.has(tx)) newcomers.push(trade);
+    }
+
+    if (!hydratedRef.current) {
+      if (curvePoints.length === 0) return;
+      for (const trade of newcomers) {
+        const tx = normalizeTradeTxHash(trade.txHash);
+        if (tx) seenTxRef.current.add(tx);
+      }
+      hydratedRef.current = true;
+      return;
+    }
+
+    // A late indexer snapshot can drop 20+ historical rows at once. Those are
+    // not live fills — only stamp 1–2 newly observed txs (a buy, or buy+sell).
+    if (newcomers.length >= 3) {
+      for (const trade of newcomers) {
+        const tx = normalizeTradeTxHash(trade.txHash);
+        if (tx) seenTxRef.current.add(tx);
+      }
+      return;
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const nowBucket = bucketStartUnix(nowSec, intervalSeconds);
+    setClockOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const trade of newcomers) {
+        const tx = normalizeTradeTxHash(trade.txHash);
+        if (!tx) continue;
+        seenTxRef.current.add(tx);
+        const reported = timestampSec(trade.timestamp);
+        const reportedBucket = reported > 0 ? bucketStartUnix(reported, intervalSeconds) : -1;
+        if (reportedBucket !== nowBucket) {
+          next[tx] = nowSec;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [curvePoints, intervalSeconds]);
 
   const clearHideTooltipTimer = useCallback(() => {
     if (hideTooltipTimerRef.current) {
@@ -568,23 +695,39 @@ export function UnifiedMarketChart({
       currentBondingSoldRaw,
       solanaCurvePricing,
       solanaGraduated,
-      livePriceNative,
       liveSupplyWhole,
+      intervalSeconds,
+      clockOverrides,
     );
   }, [
     chainId,
+    clockOverrides,
     currentBondingSoldRaw,
     solanaCurvePricing,
     solanaGraduated,
-    livePriceNative,
     liveSupplyWhole,
     curvePoints,
     denomination,
     graduationTimeSec,
+    intervalSeconds,
     marketState,
     metric,
     nativeUsd,
   ]);
+
+  const liveChartValue = useMemo(() => {
+    const tipPrice = finite(livePriceNative);
+    if (!tipPrice) return null;
+    if (metric === "price") {
+      const value = denomination === "USD" ? tipPrice * (nativeUsd || 1) : tipPrice;
+      return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    const supply = finite(liveSupplyWhole);
+    if (!supply) return null;
+    const valueNative = tipPrice * supply;
+    const value = denomination === "USD" ? valueNative * (nativeUsd || 1) : valueNative;
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }, [denomination, livePriceNative, liveSupplyWhole, metric, nativeUsd]);
 
   const data = useMemo(() => {
     if (!seriesPoints.length && !(marketCandles || []).length) return [] as CandleRow[];
@@ -602,8 +745,12 @@ export function UnifiedMarketChart({
       tokenDecimals,
     );
     // Client rebuild from trades is source of truth. Server candles only pad older history.
-    return prependServerCache(fromTrades, fromServer);
-  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
+    return applyLiveMarkToOpenBucket(
+      prependServerCache(fromTrades, fromServer),
+      liveChartValue,
+      intervalSeconds,
+    );
+  }, [denomination, intervalSeconds, liveChartValue, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];
@@ -642,7 +789,7 @@ export function UnifiedMarketChart({
       const priceNative =
         authoritative?.priceNative ?? finite(trade.pricePerToken);
 
-      const ts = Number(trade.timestamp || 0);
+      const ts = timestampSec(trade.timestamp);
       if (!priceNative || ts <= 0) continue;
       const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
       const afterGrad =
@@ -784,9 +931,12 @@ export function UnifiedMarketChart({
         timeVisible: true,
         secondsVisible: intervalSeconds <= 60,
         rightOffset: 8,
-        barSpacing: 6,
-        minBarSpacing: 3,
+        barSpacing: DESIRED_BAR_PX,
+        minBarSpacing: MIN_BAR_SPACING,
         lockVisibleTimeRangeOnResize: false,
+      },
+      localization: {
+        tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds),
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
@@ -845,7 +995,14 @@ export function UnifiedMarketChart({
 
   useEffect(() => {
     chartRef.current?.applyOptions({
-      timeScale: { secondsVisible: intervalSeconds <= 60 },
+      timeScale: {
+        secondsVisible: intervalSeconds <= 60,
+        barSpacing: DESIRED_BAR_PX,
+        minBarSpacing: MIN_BAR_SPACING,
+      },
+      localization: {
+        tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds),
+      },
     });
   }, [intervalSeconds]);
 
@@ -886,7 +1043,13 @@ export function UnifiedMarketChart({
     //   - 1m -> 5m -> 1m rebuckets the same trades,
     //   - USD/SOL changes every OHLC value,
     //   - an indexer reconciliation changes historical state.
+    const prev = previousDataRef.current;
+    const prevLastTime = prev.length ? Number(prev[prev.length - 1].time) : 0;
+    const nextLastTime = data.length ? Number(data[data.length - 1].time) : 0;
+    const addedBar = data.length > prev.length || nextLastTime > prevLastTime;
+
     series.setData(data as any);
+    previousDataRef.current = data;
 
     if (data.length === 0) {
       initialRangeSetRef.current = false;
@@ -896,16 +1059,28 @@ export function UnifiedMarketChart({
 
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;
-      const barPx = 6;
       // Keep candles a fixed pixel width (Pump-style). Few trades must not stretch
       // into one giant bar — pad the logical range so unused slots stay empty.
-      const slotsThatFit = Math.max(48, Math.min(220, Math.floor(width / barPx)));
-      chart.timeScale().applyOptions({ barSpacing: barPx, minBarSpacing: 3, rightOffset: 8 });
+      const slotsThatFit = Math.max(
+        MIN_VISIBLE_SLOTS,
+        Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / DESIRED_BAR_PX)),
+      );
+      chart.timeScale().applyOptions({
+        barSpacing: DESIRED_BAR_PX,
+        minBarSpacing: MIN_BAR_SPACING,
+        rightOffset: 8,
+      });
       chart.timeScale().setVisibleLogicalRange({
         from: data.length - slotsThatFit,
-        to: data.length + 8,
+        to: data.length + 6,
       });
       initialRangeSetRef.current = true;
+    } else if (addedBar) {
+      try {
+        chart.timeScale().scrollToRealTime();
+      } catch {
+        // ignore
+      }
     }
     requestAnimationFrame(() => repositionCreatorPins());
   }, [data, repositionCreatorPins]);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   UnifiedMarketChart,
@@ -6,7 +6,14 @@ import {
   type UnifiedChartResolution,
 } from "@/components/token/UnifiedMarketChart";
 import { useContinuousMarketTrades } from "@/hooks/useContinuousMarketTrades";
+import { useSolanaMeteoraMarket } from "@/hooks/useSolanaMeteoraMarket";
+import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
 import { isSolanaChainId } from "@/lib/chainConfig";
+import {
+  fetchSolanaCampaignCurveState,
+  solanaMarginalSpotSol,
+  type SolanaCampaignCurveState,
+} from "@/lib/solanaCampaignRead";
 
 type ContinuousMarketChartPanelProps = {
   campaignAddress?: string;
@@ -40,7 +47,47 @@ export function ContinuousMarketChartPanel({
 }: ContinuousMarketChartPanelProps) {
   const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");
   const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");
-  const nativeSymbol = isSolanaChainId(chainId) ? "SOL" : "BNB";
+  const solana = isSolanaChainId(chainId);
+  const nativeSymbol = solana ? "SOL" : "BNB";
+  const { price: solUsd } = useSolUsdPrice(solana);
+  const [solanaCurve, setSolanaCurve] = useState<SolanaCampaignCurveState | null>(null);
+
+  useEffect(() => {
+    const addr = String(campaignAddress || "").trim();
+    if (!solana || !addr) {
+      setSolanaCurve(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchSolanaCampaignCurveState(addr).then((next) => {
+      if (!cancelled) setSolanaCurve(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignAddress, solana]);
+
+  const tokenDecimals = Number(solanaCurve?.tokenDecimals ?? 6);
+  const meteora = useSolanaMeteoraMarket({
+    mint: String(solanaCurve?.mint || tokenAddress || ""),
+    tokenDecimals,
+    campaignTokenVault: solanaCurve?.tokenVault ?? null,
+    enabled: Boolean(solana && solanaCurve?.graduated),
+  });
+
+  const solanaSpot = useMemo(() => {
+    if (!solanaCurve || solanaCurve.economicsVersion < 2) return null;
+    const spot = solanaMarginalSpotSol(solanaCurve, solanaCurve.soldTokens);
+    return spot > 0 ? spot : null;
+  }, [solanaCurve]);
+
+  const livePriceNative = (solanaCurve?.graduated ? meteora.spot?.priceSol : null) ?? solanaSpot;
+  const liveSupplyWhole = useMemo(() => {
+    if (!solanaCurve || solanaCurve.soldTokens <= 0n) return null;
+    const scale = 10 ** Number(solanaCurve.tokenDecimals || 6);
+    const whole = Number(solanaCurve.soldTokens) / scale;
+    return Number.isFinite(whole) && whole > 0 ? whole : null;
+  }, [solanaCurve]);
 
   const market = useContinuousMarketTrades({
     campaignAddress,
@@ -94,11 +141,18 @@ export function ContinuousMarketChartPanel({
           creatorAvatarUrl={creatorAvatarUrl}
           creatorDisplayName={creatorDisplayName}
           chainId={chainId}
+          currentBondingSoldRaw={solanaCurve?.soldTokens ?? null}
+          solanaCurvePricing={solana ? solanaCurve : null}
+          solanaGraduated={Boolean(solana && solanaCurve?.graduated)}
+          livePriceNative={solana ? livePriceNative : null}
+          liveSupplyWhole={solana ? liveSupplyWhole : null}
+          nativeUsdPrice={solana ? solUsd : undefined}
           resolution={resolution}
           onResolutionChange={setResolution}
           denomination={denomination}
           loading={market.loading}
           error={market.error}
+          marketKey={`${chainId}:${campaignAddress || tokenAddress || ""}`}
         />
       </div>
     </div>

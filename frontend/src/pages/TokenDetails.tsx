@@ -4258,6 +4258,7 @@ const toSeconds = (ts: number): number => {
                   livePriceNative={isSolanaPage ? solanaLivePrice : null}
                   liveSupplyWhole={isSolanaPage ? solanaSoldWhole : null}
                   nativeUsdPrice={nativeUsd}
+                  marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}

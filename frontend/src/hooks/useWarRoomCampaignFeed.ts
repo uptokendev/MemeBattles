@@ -5,11 +5,13 @@ import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import { isSolanaAddress } from "@/lib/address";
 import {
   BNB_CHAIN_ID,
   BNB_TESTNET_CHAIN_ID,
   SOLANA_CHAIN_ID,
   isEvmChainId,
+  isSolanaChainId,
   type SupportedChainId,
 } from "@/lib/chainConfig";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
@@ -130,17 +132,25 @@ function normalizeStatus(item: any): "graduated" | "live" | "draft" | "ended" | 
   return undefined;
 }
 
+function preserveFeedAddress(value: unknown, chainId?: number): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (isSolanaChainId(Number(chainId)) || isSolanaAddress(raw)) return raw;
+  return raw.toLowerCase();
+}
+
 function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
-  const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").toLowerCase();
-  const token = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").toLowerCase();
-  const creator = String(item?.creatorAddress ?? item?.creator_address ?? item?.creator ?? "").toLowerCase();
+  const chainId = toNumber(item?.chainId ?? item?.chain_id);
+  const campaign = preserveFeedAddress(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign, chainId);
+  const token = preserveFeedAddress(item?.tokenAddress ?? item?.token_address ?? item?.token, chainId);
+  const creator = preserveFeedAddress(item?.creatorAddress ?? item?.creator_address ?? item?.creator, chainId);
   const normalizedStatus = normalizeStatus(item);
   const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri) || "/placeholder.svg";
   const isDexTrading = Boolean((item?.isDexTrading ?? item?.is_dex_trading) ?? (normalizedStatus === "graduated" || normalizedStatus === "ended"));
 
   return {
     id: 100000 + index,
-    chainId: toNumber(item?.chainId ?? item?.chain_id),
+    chainId,
     campaign,
     token,
     creator,
@@ -187,16 +197,17 @@ function mapDraftToWarRoomCampaign(
   const scheduled = isScheduledDraft(draft);
   // Prefer real campaign address for armed timed launches so we can de-dupe against on-chain rows,
   // but keep draft status so the row never opens a trade panel pre-launch.
+  const draftChainId = Number(draft.chainId);
   const campaignKey = draft.campaignAddress
-    ? String(draft.campaignAddress).toLowerCase()
+    ? preserveFeedAddress(draft.campaignAddress, draftChainId)
     : `draft:${draft.id}`;
 
   return {
     id: 200000 + index,
-    chainId: Number(draft.chainId),
+    chainId: draftChainId,
     campaign: campaignKey,
     token: "",
-    creator: String(draft.creatorWallet || "").toLowerCase(),
+    creator: preserveFeedAddress(draft.creatorWallet, draftChainId),
     name: String(draft.name || "Unknown"),
     symbol: String(draft.ticker || ""),
     logoURI: resolveImageUri(promotion?.bannerUrl || draft.logoUrl) || resolveImageUri(draft.logoUrl) || "/placeholder.svg",
@@ -222,7 +233,7 @@ function mapDraftToWarRoomCampaign(
     draftOptInCount: safeCount(popularity?.armedCount),
     draftCommentCount: safeCount(popularity?.comments),
     promotionHref,
-    scheduledCampaignAddress: draft.campaignAddress ? String(draft.campaignAddress).toLowerCase() : null,
+    scheduledCampaignAddress: draft.campaignAddress ? preserveFeedAddress(draft.campaignAddress, draftChainId) : null,
   } as WarRoomCampaign;
 }
 
@@ -254,7 +265,7 @@ function isDraftOnlyRow(campaign: WarRoomCampaign) {
   if (isGraduatedCampaign(campaign)) return false;
   // Real market rows with campaign 0x addresses stay market even if a draft lifecycle row exists.
   const addr = String(campaign.campaign || "");
-  const looksLikeMarket = /^0x[a-f0-9]{40}$/i.test(addr);
+  const looksLikeMarket = /^0x[a-f0-9]{40}$/i.test(addr) || isSolanaAddress(addr);
   if (looksLikeMarket && (rich.isActive === true || rich.status === "live" || Number(rich.marketCapBnb || 0) > 0 || Number(rich.raisedTotalBnb || 0) > 0)) {
     return false;
   }

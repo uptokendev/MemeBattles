@@ -40,7 +40,8 @@ function parseRawAmount(rawValue: unknown): bigint {
   }
 }
 
-function timestampSec(value: unknown): number {
+/** Unix seconds. Accepts sec, ms, Date, ISO, or numeric strings. */
+export function timestampSec(value: unknown): number {
   if (value instanceof Date) return Math.floor(value.getTime() / 1000);
   if (typeof value === "number") return Math.floor(value > 1e12 ? value / 1000 : value);
   const text = String(value || "").trim();

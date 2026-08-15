@@ -106,7 +106,13 @@ export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | un
       if (!key) continue;
       const prev = byKey.get(key);
       if (!prev || tradeQuality(point) >= tradeQuality(prev)) {
-        byKey.set(key, { ...point, txHash: tx });
+        const next = { ...point, txHash: tx };
+        // Never let a later/optimistic clock be replaced by a stale indexer time.
+        // That is what collapsed "traded yesterday" + "traded now" into one 1m bar.
+        const nextTs = Number(next.timestamp || 0);
+        const prevTs = Number(prev?.timestamp || 0);
+        if (prevTs > nextTs) next.timestamp = prevTs;
+        byKey.set(key, next);
       }
     }
   }

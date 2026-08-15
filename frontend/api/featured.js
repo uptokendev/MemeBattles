@@ -108,7 +108,12 @@ ${LIFECYCLE_SELECT}
      FROM vote_aggregates va
      INNER JOIN campaigns c
        ON c.chain_id = va.chain_id
-      AND c.campaign_address = va.campaign_address
+      AND (
+        c.campaign_address = va.campaign_address
+        OR (c.token_address is not null AND c.token_address = va.campaign_address)
+        OR lower(c.campaign_address) = lower(va.campaign_address)
+        OR (c.token_address is not null AND lower(c.token_address) = lower(va.campaign_address))
+      )
 ${LIFECYCLE_JOIN}
      LEFT JOIN token_stats ts
        ON ts.chain_id = c.chain_id

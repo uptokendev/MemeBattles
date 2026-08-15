@@ -17,12 +17,15 @@ function isTruthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 
+const DEFAULT_SOLANA_VOTE_TREASURY = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
+
 function solanaVoteTreasury() {
   const candidates = [
     process.env.SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_VOTE_TREASURY_ADDRESS_101,
     process.env.VOTE_TREASURY_ADDRESS_101,
+    DEFAULT_SOLANA_VOTE_TREASURY,
   ];
   for (const c of candidates) {
     const v = String(c || "").trim();
@@ -171,6 +174,43 @@ function extractSolTransfer(tx, voter, treasury) {
   };
 }
 
+async function resolveSolanaVoteCampaign(chainId, address) {
+  const raw = String(address || "").trim();
+  if (!raw) return null;
+  const { rows } = await pool.query(
+    `select campaign_address, token_address, graduated_at_chain
+       from public.campaigns
+      where chain_id = $1
+        and (
+          campaign_address = $2
+          or token_address = $2
+          or lower(campaign_address) = lower($2)
+          or (token_address is not null and lower(token_address) = lower($2))
+        )
+      order by
+        case when campaign_address = $2 then 0
+             when token_address = $2 then 1
+             else 2
+        end
+      limit 1`,
+    [chainId, raw],
+  );
+  return rows[0] || null;
+}
+
+function memoMatchesCampaign(memoCampaign, row, requested) {
+  const memo = String(memoCampaign || "").trim();
+  if (!memo) return false;
+  const candidates = [
+    requested,
+    row?.campaign_address,
+    row?.token_address,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  return candidates.some((value) => value === memo);
+}
+
 async function patchVoteAggregates(chainId, campaign) {
   // Case-preserving identity for Solana; do not force lower().
   const r = await pool.query(
@@ -269,6 +309,9 @@ export async function solanaVoteIngest(req, res) {
       });
     }
 
+    const resolved = await resolveSolanaVoteCampaign(chainId, campaignAddress);
+    const canonicalCampaign = String(resolved?.campaign_address || campaignAddress).trim();
+
     const rpcUrl = String(process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com").trim();
     const tx = await rpcCall(rpcUrl, "getTransaction", [
       signature,
@@ -287,7 +330,7 @@ export async function solanaVoteIngest(req, res) {
     }
 
     const memoCampaign = extractUpvoteMemoCampaign(tx);
-    if (!memoCampaign || memoCampaign !== campaignAddress) {
+    if (!memoMatchesCampaign(memoCampaign, resolved, campaignAddress)) {
       return json(res, 400, {
         error: "Vote transaction must include a memo binding this campaign (mwz-upvote:<campaign>).",
         code: "SOLANA_VOTE_CAMPAIGN_UNBOUND",
@@ -324,7 +367,7 @@ export async function solanaVoteIngest(req, res) {
        on conflict do nothing`,
       [
         chainId,
-        campaignAddress,
+        canonicalCampaign,
         voterAddress,
         SYSTEM_PROGRAM,
         transfer.amountLamports.toString(),
@@ -345,7 +388,7 @@ export async function solanaVoteIngest(req, res) {
            on conflict (chain_id, tx_hash, log_index) do nothing`,
           [
             chainId,
-            campaignAddress,
+            canonicalCampaign,
             voterAddress,
             SYSTEM_PROGRAM,
             transfer.amountLamports.toString(),
@@ -361,14 +404,14 @@ export async function solanaVoteIngest(req, res) {
       throw err;
     });
 
-    const agg = await patchVoteAggregates(chainId, campaignAddress);
+    const agg = await patchVoteAggregates(chainId, canonicalCampaign);
 
     return json(res, 200, {
       ok: true,
       items: [
         {
           chainId,
-          campaignAddress,
+          campaignAddress: canonicalCampaign,
           voterAddress,
           txHash: signature,
           amountLamports: transfer.amountLamports.toString(),

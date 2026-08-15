@@ -6,6 +6,11 @@ import { getActiveChainId, getFactoryAddress, isSolanaChainId } from "@/lib/chai
 import { getReadProvider } from "@/lib/readProvider";
 import { isEvmAddress, isSolanaAddress, normalizeAddress } from "@/lib/address";
 import { apiFetch } from "@/lib/apiBase";
+import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
+import {
+  fetchSolanaCampaignCurveState,
+  solanaMarginalSpotSol,
+} from "@/lib/solanaCampaignRead";
 
 type FetchCampaigns = () => Promise<any[]>;
 type FetchCampaignSummary = (campaign: any) => Promise<CampaignSummary>;
@@ -107,6 +112,44 @@ async function fetchCreatedCampaignsOnChain(chainId: number | undefined, creator
   }
 }
 
+function formatCompactUsd(usd: number): string {
+  if (!Number.isFinite(usd) || usd <= 0) return "—";
+  const abs = Math.abs(usd);
+  const fmt = (v: number, suffix: string) => {
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+    return `$${v.toFixed(decimals)}${suffix}`;
+  };
+  if (abs >= 1e12) return fmt(usd / 1e12, "T");
+  if (abs >= 1e9) return fmt(usd / 1e9, "B");
+  if (abs >= 1e6) return fmt(usd / 1e6, "M");
+  if (abs >= 1e3) return fmt(usd / 1e3, "K");
+  const decimals = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
+  return `$${usd.toFixed(decimals)}`;
+}
+
+function nativeAmount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+async function solanaMarketCapLabel(item: any, solUsd: number | null): Promise<string> {
+  const fromStats = nativeAmount(item?.marketcapBnb ?? item?.marketCapBnb);
+  const fromPriceSold =
+    nativeAmount(item?.lastPriceBnb ?? item?.priceBnb) * nativeAmount(item?.soldTokens);
+  const native = fromStats || fromPriceSold;
+  if (native > 0 && solUsd && solUsd > 0) return formatCompactUsd(native * solUsd);
+  if (native > 0) return `${native.toFixed(2)} SOL`;
+
+  const curve = await fetchSolanaCampaignCurveState(String(item?.campaign || "")).catch(() => null);
+  if (!curve) return "—";
+  const spot = solanaMarginalSpotSol(curve, curve.soldTokens);
+  const decimals = Number(curve.tokenDecimals || 6);
+  const soldWhole = Number(curve.soldTokens) / 10 ** decimals;
+  if (!(spot > 0 && soldWhole > 0)) return "—";
+  if (solUsd && solUsd > 0) return formatCompactUsd(spot * soldWhole * solUsd);
+  return `${(spot * soldWhole).toFixed(2)} SOL`;
+}
+
 /** Load Solana campaigns from the shared registry by creator wallet. */
 async function fetchSolanaCreatedCampaigns(creator: string): Promise<any[]> {
   try {
@@ -132,6 +175,10 @@ async function fetchSolanaCreatedCampaigns(creator: string): Promise<any[]> {
         extraLink: String(item.extraLink || ""),
         createdAt: item.createdAtChain ? Math.floor(new Date(item.createdAtChain).getTime() / 1000) : undefined,
         chainId: 101,
+        marketcapBnb: item.marketcapBnb,
+        lastPriceBnb: item.lastPriceBnb,
+        soldTokens: item.soldTokens,
+        holderCount: item.holderCount,
       }));
   } catch (error) {
     console.warn("[Profile] Solana campaigns fetch failed", error);
@@ -147,6 +194,9 @@ export function useCreatedCampaigns({
   fetchCampaignSummary,
 }: UseCreatedCampaignsArgs) {
   const [created, setCreated] = useState<CreatedCampaignCard[]>([]);
+  const { price: solUsd } = useSolUsdPrice(
+    isSolanaChainId(Number(chainId)) || isSolanaAddress(viewedAddress) || isSolanaAddress(account),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -177,9 +227,8 @@ export function useCreatedCampaigns({
         if (cancelled) return;
 
         if (solanaOwner) {
-          // Solana registry rows already have display fields — skip heavy EVM summary RPC.
-          setCreated(
-            mine.map((c, idx) => ({
+          const cards = await Promise.all(
+            mine.map(async (c, idx) => ({
               id: typeof c.id === "number" ? c.id : idx + 1,
               image: c.logoURI || "/placeholder.svg",
               name: c.name || "Solana campaign",
@@ -187,10 +236,12 @@ export function useCreatedCampaigns({
               campaignAddress: c.campaign,
               tokenAddress: c.token,
               chainId: 101,
-              marketCap: "—",
+              marketCap: await solanaMarketCapLabel(c, solUsd),
               timeAgo: c.createdAt ? formatTimeAgo(c.createdAt) : "",
+              buyersCount: Number(c.holderCount || 0) || undefined,
             })),
           );
+          if (!cancelled) setCreated(cards);
           return;
         }
 
@@ -226,7 +277,7 @@ export function useCreatedCampaigns({
     return () => {
       cancelled = true;
     };
-  }, [viewedAddress, account, chainId, fetchCampaigns, fetchCampaignSummary]);
+  }, [viewedAddress, account, chainId, fetchCampaigns, fetchCampaignSummary, solUsd]);
 
   return created;
 }
