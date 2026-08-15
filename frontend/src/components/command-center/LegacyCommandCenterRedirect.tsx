@@ -1,7 +1,7 @@
 import { Navigate } from "react-router-dom";
 
 import { useWallet } from "@/contexts/WalletContext";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
 import { normalizeRouteWallet } from "@/lib/address";
 
 type CommandCenterSection =
@@ -21,14 +21,8 @@ type LegacyCommandCenterRedirectProps = {
 
 export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedirectProps) {
   const evmWallet = useWallet();
-  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
-  const anyWallet: any = evmWallet as any;
-  const isEvmConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account);
-  const accountWallet = isSolanaConnected && solanaAccount
-    ? normalizeRouteWallet(solanaAccount)
-    : isEvmConnected
-      ? normalizeRouteWallet(evmWallet.account)
-      : null;
+  const feedWallet = useActiveFeedWallet();
+  const accountWallet = normalizeRouteWallet(feedWallet.address || evmWallet.account);
 
   if (!accountWallet) {
     return <Navigate to="/profile" replace />;

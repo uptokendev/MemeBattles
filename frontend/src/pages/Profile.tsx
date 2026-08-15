@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
 import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { isSolanaAddress, normalizeAddress } from "@/lib/address";
 import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
@@ -44,21 +45,16 @@ const Profile = () => {
   const navigate = useNavigate();
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
+  const feedWallet = useActiveFeedWallet();
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
 
   const anyWallet: any = wallet as any;
 
-  const solanaAccount = solanaWallet.solanaAccount || null;
-  const evmAccount = wallet.account ?? null;
-  // Prefer Solana when only Solana is connected; prefer EVM when both (BNB profile path).
-  const isSolanaProfile = Boolean(solanaAccount && !evmAccount);
-  const isConnected: boolean = Boolean(evmAccount || solanaAccount);
-
-  const account: string | null = isConnected
-    ? isSolanaProfile
-      ? solanaAccount
-      : evmAccount || solanaAccount
-    : null;
+  const solanaAccount = feedWallet.solanaAccount || solanaWallet.solanaAccount || null;
+  const evmAccount = feedWallet.evmAccount || wallet.account || null;
+  const isSolanaProfile = Boolean(feedWallet.isSolana || isSolanaAddress(feedWallet.address));
+  const isConnected: boolean = Boolean(feedWallet.address || evmAccount || solanaAccount);
+  const account: string | null = feedWallet.address || (isSolanaProfile ? solanaAccount : evmAccount);
 
   const {
     addressParam,
@@ -1385,6 +1381,15 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                                 Promotion draft
                               </span>
                             )}
+                            {(Number(campaign.chainId) === 101 || Number(campaign.chainId) === 102) ? (
+                              <span className="shrink-0 rounded-full border border-purple-400/40 px-2 py-0.5 text-[10px] text-purple-300">
+                                SOL
+                              </span>
+                            ) : Number(campaign.chainId) === 56 || Number(campaign.chainId) === 97 ? (
+                              <span className="shrink-0 rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">
+                                BNB
+                              </span>
+                            ) : null}
                           </div>
 
                           <div className="text-xs text-muted-foreground truncate">

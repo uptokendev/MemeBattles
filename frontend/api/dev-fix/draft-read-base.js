@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isSolanaChain, normalizeAddress as normalizeAddressBase, normalizeWalletFlexible, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 
 const STATUSES = new Set([
@@ -98,7 +98,7 @@ function popularityFromMetrics(metrics, extras = {}) {
   const views = Number(m.views || 0);
   const follows = Number(extras.follows ?? m.follows ?? 0);
   const comments = Number(extras.comments ?? m.comments ?? 0);
-  const reactions = Number(m.reactions || 0);
+  const reactions = Number(extras.reactions ?? m.reactions ?? 0);
   const shares = Number(m.shares || 0);
   const signedActions = Number(m.signedActions ?? m.signed_actions ?? 0);
   const armedCount = Number(extras.armedCount ?? 0);
@@ -109,7 +109,13 @@ function popularityFromMetrics(metrics, extras = {}) {
 }
 
 async function getDraftEngagementCounts(pool, draft) {
-  const [followRes, armedCountRes, nonCreatorCommentRes] = await Promise.all([
+  const creator = String(draft.creatorWallet || "").trim();
+  const solanaCreator = creator.length >= 32 && !creator.startsWith("0x");
+  const commentAuthorNeq = solanaCreator
+    ? "(wallet_address <> $2 and lower(wallet_address) <> lower($2))"
+    : "lower(wallet_address) <> lower($2)";
+
+  const [followRes, armedCountRes, nonCreatorCommentRes, reactionRes] = await Promise.all([
     pool
       .query("select count(*)::int as count from public.campaign_draft_follows where draft_id = $1", [draft.id])
       .catch(() => ({ rows: [{ count: 0 }] })),
@@ -122,8 +128,17 @@ async function getDraftEngagementCounts(pool, draft) {
            from public.campaign_draft_comments
           where draft_id = $1
             and moderation_status = 'visible'
-            and lower(wallet_address) <> lower($2)`,
-        [draft.id, draft.creatorWallet],
+            and ${commentAuthorNeq}`,
+        [draft.id, creator],
+      )
+      .catch(() => ({ rows: [{ count: 0 }] })),
+    pool
+      .query(
+        `select coalesce(sum(reaction_count), 0)::int as count
+           from public.campaign_draft_comments
+          where draft_id = $1
+            and moderation_status = 'visible'`,
+        [draft.id],
       )
       .catch(() => ({ rows: [{ count: 0 }] })),
   ]);
@@ -132,6 +147,7 @@ async function getDraftEngagementCounts(pool, draft) {
     follows: Number(followRes.rows[0]?.count || 0),
     armedCount: Number(armedCountRes.rows[0]?.count || 0),
     comments: Number(nonCreatorCommentRes.rows[0]?.count || 0),
+    reactions: Number(reactionRes.rows[0]?.count || 0),
   };
 }
 
@@ -200,7 +216,8 @@ export async function signedPrepareBySlug(req, res) {
   if (!draft) return json(res, 404, { error: "Prepare page not found" });
 
   const q = getQuery(req);
-  let viewer = normalizeAddress(q.viewer || "", draft.chainId);
+  // Public viewer hydrate (Armed / Following) is wallet-identity, not draft-chain.
+  let viewer = normalizeWalletFlexible(q.viewer || "");
 
   if (draft.visibility === "private") {
     let auth = null;

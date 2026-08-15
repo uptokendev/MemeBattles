@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ProfileTab } from "@/types/profile";
 import type { ActivityTradeRow } from "@/types/profilePage";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { normalizeAddress } from "@/lib/address";
 
 export type ProfileActivityTab = "trades" | "comments" | "created" | "interactions";
 
@@ -35,7 +36,7 @@ export function useProfileActivity({
     }
 
     const ac = new AbortController();
-    const addr = viewedAddress.toLowerCase();
+    const addr = normalizeAddress(viewedAddress);
     const cid = Number(chainId ?? 97);
 
     setActivityLoading(true);

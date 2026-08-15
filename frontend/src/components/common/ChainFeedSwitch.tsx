@@ -1,16 +1,74 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { isEvmAddress } from "@/lib/address";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, isEvmChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import { getCampaignFeedChainId } from "@/lib/feedChainConfig";
+import { ACTIVE_WALLET_KIND_KEY, FEED_CHAIN_EVENT, FEED_CHAIN_KEY, getActiveWalletKind, setActiveWalletKind } from "@/lib/activeWalletChain";
 
-const FEED_CHAIN_KEY = "mwz:selected_feed_chain_id";
-const FEED_CHAIN_EVENT = "memewarzone:feedChainChanged";
-
-function resolveBnbFeedChainId(): SupportedChainId {
+export function resolveBnbFeedChainId(): SupportedChainId {
   // Prefer configured/dev-testnet feed chain (usually 97 for postgrad inventory).
   const configured = getCampaignFeedChainId();
   if (configured === BNB_TESTNET_CHAIN_ID || configured === BNB_CHAIN_ID) return configured;
   return BNB_CHAIN_ID;
+}
+
+function bnbFeedForWallet(chainId?: number | null): SupportedChainId {
+  if (isEvmChainId(chainId)) return chainId as SupportedChainId;
+  return resolveBnbFeedChainId();
+}
+
+/**
+ * Last connected wallet owns the whole frontend.
+ * Phantom/Solana present → Solana feed. Explicit BNB connect → BNB feed.
+ */
+export function useLatchFeedChainToWallet() {
+  const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const prevSolana = useRef<string | null | undefined>(undefined);
+  const prevEvm = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const solanaNow = isSolanaConnected && solanaAccount ? String(solanaAccount) : null;
+    const evmNow = wallet.isConnected && isEvmAddress(wallet.account) ? String(wallet.account) : null;
+    const firstRun = prevSolana.current === undefined && prevEvm.current === undefined;
+    const solanaConnected = Boolean(solanaNow && solanaNow !== prevSolana.current);
+    const evmConnected = Boolean(evmNow && evmNow !== prevEvm.current);
+
+    const activateSolana = () => {
+      setActiveWalletKind("solana");
+      setSelectedFeedChainId(SOLANA_CHAIN_ID);
+    };
+    const activateBnb = () => {
+      setActiveWalletKind("bnb");
+      setSelectedFeedChainId(bnbFeedForWallet(wallet.chainId));
+    };
+
+    if (firstRun) {
+      // Restored Phantom must beat leftover MetaMask on refresh.
+      if (solanaNow) activateSolana();
+      else if (evmNow) activateBnb();
+    } else if (solanaConnected) {
+      activateSolana();
+    } else if (evmConnected && !solanaNow) {
+      // Auto-reconnect of MetaMask must not steal the app from a live Solana session.
+      // Explicit BNB connect goes through the wallet modal and sets the feed directly.
+      activateBnb();
+    } else if (!solanaNow && prevSolana.current && evmNow) {
+      activateBnb();
+    } else if (!evmNow && prevEvm.current && solanaNow) {
+      activateSolana();
+    }
+
+    prevSolana.current = solanaNow;
+    prevEvm.current = evmNow;
+  }, [isSolanaConnected, solanaAccount, wallet.isConnected, wallet.account, wallet.chainId]);
+}
+
+export function FeedChainWalletLatch() {
+  useLatchFeedChainToWallet();
+  return null;
 }
 
 function normalizeFeedChainId(value: unknown): SupportedChainId {
@@ -23,6 +81,7 @@ function normalizeFeedChainId(value: unknown): SupportedChainId {
 export function getSelectedFeedChainId(): SupportedChainId {
   if (typeof window === "undefined") return resolveBnbFeedChainId();
   try {
+    if (getActiveWalletKind() === "solana") return SOLANA_CHAIN_ID;
     return normalizeFeedChainId(window.localStorage.getItem(FEED_CHAIN_KEY));
   } catch {
     return resolveBnbFeedChainId();
@@ -35,6 +94,7 @@ export function setSelectedFeedChainId(chainId: SupportedChainId): SupportedChai
     try {
       window.localStorage.setItem(FEED_CHAIN_KEY, String(next));
       window.localStorage.setItem("mwz:last_featured_chain_id", String(next));
+      window.localStorage.setItem(ACTIVE_WALLET_KIND_KEY, next === SOLANA_CHAIN_ID ? "solana" : "bnb");
       window.dispatchEvent(new CustomEvent(FEED_CHAIN_EVENT, { detail: { chainId: next } }));
     } catch {
       // ignore storage failures

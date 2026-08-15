@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Archive, Copy, Eye, FileText, Pencil, ShieldCheck } from "lucide-react";
+import { Copy, Eye, FileText, Pencil, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { resolveImageUri } from "@/lib/media";
 import { signDraftAction } from "@/lib/draftAuth";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { isSolanaAddress } from "@/lib/address";
 import {
@@ -153,26 +154,23 @@ export function ProfileDraftsPanel({
     toast.success("Prepare page link copied.");
   };
 
-  const archiveDraft = async (draft: CampaignDraft) => {
+  const removeDraft = async (draft: CampaignDraft) => {
     if (!isOwnProfile) return;
 
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet before archiving.");
+    const draftIsSolana = isSolanaChainId(Number(draft.chainId)) || isSolanaAddress(draft.creatorWallet);
+    const ownerWallet = draftIsSolana ? solanaWallet.solanaAccount : wallet.account;
+    if (!ownerWallet || !walletsMatch(draft.creatorWallet, ownerWallet) || (!draftIsSolana && !wallet.signer)) {
+      toast.error(`Connect the draft owner ${draftIsSolana ? "Solana" : "BNB"} wallet before removing.`);
       return;
     }
 
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
-      toast.error("Only the draft owner wallet can archive this draft.");
-      return;
-    }
-
-    if (draft.status !== "draft") {
-      toast.error("Only unpublished drafts can be archived.");
+    if (draft.status === "deployed" || draft.status === "live") {
+      toast.error("Deployed drafts cannot be removed.");
       return;
     }
 
     const confirmed = window.confirm(
-      `Archive ${draft.name} / $${draft.ticker}? This removes it from public Prepare Mode listings.`
+      `Remove ${draft.name} / $${draft.ticker}? This hides it from Prepare Mode and your profile, and unlocks the ticker.`,
     );
 
     if (!confirmed) return;
@@ -180,23 +178,26 @@ export function ProfileDraftsPanel({
     setBusyDraftId(draft.id);
 
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: "archive_draft",
-        draftId: draft.id,
-      });
+      const auth = draftIsSolana
+        ? await signSolanaDraftAction({
+            walletAddress: ownerWallet,
+            chainId: draft.chainId,
+            action: "archive_draft",
+            draftId: draft.id,
+          })
+        : await signDraftAction({
+            signer: wallet.signer,
+            walletAddress: ownerWallet,
+            chainId: draft.chainId,
+            action: "archive_draft",
+            draftId: draft.id,
+          });
 
-      const updated = await archiveCampaignDraft(draft.id, auth);
-
-      setItems((prev) =>
-        prev.map((item) => (item.id === draft.id ? updated.draft : item))
-      );
-
-      toast.success("Draft archived.");
+      await archiveCampaignDraft(draft.id, auth);
+      setItems((prev) => prev.filter((item) => item.id !== draft.id));
+      toast.success("Draft removed. The ticker is available again.");
     } catch (err: any) {
-      toast.error(err?.message || "Failed to archive draft.");
+      toast.error(err?.message || "Failed to remove draft.");
     } finally {
       setBusyDraftId(null);
     }
@@ -222,7 +223,7 @@ export function ProfileDraftsPanel({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {isOwnProfile
-              ? "Manage your saved drafts, promotion pages, visibility, and archive actions."
+              ? "Manage your saved drafts, promotion pages, visibility, and remove unused drafts."
               : `Public Prepare Mode drafts by ${shortAddr(viewedAddress)}.`}
           </p>
         </div>
@@ -264,7 +265,7 @@ export function ProfileDraftsPanel({
               draft.status === "deployed" && (draft.tokenAddress || draft.campaignAddress)
                 ? `/token/${draft.tokenAddress || draft.campaignAddress}`
                 : `/prepare/${draft.slug}`;
-            const canArchive = isOwnProfile && draft.status === "draft";
+            const canRemove = isOwnProfile && draft.status !== "deployed" && draft.status !== "live" && draft.status !== "archived";
             const isBusy = busyDraftId === draft.id;
 
             return (
@@ -364,15 +365,15 @@ export function ProfileDraftsPanel({
                       </Button>
                     )}
 
-                    {canArchive && (
+                    {canRemove && (
                       <Button
-                        onClick={() => archiveDraft(draft)}
+                        onClick={() => removeDraft(draft)}
                         disabled={isBusy}
                         variant="outline"
                         className="mwz-button h-8 justify-center border-red-500/40 px-2 font-retro text-[10px] text-red-300 hover:border-red-400 hover:text-red-200"
                       >
-                        <Archive className="mr-1 h-3.5 w-3.5" />
-                        {isBusy ? "..." : "Archive"}
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        {isBusy ? "..." : "Remove"}
                       </Button>
                     )}
                   </div>

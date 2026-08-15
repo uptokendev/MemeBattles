@@ -14,6 +14,8 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { resolveBnbFeedChainId, setSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { WAKE_PROVIDER_DISCOVERY_DELAYS_MS } from "@/lib/injectedProviderDiscovery";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 
@@ -245,6 +247,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
 
       try {
         await connect(detectedWallet.id);
+        setSelectedFeedChainId(resolveBnbFeedChainId());
         toast.success(`Connected ${detectedWallet.name}`);
         onOpenChange(false);
       } catch (error) {
@@ -266,6 +269,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
 
       try {
         await connectSolana(option.id);
+        setSelectedFeedChainId(SOLANA_CHAIN_ID);
         toast.success(`Connected ${option.name}`);
         onOpenChange(false);
       } catch (error: any) {
@@ -298,8 +302,8 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   }, [disconnectSolana, onOpenChange]);
 
   const connectedSummary = useMemo(() => {
-    if (isConnected && account) return { label: "BNB wallet connected", detail: `${chainId ? `Chain ${chainId} · ` : ""}${shortAddress(account)}`, accent: "accent" as const };
     if (isSolanaConnected && solanaAccount) return { label: "Solana wallet connected", detail: `${solanaWalletName ? `${solanaWalletName} · ` : ""}${shortAddress(solanaAccount)}`, accent: "solana" as const };
+    if (isConnected && account) return { label: "BNB wallet connected", detail: `${chainId ? `Chain ${chainId} · ` : ""}${shortAddress(account)}`, accent: "accent" as const };
     return null;
   }, [account, chainId, isConnected, isSolanaConnected, solanaAccount, solanaWalletName]);
 

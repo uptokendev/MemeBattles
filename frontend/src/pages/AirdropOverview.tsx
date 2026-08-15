@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { useWallet } from "@/contexts/WalletContext";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
 import { isSolanaAddress } from "@/lib/address";
 import { isSolanaChainId } from "@/lib/chainConfig";
 import { fetchWalletRewardSummary, type WalletRewardSummary } from "@/lib/recruiterApi";
@@ -86,9 +87,10 @@ function EligibilityCard(props: {
 
 export default function AirdropOverview() {
   const wallet = useWallet();
-  const account = wallet.account || "";
-  const solana = isSolanaAddress(account) || isSolanaChainId(Number(wallet.chainId));
-  const chainId = solana ? 101 : Number(wallet.chainId || 97);
+  const feedWallet = useActiveFeedWallet();
+  const account = feedWallet.address || wallet.account || "";
+  const solana = feedWallet.isSolana || isSolanaAddress(account) || isSolanaChainId(Number(feedWallet.chainId));
+  const chainId = solana ? 101 : Number(feedWallet.chainId || wallet.chainId || 97);
   const symbol = solana ? "SOL" : "BNB";
 
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);

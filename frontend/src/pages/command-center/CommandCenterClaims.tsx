@@ -8,6 +8,8 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { addressesMatch } from "@/lib/address";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
 import {
@@ -161,6 +163,7 @@ function buildRewardCards(
   squadState?: string | null,
   recruiterLinkState?: string | null,
   isRecruiterFlag?: boolean,
+  chainId?: number | null,
 ): RewardCardConfig[] {
   const recruiterOk = hasRecruiterAccess(recruiterLinkState, isRecruiterFlag);
   const squadOk = hasActiveSquad(squadState, recruiterLinkState);
@@ -199,7 +202,7 @@ function buildRewardCards(
       description: copy.description,
       icon: copy.icon,
       buttonLabel: state === "failed" ? "Retry Claim" : `Claim ${copy.title}`,
-      amountLabel: formatNativeAmount(String(amountSum(groupItems)), first?.chainId, first?.tokenSymbol),
+      amountLabel: formatNativeAmount(String(amountSum(groupItems)), first?.chainId ?? chainId, first?.tokenSymbol),
       state,
       items: groupItems,
     };
@@ -209,6 +212,7 @@ function buildRewardCards(
 export default function CommandCenterClaims() {
   const { attribution, chainId, walletAddress } = useCommandCenterData();
   const wallet = useWallet();
+  const { solanaAccount } = useSolanaWallet();
   const [items, setItems] = useState<RewardLedgerItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [claimingType, setClaimingType] = useState<string | null>(null);
@@ -248,8 +252,8 @@ export default function CommandCenterClaims() {
   }, [walletAddress]);
 
   const rewardCards = useMemo(
-    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag),
-    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag],
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag, chainId),
+    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag, chainId],
   );
   const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState, isRecruiterFlag);
 
@@ -264,15 +268,14 @@ export default function CommandCenterClaims() {
 
     const signer = wallet?.signer;
     if (!signer) {
-      setMessage("Connect your BNB wallet before claiming rewards.");
+      setMessage("Connect the wallet that owns these rewards before claiming.");
       try {
         window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       } catch {}
       return;
     }
 
-    const activeAccount = String(wallet.account || "").toLowerCase();
-    if (!activeAccount || activeAccount !== String(walletAddress || "").toLowerCase()) {
+    if (!addressesMatch(wallet.account, walletAddress) && !addressesMatch(solanaAccount, walletAddress)) {
       setMessage("Connect the same wallet that owns these rewards before claiming.");
       return;
     }
@@ -338,7 +341,7 @@ export default function CommandCenterClaims() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterCard title="Your Rewards">
+      <CommandCenterCard title={isSolana(chainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
         {message ? <div className="mb-3 rounded-xl border border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">{message}</div> : null}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {

@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { normalizeAddress } from "@/lib/address";
 
 export type RewardItem = {
   period: "weekly" | "monthly";
@@ -66,7 +67,7 @@ export function buildLeagueClaimMessage(args: {
     "MemeWarzone League",
     "Action: LEAGUE_CLAIM",
     `ChainId: ${chainId}`,
-    `Recipient: ${recipient.toLowerCase()}`,
+    `Recipient: ${normalizeAddress(recipient)}`,
     `Period: ${period}`,
     `EpochStart: ${epochStart}`,
     `Category: ${category}`,
@@ -76,7 +77,7 @@ export function buildLeagueClaimMessage(args: {
 }
 
 export async function fetchClaimableRewards(chainId: number, address: string): Promise<RewardItem[]> {
-  const qs = new URLSearchParams({ chainId: String(chainId), address: address.toLowerCase() });
+  const qs = new URLSearchParams({ chainId: String(chainId), address: normalizeAddress(address) });
   const r = await fetch(`/api/rewards?${qs.toString()}`);
   const j = await r.json();
   return Array.isArray(j?.rewards) ? (j.rewards as RewardItem[]) : [];
@@ -90,7 +91,7 @@ export async function fetchMonthlyClaim(
   const qs = new URLSearchParams({
     chainId: String(chainId),
     monthId,
-    wallet: address.toLowerCase(),
+    wallet: normalizeAddress(address),
   });
   const { apiFetch } = await import("@/lib/apiBase");
   const r = await apiFetch(`/api/league?${qs.toString()}`);

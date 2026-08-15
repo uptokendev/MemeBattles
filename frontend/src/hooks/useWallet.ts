@@ -550,6 +550,43 @@ export function useWallet(): WalletHook {
     };
   }, [setDetectedWalletSnapshot]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+
+    const restore = async () => {
+      try {
+        if (window.localStorage.getItem(DISCONNECTED_KEY) === "1") return;
+        const selectedId = String(window.localStorage.getItem(SELECTED_WALLET_KEY) || "").trim();
+        if (!selectedId || accountRef.current) return;
+        requestEip6963Providers();
+        setDetectedWalletSnapshot();
+        let selectedWallet = findWallet(selectedId as WalletType);
+        if (!selectedWallet?.provider) return;
+        const accounts = normalizeAccounts(
+          await selectedWallet.provider.request({ method: "eth_accounts" }),
+        );
+        const chosen = await chooseAccount(selectedWallet.provider, accounts);
+        if (!chosen || cancelled || accountRef.current) return;
+        const browserProvider = new BrowserProvider(selectedWallet.provider);
+        const network = await browserProvider.getNetwork();
+        const cid = Number(network.chainId);
+        if (!isAllowedChainId(cid)) return;
+        bindListeners(selectedWallet.provider);
+        await applyProviderState(selectedWallet.provider, chosen, selectedWallet.id);
+        if (!cancelled) setChainId(cid);
+      } catch {
+        // Silent restore only — never prompt on refresh.
+      }
+    };
+
+    const timers = [80, 250, 800, 1600].map((delay) => window.setTimeout(() => { void restore(); }, delay));
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [applyProviderState, bindListeners, setDetectedWalletSnapshot]);
+
   const connect = useCallback(async (wallet?: WalletType) => {
     if (typeof window === "undefined") throw new Error("No browser environment detected.");
     if (!wallet) {

@@ -29,6 +29,7 @@ export type HomeQuery = {
     | "mcap_asc"
     | "votes_desc"
     | "progress_desc"
+    | "popular_desc"
     | "created_desc"
     | "created_asc";
   timeFilter?: "1h" | "24h" | "7d" | "all";

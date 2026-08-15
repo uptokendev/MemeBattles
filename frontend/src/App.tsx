@@ -8,11 +8,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { useState, type CSSProperties } from "react";
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { SolanaWalletProvider } from "@/contexts/SolanaWalletContext";
+import { FeedChainWalletLatch } from "@/components/common/ChainFeedSwitch";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
+import { normalizeRouteWallet, routeWalletsMatch } from "@/lib/address";
 import Showcase from "./pages/Showcase";
 import Arena from "./pages/Arena";
 import ArenaBattles from "./pages/ArenaBattles";
@@ -71,6 +74,33 @@ import { DocumentTitleSync } from "@/hooks/useDocumentTitle";
 
 const queryClient = new QueryClient();
 
+function OwnWalletRouteSync() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const feedWallet = useActiveFeedWallet();
+  const previousWalletRef = useRef<string | null>(null);
+  const currentWallet = normalizeRouteWallet(feedWallet.address);
+
+  useEffect(() => {
+    const previousWallet = previousWalletRef.current;
+    previousWalletRef.current = currentWallet;
+    if (!previousWallet || !currentWallet || routeWalletsMatch(previousWallet, currentWallet)) return;
+
+    const match = location.pathname.match(/^\/profile\/([^/]+)(\/command(?:\/.*)?)?$/);
+    if (!match) return;
+    let urlWallet = match[1];
+    try {
+      urlWallet = decodeURIComponent(match[1]);
+    } catch {
+      // keep raw
+    }
+    if (!routeWalletsMatch(urlWallet, previousWallet)) return;
+    navigate(`/profile/${currentWallet}${match[2] || ""}${location.search}`, { replace: true });
+  }, [currentWallet, location.pathname, location.search, navigate]);
+
+  return null;
+}
+
 function AppShellLayout({
   mobileMenuOpen,
   setMobileMenuOpen,
@@ -106,6 +136,7 @@ function AppShellLayout({
       style={mainStyle}
     >
       <DocumentTitleSync />
+      <OwnWalletRouteSync />
       <div className="hidden lg:block">
         <LeftBattleSidebar collapsed={leftSidebarCollapsed} onToggleCollapse={toggleLeftSidebar} />
       </div>
@@ -210,6 +241,7 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
         <SolanaWalletProvider>
+          <FeedChainWalletLatch />
           <TooltipProvider>
             <Toaster />
             <Sonner />

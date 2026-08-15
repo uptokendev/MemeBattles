@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, Copy, Eye, Flame, ImageIcon, LockKeyhole, Rocket, Save, ShieldCheck, UploadCloud } from "lucide-react";
+import { Copy, Eye, Flame, ImageIcon, LockKeyhole, Rocket, Save, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -366,21 +366,21 @@ export default function DraftPromotionSetup() {
   const archiveCurrentDraft = async () => {
     if (!draft) return;
     if (!ownerConnected) {
-      toast.error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before archiving.`);
+      toast.error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before removing.`);
       return;
     }
     if (draft.status === "deployed") {
-      toast.error("Deployed drafts cannot be archived.");
+      toast.error("Deployed drafts cannot be removed.");
       return;
     }
-    const confirmed = window.confirm(`Archive ${draft.name} / $${draft.ticker}? This removes it from public Prepare Mode listings.`);
+    const confirmed = window.confirm(`Remove ${draft.name} / $${draft.ticker}? This hides it from Prepare Mode and unlocks the ticker.`);
     if (!confirmed) return;
 
     setSaving(true);
     try {
       const auth = await signOwnerAction("archive_draft");
       await archiveCampaignDraft(draftId, auth);
-      toast.success("Draft archived.");
+      toast.success("Draft removed. The ticker is available again.");
       navigate("/profile?tab=drafts");
     } catch (err: any) {
       toast.error(err?.message || "Failed to archive draft.");
@@ -618,7 +618,7 @@ export default function DraftPromotionSetup() {
             <div className="grid gap-2">
               <Button onClick={copyLink} variant="outline" className="mwz-button h-9 w-full justify-center font-retro text-xs"><Flame className="mr-2 h-4 w-4" /> Copy link</Button>
               <Button onClick={archiveCurrentDraft} disabled={saving || uploadingLogo || !ownerConnected || draft.status === "deployed" || draft.status === "archived"} variant="outline" className="mwz-button h-9 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200">
-                <Archive className="mr-2 h-4 w-4" /> {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
+                <Trash2 className="mr-2 h-4 w-4" /> {draft.status === "archived" ? "Draft Removed" : "Remove Draft"}
               </Button>
             </div>
           </div>

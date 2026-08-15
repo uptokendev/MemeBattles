@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Bell,
@@ -60,6 +60,57 @@ function shortWallet(value: string) {
   if (!value) return "Unknown";
   if (value.startsWith("@")) return value;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+type PrepareActingKind = "evm" | "solana";
+const PREPARE_ACTING_KIND_KEY = "mwz:prepare-acting-kind";
+
+function readActingKind(): PrepareActingKind | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.sessionStorage.getItem(PREPARE_ACTING_KIND_KEY);
+    return value === "evm" || value === "solana" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActingKind(kind: PrepareActingKind) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PREPARE_ACTING_KIND_KEY, kind);
+  } catch {
+    // ignore
+  }
+}
+
+function isSolanaDraftChain(chainId?: number | null) {
+  return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function resolveActingWallet(input: {
+  evmAccount?: string | null;
+  solanaAccount?: string | null;
+  draftChainId?: number | null;
+  preferredKind?: PrepareActingKind | null;
+}): { address: string | null; kind: PrepareActingKind | null; canSwitch: boolean } {
+  const evmAccount = String(input.evmAccount || "").trim();
+  const solanaAccount = String(input.solanaAccount || "").trim();
+  const hasEvm = Boolean(evmAccount);
+  const hasSol = Boolean(solanaAccount);
+
+  if (!hasEvm && !hasSol) return { address: null, kind: null, canSwitch: false };
+  if (hasEvm && !hasSol) return { address: evmAccount, kind: "evm", canSwitch: false };
+  if (hasSol && !hasEvm) return { address: solanaAccount, kind: "solana", canSwitch: false };
+
+  if (input.preferredKind === "evm") return { address: evmAccount, kind: "evm", canSwitch: true };
+  if (input.preferredKind === "solana") return { address: solanaAccount, kind: "solana", canSwitch: true };
+
+  // Both connected, no explicit choice: keep same-chain follow/arm as the default.
+  if (isSolanaDraftChain(input.draftChainId)) {
+    return { address: solanaAccount, kind: "solana", canSwitch: true };
+  }
+  return { address: evmAccount, kind: "evm", canSwitch: true };
 }
 
 function statusLabel(status: string) {
@@ -172,7 +223,15 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version
   return `${publicAppOrigin()}/api/prepare-share-card?${params.toString()}`;
 }
 
-function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: string }) {
+function RadarCard({
+  percentage,
+  heatLabel,
+  comments = 0,
+}: {
+  percentage: number;
+  heatLabel: string;
+  comments?: number;
+}) {
   const [pulse, setPulse] = useState(0);
   const [drift, setDrift] = useState(0);
 
@@ -216,7 +275,7 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
       </div>
 
       <div className="mt-4 flex items-center justify-between text-xs uppercase tracking-[0.18em]">
-        <span className="mwz-muted">Signal</span>
+        <span className="mwz-muted">{Number(comments) || 0} transmissions</span>
         <span className="text-orange-300 transition-all duration-300">
           {livePercentage}% · {heatLabel}
         </span>
@@ -381,175 +440,159 @@ function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-4">
-      <div className="mwz-card flex max-h-[min(92vh,900px)] w-full max-w-5xl flex-col overflow-hidden border-orange-400/50 bg-black/95">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/50 p-4 md:p-5">
-          <div className="min-w-0">
-            <div className="text-xs uppercase tracking-[0.22em] text-orange-300">
-              // Dynamic share card
-            </div>
-            <h3 className="mt-1 font-retro text-2xl uppercase tracking-[0.08em] text-foreground md:text-3xl">
-              Share on X
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              X cannot auto-attach images from a website button. Save the share card, open
-              your post, then attach the PNG — same pattern as trade P&amp;L cards.
-            </p>
-          </div>
-
-          <button type="button" onClick={onClose} className="mwz-button h-9 w-9 shrink-0">
-            <X className="mx-auto h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
-        <div className="relative overflow-hidden border border-border/70 bg-black/50">
-          {imageStatus === "loading" ? (
-            <div className="flex min-h-[220px] flex-col items-center justify-center bg-black px-4 py-8 text-center">
-              <RadarLoader label="Creating share card…" size="sm" />
-              <p className="mt-2 max-w-sm text-xs text-muted-foreground">
-                Rendering your Prepare Mode art. This can take a few seconds.
+    <div className="fixed inset-0 z-[80] overflow-y-auto overscroll-contain bg-black/75 p-2 backdrop-blur-sm sm:p-4">
+      <div className="flex min-h-[100dvh] items-center justify-center sm:min-h-[calc(100dvh-2rem)]">
+        <div className="relative flex max-h-[96dvh] w-full max-w-2xl flex-col overflow-hidden border border-orange-400/50 bg-black/95">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/50 px-3 py-3 sm:px-4">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.22em] text-orange-300 sm:text-xs">
+                // Dynamic share card
+              </div>
+              <h3 className="mt-1 font-retro text-xl uppercase tracking-[0.08em] text-foreground sm:text-2xl">
+                Share on X
+              </h3>
+              <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
+                Save the share card, open X, then attach the PNG — same pattern as trade P&amp;L cards.
               </p>
             </div>
-          ) : null}
-          {imageStatus === "error" ? (
-            <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 px-4 py-8 text-center">
-              <p className="text-sm text-orange-200">Share card failed to load.</p>
-              <Button
-                type="button"
-                className="mwz-button font-retro text-xs"
-                onClick={() => setImageStatus("loading")}
-              >
-                Retry
-              </Button>
-            </div>
-          ) : null}
-          <img
-            key={pngUrl}
-            src={pngUrl}
-            alt="Generated Prepare Mode share card"
-            className={`w-full ${imageStatus === "ready" ? "block" : "absolute h-px w-px opacity-0"}`}
-            onLoad={() => setImageStatus("ready")}
-            onError={() => setImageStatus("error")}
-          />
-        </div>
 
-        {/* Primary guided CTA */}
-        <div className="mt-4 rounded-lg border border-orange-400/40 bg-orange-500/10 p-4">
-          <div className="text-xs uppercase tracking-[0.18em] text-orange-300">
-            Fast path (recommended)
+            <button type="button" onClick={onClose} className="mwz-button h-9 w-9 shrink-0">
+              <X className="mx-auto h-4 w-4" />
+            </button>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Downloads your share card, then opens X with the Warzone message and promotion
-            page link. You only attach the image in X and hit Post.
-          </p>
-          <Button
-            type="button"
-            onClick={() => void guidedShare()}
-            disabled={Boolean(busy)}
-            className="mwz-button mwz-button-orange mt-3 w-full font-retro sm:w-auto"
-          >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            {busy === "guided" ? "Preparing…" : "1 · Download card & open X"}
-          </Button>
-        </div>
 
-        {/* Explicit 3 steps */}
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div
-            className={`rounded-lg border p-4 ${
-              downloaded ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
-            }`}
-          >
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                1
-              </span>
-              Save the card
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Downloads a PNG of this preview to your device (usually Downloads folder).
-            </p>
-            <Button
-              type="button"
-              onClick={() => void downloadCard()}
-              disabled={Boolean(busy)}
-              className="mwz-button mt-3 w-full font-retro text-xs"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {busy === "download" ? "Saving…" : downloaded ? "Download again" : "Download share card"}
-            </Button>
-            {downloaded ? (
-              <p className="mt-2 text-[11px] text-emerald-300">Saved ✓ — continue to step 2</p>
+          <div className="relative flex shrink-0 items-center justify-center overflow-hidden border-b border-border/70 bg-black/50">
+            {imageStatus === "loading" ? (
+              <div className="flex h-[28vh] max-h-[220px] min-h-[140px] w-full flex-col items-center justify-center px-4 text-center">
+                <RadarLoader label="Creating share card…" size="sm" />
+                <p className="mt-2 max-w-sm text-xs text-muted-foreground">
+                  Rendering your Prepare Mode art. This can take a few seconds.
+                </p>
+              </div>
             ) : null}
+            {imageStatus === "error" ? (
+              <div className="flex h-[22vh] min-h-[120px] w-full flex-col items-center justify-center gap-2 px-4 text-center">
+                <p className="text-sm text-orange-200">Share card failed to load.</p>
+                <Button
+                  type="button"
+                  className="mwz-button font-retro text-xs"
+                  onClick={() => setImageStatus("loading")}
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            <img
+              key={pngUrl}
+              src={pngUrl}
+              alt="Generated Prepare Mode share card"
+              className={
+                imageStatus === "ready"
+                  ? "max-h-[28vh] w-full object-contain sm:max-h-[32vh]"
+                  : "pointer-events-none absolute h-px w-px opacity-0"
+              }
+              onLoad={() => setImageStatus("ready")}
+              onError={() => setImageStatus("error")}
+            />
           </div>
 
-          <div
-            className={`rounded-lg border p-4 ${
-              openedX ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
-            }`}
-          >
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                2
-              </span>
-              Open X
+          <div className="shrink-0 border-b border-orange-400/40 bg-orange-500/10 px-3 py-3 sm:px-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-orange-300 sm:text-xs">
+              Fast path (recommended)
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Opens compose with your message + promotion page link (not the raw image URL).
+            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+              Downloads the card, then opens X with your message. Attach the PNG in X and Post.
             </p>
             <Button
               type="button"
-              onClick={openXOnly}
+              onClick={() => void guidedShare()}
               disabled={Boolean(busy)}
-              className="mwz-button mt-3 w-full font-retro text-xs"
+              className="mwz-button mwz-button-orange mt-2 w-full font-retro"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              {busy === "open-x" ? "Opening…" : "Open X compose"}
+              {busy === "guided" ? "Preparing…" : "1 · Download card & open X"}
             </Button>
-            {openedX ? (
-              <p className="mt-2 text-[11px] text-emerald-300">Compose opened ✓ — finish step 3 in X</p>
-            ) : null}
           </div>
 
-          <div className="rounded-lg border border-border/70 bg-black/40 p-4">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-orange-300">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
-                3
-              </span>
-              Attach in X
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+            <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+              <div
+                className={`rounded-lg border p-3 ${
+                  downloaded ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    1
+                  </span>
+                  Save the card
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => void downloadCard()}
+                  disabled={Boolean(busy)}
+                  className="mwz-button mt-2 w-full font-retro text-xs"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {busy === "download" ? "Saving…" : downloaded ? "Download again" : "Download share card"}
+                </Button>
+              </div>
+
+              <div
+                className={`rounded-lg border p-3 ${
+                  openedX ? "border-emerald-400/50 bg-emerald-500/10" : "border-border/70 bg-black/40"
+                }`}
+              >
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    2
+                  </span>
+                  Open X
+                </div>
+                <Button
+                  type="button"
+                  onClick={openXOnly}
+                  disabled={Boolean(busy)}
+                  className="mwz-button mt-2 w-full font-retro text-xs"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {busy === "open-x" ? "Opening…" : "Open X compose"}
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-black/40 p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-orange-300 sm:text-xs">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500/20 font-retro text-[10px] text-orange-200">
+                    3
+                  </span>
+                  Attach in X
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  In X: media button → pick the PNG → Post.
+                </p>
+              </div>
             </div>
-            <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
-              <li>In the X post, click the <strong className="text-foreground">image / media</strong> button</li>
-              <li>Choose the share card you just downloaded</li>
-              <li>Check the text, then <strong className="text-foreground">Post</strong></li>
-            </ol>
-            <p className="mt-3 text-[11px] leading-relaxed text-orange-200/90">
-              Phone tip: the fast path may open a share sheet — pick <strong>X</strong> so the
-              image is attached automatically.
-            </p>
-          </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-border/50 pt-4 pb-1">
-          <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
-            <Share2 className="mr-2 h-4 w-4" />
-            Copy page link
-          </Button>
-          <Button
-            type="button"
-            onClick={async () => {
-              await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
-              toast.message("PNG link copied — for Discord/Telegram previews only, not for X media.", {
-                duration: 6_000,
-              });
-            }}
-            className="mwz-button font-retro text-xs"
-          >
-            <ImageDown className="mr-2 h-4 w-4" />
-            Copy PNG link
-          </Button>
-        </div>
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-3">
+              <Button type="button" onClick={() => void copyPage()} className="mwz-button font-retro text-xs">
+                <Share2 className="mr-2 h-4 w-4" />
+                Copy page link
+              </Button>
+              <Button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(pngUrl).catch(() => undefined);
+                  toast.message("PNG link copied — for Discord/Telegram previews only, not for X media.", {
+                    duration: 6_000,
+                  });
+                }}
+                className="mwz-button font-retro text-xs"
+              >
+                <ImageDown className="mr-2 h-4 w-4" />
+                Copy PNG link
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -559,11 +602,17 @@ function ShareModal({
 function TransmissionList({
   draftId,
   isCreator,
+  viewerWallet,
+  onEngagement,
 }: {
   draftId: string;
   isCreator: boolean;
+  viewerWallet?: string | null;
+  onEngagement?: () => void;
 }) {
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
+  const account = String(viewerWallet || solanaWallet.solanaAccount || wallet.account || "").trim();
   const [items, setItems] = useState<DraftComment[]>([]);
   const [body, setBody] = useState("");
   const [replyingTo, setReplyingTo] = useState<DraftComment | null>(null);
@@ -574,7 +623,7 @@ function TransmissionList({
   useEffect(() => {
     let cancelled = false;
 
-    void fetchDraftComments(draftId, wallet.account)
+    void fetchDraftComments(draftId, account)
       .then((comments) => {
         if (!cancelled) setItems(comments);
       })
@@ -585,15 +634,23 @@ function TransmissionList({
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account]);
+  }, [account, draftId]);
+
+  const requireAccount = () => {
+    if (account) return account;
+    toast.error("Connect wallet to fire this transmission.");
+    try {
+      window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+    } catch {
+      // ignore
+    }
+    return "";
+  };
 
   const send = async (reply = false) => {
     const text = reply ? replyBody.trim() : body.trim();
-
-    if (!wallet.account) {
-      toast.error("Connect wallet to send a transmission.");
-      return;
-    }
+    const walletAddress = requireAccount();
+    if (!walletAddress) return;
 
     if (reply && !isCreator) {
       toast.error("Only the creator can reply to transmissions.");
@@ -610,7 +667,7 @@ function TransmissionList({
           ? `↳ Creator reply to ${replyingTo.displayName || shortWallet(replyingTo.walletAddress)}: `
           : "";
 
-      const comment = await addDraftComment(draftId, wallet.account, `${prefix}${text}`);
+      const comment = await addDraftComment(draftId, walletAddress, `${prefix}${text}`);
 
       setItems((prev) => [comment, ...prev]);
       setBody("");
@@ -618,6 +675,7 @@ function TransmissionList({
       setReplyingTo(null);
 
       toast.success(reply ? "Creator reply sent." : "Transmission sent.");
+      onEngagement?.();
     } catch (err: any) {
       toast.error(err?.message || "Failed to send transmission");
     } finally {
@@ -626,10 +684,8 @@ function TransmissionList({
   };
 
   const react = async (comment: DraftComment) => {
-    if (!wallet.account) {
-      toast.error("Connect wallet to fire this transmission.");
-      return;
-    }
+    const walletAddress = requireAccount();
+    if (!walletAddress) return;
     if (reactingIds[comment.id]) return;
 
     const previousCount = Number(comment.reactionCount || 0);
@@ -647,7 +703,7 @@ function TransmissionList({
     );
 
     try {
-      const result = await toggleDraftCommentReaction(draftId, comment.id, wallet.account);
+      const result = await toggleDraftCommentReaction(draftId, comment.id, walletAddress);
       setItems((prev) =>
         prev.map((item) =>
           item.id === comment.id
@@ -659,6 +715,7 @@ function TransmissionList({
             : item
         )
       );
+      onEngagement?.();
     } catch (err: any) {
       setItems((prev) =>
         prev.map((item) =>
@@ -839,7 +896,7 @@ function TransmissionList({
             Send transmission
           </Button>
 
-          {!wallet.account && (
+          {!account && (
             <p className="mt-3 text-xs text-muted-foreground">
               Wallet connection required for bunker actions.
             </p>
@@ -854,10 +911,20 @@ export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
-  // Private Solana drafts must authenticate with the Solana owner key, not EVM.
-  const viewerWallet = solanaWallet.solanaAccount || wallet.account || null;
-
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
+  const [preferredActingKind, setPreferredActingKind] = useState<PrepareActingKind | null>(() => readActingKind());
+  const acting = useMemo(
+    () =>
+      resolveActingWallet({
+        evmAccount: wallet.account,
+        solanaAccount: solanaWallet.solanaAccount,
+        draftChainId: bundle?.draft.chainId,
+        preferredKind: preferredActingKind,
+      }),
+    [bundle?.draft.chainId, preferredActingKind, solanaWallet.solanaAccount, wallet.account],
+  );
+  const viewerWallet = acting.address;
+
   const [loading, setLoading] = useState(true);
   const [followCount, setFollowCount] = useState<number | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -869,9 +936,12 @@ export default function Prepare() {
   useEffect(() => {
     let cancelled = false;
 
-    setLoading(true);
+    if (!bundle || bundle.draft.slug !== slug) setLoading(true);
 
-    void fetchPrepareDraft(slug, viewerWallet)
+    void fetchPrepareDraft(slug, viewerWallet, {
+      evmAccount: wallet.account,
+      solanaAccount: solanaWallet.solanaAccount,
+    })
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
@@ -891,17 +961,29 @@ export default function Prepare() {
     return () => {
       cancelled = true;
     };
-  }, [slug, viewerWallet]);
+  }, [slug, viewerWallet, wallet.account, solanaWallet.solanaAccount]);
 
   const draft = bundle?.draft;
   const promo = bundle?.promotion;
   const pop = bundle?.popularity;
 
   const refreshPrepareBundle = async () => {
-    const data = await fetchPrepareDraft(slug, viewerWallet);
+    const data = await fetchPrepareDraft(slug, viewerWallet, {
+      evmAccount: wallet.account,
+      solanaAccount: solanaWallet.solanaAccount,
+    });
     setBundle(data);
     setFollowCount(data.popularity.follows);
     return data;
+  };
+
+  const handleSwitchOperative = () => {
+    if (!acting.canSwitch) return;
+    const next: PrepareActingKind = acting.kind === "evm" ? "solana" : "evm";
+    writeActingKind(next);
+    setPreferredActingKind(next);
+    setHasArmed(false);
+    setHasFollowed(false);
   };
 
   const handleArmNotification = async () => {
@@ -1045,6 +1127,21 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
             Creator · {creatorLabel(bundle)}
           </Link>
 
+          {acting.canSwitch && acting.kind && viewerWallet ? (
+            <div className="relative z-20 mt-5 flex flex-wrap items-center justify-center gap-2">
+              <span className="mwz-chip inline-flex items-center gap-2 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em]">
+                Acting as · {acting.kind === "evm" ? "BNB operative" : "SOL scout"} {shortWallet(viewerWallet)}
+              </span>
+              <button
+                type="button"
+                onClick={handleSwitchOperative}
+                className="text-[10px] uppercase tracking-[0.16em] text-orange-300 underline-offset-4 hover:text-orange-200 hover:underline"
+              >
+                Switch operative
+              </button>
+            </div>
+          ) : null}
+
           <div className="relative z-20 mt-6 flex flex-wrap justify-center gap-3">
             <Button
               onClick={handleArmNotification}
@@ -1182,7 +1279,11 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
               </div>
             </div>
 
-            <RadarCard percentage={pop.popularityPercentage} heatLabel={pop.heatLabel} />
+            <RadarCard
+              percentage={pop.popularityPercentage}
+              heatLabel={pop.heatLabel}
+              comments={pop.comments}
+            />
           </div>
         </section>
 
@@ -1244,7 +1345,14 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </div>
         </section>
 
-        <TransmissionList draftId={draft.id} isCreator={isCreator} />
+        <TransmissionList
+          draftId={draft.id}
+          isCreator={isCreator}
+          viewerWallet={viewerWallet}
+          onEngagement={() => {
+            void refreshPrepareBundle().catch(() => null);
+          }}
+        />
 
         <section className="mx-auto max-w-7xl px-4 py-10 pb-20 md:px-8 md:py-14 md:pb-24">
           <div className="mwz-card border-orange-400/50 bg-[radial-gradient(ellipse_at_top,rgba(255,153,0,0.18),rgba(2,17,4,0.92)_70%)] p-8 text-center md:p-12">
@@ -1260,6 +1368,21 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
               {(followCount ?? pop.follows).toLocaleString()} soldiers already watching.
               The moment {ticker} moves from draft to live campaign, the alert fires.
             </p>
+
+            {acting.canSwitch && acting.kind && viewerWallet ? (
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <span className="mwz-chip inline-flex items-center gap-2 px-3 py-1.5 text-[10px] uppercase tracking-[0.16em]">
+                  Acting as · {acting.kind === "evm" ? "BNB operative" : "SOL scout"} {shortWallet(viewerWallet)}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSwitchOperative}
+                  className="text-[10px] uppercase tracking-[0.16em] text-orange-300 underline-offset-4 hover:text-orange-200 hover:underline"
+                >
+                  Switch operative
+                </button>
+              </div>
+            ) : null}
 
             <div className="mt-7 flex justify-center">
               <Button

@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
+import { isSolanaChainId } from "@/lib/chainConfig";
 
 export default function CommandCenterOverview() {
   const {
     leagueCabinet,
     loadingLeagueCabinet,
+    chainId,
     nativeBalance,
     tokenBalances,
     loadingBalances,
@@ -57,10 +59,10 @@ export default function CommandCenterOverview() {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/50 bg-card/35">
-                  <img src="/assets/ticker.png" alt="BNB" className="h-7 w-7 object-contain" />
+                  <img src="/assets/ticker.png" alt={isSolanaChainId(chainId) ? "SOL" : "BNB"} className="h-7 w-7 object-contain" />
                 </div>
                 <div>
-                  <div className="font-retro text-sm text-foreground">Native BNB</div>
+                  <div className="font-retro text-sm text-foreground">{isSolanaChainId(chainId) ? "Native SOL" : "Native BNB"}</div>
                   <div className="mt-1 text-xs text-muted-foreground">Connected wallet balance</div>
                 </div>
               </div>

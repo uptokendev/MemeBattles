@@ -1,5 +1,5 @@
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, normalizeWalletFlexible } from "../server/http.js";
 
 // GET /api/rewards?chainId=56&address=0x...
 // Returns *unclaimed* prizes for the recipient.
@@ -9,10 +9,16 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId);
-    const address = String(q.address ?? "").toLowerCase();
+    const address = normalizeWalletFlexible(q.address);
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+    if (!address || (!isAddress(address) && !isSolanaAddress(address))) {
+      return json(res, 400, { error: "Invalid address" });
+    }
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
+
+    const recipientClause = isSolanaAddress(address)
+      ? "(w.recipient_address = $2 OR lower(w.recipient_address) = lower($2))"
+      : "lower(w.recipient_address) = $2";
 
     // Find winnings for the recipient and exclude already-claimed rows.
     const { rows } = await pool.query(
@@ -34,7 +40,7 @@ export default async function handler(req, res) {
          AND c.category = w.category
          AND c.rank = w.rank
         WHERE w.chain_id = $1
-          AND lower(w.recipient_address) = $2
+          AND ${recipientClause}
           AND c.claimed_at IS NULL
           AND (w.expires_at IS NULL OR w.expires_at > NOW())
         ORDER BY w.epoch_start DESC, w.period DESC, w.category ASC, w.rank ASC`,

@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isEvmAddress, isSolanaAddress } from "@/lib/address";
+import { BNB_TESTNET_CHAIN_ID, getActiveChainId, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
 import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
@@ -77,13 +78,26 @@ export function CommandCenterDataProvider({
   // Solana wallets do not report an EVM-style chainId, so force the app's Solana
   // chain id when the connected owner wallet is Solana.
   const evmWalletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-  const walletChainId: number | undefined = hasSolanaWallet ? SOLANA_CHAIN_ID : evmWalletChainId;
-  const chainId: number | undefined = hasSolanaWallet
+  // Viewed Command Center wallet decides the chain. Never inherit the leftover
+  // BNB feed or a still-connected MetaMask session when the URL is a Solana pubkey.
+  const addressDrivenChainId = isSolanaAddress(walletAddress)
     ? SOLANA_CHAIN_ID
-    : evmWalletChainId
-      ? getActiveChainId(evmWalletChainId)
+    : isEvmAddress(walletAddress)
+      ? (isEvmChainId(evmWalletChainId) ? evmWalletChainId : BNB_TESTNET_CHAIN_ID)
       : undefined;
-  const account = hasSolanaWallet ? solanaAccount : wallet.account || walletAddress;
+  const walletChainId: number | undefined = addressDrivenChainId
+    ?? (hasSolanaWallet ? SOLANA_CHAIN_ID : evmWalletChainId);
+  const chainId: number | undefined = addressDrivenChainId
+    ?? (hasSolanaWallet
+      ? SOLANA_CHAIN_ID
+      : evmWalletChainId
+        ? getActiveChainId(evmWalletChainId)
+        : undefined);
+  const account = isSolanaAddress(walletAddress)
+    ? walletAddress
+    : hasSolanaWallet
+      ? solanaAccount
+      : wallet.account || walletAddress;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [loadingAttribution, setLoadingAttribution] = useState(false);

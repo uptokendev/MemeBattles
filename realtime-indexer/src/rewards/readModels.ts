@@ -1,5 +1,6 @@
 import type { QueryResult } from "pg";
 import { pool } from "../db.js";
+import { normalizeWalletAddress, walletEqualsSql } from "../walletAddress.js";
 import type { RewardProgram } from "./ledger.js";
 import type { EligibilityProgram, EligibilityReasonCode } from "./reasonCodes.js";
 
@@ -193,11 +194,7 @@ function mustIso(value: unknown, label: string): string {
 }
 
 function normalizeAddress(value: unknown): string {
-  const address = String(value ?? "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    throw new Error(`Invalid wallet address: ${String(value ?? "")}`);
-  }
-  return address;
+  return normalizeWalletAddress(value);
 }
 
 function normalizeCode(value: unknown): string {
@@ -420,7 +417,7 @@ function mapRecruiterClosureDiagnosticRow(row: any): RecruiterClosureDiagnosticR
 
 export async function getWalletRewardSummary(walletAddress: string, db: DbLike = pool): Promise<WalletRewardSummaryRecord | null> {
   const r = await db.query(
-    `select * from public.wallet_reward_summaries where wallet_address = $1 limit 1`,
+    `select * from public.wallet_reward_summaries where ${walletEqualsSql("wallet_address", 1)} limit 1`,
     [normalizeAddress(walletAddress)]
   );
   return r.rows[0] ? mapWalletRewardSummaryRow(r.rows[0]) : null;
@@ -432,7 +429,7 @@ export async function listWalletRewardHistory(
   db: DbLike = pool
 ): Promise<any[]> {
   const values: any[] = [normalizeAddress(walletAddress)];
-  const clauses = [`l.wallet_address = $1`];
+  const clauses = [walletEqualsSql("l.wallet_address", 1)];
   if (filters.program) {
     values.push(filters.program);
     clauses.push(`l.program = $${values.length}`);
@@ -516,7 +513,7 @@ export async function listWalletEligibilityHistory(
   db: DbLike = pool
 ): Promise<any[]> {
   const values: any[] = [normalizeAddress(walletAddress)];
-  const clauses = [`er.wallet_address = $1`];
+  const clauses = [walletEqualsSql("er.wallet_address", 1)];
   if (filters.program) {
     values.push(filters.program);
     clauses.push(`er.program = $${values.length}`);
@@ -575,7 +572,7 @@ export async function getRecruiterSummaryByCode(code: string, db: DbLike = pool)
 
 export async function getRecruiterSummaryByWalletAddress(walletAddress: string, db: DbLike = pool): Promise<RecruiterSummaryRecord | null> {
   const r = await db.query(
-    `select * from public.recruiter_summaries where wallet_address = $1 limit 1`,
+    `select * from public.recruiter_summaries where ${walletEqualsSql("wallet_address", 1)} limit 1`,
     [normalizeAddress(walletAddress)]
   );
   return r.rows[0] ? mapRecruiterSummaryRow(r.rows[0]) : null;

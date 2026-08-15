@@ -4,11 +4,10 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { BNB_TESTNET_CHAIN_ID, getActiveChainId, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { fetchUserProfile, fetchPublicPortfolioMetrics, type UserProfile } from "@/lib/profileApi";
 import { fetchOwnerCampaignDrafts, fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import { isSolanaAddress } from "@/lib/address";
-import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
 import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
@@ -164,7 +163,12 @@ export default function PublicProfile({
   const wallet = useWallet();
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const anyWallet: any = wallet as any;
-  const activeChainId = getActiveChainId(anyWallet?.chainId ?? null);
+  const evmWalletChainId = anyWallet?.chainId ?? null;
+  const activeChainId = isSolanaAddress(profileWallet)
+    ? SOLANA_CHAIN_ID
+    : isEvmChainId(evmWalletChainId)
+      ? Number(evmWalletChainId)
+      : getActiveChainId(evmWalletChainId) || BNB_TESTNET_CHAIN_ID;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);

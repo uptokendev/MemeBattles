@@ -3,11 +3,14 @@ import { Contract, ethers } from "ethers";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
 import { getReadProvider } from "@/lib/readProvider";
+import type { SolanaCampaignCurveState } from "@/lib/solanaCampaignRead";
 import {
   ensureTopazSellAllowance,
   executeTopazBuy,
@@ -67,6 +70,47 @@ function parseTokenAmountWei(value: string): bigint {
   }
 }
 
+function parseSolLamports(value: string): bigint {
+  const v = (value ?? "").trim();
+  if (!v || v === "." || v === "-") return 0n;
+  const cleaned = v.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  const whole = BigInt(parts[0] || "0");
+  const frac = (parts[1] || "").slice(0, 9).padEnd(9, "0");
+  try {
+    return whole * 1_000_000_000n + BigInt(frac || "0");
+  } catch {
+    return 0n;
+  }
+}
+
+function parseTokenAmountDecimals(value: string, decimals: number): bigint {
+  const v = (value ?? "").trim();
+  if (!v || v === "." || v === "-") return 0n;
+  const cleaned = v.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  const whole = BigInt(parts[0] || "0");
+  const frac = (parts[1] || "").slice(0, decimals).padEnd(decimals, "0");
+  try {
+    return whole * 10n ** BigInt(decimals) + BigInt(frac || "0");
+  } catch {
+    return 0n;
+  }
+}
+
+function formatAmount(raw?: bigint | null, decimals = 18, symbol = ""): string {
+  if (raw == null) return "—";
+  try {
+    const text = ethers.formatUnits(raw, decimals);
+    const n = Number(text);
+    if (!Number.isFinite(n)) return symbol ? `${text} ${symbol}` : text;
+    const pretty = n >= 1 ? n.toFixed(decimals >= 9 ? 4 : 2) : n >= 0.01 ? n.toFixed(6) : n.toFixed(Math.min(8, decimals));
+    return symbol ? `${pretty} ${symbol}` : pretty;
+  } catch {
+    return "—";
+  }
+}
+
 function parseBnbAmountWei(value: string): bigint {
   const v = (value ?? "").trim();
   if (!v || v === "." || v === "-") return 0n;
@@ -83,8 +127,10 @@ function parseBnbAmountWei(value: string): bigint {
 export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   const { toast } = useToast();
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const { fetchCampaignMetrics, buyTokens, sellTokens } = useLaunchpad();
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
+  const [solanaCurve, setSolanaCurve] = useState<SolanaCampaignCurveState | null>(null);
   const [tradeAmount, setTradeAmount] = useState("0");
   const [tradeInputDenom, setTradeInputDenom] = useState<"TOKEN" | "BNB">("BNB");
   const [effectiveTokenWei, setEffectiveTokenWei] = useState<bigint>(0n);
@@ -99,8 +145,23 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
   const [topazSlippageBps] = useState(100);
 
-  const chainId = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
-  const readProvider = useMemo(() => getReadProvider(chainId), [chainId]);
+  const isSolanaCampaign =
+    isSolanaAddress(campaign.campaign) ||
+    isSolanaAddress(campaign.token) ||
+    Number((campaign as { chainId?: number }).chainId) === SOLANA_CHAIN_ID;
+  const nativeUnit = isSolanaCampaign ? "SOL" : "BNB";
+  const tokenDecimals = isSolanaCampaign ? Number(solanaCurve?.tokenDecimals ?? 6) : TOKEN_DECIMALS;
+  const solanaDex = Boolean(solanaCurve?.graduated || solanaCurve?.curveClosed);
+
+  const chainId = useMemo(() => {
+    if (isSolanaCampaign) return SOLANA_CHAIN_ID;
+    const active = getActiveChainId(wallet.chainId);
+    return isSolanaChainId(active) ? 97 : active;
+  }, [isSolanaCampaign, wallet.chainId]);
+  const readProvider = useMemo(() => {
+    if (isSolanaCampaign || isSolanaChainId(chainId)) return null;
+    return getReadProvider(chainId);
+  }, [chainId, isSolanaCampaign]);
 
   const topbarButtonClass =
     "bg-transparent border border-orange-400/50 text-orange-300 hover:bg-orange-500 hover:text-white hover:border-orange-500 " +
@@ -112,6 +173,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
     "data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:border-orange-500 data-[state=active]:shadow-lg";
 
   const isDexStage = useMemo(() => {
+    if (isSolanaCampaign) return solanaDex;
     const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
     return hasLaunchFlag
       ? Boolean((metrics as any)?.launched) ||
@@ -119,21 +181,53 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
             ? (metrics as any).finalizedAt > 0n
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
-  }, [metrics]);
-  const isTopazTradingActive = isDexStage;
+  }, [isSolanaCampaign, metrics, solanaDex]);
+  const isTopazTradingActive = !isSolanaCampaign && isDexStage;
 
   const loadMetrics = useCallback(async () => {
     try {
+      if (isSolanaCampaign) {
+        const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
+        const curve = await resolveSolanaCampaignCurve(String(campaign.campaign || campaign.token || ""));
+        setSolanaCurve(curve);
+        setMetrics(null);
+        return;
+      }
       const next = await fetchCampaignMetrics(campaign.campaign);
       setMetrics(next);
     } catch (error) {
       console.warn("[WarRoomTradePanel] Failed to load metrics", error);
       setMetrics(null);
     }
-  }, [campaign.campaign, fetchCampaignMetrics]);
+  }, [campaign.campaign, campaign.token, fetchCampaignMetrics, isSolanaCampaign]);
 
   const loadBalances = useCallback(async () => {
     try {
+      if (isSolanaCampaign) {
+        const { getSolanaProvider } = await import("@/lib/solanaWallet");
+        const { loadSolanaWeb3 } = await import("@/lib/solanaWeb3");
+        const { getPublicRpcUrl } = await import("@/lib/chainConfig");
+        const { getSolanaTokenBalanceRaw } = await import("@/lib/solanaTradeV1");
+        const provider = getSolanaProvider();
+        const pubkey = String(provider?.publicKey?.toString?.() || solanaWallet.solanaAccount || "").trim();
+        if (!pubkey) {
+          setBnbBalanceWei(null);
+          setTokenBalanceWei(null);
+          return;
+        }
+        const web3 = await loadSolanaWeb3();
+        const connection = new web3.Connection(
+          String(import.meta.env.VITE_SOLANA_RPC || "").trim() || getPublicRpcUrl(SOLANA_CHAIN_ID),
+          { commitment: "confirmed", disableRetryOnRateLimit: true },
+        );
+        const lamports = BigInt(await connection.getBalance(new web3.PublicKey(pubkey)));
+        const mint = String(campaign.token || campaign.campaign || "").trim();
+        const tokenRaw = mint ? await getSolanaTokenBalanceRaw({ mint, owner: pubkey }) : 0n;
+        setBnbBalanceWei(lamports);
+        setTokenBalanceWei(tokenRaw);
+        return;
+      }
+
       if (!wallet.provider || !wallet.account) {
         setBnbBalanceWei(null);
         setTokenBalanceWei(null);
@@ -160,7 +254,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       setBnbBalanceWei(null);
       setTokenBalanceWei(null);
     }
-  }, [wallet.provider, wallet.account, campaign.token]);
+  }, [campaign.campaign, campaign.token, isSolanaCampaign, solanaWallet.solanaAccount, wallet.account, wallet.provider]);
 
   useEffect(() => {
     loadMetrics();
@@ -185,6 +279,176 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
     const loadQuote = async () => {
       try {
         setQuoteError(null);
+
+        if (isSolanaCampaign) {
+          const amountStr = String(tradeAmount || "0").trim();
+          const dec = tokenDecimals;
+          let curve = solanaCurve;
+          if (!curve && campaign.campaign) {
+            const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
+            curve = await resolveSolanaCampaignCurve(String(campaign.campaign));
+            if (!cancelled && curve) setSolanaCurve(curve);
+          }
+          if (!curve) {
+            setQuoteWei(null);
+            setQuoteError("Could not load this Solana campaign.");
+            return;
+          }
+          if (curve?.graduated || curve?.curveClosed) {
+            const { quoteSolanaMeteoraExactIn } = await import("@/lib/solanaMeteoraTrade");
+            const mint = String(curve?.mint || campaign.token || campaign.campaign);
+            const amountIn =
+              tradeTab === "buy" && tradeInputDenom === "BNB"
+                ? parseSolLamports(amountStr)
+                : parseTokenAmountDecimals(amountStr, dec);
+            if (amountIn <= 0n) {
+              setEffectiveTokenWei(0n);
+              setEffectiveBnbWei(0n);
+              setQuoteWei(null);
+              return;
+            }
+            setQuoteLoading(true);
+            const quote = await quoteSolanaMeteoraExactIn({
+              side: tradeTab === "buy" ? "buy" : "sell",
+              mint,
+              tokenDecimals: dec,
+              amountInRaw: amountIn,
+              slippagePct: SLIPPAGE_PCT,
+            });
+            if (cancelled) return;
+            if (tradeTab === "buy") {
+              setEffectiveBnbWei(amountIn);
+              setEffectiveTokenWei(quote.amountOutRaw);
+              setQuoteWei(amountIn);
+            } else {
+              setEffectiveTokenWei(amountIn);
+              setEffectiveBnbWei(quote.amountOutRaw);
+              setQuoteWei(quote.amountOutRaw);
+            }
+            return;
+          }
+
+          const {
+            quoteBuyExactSolIn,
+            quoteSellExactTokensIn,
+            checkedLinearCurveCost,
+          } = await import("@/lib/solanaTradeV1");
+          const econ = Number(curve?.economicsVersion ?? 2);
+          const basePrice = curve?.basePriceLamports ?? 1n;
+          const slope = curve?.priceSlopeLamports ?? 1n;
+          const sold = curve?.soldTokens ?? 0n;
+          const supply = curve?.curveTokenSupply ?? 800_000_000_000_000n;
+          const buyFeeBps = curve?.buyFeeBps ?? 200;
+          const sellFeeBps = curve?.sellFeeBps ?? 200;
+          setQuoteLoading(true);
+
+          if (tradeTab === "buy") {
+            if (tradeInputDenom === "BNB") {
+              const lamportsIn = parseSolLamports(amountStr);
+              if (lamportsIn <= 0n) {
+                setEffectiveBnbWei(0n);
+                setEffectiveTokenWei(0n);
+                setQuoteWei(null);
+                return;
+              }
+              const q = quoteBuyExactSolIn({
+                lamportsIn,
+                basePrice,
+                slope,
+                sold,
+                curveSupply: supply,
+                buyFeeBps,
+                economicsVersion: econ,
+                tokenDecimals: dec,
+              });
+              if (!cancelled) {
+                setEffectiveBnbWei(lamportsIn);
+                setEffectiveTokenWei(q.tokensOut);
+                setQuoteWei(lamportsIn);
+                setQuoteError(q.tokensOut <= 0n ? "Amount too small for curve quote." : null);
+              }
+            } else {
+              const tokensWanted = parseTokenAmountDecimals(amountStr, dec);
+              if (tokensWanted <= 0n) {
+                setEffectiveBnbWei(0n);
+                setEffectiveTokenWei(0n);
+                setQuoteWei(null);
+                return;
+              }
+              const grossCost = checkedLinearCurveCost(basePrice, slope, sold, tokensWanted, econ, dec);
+              const feeBps = BigInt(buyFeeBps);
+              const lamportsIn =
+                feeBps >= 10_000n
+                  ? grossCost
+                  : (grossCost * 10_000n + (10_000n - feeBps - 1n)) / (10_000n - feeBps);
+              if (!cancelled) {
+                setEffectiveTokenWei(tokensWanted);
+                setEffectiveBnbWei(lamportsIn);
+                setQuoteWei(lamportsIn);
+              }
+            }
+          } else if (tradeInputDenom === "BNB") {
+            const targetLamports = parseSolLamports(amountStr);
+            if (targetLamports <= 0n) {
+              setEffectiveTokenWei(0n);
+              setEffectiveBnbWei(0n);
+              setQuoteWei(null);
+              return;
+            }
+            const walletMax = tokenBalanceWei != null && tokenBalanceWei > 0n ? tokenBalanceWei : sold;
+            const maxTokens = walletMax < sold ? walletMax : sold;
+            if (maxTokens <= 0n) {
+              setQuoteError("No token balance available to sell.");
+              return;
+            }
+            const quoteFor = (tokensIn: bigint) =>
+              quoteSellExactTokensIn({
+                tokensIn,
+                basePrice,
+                slope,
+                sold,
+                sellFeeBps,
+                economicsVersion: econ,
+                tokenDecimals: dec,
+              });
+            let lo = 1n;
+            let hi = maxTokens;
+            for (let i = 0; i < 64 && lo < hi; i += 1) {
+              const mid = (lo + hi) / 2n;
+              if (quoteFor(mid).lamportsOut >= targetLamports) hi = mid;
+              else lo = mid + 1n;
+            }
+            const q = quoteFor(lo);
+            if (!cancelled) {
+              setEffectiveTokenWei(lo);
+              setEffectiveBnbWei(q.lamportsOut);
+              setQuoteWei(q.lamportsOut);
+            }
+          } else {
+            const tokensIn = parseTokenAmountDecimals(amountStr, dec);
+            if (tokensIn <= 0n) {
+              setEffectiveTokenWei(0n);
+              setEffectiveBnbWei(0n);
+              setQuoteWei(null);
+              return;
+            }
+            const q = quoteSellExactTokensIn({
+              tokensIn,
+              basePrice,
+              slope,
+              sold,
+              sellFeeBps,
+              economicsVersion: econ,
+              tokenDecimals: dec,
+            });
+            if (!cancelled) {
+              setEffectiveTokenWei(tokensIn);
+              setEffectiveBnbWei(q.lamportsOut);
+              setQuoteWei(q.lamportsOut);
+            }
+          }
+          return;
+        }
 
         if (isDexStage) {
           if (!isTopazTradingActive || !campaign.campaign || !campaign.token) {
@@ -315,7 +579,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
         setQuoteLoading(true);
 
-        if (!wallet.provider) {
+        if (!wallet.provider || !readProvider) {
           if (!cancelled) {
             setQuoteWei(null);
             setQuoteError("Wallet provider not available");
@@ -398,10 +662,100 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [wallet.provider, campaign.campaign, campaign.token, chainId, readProvider, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, topazSlippageBps]);
+  }, [wallet.provider, campaign.campaign, campaign.token, chainId, readProvider, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage, isTopazTradingActive, topazSlippageBps, isSolanaCampaign, solanaCurve, tokenDecimals]);
 
   const handlePlaceTrade = async () => {
     if (!campaign.campaign) return;
+
+    if (isSolanaCampaign) {
+      try {
+        setTradePending(true);
+        const { getSolanaProvider } = await import("@/lib/solanaWallet");
+        const {
+          requestSolanaTradeAuthorization,
+          submitSolanaTradeV1,
+          ensureTraderAta,
+          applySlippageMinOut,
+        } = await import("@/lib/solanaTradeV1");
+        const provider = getSolanaProvider();
+        const trader = String(provider?.publicKey?.toString?.() || solanaWallet.solanaAccount || "");
+        if (!trader) {
+          toast({ title: "Connect Solana wallet", description: "Connect Phantom / Solflare to trade Solana campaigns." });
+          window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
+          return;
+        }
+        const curve = solanaCurve;
+        const mint = String(curve?.mint || campaign.token || campaign.campaign);
+        const campaignPda = String(curve?.campaignAddress || campaign.campaign);
+        const dec = tokenDecimals;
+        let amountIn = 0n;
+        let minOut = 0n;
+        if (tradeTab === "buy") {
+          amountIn = tradeInputDenom === "BNB" ? parseSolLamports(tradeAmount) : effectiveBnbWei;
+          if (amountIn <= 0n) throw new Error("Enter a SOL amount to buy.");
+          minOut = applySlippageMinOut(effectiveTokenWei > 0n ? effectiveTokenWei : 0n, SLIPPAGE_PCT);
+        } else {
+          amountIn = tradeInputDenom === "BNB" ? effectiveTokenWei : parseTokenAmountDecimals(tradeAmount, dec);
+          if (amountIn <= 0n) throw new Error("Enter a token amount or target SOL payout to sell.");
+          const estSol = quoteWei != null && quoteWei > 0n ? quoteWei : effectiveBnbWei;
+          minOut = applySlippageMinOut(estSol > 0n ? estSol : 0n, SLIPPAGE_PCT);
+        }
+
+        if (curve?.graduated || curve?.curveClosed) {
+          const { quoteSolanaMeteoraExactIn, executeSolanaMeteoraSwap } = await import("@/lib/solanaMeteoraTrade");
+          const quote = await quoteSolanaMeteoraExactIn({
+            side: tradeTab === "buy" ? "buy" : "sell",
+            mint,
+            tokenDecimals: dec,
+            amountInRaw: amountIn,
+            slippagePct: SLIPPAGE_PCT,
+          });
+          const result = await executeSolanaMeteoraSwap({
+            quote,
+            mint,
+            tokenDecimals: dec,
+            walletAddress: trader,
+            poolAddress: quote.pool,
+          });
+          toast({
+            title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
+            description: `Tx: ${result.signature.slice(0, 12)}…`,
+          });
+          await Promise.all([loadMetrics(), loadBalances()]);
+          return;
+        }
+
+        await ensureTraderAta({ mint, owner: trader });
+        const auth = await requestSolanaTradeAuthorization({
+          side: tradeTab === "buy" ? "buy" : "sell",
+          campaignAddress: campaignPda,
+          mintAddress: mint,
+          traderAddress: trader,
+          amountIn,
+          minOut,
+          tokenVault: curve?.tokenVault || campaign.tokenVault || null,
+          solVault: curve?.solVault || campaign.solVault || null,
+          campaignId: curve?.campaignIdHex || campaign.campaignIdHex || null,
+          chainId: SOLANA_CHAIN_ID,
+        });
+        const result = await submitSolanaTradeV1(auth, { traderAddress: trader });
+        toast({
+          title: tradeTab === "buy" ? "Buy confirmed" : "Sell confirmed",
+          description: `Tx: ${result.signature.slice(0, 12)}…`,
+        });
+        await Promise.all([loadMetrics(), loadBalances()]);
+      } catch (error: any) {
+        const { mapSolanaTradeError } = await import("@/lib/solanaTradeV1").catch(() => ({ mapSolanaTradeError: (e: any) => String(e?.message || e) }));
+        toast({
+          title: "Trade failed",
+          description: mapSolanaTradeError(error),
+          variant: "destructive",
+        });
+      } finally {
+        setTradePending(false);
+      }
+      return;
+    }
 
     if (isDexStage) {
       if (!isTopazTradingActive || !campaign.token) {
@@ -576,6 +930,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       if (tradeTab === "buy") {
         let costWei: bigint = quoteWei && quoteWei > 0n ? quoteWei : tradeInputDenom === "BNB" ? inputBnbWei : 0n;
         if (amountWei > 0n && costWei === 0n) {
+          if (!readProvider) throw new Error("Read provider unavailable");
           const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, readProvider) as any;
           costWei = await contract.quoteBuyExactTokens(amountWei);
         }
@@ -666,7 +1021,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   className="h-6 px-2 text-[10px] text-muted-foreground hover:bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
                   onClick={toggleTradeInputDenom}
                 >
-                  {tradeInputDenom === "BNB" ? `Switch to ${campaign.symbol}` : "Switch to BNB"}
+                  {tradeInputDenom === "BNB" ? `Switch to ${campaign.symbol}` : `Switch to ${nativeUnit}`}
                 </Button>
                 <span className="text-[11px] text-muted-foreground">Slip {SLIPPAGE_PCT}%</span>
               </div>
@@ -679,16 +1034,16 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   placeholder="0"
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <span className="text-[11px] font-mono text-muted-foreground md:text-xs">{tradeInputDenom === "BNB" ? "BNB" : campaign.symbol}</span>
+                  <span className="text-[11px] font-mono text-muted-foreground md:text-xs">{tradeInputDenom === "BNB" ? nativeUnit : campaign.symbol}</span>
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                <span className="truncate">Bal: {tradeInputDenom === "BNB" ? formatBnbFromWei(bnbBalanceWei) : `${formatTokenFromWei(tokenBalanceWei)} ${campaign.symbol}`}</span>
-                <span className="truncate text-right">Pay: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}</span>
+                <span className="truncate">Bal: {tradeInputDenom === "BNB" ? formatAmount(bnbBalanceWei, isSolanaCampaign ? 9 : 18, nativeUnit) : `${formatAmount(tokenBalanceWei, tokenDecimals)} ${campaign.symbol}`}</span>
+                <span className="truncate text-right">Pay: {quoteLoading ? "…" : quoteWei != null ? formatAmount(quoteWei, isSolanaCampaign ? 9 : 18, nativeUnit) : "—"}</span>
               </div>
               {effectiveTokenWei > 0n ? (
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Receive: {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}
+                  Receive: {formatAmount(effectiveTokenWei, tokenDecimals)} {campaign.symbol}
                   {tradeInputDenom === "TOKEN" ? " (exact)" : " (est.)"}
                 </p>
               ) : null}
@@ -696,7 +1051,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
             </div>
 
             <div className="text-center text-[11px] text-muted-foreground md:text-xs">
-              {isDexStage ? (
+              {isDexStage && !isSolanaCampaign ? (
                 isTopazTradingActive && quoteWei != null ? (
                   <p>Topaz execution · slippage {(topazSlippageBps / 100).toFixed(2)}%.</p>
                 ) : (
@@ -704,11 +1059,11 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                 )
               ) : quoteWei != null && effectiveTokenWei > 0n ? (
                 <p>
-                  Pay ~{formatBnbFromWei(quoteWei)} → get {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}
-                  {" "}(max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                  Pay ~{formatAmount(quoteWei, isSolanaCampaign ? 9 : 18, nativeUnit)} → get {formatAmount(effectiveTokenWei, tokenDecimals)} {campaign.symbol}
+                  {" "}(max {formatAmount((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n, isSolanaCampaign ? 9 : 18, nativeUnit)})
                 </p>
               ) : (
-                <p>Enter a BNB amount to buy (switch to {campaign.symbol || "TOKEN"} for exact size).</p>
+                <p>Enter a {nativeUnit} amount to buy (switch to {campaign.symbol || "TOKEN"} for exact size).</p>
               )}
             </div>
 
@@ -718,26 +1073,26 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                 tradePending ||
                 approvePending ||
                 quoteLoading ||
-                (isDexStage && !isTopazTradingActive) ||
-                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)
+                (isDexStage && !isSolanaCampaign && !isTopazTradingActive) ||
+                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountDecimals(tradeAmount, tokenDecimals) <= 0n)
               }
               className={`w-full ${topbarButtonClass}`}
             >
-              {tradePending ? "Processing..." : isDexStage ? "Buy on Topaz" : "Buy"}
+              {tradePending ? "Processing..." : isSolanaCampaign && isDexStage ? "Buy on Meteora" : isDexStage ? "Buy on Topaz" : "Buy"}
             </Button>
           </TabsContent>
 
           <TabsContent value="sell" className="space-y-2.5 mt-0 md:space-y-3">
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-muted-foreground">Amt ({tradeInputDenom === "BNB" ? "BNB" : campaign.symbol})</span>
+                <span className="text-[11px] text-muted-foreground">Amt ({tradeInputDenom === "BNB" ? nativeUnit : campaign.symbol})</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
                   onClick={toggleTradeInputDenom}
                 >
-                  {tradeInputDenom === "BNB" ? `Switch to ${campaign.symbol}` : "Switch to BNB"}
+                  {tradeInputDenom === "BNB" ? `Switch to ${campaign.symbol}` : `Switch to ${nativeUnit}`}
                 </Button>
               </div>
               <div className="relative">
@@ -749,7 +1104,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   placeholder="0"
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <span className="text-[11px] font-mono text-muted-foreground md:text-xs">{tradeInputDenom === "BNB" ? "BNB" : campaign.symbol}</span>
+                  <span className="text-[11px] font-mono text-muted-foreground md:text-xs">{tradeInputDenom === "BNB" ? nativeUnit : campaign.symbol}</span>
                 </div>
               </div>
 
@@ -761,7 +1116,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   onClick={() => {
                     if (tokenBalanceWei == null) return;
                     const amount = (tokenBalanceWei * 25n) / 100n;
-                    setTradeAmount(ethers.formatUnits(amount, TOKEN_DECIMALS));
+                    setTradeAmount(ethers.formatUnits(amount, tokenDecimals));
                   }}
                 >
                   25%
@@ -773,7 +1128,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   onClick={() => {
                     if (tokenBalanceWei == null) return;
                     const amount = (tokenBalanceWei * 50n) / 100n;
-                    setTradeAmount(ethers.formatUnits(amount, TOKEN_DECIMALS));
+                    setTradeAmount(ethers.formatUnits(amount, tokenDecimals));
                   }}
                 >
                   50%
@@ -784,7 +1139,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                   className="h-7 px-0 text-[11px]"
                   onClick={() => {
                     if (tokenBalanceWei == null) return;
-                    setTradeAmount(ethers.formatUnits(tokenBalanceWei, TOKEN_DECIMALS));
+                    setTradeAmount(ethers.formatUnits(tokenBalanceWei, tokenDecimals));
                   }}
                 >
                   100%
@@ -792,25 +1147,25 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
               </div>
 
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                <span className="truncate">Bal: {tradeInputDenom === "BNB" ? formatBnbFromWei(bnbBalanceWei) : `${formatTokenFromWei(tokenBalanceWei)} ${campaign.symbol}`}</span>
-                <span className="truncate text-right">Out: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}</span>
+                <span className="truncate">Bal: {tradeInputDenom === "BNB" ? formatAmount(bnbBalanceWei, isSolanaCampaign ? 9 : 18, nativeUnit) : `${formatAmount(tokenBalanceWei, tokenDecimals)} ${campaign.symbol}`}</span>
+                <span className="truncate text-right">Out: {tradeInputDenom === "BNB" ? formatAmount(effectiveBnbWei, isSolanaCampaign ? 9 : 18, nativeUnit) : (quoteLoading ? "…" : quoteWei != null ? formatAmount(quoteWei, isSolanaCampaign ? 9 : 18, nativeUnit) : "—")}</span>
               </div>
               {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
-                <p className="mt-1 text-[11px] text-muted-foreground">Est. sell: {formatTokenFromWei(effectiveTokenWei)} {campaign.symbol}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Est. sell: {formatAmount(effectiveTokenWei, tokenDecimals)} {campaign.symbol}</p>
               ) : null}
               {approvePending ? <p className="mt-2 text-center text-xs text-muted-foreground">Approval in progress...</p> : null}
               {quoteError ? <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p> : null}
             </div>
 
             <div className="text-center text-[11px] text-muted-foreground md:text-xs">
-              {isDexStage ? (
+              {isDexStage && !isSolanaCampaign ? (
                 isTopazTradingActive && quoteWei != null ? (
                   <p>Topaz execution · slippage {(topazSlippageBps / 100).toFixed(2)}%.</p>
                 ) : (
                   <p>Topaz market verification is in progress.</p>
                 )
               ) : quoteWei != null ? (
-                <p>You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})</p>
+                <p>You will receive ~{formatAmount(quoteWei, isSolanaCampaign ? 9 : 18, nativeUnit)} (min {formatAmount((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n, isSolanaCampaign ? 9 : 18, nativeUnit)})</p>
               ) : (
                 <p>Enter an amount to see the sell quote.</p>
               )}
@@ -822,12 +1177,12 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
                 tradePending ||
                 approvePending ||
                 quoteLoading ||
-                (isDexStage && !isTopazTradingActive) ||
-                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n)
+                (isDexStage && !isSolanaCampaign && !isTopazTradingActive) ||
+                (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountDecimals(tradeAmount, tokenDecimals) <= 0n)
               }
               className={`w-full ${topbarButtonClass}`}
             >
-              {tradePending ? "Processing..." : isDexStage ? "Sell on Topaz" : "Sell"}
+              {tradePending ? "Processing..." : isSolanaCampaign && isDexStage ? "Sell on Meteora" : isDexStage ? "Sell on Topaz" : "Sell"}
             </Button>
           </TabsContent>
         </Tabs>

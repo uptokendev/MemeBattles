@@ -273,6 +273,7 @@ function isPublicDiscoverableDraft(draft) {
 
 function canViewDraft(draft, viewer) {
   if (!draft) return false;
+  if (String(draft.status) === "archived") return false;
   if (draft.visibility !== "private") return true;
   const c = normalizeAddress(draft.creatorWallet, draft.chainId);
   const v = normalizeAddress(viewer, draft.chainId);
@@ -387,6 +388,7 @@ export async function drafts(req, res) {
           ? await pool.query(
               `select * from campaign_drafts
                 where creator_wallet = $1
+                  and status <> 'archived'
                 order by created_at desc
                 limit 100`,
               [owner],
@@ -394,6 +396,7 @@ export async function drafts(req, res) {
           : await pool.query(
               `select * from campaign_drafts
                 where lower(creator_wallet) = lower($1)
+                  and status <> 'archived'
                 order by created_at desc
                 limit 100`,
               [owner],
@@ -466,7 +469,9 @@ export async function drafts(req, res) {
 
     const store = memoryStore();
     const items = Array.from(store.drafts.values())
-      .filter((draft) => (owner ? draft.creatorWallet === owner : isPublicDiscoverableDraft(draft)))
+      .filter((draft) => (owner
+        ? draft.creatorWallet === owner && draft.status !== "archived"
+        : isPublicDiscoverableDraft(draft)))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return json(res, 200, { items });
   }
@@ -756,7 +761,7 @@ export async function draftArchive(req, res) {
   if (!exists.rows.length) return json(res, 404, { error: "Draft not found" });
 
   const row = exists.rows[0];
-  if (row.status === "deployed") return json(res, 409, { error: "Deployed drafts cannot be archived from Prepare Mode." });
+  if (row.status === "deployed") return json(res, 409, { error: "Deployed drafts cannot be removed from Prepare Mode." });
   if (row.status === "archived") {
     const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
     return json(res, 200, updated);
@@ -779,7 +784,7 @@ export async function draftArchive(req, res) {
       await releaseTickerReservation(db, {
         draftId: id,
         creatorWallet: row.creator_wallet,
-        reason: "Draft archived by creator; ticker returned to the chain availability pool.",
+        reason: "Draft removed by creator; ticker returned to the chain availability pool.",
       });
     });
   } catch (error) {

@@ -12,6 +12,8 @@ import {
 } from "@/lib/profile/portfolioCalculations";
 import { getReadProvider } from "@/lib/readProvider";
 import { getActiveChainId, isEvmChainId } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
+import { getSolanaReadConnection } from "@/lib/solanaReadConnection";
 
 const ERC20_ABI_MIN = [
   {
@@ -87,6 +89,32 @@ export function useProfileBalances({
       try {
         // BSC testnet/mainnet have no ENS — never pass non-0x values into ethers name resolvers.
         const targetRaw = String(viewedAddress || account || "").trim();
+        if (isSolanaAddress(targetRaw)) {
+          setLoadingBalances(true);
+          setLoadingPortfolioMetrics(true);
+          try {
+            const { PublicKey } = await import("@solana/web3.js");
+            const lamports = await getSolanaReadConnection().getBalance(new PublicKey(targetRaw), "confirmed");
+            const sol = (Number(lamports) / 1_000_000_000).toFixed(4);
+            if (!cancelled) {
+              setNativeBalance(`${sol} SOL`);
+              setTokenBalances([]);
+              setPortfolioMetrics(null);
+            }
+          } catch {
+            if (!cancelled) {
+              setNativeBalance("");
+              setTokenBalances([]);
+              setPortfolioMetrics(null);
+            }
+          } finally {
+            if (!cancelled) {
+              setLoadingBalances(false);
+              setLoadingPortfolioMetrics(false);
+            }
+          }
+          return;
+        }
         if (!targetRaw || !ethers.isAddress(targetRaw)) {
           setNativeBalance("");
           setTokenBalances([]);

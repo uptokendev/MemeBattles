@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
 import PublicProfile from "./PublicProfile";
 import { effectiveWalletAddress, normalizeRouteWallet, routeWalletsMatch } from "@/lib/address";
 
@@ -54,15 +54,10 @@ export default function ProfilePage() {
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams] = useSearchParams();
   const evmWallet = useWallet();
-  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const feedWallet = useActiveFeedWallet();
   const anyWallet: any = evmWallet as any;
 
-  const isEvmConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account);
-  const account = isSolanaConnected && solanaAccount
-    ? solanaAccount
-    : isEvmConnected
-      ? evmWallet.account ?? null
-      : null;
+  const account = feedWallet.address;
   const accountWallet = normalizeRouteWallet(account);
 
   const legacyAddress = searchParams.get("address");

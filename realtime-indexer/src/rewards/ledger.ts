@@ -1,5 +1,6 @@
 import type { PoolClient, QueryResult } from "pg";
 import { pool } from "../db.js";
+import { normalizeWalletAddress, walletEqualsSql } from "../walletAddress.js";
 import { ensureWeeklyEpoch, getCurrentWeeklyEpoch, getEpochById, type RewardEpochRecord } from "./epochs.js";
 import { processRewardEligibilityForEpoch } from "./eligibility.js";
 import { ensurePublishedAirdropDrawForEpoch, getPublishedAirdropDrawForEpoch, listAirdropWinners } from "./airdrops.js";
@@ -107,11 +108,7 @@ function mustIso(value: unknown, label: string): string {
 }
 
 function normalizeAddress(value: unknown): string {
-  const address = String(value ?? "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    throw new Error(`Invalid wallet address: ${String(value ?? "")}`);
-  }
-  return address;
+  return normalizeWalletAddress(value);
 }
 
 function normalizeHash(value: unknown): string {
@@ -362,7 +359,7 @@ export async function listRewardLedgerEntries(filters: {
 
   if (filters.walletAddress) {
     values.push(normalizeAddress(filters.walletAddress));
-    clauses.push(`wallet_address = $${values.length}`);
+    clauses.push(walletEqualsSql("wallet_address", values.length));
   }
   if (filters.epochId != null) {
     values.push(filters.epochId);
@@ -401,7 +398,7 @@ export async function listRewardClaims(filters: {
 
   if (filters.walletAddress) {
     values.push(normalizeAddress(filters.walletAddress));
-    clauses.push(`wallet_address = $${values.length}`);
+    clauses.push(walletEqualsSql("wallet_address", values.length));
   }
   if (filters.epochId != null) {
     values.push(filters.epochId);

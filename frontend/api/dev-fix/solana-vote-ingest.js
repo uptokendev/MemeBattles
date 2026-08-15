@@ -19,19 +19,100 @@ function isTruthy(value) {
 
 const DEFAULT_SOLANA_VOTE_TREASURY = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
 
-function solanaVoteTreasury() {
-  const candidates = [
+function solanaVoteTreasuries() {
+  const out = [];
+  const seen = new Set();
+  for (const c of [
     process.env.SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_VOTE_TREASURY_ADDRESS_101,
     process.env.VOTE_TREASURY_ADDRESS_101,
     DEFAULT_SOLANA_VOTE_TREASURY,
-  ];
-  for (const c of candidates) {
+  ]) {
     const v = String(c || "").trim();
-    if (v && isSolanaAddress(v)) return v;
+    if (!v || !isSolanaAddress(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function solanaVoteTreasury() {
+  return solanaVoteTreasuries()[0] || "";
+}
+
+function pubkeyOf(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value.pubkey === "string") return value.pubkey.trim();
+  if (value.pubkey && typeof value.pubkey.toString === "function") return String(value.pubkey.toString()).trim();
+  if (typeof value.toString === "function") {
+    const text = String(value.toString());
+    return text === "[object Object]" ? "" : text.trim();
   }
   return "";
+}
+
+function samePubkey(a, b) {
+  return Boolean(a && b && String(a) === String(b));
+}
+
+function flattenAccountKeys(tx) {
+  const message = tx?.transaction?.message || {};
+  const staticKeys = message.accountKeys || message.staticAccountKeys || [];
+  const keys = (Array.isArray(staticKeys) ? staticKeys : []).map(pubkeyOf).filter(Boolean);
+  const loaded = tx?.meta?.loadedAddresses || {};
+  for (const list of [loaded.writable, loaded.readonly]) {
+    for (const item of list || []) {
+      const key = pubkeyOf(item);
+      if (key) keys.push(key);
+    }
+  }
+  return keys;
+}
+
+function parseSystemTransferFromIx(ix, keys) {
+  if (!ix) return null;
+  const program =
+    pubkeyOf(ix.programId) ||
+    keys[Number(ix.programIdIndex ?? -1)] ||
+    String(ix.program || "");
+  const parsedType = String(ix?.parsed?.type || "");
+  if (parsedType === "transfer" || parsedType === "transferWithSeed") {
+    const info = ix.parsed.info || {};
+    const lamports = BigInt(info.lamports ?? info.lamportsSent ?? 0);
+    const from = String(info.source || info.from || "");
+    const to = String(info.destination || info.to || "");
+    if (lamports > 0n && from && to) return { from, to, lamports };
+  }
+  if (program !== SYSTEM_PROGRAM && program !== "system") return null;
+  const dataRaw = ix.data;
+  if (!dataRaw || typeof dataRaw !== "string") return null;
+  let data;
+  try {
+    data = Buffer.from(dataRaw, "base64");
+  } catch {
+    return null;
+  }
+  if (data.length < 12) return null;
+  const index = data.readUInt32LE(0);
+  if (index !== 2) return null;
+  const lamports = data.readBigUInt64LE(4);
+  const accounts = ix.accounts || ix.accountKeyIndexes || [];
+  const from = keys[Number(accounts[0])] || "";
+  const to = keys[Number(accounts[1])] || "";
+  if (lamports > 0n && from && to) return { from, to, lamports };
+  return null;
+}
+
+function collectInstructions(tx) {
+  const message = tx?.transaction?.message || {};
+  const outer = message.instructions || [];
+  const inner = [];
+  for (const group of tx?.meta?.innerInstructions || []) {
+    for (const ix of group.instructions || []) inner.push(ix);
+  }
+  return [...outer, ...inner];
 }
 
 const MEMO_PROGRAMS = new Set([
@@ -71,20 +152,18 @@ function decodeIxData(raw) {
 }
 
 function extractUpvoteMemoCampaign(tx) {
-  const message = tx?.transaction?.message;
-  const keys = (message?.accountKeys || []).map((k) =>
-    typeof k === "string" ? k : String(k?.pubkey || k || ""),
-  );
-  const instructions = message?.instructions || [];
-  for (const ix of instructions) {
+  const keys = flattenAccountKeys(tx);
+  for (const ix of collectInstructions(tx)) {
     const program =
-      typeof ix.programId === "string"
-        ? ix.programId
-        : keys[Number(ix.programIdIndex ?? -1)] || "";
-    if (!MEMO_PROGRAMS.has(program)) continue;
-    const memo = decodeIxData(ix.data);
-    const match = memo.match(/mwz-upvote:([1-9A-HJ-NP-Za-km-z]{32,44})/);
-    if (match?.[1]) return match[1];
+      pubkeyOf(ix.programId) ||
+      keys[Number(ix.programIdIndex ?? -1)] ||
+      String(ix.program || "");
+    const parsedMemo = typeof ix.parsed === "string" ? ix.parsed : "";
+    const memo = parsedMemo || decodeIxData(ix.data);
+    if (MEMO_PROGRAMS.has(program) || program === "spl-memo" || /mwz-upvote:/.test(memo)) {
+      const match = String(memo).match(/mwz-upvote:([1-9A-HJ-NP-Za-km-z]{32,44})/);
+      if (match?.[1]) return match[1];
+    }
   }
   for (const line of tx?.meta?.logMessages || []) {
     const match = String(line).match(/mwz-upvote:([1-9A-HJ-NP-Za-km-z]{32,44})/);
@@ -146,32 +225,82 @@ async function rpcCall(rpcUrl, method, params) {
 }
 
 /**
- * Parse a confirmed transfer of lamports from voter → treasury.
+ * Parse a confirmed transfer of lamports from voter → any known vote treasury.
  */
-function extractSolTransfer(tx, voter, treasury) {
+function extractSolTransfer(tx, voter, treasuries) {
   const meta = tx?.meta;
-  const message = tx?.transaction?.message;
   if (!meta || meta.err) return null;
+  const treasurySet = new Set((treasuries || []).filter(Boolean));
+  const keys = flattenAccountKeys(tx);
+  const feePayer = keys[0] || "";
 
-  // accountKeys may be array of strings or {pubkey}
-  const keys = (message?.accountKeys || []).map((k) =>
-    typeof k === "string" ? k : String(k?.pubkey || k || ""),
-  );
+  for (const ix of collectInstructions(tx)) {
+    const parsed = parseSystemTransferFromIx(ix, keys);
+    if (!parsed) continue;
+    const destOk = [...treasurySet].some((treasury) => samePubkey(parsed.to, treasury));
+    const sourceOk = samePubkey(parsed.from, voter) || samePubkey(parsed.from, feePayer);
+    if (destOk && sourceOk) {
+      return {
+        amountLamports: parsed.lamports,
+        blockTime: tx.blockTime || null,
+        slot: tx.slot || 0,
+        treasury: parsed.to,
+      };
+    }
+  }
+
   const pre = meta.preBalances || [];
   const post = meta.postBalances || [];
-  const voterIdx = keys.findIndex((k) => k === voter);
-  const treasuryIdx = keys.findIndex((k) => k === treasury);
-  if (voterIdx < 0 || treasuryIdx < 0) return null;
+  const voterIdx = keys.findIndex((k) => samePubkey(k, voter) || samePubkey(k, feePayer));
+  for (const treasury of treasurySet) {
+    const treasuryIdx = keys.findIndex((k) => samePubkey(k, treasury));
+    if (voterIdx < 0 || treasuryIdx < 0) continue;
+    const voterDelta = BigInt(post[voterIdx] ?? 0) - BigInt(pre[voterIdx] ?? 0);
+    const treasuryDelta = BigInt(post[treasuryIdx] ?? 0) - BigInt(pre[treasuryIdx] ?? 0);
+    if (treasuryDelta > 0n && voterDelta < 0n) {
+      return {
+        amountLamports: treasuryDelta,
+        blockTime: tx.blockTime || null,
+        slot: tx.slot || 0,
+        treasury,
+      };
+    }
+  }
+  return null;
+}
 
-  const voterDelta = BigInt(post[voterIdx] ?? 0) - BigInt(pre[voterIdx] ?? 0);
-  const treasuryDelta = BigInt(post[treasuryIdx] ?? 0) - BigInt(pre[treasuryIdx] ?? 0);
-  // Voter paid (negative), treasury received (positive)
-  if (treasuryDelta <= 0n || voterDelta >= 0n) return null;
-  return {
-    amountLamports: treasuryDelta,
-    blockTime: tx.blockTime || null,
-    slot: tx.slot || 0,
-  };
+function solanaRpcUrls() {
+  const urls = [
+    process.env.SOLANA_RPC_URL,
+    process.env.SOLANA_RPC_HTTP,
+    process.env.VITE_SOLANA_RPC,
+    "https://api.devnet.solana.com",
+    "https://api.mainnet-beta.solana.com",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  return [...new Set(urls)];
+}
+
+async function fetchVoteTransaction(signature) {
+  const configs = [
+    { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+    { encoding: "json", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
+    { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
+  ];
+  let lastError = null;
+  for (const rpcUrl of solanaRpcUrls()) {
+    for (const config of configs) {
+      try {
+        const tx = await rpcCall(rpcUrl, "getTransaction", [signature, config]);
+        if (tx) return tx;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
 }
 
 async function resolveSolanaVoteCampaign(chainId, address) {
@@ -301,7 +430,8 @@ export async function solanaVoteIngest(req, res) {
       return json(res, 400, { error: "voterAddress must be a Solana public key." });
     }
 
-    const treasury = solanaVoteTreasury();
+    const treasuries = solanaVoteTreasuries();
+    const treasury = treasuries[0] || "";
     if (!treasury) {
       return json(res, 503, {
         error: "Solana vote treasury is not configured (SOLANA_VOTE_TREASURY_ADDRESS).",
@@ -312,20 +442,18 @@ export async function solanaVoteIngest(req, res) {
     const resolved = await resolveSolanaVoteCampaign(chainId, campaignAddress);
     const canonicalCampaign = String(resolved?.campaign_address || campaignAddress).trim();
 
-    const rpcUrl = String(process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com").trim();
-    const tx = await rpcCall(rpcUrl, "getTransaction", [
-      signature,
-      { encoding: "json", commitment: "confirmed", maxSupportedTransactionVersion: 0 },
-    ]);
+    const tx = await fetchVoteTransaction(signature);
     if (!tx) {
       return json(res, 404, { error: "Transaction not found (wait for confirmation and retry)." });
     }
 
-    const transfer = extractSolTransfer(tx, voterAddress, treasury);
+    const transfer = extractSolTransfer(tx, voterAddress, treasuries);
     if (!transfer) {
       return json(res, 400, {
         error: "Transaction is not a confirmed SOL transfer from voter to vote treasury.",
         code: "SOLANA_VOTE_TRANSFER_INVALID",
+        treasury,
+        voterAddress,
       });
     }
 

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { RadarLoader } from "@/components/ui/RadarLoader";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { resolveBnbFeedChainId, setSelectedFeedChainId, useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import {
   LEAGUES,
   calculatePaidPlaces,
@@ -400,7 +401,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const activeBnbChainId = walletChainId === 56 ? 56 : 97;
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  const [chain, setChain] = useState<LeagueChain>("bnb");
+  const [feedChainId] = useSelectedFeedChainId();
+  const [chain, setChain] = useState<LeagueChain>(() => (feedChainId === SOLANA_CHAIN_ID ? "solana" : "bnb"));
   const [period, setPeriod] = useState<Period>("weekly");
   const [epochOffset, setEpochOffset] = useState(0);
   const [selectedLeagueKey, setSelectedLeagueKey] = useState<LeagueKey>("fastest_finish");
@@ -410,6 +412,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   const selectedLeague = LEAGUES.find((league) => league.key === selectedLeagueKey) ?? LEAGUES[0];
   const epochOptions = useMemo(() => getEpochOptions(period), [period]);
+
+  useEffect(() => {
+    setChain(feedChainId === SOLANA_CHAIN_ID ? "solana" : "bnb");
+  }, [feedChainId]);
 
   useEffect(() => {
     if (!selectedLeague.supports.includes(period)) {
@@ -543,7 +549,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 value={chain}
                 left={{ value: "bnb", label: "BNB" }}
                 right={{ value: "solana", label: "Solana" }}
-                onChange={(next) => setChain(next)}
+                onChange={(next) => {
+                  setChain(next);
+                  setSelectedFeedChainId(next === "solana" ? SOLANA_CHAIN_ID : resolveBnbFeedChainId());
+                }}
               />
               <TacticalSwitch<Period>
                 label="Epoch"

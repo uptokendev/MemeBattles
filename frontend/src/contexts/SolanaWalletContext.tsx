@@ -4,6 +4,10 @@ import {
   disconnectSolanaWallet as disconnectSolanaFn,
   detectSolanaWallets,
   ensureSolanaListeners,
+  getSolanaProvider,
+  getStoredSolanaWallet,
+  getStoredSolanaWalletName,
+  refreshSolanaWalletFromProvider,
   SOLANA_WALLET_EVENT,
   type DetectedSolanaWallet,
 } from "@/lib/solanaWallet";
@@ -27,13 +31,13 @@ type SolanaWalletContextType = {
 const SolanaWalletContext = createContext<SolanaWalletContextType | null>(null);
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
-  const [solanaAccount, setSolanaAccount] = useState("");
-  const [solanaWalletName, setSolanaWalletName] = useState("");
+  const [solanaAccount, setSolanaAccount] = useState(() => getStoredSolanaWallet());
+  const [solanaWalletName, setSolanaWalletName] = useState(() => getStoredSolanaWalletName());
   const [connectingSolana, setConnectingSolana] = useState(false);
   const [availableSolanaWallets, setAvailableSolanaWallets] = useState<DetectedSolanaWallet[]>([]);
 
   const refreshAvailableWallets = useCallback(() => {
-    ensureSolanaListeners({ readExistingAccount: false });
+    ensureSolanaListeners({ readExistingAccount: true });
     setAvailableSolanaWallets(detectSolanaWallets());
   }, []);
 
@@ -60,10 +64,32 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     refreshAvailableWallets();
+    const existing = refreshSolanaWalletFromProvider() || getStoredSolanaWallet();
+    if (existing) {
+      setSolanaAccount(existing);
+      setSolanaWalletName(getStoredSolanaWalletName());
+    }
+
+    const restoreTrusted = window.setTimeout(() => {
+      const provider = getSolanaProvider();
+      if (!provider?.connect || getStoredSolanaWallet()) return;
+      void provider.connect({ onlyIfTrusted: true } as { onlyIfTrusted?: boolean }).then((result) => {
+        const key = String(result?.publicKey?.toString?.() || provider.publicKey?.toString?.() || "").trim();
+        if (key) {
+          refreshSolanaWalletFromProvider();
+          setSolanaAccount(key);
+        }
+      }).catch(() => {});
+    }, 120);
 
     const timers = [80, 250, 800, 1600].map((delay) =>
       window.setTimeout(() => {
         setAvailableSolanaWallets(detectSolanaWallets());
+        const restored = refreshSolanaWalletFromProvider() || getStoredSolanaWallet();
+        if (restored) {
+          setSolanaAccount(restored);
+          setSolanaWalletName(getStoredSolanaWalletName());
+        }
       }, delay)
     );
 
@@ -82,6 +108,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     window.addEventListener(SOLANA_WALLET_EVENT, onEvent as EventListener);
 
     return () => {
+      window.clearTimeout(restoreTrusted);
       timers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener(SOLANA_WALLET_EVENT, onEvent as EventListener);
     };

@@ -47,8 +47,9 @@ const SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }>
 ];
 
 const DRAFT_SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }> = [
-  { value: "created_desc", label: "New draft" },
+  { value: "created_desc", label: "New" },
   { value: "progress_desc", label: "Near deployment" },
+  { value: "popular_desc", label: "Most popular" },
 ];
 
 function numOrUndef(s: string): number | undefined {
@@ -66,7 +67,9 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
   const forcedStatus = query.tab === "ending" ? "live" : query.tab === "dex" ? "graduated" : null;
   const statusValue = forcedStatus ?? (query.status ?? "all");
   const sortValue = isDraftRow
-    ? query.sort === "progress_desc" ? "progress_desc" : "created_desc"
+    ? query.sort === "progress_desc" || query.sort === "popular_desc"
+      ? query.sort
+      : "created_desc"
     : query.sort ?? "default";
 
   const [mcapMin, setMcapMin] = useState<string>(query.mcapMinUsd != null ? String(query.mcapMinUsd) : "");
@@ -124,7 +127,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                   const nextStatus = nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
                   const nextSort = nextTab === "drafts"
                     ? "created_desc"
-                    : query.tab === "drafts" && query.sort === "progress_desc"
+                    : query.tab === "drafts"
                       ? "default"
                       : query.sort ?? "default";
                   onChange({ ...query, tab: nextTab, status: nextStatus, sort: nextSort });

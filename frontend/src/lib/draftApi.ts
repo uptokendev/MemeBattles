@@ -1,5 +1,6 @@
 import { verifyMessage } from "ethers";
 import { apiFetch, apiUrl } from "@/lib/apiBase";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
@@ -442,6 +443,27 @@ async function signDraftActionWithKnownChain(input: {
   return auth;
 }
 
+async function resolveConnectedEvmChainId(): Promise<number> {
+  try {
+    const eth = (globalThis as any)?.ethereum;
+    if (eth?.request) {
+      const hex = await eth.request({ method: "eth_chainId" });
+      const n = Number.parseInt(String(hex), 16);
+      if (n === BNB_CHAIN_ID || n === BNB_TESTNET_CHAIN_ID) return n;
+    }
+  } catch {
+    /* ignore */
+  }
+  return BNB_CHAIN_ID;
+}
+
+/** Sign follow/arm on the WALLET's chain, not the draft's chain. */
+async function resolveEngagementSignerChainId(walletAddress: string, draftChainId: number): Promise<number> {
+  if (isSolanaWalletAddress(walletAddress)) return SOLANA_CHAIN_ID;
+  if (draftChainId === BNB_CHAIN_ID || draftChainId === BNB_TESTNET_CHAIN_ID) return draftChainId;
+  return resolveConnectedEvmChainId();
+}
+
 async function signPrepareEngagement(input: {
   action: "follow_draft" | "comment_draft" | "arm_draft_notifications" | "react_draft_comment";
   draftId: string;
@@ -451,23 +473,20 @@ async function signPrepareEngagement(input: {
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
   const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
   const draftChainId = Number(bundle.draft.chainId);
-  // EVM wallets must sign/nonce on an EVM chain id. Solana drafts often have chainId 101,
-  // which rejects 0x addresses on /api/auth/nonce — use the connected wallet chain instead.
-  const isEvmWallet = /^0x[a-f0-9]{40}$/i.test(walletAddress);
+  const isSocialAction =
+    input.action === "follow_draft" ||
+    input.action === "arm_draft_notifications" ||
+    input.action === "comment_draft" ||
+    input.action === "react_draft_comment";
+
   let chainId = draftChainId;
-  if (isEvmWallet && (draftChainId === 101 || draftChainId === 102 || !Number.isFinite(draftChainId))) {
-    try {
-      const eth = (globalThis as any)?.ethereum;
-      if (eth?.request) {
-        const hex = await eth.request({ method: "eth_chainId" });
-        const n = Number.parseInt(String(hex), 16);
-        if (Number.isFinite(n) && n > 0) chainId = n;
-      }
-    } catch {
-      /* ignore */
-    }
-    if (chainId === 101 || chainId === 102 || !Number.isFinite(chainId) || chainId <= 0) {
-      chainId = 56;
+  if (isSocialAction) {
+    chainId = await resolveEngagementSignerChainId(walletAddress, draftChainId);
+  } else {
+    // Comments / reacts stay on the previous same-chain-oriented remap.
+    const isEvmWallet = /^0x[a-f0-9]{40}$/i.test(walletAddress);
+    if (isEvmWallet && (draftChainId === 101 || draftChainId === 102 || !Number.isFinite(draftChainId))) {
+      chainId = await resolveConnectedEvmChainId();
     }
   }
   return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId });
@@ -826,7 +845,7 @@ export async function fetchOwnerCampaignDrafts(owner: string, input: { chainId?:
 }
 
 export async function fetchFollowedCampaignDrafts(input: { walletAddress: string; chainId?: number }): Promise<CampaignDraft[]> {
-  const res = await apiFetch(`/api/drafts/followed${query({ wallet: input.walletAddress, chainId: input.chainId })}`, { cache: "no-store" });
+  const res = await apiFetch(`/api/drafts/followed${query({ wallet: input.walletAddress })}`, { cache: "no-store" });
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
@@ -891,13 +910,24 @@ export async function saveDraftPromotion(draftId: string, input: SavePromotionIn
   return bundle;
 }
 
-export async function fetchPrepareDraft(slug: string, viewer?: string | null): Promise<PrepareDraftBundle> {
+export async function fetchPrepareDraft(
+  slug: string,
+  viewer?: string | null,
+  options?: { evmAccount?: string | null; solanaAccount?: string | null },
+): Promise<PrepareDraftBundle> {
   const url = apiUrl(`/api/prepare/${encodeURIComponent(slug)}${query({ viewer })}`);
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
 
   if (res.ok) return json as PrepareDraftBundle;
-  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") return retryPrivateReadWithAuth(url, viewer, json, json?.draftId || null);
+  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
+    const chainId = Number(json?.chainId);
+    const ownerWallet =
+      chainId === SOLANA_CHAIN_ID || chainId === 102
+        ? options?.solanaAccount || viewer
+        : options?.evmAccount || viewer;
+    return retryPrivateReadWithAuth(url, ownerWallet, json, json?.draftId || null);
+  }
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 

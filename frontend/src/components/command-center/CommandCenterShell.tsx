@@ -3,8 +3,8 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { CommandCenterLayout } from "@/components/command-center/CommandCenterLayout";
+import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
 import { effectiveWalletAddress, normalizeRouteWallet, routeWalletsMatch } from "@/lib/address";
 
 function openWalletModal(wallet: any) {
@@ -66,12 +66,10 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
   const { wallet: walletParam } = useParams<{ wallet?: string }>();
   const location = useLocation();
   const wallet = useWallet();
-  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const feedWallet = useActiveFeedWallet();
   const anyWallet: any = wallet as any;
 
-  const connectedWallet = isSolanaConnected && solanaAccount
-    ? normalizeRouteWallet(solanaAccount)
-    : normalizeRouteWallet(wallet.account);
+  const connectedWallet = normalizeRouteWallet(feedWallet.address);
   const requestedWallet = normalizeRouteWallet(walletParam);
   const walletAddress = requestedWallet ? effectiveWalletAddress(requestedWallet, connectedWallet) : null;
 

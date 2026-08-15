@@ -151,7 +151,7 @@ const Create = () => {
   const graduationTouchedRef = useRef(false);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
+  const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && (getActiveChainId(wallet.chainId) === SOLANA_CHAIN_ID || !wallet.isConnected));
   const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
   const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
   // BNB testnet (97) + Solana (101): include $6 test grad when flag allows (default on).

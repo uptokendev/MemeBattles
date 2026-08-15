@@ -128,6 +128,22 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
       });
   }
 
+  if (sort === "popular_desc") {
+    const score = (item: DraftCampaignVM) => {
+      const pop = item.popularity;
+      const ranked = Number(pop?.rankingScore ?? 0);
+      if (Number.isFinite(ranked) && ranked > 0) return ranked;
+      const pct = Number(pop?.popularityPercentage ?? 0);
+      const follows = Number(pop?.follows ?? 0);
+      const comments = Number(pop?.comments ?? 0);
+      return pct * 10 + follows * 3 + comments;
+    };
+    return active.slice().sort((a, b) => {
+      const diff = score(b) - score(a);
+      return diff || created(b).localeCompare(created(a));
+    });
+  }
+
   if (sort === "created_asc") return active.slice().sort((a, b) => created(a).localeCompare(created(b)));
   return active.slice().sort((a, b) => created(b).localeCompare(created(a)));
 }

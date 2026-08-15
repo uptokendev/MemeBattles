@@ -31,6 +31,7 @@ import { runGraduationReconcilerOnce } from "./graduationReconciler.js";
 import { ensureDexPoolForCampaign } from "./marketApi.js";
 import { registerLpFeesRoutes } from "./lpFeesRoutes.js";
 import { runTopazPoolIndexerOnce } from "./topazPoolIndexer.js";
+import { parseWalletAddressOrNull, walletEqualsSql } from "./walletAddress.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
@@ -1635,8 +1636,8 @@ app.get("/internal/rewards/ops/admin-actions", wrap(async (req, res) => {
 }));
 
 app.get("/api/rewards/me", wrap(async (req, res) => {
-  const address = String(req.query.address || "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  const address = parseWalletAddressOrNull(req.query.address);
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
   const summary = await getWalletRewardSummary(address);
@@ -1645,10 +1646,10 @@ app.get("/api/rewards/me", wrap(async (req, res) => {
 }));
 
 app.get("/api/rewards/me/history", wrap(async (req, res) => {
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
   const items = await listWalletRewardHistory(address, { limit, program: program as any });
@@ -1656,11 +1657,11 @@ app.get("/api/rewards/me/history", wrap(async (req, res) => {
 }));
 
 app.get("/api/rewards/me/claims", wrap(async (req, res) => {
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
   if (epochId != null && !Number.isFinite(epochId)) {
@@ -1675,10 +1676,10 @@ app.get("/api/rewards/me/claims", wrap(async (req, res) => {
 }));
 
 app.get("/api/rewards/me/eligibility", wrap(async (req, res) => {
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
   if (program != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(program)) {
@@ -1798,14 +1799,14 @@ app.get("/api/squads/:recruiterCode/summary", wrap(async (req, res) => {
 // GET /api/activity/trades?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
 app.get("/api/activity/trades", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
 
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
 
@@ -1850,7 +1851,7 @@ app.get("/api/activity/trades", wrap(async (req, res) => {
        on c.chain_id = t.chain_id
       and c.campaign_address = t.campaign_address
      where t.chain_id = $1
-       and t.wallet = $2
+       and ${walletEqualsSql("t.wallet", 2)}
        ${whereCursor}
      order by t.block_number desc, t.log_index desc
      limit $${params.length}`,
@@ -1884,14 +1885,14 @@ app.get("/api/activity/trades", wrap(async (req, res) => {
 // GET /api/activity/comments?chainId=97&address=0x...&limit=50&cursor=TS:ID
 app.get("/api/activity/comments", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
 
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
 
@@ -1933,7 +1934,7 @@ app.get("/api/activity/comments", wrap(async (req, res) => {
        on camp.chain_id = c.chain_id
       and camp.campaign_address = c.campaign_address
      where c.chain_id = $1
-       and c.author_address = $2
+       and ${walletEqualsSql("c.author_address", 2)}
        and c.status = 0
        ${whereCursor}
      order by c.created_at desc, c.id desc
@@ -1966,14 +1967,14 @@ app.get("/api/activity/comments", wrap(async (req, res) => {
 // GET /api/activity/created?chainId=97&address=0x...&limit=50&cursor=TS:ADDR
 app.get("/api/activity/created", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
 
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
 
@@ -1982,8 +1983,8 @@ app.get("/api/activity/created", wrap(async (req, res) => {
   if (cursorRaw) {
     const parts = cursorRaw.split(":");
     const ts = Number(parts[0]);
-    const addr = String(parts[1] || "").toLowerCase();
-    if (Number.isFinite(ts) && /^0x[a-f0-9]{40}$/.test(addr)) {
+    const addr = parseWalletAddressOrNull(parts[1]);
+    if (Number.isFinite(ts) && addr) {
       cursorTs = new Date(ts * 1000);
       cursorAddr = addr;
     }
@@ -2012,7 +2013,7 @@ app.get("/api/activity/created", wrap(async (req, res) => {
        c.created_at
      from public.campaigns c
      where c.chain_id = $1
-       and c.creator_address = $2
+       and ${walletEqualsSql("c.creator_address", 2)}
        ${whereCursor}
      order by coalesce(c.created_at_chain, c.created_at) desc, c.campaign_address desc
      limit $${params.length}`,
@@ -2039,14 +2040,14 @@ app.get("/api/activity/created", wrap(async (req, res) => {
 // GET /api/activity/interactions?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
 app.get("/api/activity/interactions", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
-  const address = String(req.query.address || "").trim().toLowerCase();
+  const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
 
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+  if (!address) {
     return res.status(400).json({ error: "Invalid address" });
   }
 
@@ -2090,7 +2091,7 @@ app.get("/api/activity/interactions", wrap(async (req, res) => {
        on c.chain_id = v.chain_id
       and c.campaign_address = v.campaign_address
      where v.chain_id = $1
-       and v.voter_address = $2
+       and ${walletEqualsSql("v.voter_address", 2)}
        and v.status = 'confirmed'
        ${whereCursor}
      order by v.block_number desc, v.log_index desc

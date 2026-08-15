@@ -7,6 +7,8 @@
 //   otherwise fall back to default chain.
 // - No redeploy needed to switch between BNB testnet/mainnet; only switch the wallet network.
 
+import { getActiveWalletKind, readStoredFeedChainId } from "@/lib/activeWalletChain";
+
 export type SupportedChainId = 56 | 97 | 101;
 
 export const BNB_CHAIN_ID: SupportedChainId = 56;
@@ -97,6 +99,11 @@ function readBrowserChainContext(): SupportedChainId | null {
       const stored = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
       if (isAllowedChainId(stored)) return stored as SupportedChainId;
     }
+
+    const kind = getActiveWalletKind();
+    if (kind === "solana") return SOLANA_CHAIN_ID;
+    const storedFeed = readStoredFeedChainId();
+    if (storedFeed && isAllowedChainId(storedFeed)) return storedFeed;
   } catch {
     // ignore route-context failures
   }
@@ -107,6 +114,10 @@ function readBrowserChainContext(): SupportedChainId | null {
 export function getActiveChainId(walletChainId?: number | null): SupportedChainId {
   const routeChainId = readBrowserChainContext();
   if (routeChainId) return routeChainId;
+  const kind = getActiveWalletKind();
+  if (kind === "solana") return SOLANA_CHAIN_ID;
+  const storedFeed = readStoredFeedChainId();
+  if (storedFeed && isAllowedChainId(storedFeed)) return storedFeed;
   if (walletChainId && isAllowedChainId(walletChainId)) return walletChainId as SupportedChainId;
   return getDefaultChainId();
 }
