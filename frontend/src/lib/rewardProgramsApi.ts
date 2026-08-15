@@ -205,6 +205,41 @@ export async function requestRewardClaim(input: {
   return Array.isArray(json?.items) ? json.items as RewardLedgerItem[] : [];
 }
 
+export type AirdropPreviewWallet = {
+  walletAddress: string;
+  program: string;
+  volumeRaw?: string;
+  estimatedShareRaw?: string;
+  tradeCount?: number;
+  activeDays?: number;
+  uniqueBuyers?: number;
+  eligibleCampaignCount?: number;
+  finalWeight?: number;
+};
+
+export type AirdropPreview = {
+  ok: boolean;
+  claimsOpen: boolean;
+  chainId: number;
+  tokenSymbol: string;
+  epoch: { id: string; start: string; end: string };
+  estimatedPoolRaw: string;
+  traders: AirdropPreviewWallet[];
+  creators: AirdropPreviewWallet[];
+  traderCount: number;
+  creatorCount: number;
+  tradeCount?: number;
+  note?: string;
+};
+
+export async function fetchAirdropPreview(chainId?: number | null): Promise<AirdropPreview | null> {
+  const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/preview${buildQuery({ chainId })}`));
+  if (!res.ok) return null;
+  const json = await res.json().catch(() => null);
+  if (!json || json.ok === false) return null;
+  return json as AirdropPreview;
+}
+
 export async function fetchAirdropCurrent(chainId?: number | null): Promise<AirdropCurrent> {
   const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/current${buildQuery({ chainId })}`));
   if (res.status === 404) {

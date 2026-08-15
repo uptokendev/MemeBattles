@@ -6,7 +6,14 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { fetchAirdropCurrent, fetchAirdropWinners, type AirdropCurrent, type AirdropWinner } from "@/lib/rewardProgramsApi";
+import {
+  fetchAirdropCurrent,
+  fetchAirdropPreview,
+  fetchAirdropWinners,
+  type AirdropCurrent,
+  type AirdropPreview,
+  type AirdropWinner,
+} from "@/lib/rewardProgramsApi";
 
 const ZERO_RAW = "0";
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -73,6 +80,7 @@ export default function CommandCenterAirdrops() {
   const { chainId } = useCommandCenterData();
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
   const [current, setCurrent] = useState<AirdropCurrent | null>(null);
+  const [preview, setPreview] = useState<AirdropPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -85,11 +93,13 @@ export default function CommandCenterAirdrops() {
     void Promise.all([
       fetchAirdropCurrent(chainId),
       fetchAirdropWinners({ chainId, limit: 12 }),
+      fetchAirdropPreview(chainId).catch(() => null),
     ])
-      .then(([currentBatch, items]) => {
+      .then(([currentBatch, items, previewBatch]) => {
         if (cancelled) return;
         setCurrent(currentBatch || null);
         setWinners(Array.isArray(items) ? items : []);
+        setPreview(previewBatch);
       })
       .catch((err: any) => {
         if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop data"));
@@ -114,9 +124,14 @@ export default function CommandCenterAirdrops() {
     return configured && Number.isFinite(configured.getTime()) ? configured : getNextMondayUtc();
   }, [current]);
   const countdown = formatCountdown(nextDropAt, nowMs);
-  const currentPrizePoolRaw = current?.prizePool?.amount || current?.current?.totalAmount || ZERO_RAW;
-  const symbol = nativeSymbol(chainId, current?.prizePool?.tokenSymbol || current?.current?.tokenSymbol);
-  const poolStatus = current?.prizePool?.status || current?.current?.status || "pending";
+  const currentPrizePoolRaw =
+    current?.prizePool?.amount || current?.current?.totalAmount || preview?.estimatedPoolRaw || ZERO_RAW;
+  const symbol = nativeSymbol(chainId, current?.prizePool?.tokenSymbol || current?.current?.tokenSymbol || preview?.tokenSymbol);
+  const poolStatus = current?.prizePool?.status || current?.current?.status || preview?.note || "pending";
+  const previewRows = [
+    ...(preview?.traders || []).map((row) => ({ ...row, kind: "Trader" })),
+    ...(preview?.creators || []).map((row) => ({ ...row, kind: "Creator" })),
+  ].slice(0, 12);
 
   return (
     <div className="space-y-4">
@@ -143,6 +158,11 @@ export default function CommandCenterAirdrops() {
             <p className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Next drop in</p>
             <div className="mt-4 font-retro text-3xl text-foreground md:text-4xl">{countdown}</div>
             {current?.currentEpochId ? <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Epoch {current.currentEpochId}</p> : null}
+            {preview ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {preview.traderCount} traders / {preview.creatorCount} creators qualify this epoch. Claims closed.
+              </p>
+            ) : null}
           </CommandCenterCard>
         </div>
 
@@ -188,6 +208,32 @@ export default function CommandCenterAirdrops() {
           )}
         </CommandCenterCard>
       </div>
+
+      {previewRows.length ? (
+        <CommandCenterCard title="Eligible this epoch (preview)">
+          <p className="mb-3 text-xs text-muted-foreground">{preview?.note}</p>
+          <div className="space-y-2">
+            {previewRows.map((row) => (
+              <div
+                key={`${row.program}-${row.walletAddress}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/35 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-retro text-sm text-foreground">{shortenAddress(row.walletAddress)}</p>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                    {row.kind}
+                    {row.tradeCount ? ` · ${row.tradeCount} trades` : ""}
+                    {row.uniqueBuyers ? ` · ${row.uniqueBuyers} buyers` : ""}
+                  </p>
+                </div>
+                <p className="shrink-0 font-retro text-sm text-foreground">
+                  {formatNativeAmount(row.estimatedShareRaw || ZERO_RAW, chainId)} {symbol}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CommandCenterCard>
+      ) : null}
     </div>
   );
 }

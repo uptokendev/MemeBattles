@@ -4,11 +4,17 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { isSolanaChainId } from "@/lib/chainConfig";
 import { fetchAirdropWinners, type AirdropWinner } from "@/lib/rewardProgramsApi";
 
-function formatBnb(raw: string): string {
+const LAMPORTS_PER_SOL = 1_000_000_000;
+
+function formatNative(raw: string, solana: boolean): string {
   try {
-    const value = Number(formatEther(BigInt(raw || "0")));
+    const value = solana
+      ? Number(BigInt(raw || "0")) / LAMPORTS_PER_SOL
+      : Number(formatEther(BigInt(raw || "0")));
     return value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 });
   } catch {
     return "0";
@@ -16,6 +22,9 @@ function formatBnb(raw: string): string {
 }
 
 export default function AirdropWinners() {
+  const [selectedChainId] = useSelectedFeedChainId();
+  const solana = isSolanaChainId(Number(selectedChainId));
+  const symbol = solana ? "SOL" : "BNB";
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +36,7 @@ export default function AirdropWinners() {
 
     void (async () => {
       try {
-        const items = await fetchAirdropWinners({ limit: 100 });
+        const items = await fetchAirdropWinners({ chainId: Number(selectedChainId || 97), limit: 100 });
         if (!cancelled) setWinners(items);
       } catch (err: any) {
         if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop winners"));
@@ -39,7 +48,7 @@ export default function AirdropWinners() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedChainId]);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 py-8">
@@ -97,9 +106,9 @@ export default function AirdropWinners() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-retro text-sm text-foreground">{formatBnb(winner.payoutAmount)} BNB</p>
+                    <p className="font-retro text-sm text-foreground">{formatNative(winner.payoutAmount, solana)} {symbol}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Weight tier {winner.weightTier} · score {formatBnb(winner.activityScore)} BNB
+                      Weight tier {winner.weightTier} · score {winner.activityScore}
                     </p>
                   </div>
                 </div>

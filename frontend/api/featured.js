@@ -40,10 +40,14 @@ const LOGO_JOINS = `
           FROM public.token_metadata_registry m
          WHERE m.chain_id = c.chain_id
            AND (
-             lower(m.campaign_address) = lower(c.campaign_address)
+             m.campaign_address = c.campaign_address
+             OR lower(m.campaign_address) = lower(c.campaign_address)
              OR (
                c.token_address IS NOT NULL
-               AND lower(m.token_address) = lower(c.token_address)
+               AND (
+                 m.token_address = c.token_address
+                 OR lower(m.token_address) = lower(c.token_address)
+               )
              )
            )
          ORDER BY
@@ -62,12 +66,18 @@ const LOGO_JOINS = `
           AND (
             (
               d.campaign_address IS NOT NULL
-              AND lower(d.campaign_address) = lower(c.campaign_address)
+              AND (
+                d.campaign_address = c.campaign_address
+                OR lower(d.campaign_address) = lower(c.campaign_address)
+              )
             )
             OR (
               c.token_address IS NOT NULL
               AND d.token_address IS NOT NULL
-              AND lower(d.token_address) = lower(c.token_address)
+              AND (
+                d.token_address = c.token_address
+                OR lower(d.token_address) = lower(c.token_address)
+              )
             )
           )
         ORDER BY

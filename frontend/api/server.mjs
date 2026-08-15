@@ -129,6 +129,7 @@ import {
   rewardsHistory,
   rewardsMe,
 } from "./dev-fix/stubs.js";
+import airdropPreview from "./dev-fix/airdrop-preview.js";
 import {
   squadMembers,
   squadSummary,
@@ -439,6 +440,7 @@ router.all("/rewards/me/eligibility", wrap(rewardsEligibility));
 router.all("/rewards/claim-config", wrap(rewardClaimConfig));
 router.all("/rewards", wrap(rewards));
 router.all("/airdrops/current", wrap(airdropCurrent));
+router.all("/airdrops/preview", wrap(airdropPreview));
 router.all("/airdrops/previous-winners", wrap(airdropPreviousWinners));
 router.all("/airdrops/winners", wrap(airdropWinners));
 router.all("/admin/rewards/overview", wrap(withAdminOrOps(adminRewardOverview, "admin/rewards/overview")));

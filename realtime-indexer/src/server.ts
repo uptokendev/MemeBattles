@@ -9,7 +9,7 @@ import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
 import { createExclusionFlag, listEligibilityResults, listExclusionFlags, processRewardEligibilityForEpoch, resolveExclusionFlag } from "./rewards/eligibility.js";
-import { AIRDROP_DRAW_PROGRAMS, AIRDROP_DRAW_STATUSES, getCurrentAirdropSnapshot, listAirdropDraws, listAirdropWinners, publishAirdropDraw, runAirdropDrawForEpoch } from "./rewards/airdrops.js";
+import { AIRDROP_DRAW_PROGRAMS, AIRDROP_DRAW_STATUSES, getAirdropPreview, getCurrentAirdropSnapshot, listAirdropDraws, listAirdropWinners, publishAirdropDraw, runAirdropDrawForEpoch } from "./rewards/airdrops.js";
 import { listRecruiterLeaderboard } from "./rewards/recruiterLeaderboard.js";
 import { ELIGIBILITY_PROGRAMS, EXCLUSION_FLAG_SEVERITIES, ELIGIBILITY_REASON_CODES } from "./rewards/reasonCodes.js";
 import { listRecruiterAdminActions, listRecruiterClaimableSettlements, recordRecruiterAdminAction, RECRUITER_ADMIN_ACTION_TYPES } from "./rewards/recruiterAdmin.js";
@@ -1694,6 +1694,14 @@ app.get("/api/airdrops/current", wrap(async (req, res) => {
     return res.status(400).json({ error: "Invalid chainId" });
   }
   res.json(await getCurrentAirdropSnapshot(chainId));
+}));
+
+app.get("/api/airdrops/preview", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  if (!Number.isFinite(chainId) || chainId <= 0) {
+    return res.status(400).json({ error: "Invalid chainId" });
+  }
+  res.json(await getAirdropPreview(chainId));
 }));
 
 app.get("/api/airdrops/winners", wrap(async (req, res) => {

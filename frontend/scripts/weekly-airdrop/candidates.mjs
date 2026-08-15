@@ -1,4 +1,4 @@
-import { asBigInt, bnb, envInt, envText } from "./config.mjs";
+import { asBigInt, envInt, envText } from "./config.mjs";
 
 function isSolanaAirdropChain(chainId) {
   return Number(chainId) === 101 || Number(chainId) === 102;
@@ -59,16 +59,48 @@ export function batchComplete(batch) {
   return Boolean(batch && ["claim_open", "closed"].includes(String(batch.status)));
 }
 
+function nativeUnits(raw, chainId) {
+  return Number(raw) / (isSolanaAirdropChain(chainId) ? 1e9 : 1e18);
+}
+
+function addWalletKeys(set, value, solana) {
+  const raw = String(value || "").trim();
+  if (!raw) return;
+  set.add(raw);
+  set.add(raw.toLowerCase());
+  if (!solana) set.add(raw.toLowerCase());
+}
+
+export function isWalletExcluded(exclusions, wallet) {
+  const raw = String(wallet || "").trim();
+  if (!raw) return true;
+  return Boolean(exclusions?.all?.has(raw) || exclusions?.all?.has(raw.toLowerCase()));
+}
+
 export async function exclusionSets(client, { chainId, start, end }) {
+  const solana = isSolanaAirdropChain(chainId);
   const [risk, creators, recruiters, league, cooldown] = await Promise.all([
     client.query(
-      `select lower(w.wallet_address) wallet
-         from public.wallet_risk_profiles w left join public.wallet_clusters c on c.cluster_id=w.cluster_id
-        where w.restricted or lower(coalesce(w.risk_level,'low')) in ('high','critical')
-           or coalesce(c.restricted,false) or lower(coalesce(c.risk_level,'low')) in ('high','critical')`,
+      solana
+        ? `select w.wallet_address wallet
+             from public.wallet_risk_profiles w left join public.wallet_clusters c on c.cluster_id=w.cluster_id
+            where w.restricted or lower(coalesce(w.risk_level,'low')) in ('high','critical')
+               or coalesce(c.restricted,false) or lower(coalesce(c.risk_level,'low')) in ('high','critical')`
+        : `select lower(w.wallet_address) wallet
+             from public.wallet_risk_profiles w left join public.wallet_clusters c on c.cluster_id=w.cluster_id
+            where w.restricted or lower(coalesce(w.risk_level,'low')) in ('high','critical')
+               or coalesce(c.restricted,false) or lower(coalesce(c.risk_level,'low')) in ('high','critical')`,
     ),
-    client.query(`select lower(creator_wallet) wallet from public.creator_profiles where restricted or manual_review_required`),
-    client.query(`select lower(wallet_address) wallet from public.recruiters where wallet_address is not null`),
+    client.query(
+      solana
+        ? `select creator_wallet wallet from public.creator_profiles where restricted or manual_review_required`
+        : `select lower(creator_wallet) wallet from public.creator_profiles where restricted or manual_review_required`,
+    ),
+    client.query(
+      solana
+        ? `select wallet_address wallet from public.recruiters where wallet_address is not null`
+        : `select lower(wallet_address) wallet from public.recruiters where wallet_address is not null`,
+    ),
     client.query(
       `select ${walletExpr("recipient_address", chainId)} wallet from public.league_epoch_payouts
         where chain_id=$1 and epoch_start >= $2 and epoch_start < $3`,
@@ -82,8 +114,12 @@ export async function exclusionSets(client, { chainId, start, end }) {
       [String(chainId), start],
     ),
   ]);
-  const groups = [risk, creators, recruiters, league, cooldown].map((result) => new Set(result.rows.map((row) => row.wallet)));
-  return { all: new Set(groups.flatMap((set) => [...set])), securityCount: groups[0].size, totalCount: groups.reduce((n, set) => n + set.size, 0) };
+  const all = new Set();
+  const groups = [risk, creators, recruiters, league, cooldown];
+  for (const result of groups) {
+    for (const row of result.rows) addWalletKeys(all, row.wallet, solana);
+  }
+  return { all, securityCount: risk.rows.length, totalCount: all.size };
 }
 
 export async function traderCandidates(client, { chainId, start, end, exclusions }) {
@@ -116,11 +152,11 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
         and count(distinct (t.block_time at time zone 'utc')::date) >= $6`,
     [chainId, start, end, minVolume.toString(), minTrades, minDays],
   );
-  return rows.filter((row) => !exclusions.all.has(row.wallet_address)).map((row) => {
+  return rows.filter((row) => !isWalletExcluded(exclusions, row.wallet_address)).map((row) => {
     const total = asBigInt(row.total_volume_raw);
     const counted = total > cap ? cap : total;
-    const countedBnb = bnb(counted);
-    const rawBnb = bnb(total);
+    const countedBnb = nativeUnits(counted, chainId);
+    const rawBnb = nativeUnits(total, chainId);
     const activityScore = countedBnb + Math.min(Number(row.trade_count), 20) * 0.1 + Math.min(Number(row.active_days), 7) * 0.5;
     const smallWalletBonus = Math.max(0, 1 - countedBnb / 15) * 0.5;
     const whalePenalty = Math.max(0, rawBnb - 15) / 15;
@@ -164,7 +200,7 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
   );
   const grouped = new Map();
   for (const row of rows) {
-    if (exclusions.all.has(row.wallet_address)) continue;
+    if (isWalletExcluded(exclusions, row.wallet_address)) continue;
     if (!grouped.has(row.wallet_address)) grouped.set(row.wallet_address, []);
     grouped.get(row.wallet_address).push(row);
   }
@@ -173,8 +209,8 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
     const total = top.reduce((sum, row) => sum + asBigInt(row.qualified_buy_volume_raw), 0n);
     const counted = total > cap ? cap : total;
     const uniqueBuyers = top.reduce((sum, row) => sum + Number(row.unique_buyers), 0);
-    const countedBnb = bnb(counted);
-    const rawBnb = bnb(total);
+    const countedBnb = nativeUnits(counted, chainId);
+    const rawBnb = nativeUnits(total, chainId);
     const activityScore = countedBnb + Math.min(uniqueBuyers, 50) * 0.1 + top.length;
     const smallWalletBonus = Math.max(0, 1 - countedBnb / 25) * 0.5;
     const whalePenalty = Math.max(0, rawBnb - 25) / 25;

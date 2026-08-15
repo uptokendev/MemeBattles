@@ -5,6 +5,7 @@ import { ArrowRight, Gift, Sparkles, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
+import { isSolanaAddress } from "@/lib/address";
 import { fetchWalletRewardSummary, type WalletRewardSummary } from "@/lib/recruiterApi";
 import {
   fetchAirdropWinners,
@@ -19,9 +20,13 @@ type ProfileAirdropsPanelProps = {
   isOwnProfile: boolean;
 };
 
-function formatBnb(raw: string): string {
+const LAMPORTS_PER_SOL = 1_000_000_000;
+
+function formatNative(raw: string, solana: boolean): string {
   try {
-    const value = Number(formatEther(BigInt(raw || "0")));
+    const value = solana
+      ? Number(BigInt(raw || "0")) / LAMPORTS_PER_SOL
+      : Number(formatEther(BigInt(raw || "0")));
     return value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 });
   } catch {
     return "0";
@@ -38,8 +43,13 @@ function getLatestEligibility(items: WalletEligibilityItem[], program: string): 
   return items.find((item) => item.program === program) ?? null;
 }
 
-function EligibilityCard(props: { title: string; item: WalletEligibilityItem | null; claimableAmount: string }) {
-  const { title, item, claimableAmount } = props;
+function EligibilityCard(props: {
+  title: string;
+  item: WalletEligibilityItem | null;
+  claimableAmount: string;
+  solana: boolean;
+}) {
+  const { title, item, claimableAmount, solana } = props;
 
   return (
     <Card className="border-border/60 bg-card/65 p-5">
@@ -56,7 +66,9 @@ function EligibilityCard(props: { title: string; item: WalletEligibilityItem | n
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
           <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Claimable</p>
-          <p className="mt-2 font-retro text-lg text-foreground">{formatBnb(claimableAmount)} BNB</p>
+          <p className="mt-2 font-retro text-lg text-foreground">
+            {formatNative(claimableAmount, solana)} {solana ? "SOL" : "BNB"}
+          </p>
         </div>
         <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
           <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Last computed</p>
@@ -86,6 +98,9 @@ function EligibilityCard(props: { title: string; item: WalletEligibilityItem | n
 }
 
 export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: ProfileAirdropsPanelProps) {
+  const solana = isSolanaAddress(account);
+  const chainId = solana ? 101 : 97;
+  const symbol = solana ? "SOL" : "BNB";
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
   const [eligibility, setEligibility] = useState<WalletEligibilityItem[]>([]);
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
@@ -100,7 +115,7 @@ export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: Pro
     void (async () => {
       try {
         const [winnerItems, rewardSummary, eligibilityItems] = await Promise.all([
-          fetchAirdropWinners({ limit: 6 }).catch(() => []),
+          fetchAirdropWinners({ chainId, limit: 6 }).catch(() => []),
           account ? fetchWalletRewardSummary(account).catch(() => null) : Promise.resolve(null),
           account ? fetchWalletRewardEligibility(account, 20).catch(() => []) : Promise.resolve([]),
         ]);
@@ -119,7 +134,7 @@ export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: Pro
     return () => {
       cancelled = true;
     };
-  }, [account]);
+  }, [account, chainId]);
 
   const traderEligibility = getLatestEligibility(eligibility, "airdrop_trader");
   const creatorEligibility = getLatestEligibility(eligibility, "airdrop_creator");
@@ -175,15 +190,15 @@ export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: Pro
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Trader claimable</p>
-          <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(totals.traderClaimable)} BNB</p>
+          <p className="mt-4 font-retro text-3xl text-foreground">{formatNative(totals.traderClaimable, solana)} {symbol}</p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Creator claimable</p>
-          <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(totals.creatorClaimable)} BNB</p>
+          <p className="mt-4 font-retro text-3xl text-foreground">{formatNative(totals.creatorClaimable, solana)} {symbol}</p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Total claimable</p>
-          <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(totals.totalClaimable)} BNB</p>
+          <p className="mt-4 font-retro text-3xl text-foreground">{formatNative(totals.totalClaimable, solana)} {symbol}</p>
         </Card>
       </div>
 
@@ -197,8 +212,8 @@ export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: Pro
         </Card>
       ) : (
         <div className="grid gap-6 xl:grid-cols-2">
-          <EligibilityCard title="Trader bucket" item={traderEligibility} claimableAmount={totals.traderClaimable} />
-          <EligibilityCard title="Creator bucket" item={creatorEligibility} claimableAmount={totals.creatorClaimable} />
+          <EligibilityCard title="Trader bucket" item={traderEligibility} claimableAmount={totals.traderClaimable} solana={solana} />
+          <EligibilityCard title="Creator bucket" item={creatorEligibility} claimableAmount={totals.creatorClaimable} solana={solana} />
         </div>
       )}
 
@@ -237,7 +252,7 @@ export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: Pro
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-retro text-sm text-foreground">{formatBnb(winner.payoutAmount)} BNB</p>
+                    <p className="font-retro text-sm text-foreground">{formatNative(winner.payoutAmount, solana)} {symbol}</p>
                     <p className="mt-1 text-xs text-muted-foreground">Weight tier {winner.weightTier}</p>
                   </div>
                 </div>

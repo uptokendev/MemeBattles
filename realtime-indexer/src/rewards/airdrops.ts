@@ -854,3 +854,123 @@ export async function getCurrentAirdropSnapshot(chainId: number) {
     materializedAt: new Date().toISOString(),
   };
 }
+
+function epochWindowUtc(now = new Date()) {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+  const day = end.getUTCDay();
+  end.setUTCDate(end.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return {
+    start: new Date(end.getTime() - 7 * 86_400_000),
+    end,
+    epochId: new Date(end.getTime() - 7 * 86_400_000).toISOString().slice(0, 10),
+  };
+}
+
+export async function getAirdropPreview(chainId: number) {
+  const solana = Number(chainId) === 101 || Number(chainId) === 102;
+  const tokenSymbol = solana ? "SOL" : "BNB";
+  const window = epochWindowUtc();
+  const wallet = solana ? "t.wallet" : "lower(t.wallet)";
+  const creator = solana ? "c.creator_address" : "lower(c.creator_address)";
+  const walletNeq = solana
+    ? "(t.wallet is distinct from c.creator_address)"
+    : "(lower(t.wallet) <> lower(c.creator_address))";
+  const minTrader = solana ? "250000000" : "250000000000000000";
+  const minCreator = solana ? "3000000000" : "3000000000000000000";
+
+  const empty = {
+    ok: true,
+    claimsOpen: false,
+    chainId,
+    tokenSymbol,
+    epoch: { id: window.epochId, start: window.start.toISOString(), end: window.end.toISOString() },
+    estimatedPoolRaw: "0",
+    traders: [] as any[],
+    creators: [] as any[],
+    traderCount: 0,
+    creatorCount: 0,
+    tradeCount: 0,
+    note: "Read-only preview. Not a funded pot. Claims stay closed.",
+  };
+
+  try {
+    const [volume, traders, creators] = await Promise.all([
+      pool.query(
+        `select coalesce(sum(bnb_amount_raw), 0)::numeric as volume_raw, count(*)::int as trade_count
+           from public.curve_trades
+          where chain_id = $1 and block_time >= $2 and block_time < $3`,
+        [chainId, window.start, window.end],
+      ),
+      pool.query(
+        `select ${wallet} as "walletAddress",
+                sum(t.bnb_amount_raw)::text as "volumeRaw",
+                count(*)::int as "tradeCount",
+                count(distinct (t.block_time at time zone 'utc')::date)::int as "activeDays"
+           from public.curve_trades t
+           join public.campaigns c on c.chain_id = t.chain_id and c.campaign_address = t.campaign_address
+          where t.chain_id = $1 and t.block_time >= $2 and t.block_time < $3
+            and t.side in ('buy','sell') and ${walletNeq}
+          group by ${wallet}
+         having sum(t.bnb_amount_raw) >= $4::numeric and count(*) >= 3
+         order by sum(t.bnb_amount_raw) desc
+         limit 20`,
+        [chainId, window.start, window.end, minTrader],
+      ),
+      pool.query(
+        `select ${creator} as "walletAddress",
+                sum(t.bnb_amount_raw)::text as "volumeRaw",
+                count(distinct ${wallet})::int as "uniqueBuyers",
+                count(distinct t.campaign_address)::int as "eligibleCampaignCount"
+           from public.curve_trades t
+           join public.campaigns c on c.chain_id = t.chain_id and c.campaign_address = t.campaign_address
+          where t.chain_id = $1 and t.block_time >= $2 and t.block_time < $3
+            and t.side = 'buy' and ${walletNeq}
+          group by ${creator}
+         having sum(t.bnb_amount_raw) >= $4::numeric
+         order by sum(t.bnb_amount_raw) desc
+         limit 20`,
+        [chainId, window.start, window.end, minCreator],
+      ),
+    ]);
+
+    const volumeRaw = BigInt(String(volume.rows[0]?.volume_raw || "0").split(".")[0] || "0");
+    const estimatedPoolRaw = (volumeRaw * 50n) / 10_000n;
+    const traderPool = estimatedPoolRaw / 2n;
+    const creatorPool = estimatedPoolRaw - traderPool;
+    const split = (poolAmt: bigint, rows: any[], program: string) => {
+      if (!rows.length || poolAmt <= 0n) {
+        return rows.map((row) => ({ ...row, program, estimatedShareRaw: "0" }));
+      }
+      const weights = rows.map((row) => {
+        const n = Number(row.volumeRaw || 0);
+        return Number.isFinite(n) && n > 0 ? n : 1;
+      });
+      const total = weights.reduce((sum, n) => sum + n, 0);
+      let used = 0n;
+      return rows.map((row, index) => {
+        const share =
+          index === rows.length - 1
+            ? poolAmt - used
+            : (poolAmt * BigInt(Math.round(weights[index]))) / BigInt(Math.round(total) || 1);
+        used += share;
+        return { ...row, program, estimatedShareRaw: share.toString() };
+      });
+    };
+
+    return {
+      ...empty,
+      estimatedPoolRaw: estimatedPoolRaw.toString(),
+      tradeCount: Number(volume.rows[0]?.trade_count || 0),
+      traders: split(traderPool, traders.rows, "airdrop_trader"),
+      creators: split(creatorPool, creators.rows, "airdrop_creator"),
+      traderCount: traders.rows.length,
+      creatorCount: creators.rows.length,
+      note:
+        estimatedPoolRaw > 0n
+          ? `Read-only preview from ${volume.rows[0]?.trade_count || 0} bonding trades this epoch. Not funded. Claims stay closed.`
+          : empty.note,
+    };
+  } catch (error) {
+    return { ...empty, warning: String((error as Error)?.message || error) };
+  }
+}
