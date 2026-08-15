@@ -242,6 +242,7 @@ async function fetchOnChainTradeSnapshot(
   chainId: SupportedChainId,
   limit: number,
   signal?: AbortSignal,
+  lookbackBlocks = 50_000,
 ): Promise<CurveTradePoint[]> {
   // Solana history comes from the dedicated program indexer; never send base58
   // addresses through EVM getLogs recovery.
@@ -251,7 +252,6 @@ async function fetchOnChainTradeSnapshot(
   if (!buys.length || !sells.length) return [];
 
   const address = campaignAddress.toLowerCase();
-  const lookbackBlocks = 80_000;
   const [buyLogs, sellLogs] = await Promise.all([
     Promise.all(buys.map((topic) => scanContractLogs({ chainId, address, topics: [topic], lookbackBlocks, chunkSize: 2_000, signal }))).then((rows) => rows.flat()),
     Promise.all(sells.map((topic) => scanContractLogs({ chainId, address, topics: [topic], lookbackBlocks, chunkSize: 2_000, signal }))).then((rows) => rows.flat()),
@@ -295,8 +295,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   }, [opts?.chainId]);
 
   const inFlightRef = useRef(false);
+  const tipInFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  const reconcileMs = opts?.reconcileMs ?? 5_000;
+  const reconcileMs = opts?.reconcileMs ?? 4_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
@@ -321,7 +322,10 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     return next.length;
   }, [campaignAddress, chainId]);
 
-  const pullSnapshot = useCallback(async (signal?: AbortSignal, forceOnChainReconcile = false) => {
+  const pullSnapshot = useCallback(async (
+    signal?: AbortSignal,
+    mode: "full" | "tip" = "full",
+  ) => {
     if (!canLoadTrades || !campaignAddress) {
       setPoints([]);
       setLoading(false);
@@ -329,10 +333,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       initialLoadedRef.current = true;
       return;
     }
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+    const lock = mode === "tip" ? tipInFlightRef : inFlightRef;
+    if (lock.current) return;
+    lock.current = true;
     try {
-      if (!initialLoadedRef.current) setLoading(true);
+      if (!initialLoadedRef.current && mode === "full") setLoading(true);
       let apiRows: any[] = [];
       try {
         const tokenAddress = String(opts?.tokenAddress || "").trim();
@@ -347,9 +352,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           applySnapshot(apiRows);
           setLoading(false);
           initialLoadedRef.current = true;
-          // Indexer can return a stale partial book (one old fill). Always
-          // reconcile EVM campaigns from chain logs so later buys/sells appear.
-          if (isSolanaChainId(chainId) && !forceOnChainReconcile) {
+          if (isSolanaChainId(chainId) && mode === "tip") {
             setError(null);
             return;
           }
@@ -361,7 +364,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
       if (isEvmChainId(chainId)) {
         try {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          const fallbackRows = await fetchOnChainTradeSnapshot(
+            campaignAddress,
+            chainId,
+            limit,
+            signal,
+            mode === "tip" ? 2_500 : 50_000,
+          );
           if (signal?.aborted) return;
           if (fallbackRows.length) applySnapshot(fallbackRows);
         } catch (fallbackError) {
@@ -379,7 +388,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       }
     } finally {
       setLoading(false);
-      inFlightRef.current = false;
+      lock.current = false;
     }
   }, [canLoadTrades, campaignAddress, applySnapshot, chainId, limit, opts?.tokenAddress]);
 
@@ -396,9 +405,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       initialLoadedRef.current = false;
     }
 
-    void pullSnapshot(ac.signal);
+    void pullSnapshot(ac.signal, "full");
     if (!canLoadTrades || (!ENABLE_TRADE_POLL && !ENABLE_TOKEN_POLLING)) return () => ac.abort();
-    const timer = setInterval(() => void pullSnapshot(ac.signal), reconcileMs);
+    const timer = setInterval(() => void pullSnapshot(ac.signal, "tip"), reconcileMs);
     return () => {
       clearInterval(timer);
       ac.abort();
@@ -412,12 +421,16 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       const detail = (event as CustomEvent)?.detail || {};
       const kind = String(detail?.kind || "").toLowerCase();
       const confirmedCampaign = normalizeAddress(chainId, detail?.campaignAddress || "");
-      if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== current) return;
+      const tokenKey = normalizeAddress(chainId, opts?.tokenAddress || "");
+      if (
+        (kind !== "buy" && kind !== "sell") ||
+        (confirmedCampaign !== current && (!tokenKey || confirmedCampaign !== tokenKey))
+      ) return;
       if (Array.isArray(detail?.trades) && detail.trades.length) applySnapshot(detail.trades);
-      void pullSnapshot();
-      window.setTimeout(() => void pullSnapshot(), 1_500);
-      window.setTimeout(() => void pullSnapshot(), 4_000);
-      window.setTimeout(() => void pullSnapshot(), 8_000);
+      void pullSnapshot(undefined, "tip");
+      window.setTimeout(() => void pullSnapshot(undefined, "tip"), 1_500);
+      window.setTimeout(() => void pullSnapshot(undefined, "tip"), 4_000);
+      window.setTimeout(() => void pullSnapshot(undefined, "tip"), 8_000);
     };
     window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
     return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);

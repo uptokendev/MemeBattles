@@ -2366,10 +2366,32 @@ const toSeconds = (ts: number): number => {
     };
 
     loadReserve();
+    const timer = isSolanaPage ? 0 : window.setInterval(() => void loadReserve(), 5_000);
     return () => {
       cancelled = true;
+      if (timer) window.clearInterval(timer);
     };
   }, [readProvider, campaign?.campaign, isSolanaPage]);
+
+  // Bonding headline (price / sold / mcap) must move while the page is open.
+  useEffect(() => {
+    if (!campaign?.campaign || isSolanaPage) return;
+    let cancelled = false;
+    const loadMetrics = async () => {
+      try {
+        const next = await fetchCampaignMetrics(campaign.campaign);
+        if (!cancelled && next) setMetrics(next);
+      } catch (e) {
+        console.warn("[TokenDetails] live metrics poll failed", e);
+      }
+    };
+    void loadMetrics();
+    const timer = window.setInterval(() => void loadMetrics(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [campaign?.campaign, fetchCampaignMetrics, isSolanaPage]);
 
   // Campaign activity counters (buy/sell volume, buyers). Used for Flywheel and related panels.
   useEffect(() => {
