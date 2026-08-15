@@ -174,6 +174,67 @@ async function fetchIndexerTrades(campaignAddress: string, chainId: number, limi
   }
 }
 
+const EVM_TRADE_IFACES = [
+  // Live LaunchCampaign (3-arg).
+  new ethers.Interface([
+    "event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost)",
+    "event TokensSold(address indexed seller, uint256 amountIn, uint256 payout)",
+  ]),
+  // Older campaigns that also indexed newSold.
+  new ethers.Interface([
+    "event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost, uint256 newSold)",
+    "event TokensSold(address indexed seller, uint256 amountIn, uint256 payout, uint256 newSold)",
+  ]),
+  new ethers.Interface(CAMPAIGN_ABI),
+];
+
+function evmTradeTopics() {
+  const buys = new Set<string>();
+  const sells = new Set<string>();
+  for (const iface of EVM_TRADE_IFACES) {
+    try {
+      const buy = iface.getEvent("TokensPurchased")?.topicHash;
+      const sell = iface.getEvent("TokensSold")?.topicHash;
+      if (buy) buys.add(buy);
+      if (sell) sells.add(sell);
+    } catch {
+      // ignore ABI variants that are not present
+    }
+  }
+  return { buys: [...buys], sells: [...sells] };
+}
+
+function parseEvmTradeLog(log: ethers.Log, campaignAddress: string): Omit<CurveTradePoint, "timestamp"> | null {
+  for (const iface of EVM_TRADE_IFACES) {
+    try {
+      const parsed = iface.parseLog(log);
+      if (!parsed) continue;
+      const isSell = parsed.name === "TokensSold";
+      if (parsed.name !== "TokensPurchased" && !isSell) continue;
+      const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
+      const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
+      const tokens = numberFromRaw(tokensWei, 18);
+      const native = numberFromRaw(nativeWei, 18);
+      const txHash = normalizeTradeTxHash(log.transactionHash);
+      if (!txHash) return null;
+      return {
+        type: isSell ? "sell" : "buy",
+        from: String(isSell ? parsed.args.seller : parsed.args.buyer).toLowerCase(),
+        to: campaignAddress,
+        tokensWei,
+        nativeWei,
+        pricePerToken: tokens > 0 ? native / tokens : 0,
+        txHash,
+        blockNumber: Number(log.blockNumber ?? 0),
+        logIndex: Number(log.index ?? 0),
+      };
+    } catch {
+      // try next ABI
+    }
+  }
+  return null;
+}
+
 async function fetchOnChainTradeSnapshot(
   campaignAddress: string,
   chainId: SupportedChainId,
@@ -184,17 +245,15 @@ async function fetchOnChainTradeSnapshot(
   // addresses through EVM getLogs recovery.
   if (!isEvmChainId(chainId) || !ethers.isAddress(campaignAddress)) return [];
 
-  const iface = new ethers.Interface(CAMPAIGN_ABI);
-  const buyEvent = iface.getEvent("TokensPurchased");
-  const sellEvent = iface.getEvent("TokensSold");
-  const buyTopic = buyEvent?.topicHash;
-  const sellTopic = sellEvent?.topicHash;
-  if (!buyTopic || !sellTopic) return [];
+  const { buys, sells } = evmTradeTopics();
+  if (!buys.length || !sells.length) return [];
 
   const address = campaignAddress.toLowerCase();
-  const lookbackBlocks = 40_000;
-  const buyLogs = await scanContractLogs({ chainId, address, topics: [buyTopic], lookbackBlocks, chunkSize: 2_000, signal });
-  const sellLogs = await scanContractLogs({ chainId, address, topics: [sellTopic], lookbackBlocks, chunkSize: 2_000, signal });
+  const lookbackBlocks = 80_000;
+  const [buyLogs, sellLogs] = await Promise.all([
+    Promise.all(buys.map((topic) => scanContractLogs({ chainId, address, topics: [topic], lookbackBlocks, chunkSize: 2_000, signal }))).then((rows) => rows.flat()),
+    Promise.all(sells.map((topic) => scanContractLogs({ chainId, address, topics: [topic], lookbackBlocks, chunkSize: 2_000, signal }))).then((rows) => rows.flat()),
+  ]);
   const allLogs = [...buyLogs, ...sellLogs]
     .sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0))
     .slice(-limit);
@@ -203,32 +262,11 @@ async function fetchOnChainTradeSnapshot(
   const out: CurveTradePoint[] = [];
   for (const log of allLogs) {
     if (signal?.aborted) break;
-    try {
-      const parsed = iface.parseLog(log);
-      if (!parsed) continue;
-      const isSell = parsed.name === "TokensSold";
-      const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
-      const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
-      const tokens = numberFromRaw(tokensWei, 18);
-      const native = numberFromRaw(nativeWei, 18);
-      const blockNumber = Number(log.blockNumber ?? 0);
-      const timestamp = timestamps.get(blockNumber) || 0;
-      if (!timestamp) continue;
-      out.push({
-        type: isSell ? "sell" : "buy",
-        from: String(isSell ? parsed.args.seller : parsed.args.buyer).toLowerCase(),
-        to: address,
-        tokensWei,
-        nativeWei,
-        pricePerToken: tokens > 0 ? native / tokens : 0,
-        timestamp,
-        txHash: normalizeTradeTxHash(log.transactionHash),
-        blockNumber,
-        logIndex: Number(log.index ?? 0),
-      });
-    } catch {
-      // ignore malformed logs
-    }
+    const parsed = parseEvmTradeLog(log, address);
+    if (!parsed || parsed.blockNumber <= 0) continue;
+    const timestamp = timestamps.get(parsed.blockNumber) || 0;
+    if (!timestamp) continue;
+    out.push({ ...parsed, timestamp });
   }
   return out.filter((t) => isValidTradeTxHash(t.txHash) && t.blockNumber > 0 && t.timestamp > 0);
 }
@@ -301,7 +339,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           applySnapshot(apiRows);
           setLoading(false);
           initialLoadedRef.current = true;
-          if (!forceOnChainReconcile || isSolanaChainId(chainId)) {
+          // Indexer can return a stale partial book (one old fill). Always
+          // reconcile EVM campaigns from chain logs so later buys/sells appear.
+          if (isSolanaChainId(chainId) && !forceOnChainReconcile) {
             setError(null);
             return;
           }

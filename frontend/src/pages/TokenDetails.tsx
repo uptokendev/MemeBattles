@@ -830,7 +830,7 @@ const TokenDetails = () => {
   // CrypticPump listing badge (public)
   useEffect(() => {
     const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
-    const chainIdNum = Number(chainIdForStorage || wallet.chainId || 97);
+    const chainIdNum = Number(chainIdForStorage || 97);
     if (!campaignKey || !Number.isFinite(chainIdNum)) {
       setCrypticPumpListing(null);
       return;
@@ -842,7 +842,7 @@ const TokenDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [campaign?.campaign, campaignAddr, chainIdForStorage, wallet.chainId]);
+  }, [campaign?.campaign, campaignAddr, chainIdForStorage]);
 
   // Load campaign + metrics based on :campaignAddress (preferred).
   // Backward-compatible fallback: if param is not a 0x address, treat it as symbol.
@@ -1635,7 +1635,6 @@ const TokenDetails = () => {
     };
   }, [
     txs,
-    wallet.chainId,
     chainIdForStorage,
     campaign?.campaign,
     campaign?.token,
@@ -4152,7 +4151,7 @@ const toSeconds = (ts: number): number => {
                         return (
                           <CrypticPumpListButton
                             className="flex-shrink-0 self-center"
-                            chainId={Number(chainIdForStorage || wallet.chainId || 97)}
+                            chainId={Number(chainIdForStorage || 97)}
                             campaignAddress={campaignKey}
                             tokenAddress={campaign?.token || null}
                             name={tokenData.name}

@@ -7,7 +7,7 @@ import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { isSolanaAddress } from "@/lib/address";
 import { getReadProvider } from "@/lib/readProvider";
 import type { SolanaCampaignCurveState } from "@/lib/solanaCampaignRead";
@@ -155,9 +155,10 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
 
   const chainId = useMemo(() => {
     if (isSolanaCampaign) return SOLANA_CHAIN_ID;
-    const active = getActiveChainId(wallet.chainId);
-    return isSolanaChainId(active) ? 97 : active;
-  }, [isSolanaCampaign, wallet.chainId]);
+    const fromCampaign = Number((campaign as { chainId?: number }).chainId);
+    if (fromCampaign === 56 || fromCampaign === 97) return fromCampaign;
+    return 97;
+  }, [campaign, isSolanaCampaign]);
   const readProvider = useMemo(() => {
     if (isSolanaCampaign || isSolanaChainId(chainId)) return null;
     return getReadProvider(chainId);

@@ -9,7 +9,7 @@ import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { isSolanaAddress } from "@/lib/address";
-import { getActiveChainId, getChainLabel } from "@/lib/chainConfig";
+import { getChainLabel } from "@/lib/chainConfig";
 
 function shortenAddress(value?: string | null) {
   const input = String(value ?? "").trim();
@@ -112,7 +112,9 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const inferredChainId = Number(rich.chainId);
   const rowChainId = isSolanaAddress(campaign.campaign)
     ? 101
-    : getActiveChainId(Number.isFinite(inferredChainId) && inferredChainId > 0 ? inferredChainId : 97);
+    : inferredChainId === 56 || inferredChainId === 97
+      ? inferredChainId
+      : 97;
   const chainLabel = getChainLabel(rowChainId) || `Chain ${rowChainId || "unknown"}`;
   const draftFollows = formatCompactNumber(rich.draftFollowCount);
   const draftOptIns = formatCompactNumber(rich.draftOptInCount);

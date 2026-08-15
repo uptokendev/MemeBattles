@@ -369,13 +369,16 @@ function applyLiveHeadline(
   ];
 }
 
+function timeToSec(time: Time): number {
+  if (typeof time === "number") return time;
+  if (time && typeof time === "object" && "year" in time) {
+    return Math.floor(Date.UTC(time.year, time.month - 1, time.day) / 1000);
+  }
+  return 0;
+}
+
 function formatTickLabel(time: Time, intervalSec: number): string {
-  const sec =
-    typeof time === "number"
-      ? time
-      : time && typeof time === "object" && "year" in time
-        ? Math.floor(Date.UTC(time.year, time.month - 1, time.day) / 1000)
-        : 0;
+  const sec = timeToSec(time);
   if (!sec) return "";
   const date = new Date(sec * 1000);
   if (intervalSec >= 86400) {
@@ -385,6 +388,18 @@ function formatTickLabel(time: Time, intervalSec: number): string {
   const mm = String(date.getMinutes()).padStart(2, "0");
   if (intervalSec <= 60) return `${hh}:${mm}`;
   return `${date.getDate()} ${hh}:${mm}`;
+}
+
+function formatCrosshairTime(time: Time): string {
+  const sec = timeToSec(time);
+  if (!sec) return "";
+  return new Date(sec * 1000).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function marketCandlesForChart(
@@ -880,6 +895,8 @@ export function UnifiedMarketChart({
         lockVisibleTimeRangeOnResize: false,
       },
       localization: {
+        locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+        timeFormatter: (time: Time) => formatCrosshairTime(time),
         tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds),
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
@@ -945,6 +962,8 @@ export function UnifiedMarketChart({
         minBarSpacing: MIN_BAR_SPACING,
       },
       localization: {
+        locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+        timeFormatter: (time: Time) => formatCrosshairTime(time),
         tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds),
       },
     });
