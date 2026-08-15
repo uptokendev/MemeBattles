@@ -11,6 +11,7 @@ import {
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 import { getBlockTimestamps, scanContractLogs } from "@/lib/rpcLogScan";
 import { loadCachedTradeHistory, saveCachedTradeHistory } from "@/lib/tradeHistoryCache";
+import { indexerRowToCurvePoint } from "@/lib/chart/normalizeTrade";
 import {
   isValidTradeTxHash,
   mergeTradePoints,
@@ -262,44 +263,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     const target = normalizeAddress(chainId, campaignAddress || "");
 
     const next: CurveTradePoint[] = (rows || [])
-      .map((r: any) => {
-        try {
-          const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
-          const txHash = normalizeTradeTxHash(r.tx_hash || r.txHash);
-          if (!txHash) return null;
-          const tokensWei =
-            r.tokensWei != null
-              ? BigInt(String(r.tokensWei))
-              : parseAmount(r.token_amount_raw, r.token_amount ?? r.tokens, tokenDecimals);
-          const nativeWei =
-            r.nativeWei != null
-              ? BigInt(String(r.nativeWei))
-              : parseAmount(r.bnb_amount_raw, r.bnb_amount ?? r.native, nativeDecimals);
-          const tokens = numberFromRaw(tokensWei, tokenDecimals);
-          const native = numberFromRaw(nativeWei, nativeDecimals);
-          const suppliedPrice = Number(r.price_bnb ?? r.pricePerToken ?? 0);
-          return {
-            type: side,
-            from: normalizeAddress(chainId, r.wallet || r.trader || r.from || ""),
-            to: normalizeAddress(chainId, r.to || target),
-            tokensWei,
-            nativeWei,
-            pricePerToken: Number.isFinite(suppliedPrice) && suppliedPrice > 0 ? suppliedPrice : tokens > 0 ? native / tokens : 0,
-            soldTokensAfterRaw:
-              r.sold_tokens_after_raw != null && String(r.sold_tokens_after_raw).trim() !== ""
-                ? BigInt(String(r.sold_tokens_after_raw))
-                : r.soldTokensAfterRaw != null && String(r.soldTokensAfterRaw).trim() !== ""
-                  ? BigInt(String(r.soldTokensAfterRaw))
-                  : null,
-            timestamp: toTimestampSec(r.block_time ?? r.timestamp ?? r.time),
-            txHash,
-            blockNumber: Number(r.block_number ?? r.blockNumber ?? 0),
-            logIndex: Number(r.log_index ?? r.logIndex ?? 0),
-          } satisfies CurveTradePoint;
-        } catch {
-          return null;
-        }
-      })
+      .map((r: any) =>
+        indexerRowToCurvePoint(r, chainId, target, { token: tokenDecimals, native: nativeDecimals }),
+      )
       .filter((t): t is CurveTradePoint => Boolean(t) && isValidTradeTxHash(t?.txHash) && Number.isFinite(Number(t?.blockNumber)));
 
     if (!next.length && !options?.replaceEmpty) return 0;

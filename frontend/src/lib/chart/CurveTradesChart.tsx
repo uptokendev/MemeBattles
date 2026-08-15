@@ -53,7 +53,11 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
   // Realtime trades still update instantly because `points` changes when Ably/indexer data arrives.
   const { candles } = useMemo(() => {
     const nowSec = Math.floor(Date.now() / 1000);
-    return buildCandles(points ?? [], intervalSec, { extendToNow: true, nowSec });
+    return buildCandles(points ?? [], intervalSec, {
+      extendToNow: false,
+      maxGapFillBuckets: 0,
+      nowSec,
+    });
   }, [points, intervalSec]);
 
   // Fit only once per interval to avoid "jumping" during realtime updates
@@ -115,9 +119,9 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
         // Keep candles readable; actual visible bar count is computed from width.
         barSpacing: DESIRED_BAR_PX,
         minBarSpacing: Math.max(4, Math.floor(DESIRED_BAR_PX * 0.7)),
-        lockVisibleTimeRangeOnResize: true,
-        fixLeftEdge: true,
-        fixRightEdge: true,
+        lockVisibleTimeRangeOnResize: false,
+        fixLeftEdge: false,
+        fixRightEdge: false,
       },
 
       handleScroll: {
@@ -179,12 +183,12 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
       });
 
        const bars = lastBarCountRef.current;
-       if (bars > 5) {
+       if (bars > 0) {
          const visibleBars = Math.max(
            MIN_VISIBLE_BARS,
            Math.min(MAX_VISIBLE_BARS, Math.floor(w / DESIRED_BAR_PX))
          );
-         const from = Math.max(0, bars - visibleBars);
+         const from = bars - visibleBars;
          const to = bars + 5;
          chart.timeScale().setVisibleLogicalRange({ from, to });
        }
@@ -219,10 +223,10 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
     const el = containerRef.current;
     if (!chart || !el) return;
 
-    if (!fittedRef.current.fitted && candles.length > 5) {
+    if (!fittedRef.current.fitted && candles.length > 0) {
       const w = Math.max(10, el.getBoundingClientRect().width || el.clientWidth || 10);
 
-      // Ensure bar spacing stays consistent (users can still zoom; this establishes the default).
+      // Fixed pixel candle width — few trades stay thin instead of stretching full-width.
       chart.timeScale().applyOptions({
         barSpacing: DESIRED_BAR_PX,
         minBarSpacing: Math.max(4, Math.floor(DESIRED_BAR_PX * 0.7)),
@@ -232,7 +236,7 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
         MIN_VISIBLE_BARS,
         Math.min(MAX_VISIBLE_BARS, Math.floor(w / DESIRED_BAR_PX))
       );
-      const from = Math.max(0, candles.length - visibleBars);
+      const from = candles.length - visibleBars;
       const to = candles.length + 5;
       chart.timeScale().setVisibleLogicalRange({ from, to });
       fittedRef.current.fitted = true;

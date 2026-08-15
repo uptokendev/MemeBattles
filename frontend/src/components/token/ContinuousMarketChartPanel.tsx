@@ -6,6 +6,7 @@ import {
   type UnifiedChartResolution,
 } from "@/components/token/UnifiedMarketChart";
 import { useContinuousMarketTrades } from "@/hooks/useContinuousMarketTrades";
+import { isSolanaChainId } from "@/lib/chainConfig";
 
 type ContinuousMarketChartPanelProps = {
   campaignAddress?: string;
@@ -39,6 +40,7 @@ export function ContinuousMarketChartPanel({
 }: ContinuousMarketChartPanelProps) {
   const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");
   const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");
+  const nativeSymbol = isSolanaChainId(chainId) ? "SOL" : "BNB";
 
   const market = useContinuousMarketTrades({
     campaignAddress,
@@ -77,7 +79,7 @@ export function ContinuousMarketChartPanel({
             }`}
             onClick={() => setDenomination("BNB")}
           >
-            BNB
+            {nativeSymbol}
           </Button>
         </div>
       ) : null}

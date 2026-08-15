@@ -57,6 +57,7 @@ import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { useWallet } from "@/contexts/WalletContext";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
+import { marketTradeToCurvePoint } from "@/lib/chart/normalizeTrade";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
@@ -1504,10 +1505,10 @@ const TokenDetails = () => {
   }, [localTopazTrades, localTradeStorageAddress, chainIdForStorage]);
 
   const unifiedMarket = useUnifiedMarket({
-    campaignAddress: hasValidCampaignAddress && !isSolanaPage ? resolvedCampaignAddress : undefined,
+    campaignAddress: hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
     chainId: chainIdForStorage,
     resolution: marketResolution,
-    enabled: hasValidCampaignAddress && !isSolanaPage,
+    enabled: hasValidCampaignAddress,
   });
 
   // On-chain launched() — independent of metrics/CMS so WIC-class graduated tokens
@@ -1550,7 +1551,7 @@ const TokenDetails = () => {
   // Early graduation flag so Topaz market data can load before the full stage UI block.
   // Solana P1 shell is always bonding — never treat as graduated.
   const contractGraduatedEarly = useMemo(() => {
-    if (isSolanaPage) return false;
+    if (isSolanaPage) return Boolean(solanaCurve?.graduated);
     if (onChainLaunched) return true;
     const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
     return hasLaunchFlag
@@ -1559,7 +1560,7 @@ const TokenDetails = () => {
             ? (metrics as any).finalizedAt > 0n
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
       : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
-  }, [metrics, onChainLaunched, isSolanaPage]);
+  }, [metrics, onChainLaunched, isSolanaPage, solanaCurve?.graduated]);
 
   // Topaz pair scan only after graduation. Running it on pure bonding campaigns
   // can resolve a wrong/empty route and poison price/mcap/chart streams.
@@ -1639,12 +1640,16 @@ const TokenDetails = () => {
   const marketTradePoints: CurveTradePoint[] = useMemo(() => {
     // Always keep bonding curve history (including after graduation).
     // Include localTopazTrades on bonding too — Solana fills land here until indexer events exist.
+    const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || [])
+      .map((trade) => marketTradeToCurvePoint(trade, chainIdForStorage))
+      .filter((point): point is CurveTradePoint => Boolean(point));
     const bonding = mergeTradePoints(curvePointsForUi, confirmedCurvePoints, localTopazTrades);
     if (!contractGraduatedEarly) {
-      // Solana: seed one anchor from sold/net_raised so chart is not blank before first local fill.
+      // Only seed a synthetic Solana anchor when no real prints exist yet.
       if (
         isSolanaPage &&
         bonding.length === 0 &&
+        unifiedAsPoints.length === 0 &&
         solanaCurve &&
         solanaCurve.soldTokens > 0n &&
         solanaCurve.netRaisedLamports > 0n
@@ -1689,33 +1694,12 @@ const TokenDetails = () => {
       }
       return bonding;
     }
-    const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
-      let tokensWei = 0n;
-      let nativeWei = 0n;
-      try {
-        tokensWei = BigInt(trade.tokenAmountRaw || "0");
-      } catch {
-        tokensWei = 0n;
-      }
-      try {
-        nativeWei = BigInt(trade.nativeAmountRaw || "0");
-      } catch {
-        nativeWei = 0n;
-      }
-      return {
-        type: trade.side,
-        from: trade.wallet,
-        to: trade.recipient || trade.wallet,
-        tokensWei,
-        nativeWei,
-        pricePerToken: Number(trade.priceBnb || 0),
-        timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
-        txHash: trade.txHash,
-        blockNumber: trade.blockNumber,
-        logIndex: trade.logIndex,
-      };
-    });
-    const merged = mergeTradePoints(bonding, topazMarket.trades, localTopazTrades, unifiedAsPoints);
+    const merged = mergeTradePoints(
+      bonding,
+      isSolanaPage ? [] : topazMarket.trades,
+      localTopazTrades,
+      unifiedAsPoints,
+    );
     // After DB cleanup, free RPC often cannot re-scan old Chapel logs. Top bar still
     // has sold/volume from view calls — seed a synthetic anchor so chart/trade tab
     // are not blank (same product path that worked when DB still had rows).
@@ -1766,6 +1750,7 @@ const TokenDetails = () => {
     topazMarket.trades,
     localTopazTrades,
     unifiedMarket.trades,
+    chainIdForStorage,
   ]);
 
   const solanaSpotNative = useMemo(() => {

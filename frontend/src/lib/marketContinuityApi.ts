@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/apiBase";
+import { encodeCampaignPath } from "@/lib/chart/normalizeTrade";
 
 export type MarketStage =
   | "BONDING"
@@ -169,20 +170,20 @@ async function readJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return body as T;
 }
 
-function campaignPath(campaignAddress: string): string {
-  return encodeURIComponent(String(campaignAddress || "").trim().toLowerCase());
+function campaignPath(campaignAddress: string, chainId: number): string {
+  return encodeCampaignPath(chainId, campaignAddress);
 }
 
 export function fetchMarketState(campaignAddress: string, chainId: number, signal?: AbortSignal) {
   return readJson<MarketState>(
-    `/api/token/${campaignPath(campaignAddress)}/market-state?chainId=${chainId}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/market-state?chainId=${chainId}`,
     signal,
   );
 }
 
 export function fetchMarketRoute(campaignAddress: string, chainId: number, signal?: AbortSignal) {
   return readJson<MarketRoute>(
-    `/api/token/${campaignPath(campaignAddress)}/trade-route?chainId=${chainId}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/trade-route?chainId=${chainId}`,
     signal,
   );
 }
@@ -199,7 +200,7 @@ export function fetchMarketTrades(
   });
   if (options?.cursor) params.set("cursor", options.cursor);
   return readJson<{ items: MarketTrade[]; nextCursor: string | null }>(
-    `/api/token/${campaignPath(campaignAddress)}/market-trades?${params.toString()}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/market-trades?${params.toString()}`,
     options?.signal,
   );
 }
@@ -218,14 +219,14 @@ export function fetchMarketCandles(
   if (options?.from != null) params.set("from", String(options.from));
   if (options?.to != null) params.set("to", String(options.to));
   return readJson<MarketCandleResponse>(
-    `/api/token/${campaignPath(campaignAddress)}/market-candles?${params.toString()}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/market-candles?${params.toString()}`,
     options?.signal,
   );
 }
 
 export function fetchMarketSummary(campaignAddress: string, chainId: number, signal?: AbortSignal) {
   return readJson<MarketSummary>(
-    `/api/token/${campaignPath(campaignAddress)}/market-summary?chainId=${chainId}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/market-summary?chainId=${chainId}`,
     signal,
   );
 }

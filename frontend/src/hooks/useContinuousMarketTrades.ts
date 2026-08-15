@@ -3,7 +3,8 @@ import { Contract, ethers } from "ethers";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useTopazMarket } from "@/hooks/useTopazMarket";
 import { useUnifiedMarket, type MarketResolution } from "@/hooks/useUnifiedMarket";
-import type { SupportedChainId } from "@/lib/chainConfig";
+import { campaignKey, isCampaignAddress, marketTradeToCurvePoint } from "@/lib/chart/normalizeTrade";
+import { isEvmChainId, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { loadLocalTopazTrades, saveLocalTopazTrades } from "@/lib/localTopazTrades";
 import { getReadProvider } from "@/lib/readProvider";
 import { TOPAZ_FILL_EVENT, type TopazFillDetail } from "@/lib/recordTopazFill";
@@ -31,11 +32,11 @@ export function useContinuousMarketTrades(input: {
   /** When false, never enable browser Topaz pair scan. Default true. */
   enableTopazScan?: boolean;
 }) {
-  const campaignAddress = String(input.campaignAddress || "").trim().toLowerCase();
-  const tokenAddress = String(input.tokenAddress || "").trim().toLowerCase();
   const chainId = Number(input.chainId || 97);
-  const enabled =
-    (input.enabled ?? true) && /^0x[a-f0-9]{40}$/.test(campaignAddress);
+  const campaignAddress = campaignKey(chainId, input.campaignAddress || "");
+  const tokenAddress = campaignKey(chainId, input.tokenAddress || "");
+  const enabled = (input.enabled ?? true) && isCampaignAddress(chainId, campaignAddress);
+  const evm = isEvmChainId(chainId);
   const resolution = input.resolution ?? "1m";
 
   const { points: curvePoints, loading: curveLoading, error: curveError } = useCurveTrades(
@@ -51,7 +52,7 @@ export function useContinuousMarketTrades(input: {
   const [onChainPair, setOnChainPair] = useState("");
 
   useEffect(() => {
-    if (!enabled || !campaignAddress) {
+    if (!enabled || !campaignAddress || !evm) {
       setOnChainLaunched(false);
       setOnChainPair("");
       return;
@@ -80,7 +81,7 @@ export function useContinuousMarketTrades(input: {
     return () => {
       cancelled = true;
     };
-  }, [enabled, campaignAddress, chainId]);
+  }, [enabled, campaignAddress, chainId, evm]);
 
   useEffect(() => {
     if (!enabled) {
@@ -92,6 +93,7 @@ export function useContinuousMarketTrades(input: {
 
     let cancelled = false;
     void (async () => {
+      if (isSolanaChainId(chainId)) return;
       try {
         const remote = await fetchTopazTradeReports({
           chainId,
@@ -147,6 +149,7 @@ export function useContinuousMarketTrades(input: {
   // Do not scan pure bonding (no API post-grad, no on-chain launch/pair).
   const topazScanEnabledResolved =
     enabled &&
+    evm &&
     input.enableTopazScan !== false &&
     (graduatedFromApi || onChainLaunched || apiPairOk || Boolean(onChainPair));
 
@@ -165,7 +168,7 @@ export function useContinuousMarketTrades(input: {
       const detail = (event as CustomEvent<TopazFillDetail>).detail;
       if (!detail) return;
       if (Number(detail.chainId) !== chainId) return;
-      if (String(detail.campaignAddress || "").toLowerCase() !== campaignAddress) return;
+      if (campaignKey(chainId, detail.campaignAddress) !== campaignAddress) return;
       setLocalTopazTrades((prev) => {
         const next = mergeTradePoints(prev, [detail.point]);
         saveLocalTopazTrades(chainId, campaignAddress, next);
@@ -190,33 +193,15 @@ export function useContinuousMarketTrades(input: {
       return mergeTradePoints(curve);
     }
 
-    const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || []).map((trade) => {
-      let tokensWei = 0n;
-      let nativeWei = 0n;
-      try {
-        tokensWei = BigInt(trade.tokenAmountRaw || "0");
-      } catch {
-        tokensWei = 0n;
-      }
-      try {
-        nativeWei = BigInt(trade.nativeAmountRaw || "0");
-      } catch {
-        nativeWei = 0n;
-      }
-      return {
-        type: trade.side,
-        from: trade.wallet,
-        to: trade.recipient || trade.wallet,
-        tokensWei,
-        nativeWei,
-        pricePerToken: Number(trade.priceBnb || 0),
-        timestamp: Math.floor(new Date(trade.blockTime).getTime() / 1000),
-        txHash: trade.txHash,
-        blockNumber: trade.blockNumber,
-        logIndex: trade.logIndex,
-      };
-    });
-    return mergeTradePoints(curve, topazMarket.trades, localTopazTrades, unifiedAsPoints);
+    const unifiedAsPoints: CurveTradePoint[] = (unifiedMarket.trades || [])
+      .map((trade) => marketTradeToCurvePoint(trade, chainId))
+      .filter((point): point is CurveTradePoint => Boolean(point));
+    return mergeTradePoints(
+      curve,
+      evm ? topazMarket.trades : [],
+      localTopazTrades,
+      unifiedAsPoints,
+    );
   }, [
     curvePoints,
     topazMarket.trades,
@@ -224,6 +209,8 @@ export function useContinuousMarketTrades(input: {
     localTopazTrades,
     unifiedMarket.trades,
     isPostGrad,
+    chainId,
+    evm,
   ]);
 
   useEffect(() => {

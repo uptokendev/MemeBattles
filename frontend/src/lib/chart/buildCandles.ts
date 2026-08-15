@@ -28,14 +28,16 @@ export type VolumeBar = {
 };
 
 type BuildOpts = {
-  /** If true, fills gaps and extends candles up to "now" with flat candles. */
+  /**
+   * If true, appends flat candles from the last trade up to "now".
+   * Off by default — Pump-style charts only print when a trade happens.
+   */
   extendToNow?: boolean;
   /** Override "now" (unix seconds). Defaults to current time. */
   nowSec?: number;
   /**
-   * Max empty buckets to bridge between real trades (flat candles).
-   * 0 = never gap-fill (sparse prints stay sparse — healthier for low-volume tokens).
-   * Default 3 (~3 minutes on 1m) so short idle periods stay readable without hour-long flat lines.
+   * Max empty buckets to insert between real trades (flat OHLC, zero volume).
+   * Default 0: no empty candles. Only intervals that contain at least one trade are drawn.
    */
   maxGapFillBuckets?: number;
 };
@@ -46,11 +48,11 @@ function bucketStartSec(tsMs: number, intervalSec: number): number {
 }
 
 /**
- * Build OHLC candles from raw points (TradingView-like).
+ * Build OHLC candles from raw trade points.
  *
- * - Same-bucket trades update high/low/close (so a buy then sell in 1m shows a real wick).
- * - New bucket OPEN = previous close (continuous series).
- * - Gap fill is capped so empty hours do not draw a fake flat runway into a spike.
+ * - Same-bucket trades update high/low/close (buy then sell in 1m = one candle with a wick).
+ * - New bucket OPEN = previous close so the series stays continuous without fake bars.
+ * - Empty intervals are skipped (no flat runway). Set maxGapFillBuckets > 0 only if needed.
  */
 export function buildCandles(
   points: CurveTradePoint[],
@@ -60,7 +62,7 @@ export function buildCandles(
   const extendToNow = !!opts?.extendToNow;
   const nowSec = Math.floor(opts?.nowSec ?? Date.now() / 1000);
   const maxGapFill =
-    opts?.maxGapFillBuckets === undefined ? 3 : Math.max(0, Math.floor(opts.maxGapFillBuckets));
+    opts?.maxGapFillBuckets === undefined ? 0 : Math.max(0, Math.floor(opts.maxGapFillBuckets));
 
   if (!intervalSec || intervalSec <= 0) return { candles: [], volumes: [] };
 

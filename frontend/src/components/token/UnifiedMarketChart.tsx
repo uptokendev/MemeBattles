@@ -333,7 +333,12 @@ function marketCandlesForChart(
   const mcapMul = metric === "marketcap" ? (supply > 0 ? supply : 1) : 1;
 
   return (rows || [])
-    .filter((row) => (Number(row.source_mask || 0) & 2) === 2 || Number(row.dex_trade_count || 0) > 0)
+    .filter(
+      (row) =>
+        Number(row.trades_count || 0) > 0 ||
+        Number(row.bonding_trade_count || 0) > 0 ||
+        Number(row.dex_trade_count || 0) > 0,
+    )
     .map((row) => {
       const timestamp = Math.floor(new Date(row.bucket_start).getTime() / 1000);
       const mapValue = (value: unknown) => Number(value) * mcapMul * denomMul;
@@ -354,26 +359,14 @@ function marketCandlesForChart(
     );
 }
 
-function mergeCandleRows(primary: CandleRow[], secondary: CandleRow[]): CandleRow[] {
-  const map = new Map<number, CandleRow>();
-  const upsert = (candle: CandleRow) => {
-    const key = Number(candle.time);
-    const prev = map.get(key);
-    if (!prev) {
-      map.set(key, { ...candle });
-      return;
-    }
-    map.set(key, {
-      time: candle.time,
-      open: prev.open,
-      high: Math.max(prev.high, candle.high),
-      low: Math.min(prev.low, candle.low),
-      close: candle.close,
-    });
-  };
-  for (const row of primary) upsert(row);
-  for (const row of secondary) upsert(row);
-  return Array.from(map.values()).sort((a, b) => Number(a.time) - Number(b.time));
+/** Server candles only fill history *before* the first client-built bar (cold start). */
+function prependServerCache(client: CandleRow[], server: CandleRow[]): CandleRow[] {
+  if (!server.length) return client;
+  if (!client.length) return server;
+  const firstClient = Number(client[0].time);
+  const older = server.filter((row) => Number(row.time) < firstClient);
+  if (!older.length) return client;
+  return [...older, ...client];
 }
 
 function trimFixed(value: number, decimals: number) {
@@ -595,10 +588,9 @@ export function UnifiedMarketChart({
 
   const data = useMemo(() => {
     if (!seriesPoints.length && !(marketCandles || []).length) return [] as CandleRow[];
-    const maxGapFillBuckets = resolution === "5s" ? 6 : resolution === "1m" ? 3 : 2;
     const fromTrades = buildCandles(seriesPoints, intervalSeconds, {
       extendToNow: false,
-      maxGapFillBuckets,
+      maxGapFillBuckets: 0,
     }).candles as CandleRow[];
     // Solana post-grad Meteora candles are not wired yet; marketCandles is empty on that path.
     const fromServer = marketCandlesForChart(
@@ -609,7 +601,8 @@ export function UnifiedMarketChart({
       nativeUsd || 1,
       tokenDecimals,
     );
-    return mergeCandleRows(fromTrades, fromServer);
+    // Client rebuild from trades is source of truth. Server candles only pad older history.
+    return prependServerCache(fromTrades, fromServer);
   }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
@@ -790,10 +783,10 @@ export function UnifiedMarketChart({
         borderColor: "rgba(255,255,255,0.12)",
         timeVisible: true,
         secondsVisible: intervalSeconds <= 60,
-        rightOffset: 6,
-        barSpacing: 8,
+        rightOffset: 8,
+        barSpacing: 6,
         minBarSpacing: 3,
-        lockVisibleTimeRangeOnResize: true,
+        lockVisibleTimeRangeOnResize: false,
       },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
@@ -903,8 +896,15 @@ export function UnifiedMarketChart({
 
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;
-      const visibleBars = Math.max(24, Math.min(180, Math.floor(width / 8)));
-      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, data.length - visibleBars), to: data.length + 4 });
+      const barPx = 6;
+      // Keep candles a fixed pixel width (Pump-style). Few trades must not stretch
+      // into one giant bar — pad the logical range so unused slots stay empty.
+      const slotsThatFit = Math.max(48, Math.min(220, Math.floor(width / barPx)));
+      chart.timeScale().applyOptions({ barSpacing: barPx, minBarSpacing: 3, rightOffset: 8 });
+      chart.timeScale().setVisibleLogicalRange({
+        from: data.length - slotsThatFit,
+        to: data.length + 8,
+      });
       initialRangeSetRef.current = true;
     }
     requestAnimationFrame(() => repositionCreatorPins());

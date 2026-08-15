@@ -10,7 +10,9 @@ import {
   type MarketSummary,
   type MarketTrade,
 } from "@/lib/marketContinuityApi";
+import { campaignKey, isCampaignAddress, isTradeTxId } from "@/lib/chart/normalizeTrade";
 import { isMarketContinuityApiEnabled } from "@/lib/marketContinuityFlags";
+import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
 export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
@@ -19,7 +21,7 @@ export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" 
 const ENABLE_MARKET_API = isMarketContinuityApiEnabled();
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
-  const tx = String(trade.txHash || "").toLowerCase();
+  const tx = normalizeTradeTxHash(trade.txHash) || String(trade.txHash || "").trim();
   const logIndex = Number(trade.logIndex ?? 0);
   // Preserve real log indices (bonding multi-log txs); collapse missing/0 synthetics.
   if (!Number.isFinite(logIndex) || logIndex <= 0 || logIndex >= 1_000_000) {
@@ -28,7 +30,7 @@ function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
   return `${tx}:${logIndex}`;
 }
 
-function mergeTrades(current: MarketTrade[], incoming: MarketTrade[]) {
+function mergeTrades(current: MarketTrade[], incoming: MarketTrade[], chainId: number) {
   const map = new Map<string, MarketTrade>();
   const realTx = new Set<string>();
   const prefer = (a: MarketTrade, b: MarketTrade) => {
@@ -38,8 +40,8 @@ function mergeTrades(current: MarketTrade[], incoming: MarketTrade[]) {
     return Number(b.logIndex || 0) >= Number(a.logIndex || 0) ? b : a;
   };
   for (const trade of [...current, ...incoming]) {
-    const tx = String(trade.txHash || "").toLowerCase();
-    if (!tx.startsWith("0x") || tx.length !== 66) continue;
+    const tx = normalizeTradeTxHash(trade.txHash);
+    if (!tx || !isTradeTxId(chainId, tx)) continue;
     const logIndex = Number(trade.logIndex ?? 0);
     if (Number.isFinite(logIndex) && logIndex > 0 && logIndex < 1_000_000) realTx.add(tx);
     const key = tradeKey(trade);
@@ -48,10 +50,10 @@ function mergeTrades(current: MarketTrade[], incoming: MarketTrade[]) {
   }
   return Array.from(map.values())
     .filter((trade) => {
-      const tx = String(trade.txHash || "").toLowerCase();
+      const tx = normalizeTradeTxHash(trade.txHash);
       const logIndex = Number(trade.logIndex ?? 0);
       const synthetic = !Number.isFinite(logIndex) || logIndex <= 0 || logIndex >= 1_000_000;
-      return !(synthetic && realTx.has(tx));
+      return !(synthetic && tx && realTx.has(tx));
     })
     .sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
     .slice(-500);
@@ -68,20 +70,22 @@ function mergeCandles(current: MarketCandle[], incoming: MarketCandle[]) {
   return Array.from(map.values()).sort((a, b) => candleKey(a) - candleKey(b));
 }
 
-function realtimeTrade(data: any): MarketTrade | null {
-  const txHash = String(data?.txHash || "").toLowerCase();
-  const blockNumber = Number(data?.blockNumber || 0);
-  if (!/^0x[a-f0-9]{64}$/i.test(txHash) || !Number.isInteger(blockNumber) || blockNumber <= 0) return null;
+function realtimeTrade(data: any, chainId: number): MarketTrade | null {
+  const txHash = normalizeTradeTxHash(data?.txHash || data?.tx_hash);
+  const blockNumber = Number(data?.blockNumber || data?.block_number || 0);
+  if (!txHash || !isTradeTxId(chainId, txHash) || !Number.isInteger(blockNumber) || blockNumber <= 0) return null;
   return {
-    chainId: Number(data.chainId || 0),
-    campaignAddress: String(data.campaignAddress || "").toLowerCase(),
-    tokenAddress: String(data.tokenAddress || "").toLowerCase(),
-    pairAddress: data.pairAddress ? String(data.pairAddress).toLowerCase() : null,
+    chainId: Number(data.chainId || chainId || 0),
+    campaignAddress: campaignKey(chainId, data.campaignAddress || data.campaign_address || ""),
+    tokenAddress: campaignKey(chainId, data.tokenAddress || data.token_address || ""),
+    pairAddress: data.pairAddress || data.pair_address
+      ? campaignKey(chainId, data.pairAddress || data.pair_address)
+      : null,
     marketStage: String(data.marketStage || "TOPAZ"),
     source: String(data.source || "topaz") === "bonding" ? "bonding" : "topaz",
     side: String(data.side || "buy") === "sell" ? "sell" : "buy",
-    wallet: String(data.wallet || "").toLowerCase(),
-    recipient: data.recipient ? String(data.recipient).toLowerCase() : null,
+    wallet: campaignKey(chainId, data.wallet || ""),
+    recipient: data.recipient ? campaignKey(chainId, data.recipient) : null,
     tokenAmountRaw: String(data.tokenAmountRaw || "0"),
     nativeAmountRaw: String(data.nativeAmountRaw || "0"),
     priceBnb: data.priceBnb == null ? null : String(data.priceBnb),
@@ -99,10 +103,10 @@ export function useUnifiedMarket(input: {
   resolution?: MarketResolution;
   enabled?: boolean;
 }) {
-  const campaignAddress = String(input.campaignAddress || "").trim().toLowerCase();
+  const campaignAddress = campaignKey(input.chainId, input.campaignAddress || "");
   const resolution = input.resolution ?? "1m";
   // Chart is always "enabled" for a valid campaign so TokenDetails can render continuous history from curve points.
-  const enabled = (input.enabled ?? true) && /^0x[a-f0-9]{40}$/.test(campaignAddress);
+  const enabled = (input.enabled ?? true) && isCampaignAddress(input.chainId, campaignAddress);
   const apiEnabled = enabled && ENABLE_MARKET_API;
 
   const [state, setState] = useState<MarketState | null>(null);
@@ -223,7 +227,7 @@ export function useUnifiedMarket(input: {
       if (stage) previousStageRef.current = stage;
       if (nextState) setState(nextState);
       if (nextSummary) setSummary(nextSummary);
-      setTrades((current) => mergeTrades(current, nextTrades?.items || []));
+      setTrades((current) => mergeTrades(current, nextTrades?.items || [], input.chainId));
       setCandles((current) => mergeCandles(current, nextCandles?.items || []));
       setGraduationMarker(nextCandles?.graduationMarker || null);
       setError(null);
@@ -282,8 +286,8 @@ export function useUnifiedMarket(input: {
       scheduleRefresh(50);
     };
     const onTrade = (message: any) => {
-      const trade = realtimeTrade(message?.data);
-      if (trade) setTrades((current) => mergeTrades(current, [trade]));
+      const trade = realtimeTrade(message?.data, input.chainId);
+      if (trade) setTrades((current) => mergeTrades(current, [trade], input.chainId));
       scheduleRefresh(180);
     };
     const onCandle = () => scheduleRefresh(80);

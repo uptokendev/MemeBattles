@@ -9,14 +9,17 @@ import {
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { rewindEmptyCampaignTradeCursor } from "./emptyTradeCursorRewind.js";
-import { isEvmAddress, resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
+import { TIMEFRAMES } from "./timeframes.js";
+import { isEvmAddress, isSolanaAddress, resolveMarketIdentity, resolveMarketIdentityOrPassthrough } from "./marketIdentity.js";
 import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
 
-function normalizeAddress(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+function normalizeAddress(value: unknown, chainId?: number): string {
+  const raw = String(value ?? "").trim();
+  return chainId === 101 ? raw : raw.toLowerCase();
 }
 
-function validAddress(value: string): boolean {
+function validAddress(value: string, chainId?: number): boolean {
+  if (chainId === 101) return isSolanaAddress(value);
   return isEvmAddress(value);
 }
 
@@ -31,8 +34,8 @@ function asNumber(value: unknown, fallback: number): number {
 
 /** Path param may be campaign or public ERC-20 token; always query by campaign. */
 async function campaignFromParam(chainId: number, raw: string): Promise<string | null> {
-  const input = normalizeAddress(raw);
-  if (!validAddress(input) || !validChainId(chainId)) return null;
+  const input = normalizeAddress(raw, chainId);
+  if (!validAddress(input, chainId) || !validChainId(chainId)) return null;
   const identity = await resolveMarketIdentityOrPassthrough(chainId, input);
   return identity.campaignAddress;
 }
@@ -1114,7 +1117,7 @@ export function registerMarketContinuityRoutes(app: Express) {
       if (!campaign || !validChainId(chainId)) {
         return res.status(400).json({ error: "Invalid campaign or chainId" });
       }
-      if (!["5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"].includes(resolution)) {
+      if (!(TIMEFRAMES as string[]).includes(resolution)) {
         return res.status(400).json({ error: "Unsupported candle resolution" });
       }
 
