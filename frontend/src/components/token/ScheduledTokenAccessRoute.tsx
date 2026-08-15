@@ -5,7 +5,7 @@ import { Clock3, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getEvmReadChainIdForTokenPage, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 import { fetchPublicCampaignLifecycleDrafts, timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 
@@ -38,10 +38,13 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
 
   const chainId = useMemo(() => {
     const configured = Number(new URLSearchParams(location.search).get("chainId") || 0);
+    if (/^0x[a-fA-F0-9]{40}$/i.test(campaignAddress)) {
+      return isEvmChainId(configured) ? configured : getEvmReadChainIdForTokenPage();
+    }
     if (configured > 0) return configured;
     if (isSolanaTokenRouteId(campaignAddress)) return SOLANA_CHAIN_ID;
-    return Number(getActiveChainId(wallet.chainId));
-  }, [campaignAddress, location.search, wallet.chainId]);
+    return isEvmChainId(configured) ? configured : getEvmReadChainIdForTokenPage();
+  }, [campaignAddress, location.search]);
 
   useEffect(() => {
     let cancelled = false;

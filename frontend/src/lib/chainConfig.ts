@@ -67,6 +67,10 @@ function isEvmTokenPath(pathname: string): boolean {
   return /^\/token\/0x[a-fA-F0-9]{40}/i.test(pathname);
 }
 
+export function isEvmTokenRoutePath(pathname?: string | null): boolean {
+  return isEvmTokenPath(String(pathname || ""));
+}
+
 function tokenPathId(pathname: string): string {
   try {
     const decoded = decodeURIComponent(String(pathname || "").split("?")[0] || "");
@@ -169,6 +173,8 @@ export function pinTokenDetailsChainId(chainId: number): void {
 export function getEvmReadChainIdForTokenPage(): SupportedChainId {
   try {
     if (typeof window !== "undefined") {
+      const queryChainId = Number(new URLSearchParams(window.location.search).get("chainId") || "");
+      if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
       const pinned = Number(window.localStorage.getItem(TOKEN_DETAILS_CHAIN_KEY) || "");
       if (isEvmChainId(pinned)) return pinned as SupportedChainId;
       const featured = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
@@ -179,6 +185,37 @@ export function getEvmReadChainIdForTokenPage(): SupportedChainId {
   }
   const def = getDefaultChainId();
   return isEvmChainId(def) ? def : BNB_TESTNET_CHAIN_ID;
+}
+
+/**
+ * Chain for the open Token Details page.
+ * The address in the URL wins. A connected Solana wallet must never remount a
+ * 0x campaign as chain 101 (that drops BNB trades/holders to a stub).
+ */
+export function resolveTokenPageChainId(input?: {
+  pathname?: string | null;
+  search?: string | null;
+  routeId?: string | null;
+}): SupportedChainId {
+  const pathname =
+    input?.pathname ?? (typeof window !== "undefined" ? window.location.pathname : "");
+  const search =
+    input?.search ?? (typeof window !== "undefined" ? window.location.search : "");
+  const routeId = String(input?.routeId || tokenPathId(pathname) || "").trim();
+  const queryChainId = Number(new URLSearchParams(String(search || "").replace(/^\?/, "")).get("chainId") || "");
+
+  if (/^0x[a-fA-F0-9]{40}$/i.test(routeId) || isEvmTokenPath(pathname)) {
+    if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
+    return getEvmReadChainIdForTokenPage();
+  }
+
+  if (isSolanaTokenPath(pathname) || (!routeId.startsWith("0x") && routeId.length >= 32)) {
+    return SOLANA_CHAIN_ID;
+  }
+
+  if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
+  if (queryChainId === SOLANA_CHAIN_ID) return SOLANA_CHAIN_ID;
+  return getEvmReadChainIdForTokenPage();
 }
 
 /** Force EVM chain for 0x campaign/token ids (Token Details / War Room). */

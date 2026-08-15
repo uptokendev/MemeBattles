@@ -6,7 +6,8 @@ import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   BNB_CHAIN_ID,
   getActiveChainId,
-  getEvmReadChainIdForTokenPage,
+  isEvmTokenRoutePath,
+  resolveTokenPageChainId,
   isSolanaChainId,
   SOLANA_CHAIN_ID,
   type SupportedChainId,
@@ -491,10 +492,6 @@ async function getCampaignLogsChunked(
   return logs;
 }
 
-function isEvmTokenRoutePath(pathname?: string | null): boolean {
-  return /^\/token\/0x[a-fA-F0-9]{40}/i.test(String(pathname || ""));
-}
-
 function readWindowPathname(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -524,8 +521,10 @@ export function useLaunchpad(): LaunchpadAdapter {
       !onEvmTokenPage,
   );
 
-  // Read pin/localStorage every render on token pages (not memoized on wallet).
-  const tokenPageReadChain = onEvmTokenPage ? getEvmReadChainIdForTokenPage() : null;
+  // 0x Token Details: campaign chain from the URL, never the Solana feed latch.
+  const tokenPageReadChain = onEvmTokenPage
+    ? resolveTokenPageChainId({ pathname: location.pathname, search: location.search })
+    : null;
 
   const activeChainId = useMemo<SupportedChainId>(() => {
     // 0x token pages: pinned/featured/default EVM — never MetaMask network.

@@ -17,9 +17,9 @@ import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import {
-  getEvmReadChainIdForTokenPage,
   isSolanaChainId,
   pinTokenDetailsChainId,
+  resolveTokenPageChainId,
   SOLANA_CHAIN_ID,
   type SupportedChainId,
 } from "@/lib/chainConfig";
@@ -630,27 +630,23 @@ const TokenDetails = () => {
   }, [campaign?.campaign, campaignAddress]);
   // Pinned/featured/default EVM chain — NOT wallet network (see getEvmReadChainIdForTokenPage).
   // Solana token routes force 101 in the load effect.
-  const [pageChainId, setPageChainId] = useState<SupportedChainId>(() => {
-    try {
-      const param = String(campaignAddress || "").trim();
-      const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
-      if (q === SOLANA_CHAIN_ID || q === 102) return SOLANA_CHAIN_ID;
-      // Valid base58 OR damaged lowercased base58 (length 32–48, not 0x)
-      if (
-        param &&
-        !param.startsWith("0x") &&
-        param.length >= 32 &&
-        param.length <= 48 &&
-        (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(param) || /^[0-9A-Za-z]{32,48}$/.test(param))
-      ) {
-        return SOLANA_CHAIN_ID;
-      }
-    } catch {
-      /* ignore */
-    }
-    return getEvmReadChainIdForTokenPage();
-  });
+  const [pageChainId, setPageChainId] = useState<SupportedChainId>(() =>
+    resolveTokenPageChainId({
+      pathname: typeof window !== "undefined" ? window.location.pathname : "",
+      search: typeof window !== "undefined" ? window.location.search : "",
+      routeId: campaignAddress,
+    }),
+  );
   const chainIdForStorage = pageChainId;
+
+  useEffect(() => {
+    const next = resolveTokenPageChainId({
+      pathname: location.pathname,
+      search: location.search,
+      routeId: campaignAddress,
+    });
+    if (next !== pageChainId) setPageChainId(next);
+  }, [campaignAddress, location.pathname, location.search, pageChainId]);
   const isSolanaPage = isSolanaChainId(chainIdForStorage);
 
   useEffect(() => {
@@ -990,6 +986,7 @@ const TokenDetails = () => {
         }
 
         if (isEvmAddress) {
+          pinTokenDetailsChainId(loadChainId);
           const loadProvider = getReadProvider(loadChainId);
 
           // Parallel: prefer page chain resolve + treat param as campaign contract.

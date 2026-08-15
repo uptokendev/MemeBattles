@@ -65,10 +65,12 @@ const TokenDetailsEntry = () => {
 
   const routeId = String(campaignAddress || "").trim();
   const forcedChainId = Number(searchParams.get("chainId") || "");
-  const isSolanaRoute = useMemo(
-    () => forcedChainId === SOLANA_CHAIN_ID || isSolanaTokenRouteId(routeId),
-    [forcedChainId, routeId],
-  );
+  const isSolanaRoute = useMemo(() => {
+    // A 0x BNB/ETH token is never a Solana route, even if the wallet latch
+    // or a stale ?chainId=101 is present. That was collapsing WIC trades/holders.
+    if (/^0x[a-fA-F0-9]{40}$/i.test(routeId)) return false;
+    return forcedChainId === SOLANA_CHAIN_ID || isSolanaTokenRouteId(routeId);
+  }, [forcedChainId, routeId]);
   const initialCache = useMemo(
     () => (isSolanaRoute ? readRouteCache(routeId) : null),
     [isSolanaRoute, routeId],
