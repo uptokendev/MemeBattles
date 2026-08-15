@@ -234,8 +234,24 @@ function isEvmAddress(value: unknown) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(value || "").trim());
 }
 
+function isSolanaAddress(value: unknown) {
+  const raw = String(value || "").trim();
+  return raw.length >= 32 && raw.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(raw);
+}
+
+function isLeagueAddress(value: unknown) {
+  return isEvmAddress(value) || isSolanaAddress(value);
+}
+
+function preserveAddress(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isSolanaAddress(raw)) return raw;
+  return raw.toLowerCase();
+}
+
 function campaignKey(row: any) {
-  return String(row?.campaign_address || row?.campaignAddress || "").toLowerCase();
+  return preserveAddress(row?.campaign_address || row?.campaignAddress);
 }
 
 /** Enforce row shape per league so wallet/recruiter boards never show memecoins. */
@@ -252,7 +268,7 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
   if (def.rowType === "wallet") {
     return list
       .map((row: any) => {
-        const wallet = String(row?.wallet || row?.walletAddress || row?.buyer_address || "").trim().toLowerCase();
+        const wallet = preserveAddress(row?.wallet || row?.walletAddress || row?.buyer_address);
         return {
           ...row,
           wallet,
@@ -266,7 +282,7 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
           campaignAddress: undefined,
         };
       })
-      .filter((row) => isEvmAddress(row.wallet))
+      .filter((row) => isLeagueAddress(row.wallet))
       .map((row, index) => ({ ...row, rank: index + 1 }));
   }
 
@@ -276,7 +292,8 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
       ...row,
       campaign_address: campaignKey(row) || null,
       campaignAddress: campaignKey(row) || null,
-      token_address: row?.token_address || row?.tokenAddress || null,
+      token_address: preserveAddress(row?.token_address || row?.tokenAddress) || null,
+      tokenAddress: preserveAddress(row?.token_address || row?.tokenAddress) || null,
       name: row?.name ?? null,
       symbol: row?.symbol ?? null,
       logo_uri: row?.logo_uri || row?.logoUri || null,
@@ -284,10 +301,10 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
       sells_count: row?.sells_count != null ? Number(row.sells_count) : null,
       unique_buyers: row?.unique_buyers != null ? Number(row.unique_buyers) : null,
       bnb_amount_raw: row?.bnb_amount_raw ?? row?.bnbAmountRaw ?? null,
-      buyer_address: row?.buyer_address || row?.wallet || null,
+      buyer_address: preserveAddress(row?.buyer_address || row?.wallet) || null,
       votes_count: row?.votes_count != null ? Number(row.votes_count) : null,
     }))
-    .filter((row) => isEvmAddress(row.campaign_address));
+    .filter((row) => isLeagueAddress(row.campaign_address));
 
   if (def.key === "perfect_run" || def.key === "fastest_finish" || def.key === "crowd_favorite") {
     const byCampaign = new Map<string, any>();
@@ -735,12 +752,16 @@ export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Prom
     return mergeOnChainLeagueFallback(futureSummary, onChain);
   }
   if (options.chain === "solana") {
-    const pending = solanaPendingSummary(options.chain, options.period, options.epochOffset);
-    pending.prize = {
-      ...pending.prize,
-      warning: "Solana standings request failed. Retry — BNB boards are not reused.",
-    };
-    return pending;
+    try {
+      return await loadLegacySummary(options);
+    } catch {
+      const pending = solanaPendingSummary(options.chain, options.period, options.epochOffset);
+      pending.prize = {
+        ...pending.prize,
+        warning: "Solana standings request failed. Retry — BNB boards are not reused.",
+      };
+      return pending;
+    }
   }
 
   const legacySummary = await loadLegacySummary(options);
