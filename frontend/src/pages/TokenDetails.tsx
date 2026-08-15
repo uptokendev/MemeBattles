@@ -17,7 +17,6 @@ import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import {
-  getActiveChainId,
   getEvmReadChainIdForTokenPage,
   isSolanaChainId,
   pinTokenDetailsChainId,
@@ -1588,7 +1587,7 @@ const TokenDetails = () => {
 
   // Maker profiles after topazMarket exists so we can skip protocol/router senders.
   useEffect(() => {
-    const chainIdNum = Number(wallet.chainId ?? chainIdForStorage ?? 97);
+    const chainIdNum = Number(chainIdForStorage ?? 97);
     if (!txs.length) return;
 
     const protocolSkip = new Set(
@@ -1822,6 +1821,29 @@ const { stats: rtStats } = useTokenStatsRealtime(
     const whole = Number(ethers.formatUnits(sold, tokenDecimals));
     return Number.isFinite(whole) && whole > 0 ? whole : null;
   }, [isSolanaPage, metrics?.sold, solanaCurve?.soldTokens, tokenDecimals]);
+
+  const pageLivePriceNative = useMemo(() => {
+    if (isSolanaPage) return solanaLivePrice;
+    if (contractGraduatedEarly && topazMarket.priceBnb != null && Number.isFinite(topazMarket.priceBnb) && topazMarket.priceBnb > 0) {
+      return Number(topazMarket.priceBnb);
+    }
+    if (metrics?.currentPrice != null && metrics.currentPrice > 0n) {
+      const n = Number(ethers.formatUnits(metrics.currentPrice, 18));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    if (rtStats?.lastPriceBnb != null && Number.isFinite(rtStats.lastPriceBnb) && rtStats.lastPriceBnb > 0) {
+      return Number(rtStats.lastPriceBnb);
+    }
+    return null;
+  }, [contractGraduatedEarly, isSolanaPage, metrics?.currentPrice, rtStats?.lastPriceBnb, solanaLivePrice, topazMarket.priceBnb]);
+
+  const pageLiveSupplyWhole = useMemo(() => {
+    if (isSolanaPage) return solanaSoldWhole;
+    const sold = metrics?.sold ?? 0n;
+    if (sold <= 0n) return null;
+    const whole = Number(ethers.formatUnits(sold, tokenDecimals));
+    return Number.isFinite(whole) && whole > 0 ? whole : null;
+  }, [isSolanaPage, metrics?.sold, solanaSoldWhole, tokenDecimals]);
 
   const solanaGraduationMarker = useMemo(() => {
     if (!isSolanaPage || !solanaCurve?.graduated) return null;
@@ -4194,9 +4216,8 @@ const toSeconds = (ts: number): number => {
           <Card
             className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
           >
-            <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                
+            <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex items-center gap-2 min-w-0 shrink-0">
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
                     isDexStage
@@ -4207,8 +4228,8 @@ const toSeconds = (ts: number): number => {
                   {stagePill}
                 </span>
               </div>
-              <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:justify-end">
-                <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end">
+              <div className="flex min-w-0 flex-col gap-2 w-full xl:w-auto xl:flex-row xl:items-center xl:justify-end">
+                <div className="flex flex-wrap items-center gap-1.5 xl:flex-nowrap xl:justify-end">
                   {Object.entries(tokenData.metrics).map(([key, data]) => {
                     const ch = (data as any).change as number | null;
                     return (
@@ -4264,7 +4285,7 @@ const toSeconds = (ts: number): number => {
                 <AthBar
                   currentLabel={marketCapUsdLabel ?? undefined}
                   storageKey={`ath:${String(chainIdForStorage)}:${isSolanaPage ? String((campaignAddress ?? campaign?.campaign ?? "")) : String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
-                  className="w-full md:w-auto md:max-w-[320px]"
+                  className="w-full min-w-0 xl:w-auto xl:max-w-[280px]"
                 />
 
               </div>
@@ -4282,11 +4303,11 @@ const toSeconds = (ts: number): number => {
                   creatorAvatarUrl={creatorProfile?.avatarUrl}
                   creatorDisplayName={creatorProfile?.displayName}
                   chainId={chainIdForStorage}
-                  currentBondingSoldRaw={isSolanaPage ? solanaCurve?.soldTokens ?? null : null}
+                  currentBondingSoldRaw={isSolanaPage ? solanaCurve?.soldTokens ?? null : metrics?.sold ?? null}
                   solanaCurvePricing={isSolanaPage ? solanaCurve : null}
                   solanaGraduated={Boolean(isSolanaPage && solanaCurve?.graduated)}
-                  livePriceNative={isSolanaPage ? solanaLivePrice : null}
-                  liveSupplyWhole={isSolanaPage ? solanaSoldWhole : null}
+                  livePriceNative={pageLivePriceNative}
+                  liveSupplyWhole={pageLiveSupplyWhole}
                   nativeUsdPrice={nativeUsd}
                   marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}
                   resolution={marketResolution}
@@ -4476,7 +4497,7 @@ const toSeconds = (ts: number): number => {
                   <TabsContent value="comments" className="mt-0 min-h-0">
                     {campaign?.campaign ? (
                       <TokenComments
-                        chainId={getActiveChainId(wallet.chainId)}
+                        chainId={chainIdForStorage}
                         campaignAddress={campaign.campaign}
                         tokenAddress={campaign.token}
                       />
@@ -4488,7 +4509,7 @@ const toSeconds = (ts: number): number => {
                   <TabsContent value="updates" className="mt-0 min-h-0">
                     {campaign?.campaign ? (
                       <TokenComments
-                        chainId={getActiveChainId(wallet.chainId)}
+                        chainId={chainIdForStorage}
                         campaignAddress={campaign.campaign}
                         tokenAddress={campaign.token}
                         mode="updates"
@@ -4962,7 +4983,7 @@ const toSeconds = (ts: number): number => {
 
             {campaign?.campaign ? (
               <TokenWarRoom
-                chainId={getActiveChainId(wallet.chainId)}
+                chainId={chainIdForStorage}
                 campaignAddress={campaign.campaign}
                 creatorAddress={campaign.creator}
               />

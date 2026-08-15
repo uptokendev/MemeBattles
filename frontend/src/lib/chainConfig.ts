@@ -67,9 +67,31 @@ function isEvmTokenPath(pathname: string): boolean {
   return /^\/token\/0x[a-fA-F0-9]{40}/i.test(pathname);
 }
 
+function tokenPathId(pathname: string): string {
+  try {
+    const decoded = decodeURIComponent(String(pathname || "").split("?")[0] || "");
+    const match = decoded.match(/^\/token\/([^/]+)\/?$/);
+    return match?.[1] ? String(match[1]).trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 function isSolanaTokenPath(pathname: string): boolean {
-  // Base58 mint/campaign ids (not 0x). Keep loose — only used to avoid EVM/Solana mixups.
-  return /^\/token\/[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(pathname);
+  const id = tokenPathId(pathname);
+  if (!id || id.startsWith("0x") || id.startsWith("0X")) return false;
+  // Strict base58 *and* older lowercased/damaged grid URLs (0, O, I, l).
+  return (
+    (id.length >= 32 && id.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(id)) ||
+    (id.length >= 32 && id.length <= 48 && /^[0-9A-Za-z]+$/.test(id))
+  );
+}
+
+/** Trust an explicit 56/97/101 from a market page. Do not fall through to the wallet latch. */
+export function coerceSupportedChainId(value: unknown): SupportedChainId | null {
+  const n = Number(value);
+  if (n === BNB_CHAIN_ID || n === BNB_TESTNET_CHAIN_ID || n === SOLANA_CHAIN_ID) return n;
+  return null;
 }
 
 function readBrowserChainContext(): SupportedChainId | null {

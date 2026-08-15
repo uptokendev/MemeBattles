@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import { apiFetch } from "@/lib/apiBase";
 import {
+  coerceSupportedChainId,
   getActiveChainId,
   isEvmChainId,
   isSolanaChainId,
@@ -247,8 +248,10 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const prevCampaignRef = useRef<string>("");
 
   const chainId = useMemo<SupportedChainId>(() => {
-    const cid = Number(opts?.chainId ?? 97);
-    return getActiveChainId(cid);
+    // Token Details passes the *campaign* chain. getActiveChainId follows the
+    // last-connected wallet / feed latch and would rebuild this chart as BNB
+    // while you are still on a Solana token URL (and vice versa).
+    return coerceSupportedChainId(opts?.chainId) ?? getActiveChainId(opts?.chainId ?? null);
   }, [opts?.chainId]);
 
   const inFlightRef = useRef(false);

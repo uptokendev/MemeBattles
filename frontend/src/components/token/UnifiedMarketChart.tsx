@@ -230,19 +230,18 @@ function tradeSeriesPoints(
 
   const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
   const marketAlreadyGraduated = isGraduatedStage(marketState) || Boolean(solana && solanaGraduated);
-  const frozenSolanaSupply =
-    solana && Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
+  const frozenLiveSupply =
+    Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
       ? Number(liveSupplyWhole)
       : formatUnitsNumber(currentBondingSoldRaw, tokenDecimals);
 
-  // Solana bonding trade history can be partial (for example after page reload,
-  // RPC pagination, or indexer catch-up). Reconstruct the delta represented by
-  // the loaded *curve* trades only — DEX fills must not grow circulating.
+  // Bonding trade history can be partial (reload, RPC pagination, indexer catch-up).
+  // Reconstruct the delta represented by the loaded *curve* trades only — DEX fills
+  // must not grow circulating. Same rule on BNB and Solana so headline mcap matches.
   const bondingTrades = sorted.filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
-  const liveBondingSupply =
-    solana && !marketAlreadyGraduated
-      ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
-      : 0;
+  const liveBondingSupply = !marketAlreadyGraduated
+    ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
+    : 0;
 
   const reconstructedFinalSupply =
     solana && !marketAlreadyGraduated
@@ -290,19 +289,27 @@ function tradeSeriesPoints(
       peakCirc = Math.max(peakCirc, circulating);
     }
 
-    // Solana headline is sold × price. Chart must use the same supply — never a
+    // Headline is sold × price. Chart must use the same supply — never a
     // reconstructed walk from a partial trade book (that is what drifted mcap).
+    const soldAfter =
+      trade.soldTokensAfterRaw != null
+        ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals)
+        : 0;
     const supplyForMcap = solana
       ? !dexPrint && authoritative && authoritative.supplyWhole > 0
         ? authoritative.supplyWhole
-        : frozenSolanaSupply > 0
-          ? frozenSolanaSupply
+        : frozenLiveSupply > 0
+          ? frozenLiveSupply
           : Math.max(circulating, 0)
-      : afterGrad && fixedGradSupply > 0
-        ? fixedGradSupply
-        : afterGrad && peakCirc > 0
-          ? peakCirc
-          : Math.max(circulating, 0);
+      : soldAfter > 0
+        ? soldAfter
+        : afterGrad && fixedGradSupply > 0
+          ? fixedGradSupply
+          : frozenLiveSupply > 0
+            ? frozenLiveSupply
+            : afterGrad && peakCirc > 0
+              ? peakCirc
+              : Math.max(circulating, 0);
 
     const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
     const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
@@ -694,8 +701,8 @@ export function UnifiedMarketChart({
 
     const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
     const marketGrad = isGraduatedStage(marketState);
-    const frozenSolanaSupply =
-      solana && Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
+    const frozenLiveSupply =
+      Number.isFinite(Number(liveSupplyWhole)) && Number(liveSupplyWhole) > 0
         ? Number(liveSupplyWhole)
         : 0;
     let circulating = 0;
@@ -730,16 +737,24 @@ export function UnifiedMarketChart({
         circulating = Math.max(0, circulating);
         peakCirc = Math.max(peakCirc, circulating);
       }
+      const soldAfter =
+        trade.soldTokensAfterRaw != null
+          ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals)
+          : 0;
       const supplyForMcap =
-        afterGrad && solana && frozenSolanaSupply > 0
-          ? frozenSolanaSupply
+        afterGrad && solana && frozenLiveSupply > 0
+          ? frozenLiveSupply
           : !afterGrad && authoritative
             ? authoritative.supplyWhole
-            : afterGrad && fixedGradSupply > 0
-              ? fixedGradSupply
-              : afterGrad && peakCirc > 0
-                ? peakCirc
-                : Math.max(circulating, 0);
+            : soldAfter > 0
+              ? soldAfter
+              : afterGrad && fixedGradSupply > 0
+                ? fixedGradSupply
+                : frozenLiveSupply > 0
+                  ? frozenLiveSupply
+                  : afterGrad && peakCirc > 0
+                    ? peakCirc
+                    : Math.max(circulating, 0);
       if (!sameAddr(chainId, trade.from, creator)) continue;
 
       const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;

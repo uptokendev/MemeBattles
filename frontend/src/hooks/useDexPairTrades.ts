@@ -1,7 +1,7 @@
 import { Contract, ethers } from "ethers";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getReadProvider } from "@/lib/readProvider";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { coerceSupportedChainId, getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 
 const PAIR_ABI = [
   "function token0() view returns (address)",
@@ -30,7 +30,7 @@ const isAddress = (a?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(String(a ?? 
 
 export function useDexPairTrades(args: Args) {
   const enabled = args.enabled ?? true;
-  const chainId = getActiveChainId(args.chainId ?? null) as SupportedChainId;
+  const chainId = (coerceSupportedChainId(args.chainId) ?? getActiveChainId(args.chainId ?? null)) as SupportedChainId;
   const lookbackBlocks = Math.max(1_000, Number(args.lookbackBlocks ?? 30_000));
   const pollIntervalMs = Math.max(7_500, Number(args.pollIntervalMs ?? 20_000));
 

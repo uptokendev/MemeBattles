@@ -4,9 +4,8 @@ import { useParams } from "react-router-dom";
 
 import { TokenSafetyStatusButton } from "@/components/token/TokenSafetyStatusButton";
 import { useWallet } from "@/contexts/WalletContext";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { isSolanaAddress } from "@/lib/address";
+import { getActiveChainId, getEvmReadChainIdForTokenPage, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isEvmAddress, isSolanaAddress } from "@/lib/address";
 
 const SAFETY_STATE_MAX_AGE_MS = 15_000;
 
@@ -55,9 +54,9 @@ function blockAndOpenSafety(event: MouseEvent) {
 export function TokenSafetyRouteOverlay() {
   const { campaignAddress = "" } = useParams();
   const wallet = useWallet();
-  const solanaWallet = useSolanaWallet();
-  // Prefer route chain (Solana base58 / ?chainId=101) over EVM wallet chain.
+  // Prefer the token in the URL over the last-connected wallet / feed latch.
   const chainId = (() => {
+    if (isEvmAddress(campaignAddress)) return getEvmReadChainIdForTokenPage();
     try {
       const q = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
       if (isSolanaChainId(q)) return SOLANA_CHAIN_ID;
@@ -65,7 +64,16 @@ export function TokenSafetyRouteOverlay() {
       /* ignore */
     }
     if (isSolanaAddress(campaignAddress)) return SOLANA_CHAIN_ID;
-    if (solanaWallet.isSolanaConnected) return SOLANA_CHAIN_ID;
+    const damaged = String(campaignAddress || "").trim();
+    if (
+      damaged &&
+      !damaged.startsWith("0x") &&
+      damaged.length >= 32 &&
+      damaged.length <= 48 &&
+      /^[0-9A-Za-z]+$/.test(damaged)
+    ) {
+      return SOLANA_CHAIN_ID;
+    }
     return getActiveChainId(wallet.chainId);
   })();
   const [headerRow, setHeaderRow] = useState<HTMLElement | null>(null);
