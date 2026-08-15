@@ -3,9 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SponsoredFeaturedSlotCard } from "@/components/home/SponsoredFeaturedSlotCard";
-import { SponsorshipApplyDialog } from "@/components/home/SponsorshipApplyDialog";
 import { SearchTokenRail } from "@/components/search/SearchTokenRail";
-import { FEATURED_SPONSOR_SLOT } from "@/lib/featuredSponsor";
 import { useSearchDiscovery, type SearchRailToken } from "@/hooks/useSearchDiscovery";
 import { useSearchHistory } from "@/hooks/useSearchHistory";
 import { useTokenSearch } from "@/hooks/useTokenSearch";
@@ -35,7 +33,6 @@ export function SearchPopup({
   const [chainId] = useSelectedFeedChainId();
   const [query, setQuery] = useState("");
   const [hintIndex, setHintIndex] = useState(0);
-  const [applyOpen, setApplyOpen] = useState(false);
   const searching = query.trim().length >= 2;
   const { sponsor, featured, trending } = useSearchDiscovery(open, chainId);
   const { searched, viewed, remember, clearSearched } = useSearchHistory(open);
@@ -110,11 +107,11 @@ export function SearchPopup({
 
           <div className="shrink-0 px-3 pt-3">
             {sponsor ? (
-              <SponsoredFeaturedSlotCard
-                placement={sponsor}
-                className="h-[120px] sm:h-[140px]"
-                onHouseAdClick={() => setApplyOpen(true)}
-              />
+              <div className="flex gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="h-[150px] w-[min(100%,392px)] shrink-0">
+                  <SponsoredFeaturedSlotCard placement={sponsor} className="h-full w-full" />
+                </div>
+              </div>
             ) : null}
           </div>
 
@@ -186,7 +183,6 @@ export function SearchPopup({
           </div>
         </DialogContent>
       </Dialog>
-      <SponsorshipApplyDialog open={applyOpen} onOpenChange={setApplyOpen} defaultSlot={FEATURED_SPONSOR_SLOT} />
     </>
   );
 }

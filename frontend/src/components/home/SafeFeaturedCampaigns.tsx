@@ -9,6 +9,7 @@ import {
 } from "@/components/home/SponsoredFeaturedSlotCard";
 import { FEATURED_SPONSOR_SLOT, loadFeaturedSponsorSlot } from "@/lib/featuredSponsor";
 import { SponsorshipApplyDialog } from "@/components/home/SponsorshipApplyDialog";
+import { AdvertisementNoticeDialog } from "@/components/home/AdvertisementNoticeDialog";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchPublicCampaignDrafts } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
@@ -478,6 +479,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
   const [items, setItems] = useState<FeaturedItem[]>([]);
   const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(null);
   const [applyOpen, setApplyOpen] = useState(false);
+  const [adNoticeOpen, setAdNoticeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const softPollInFlight = useRef(false);
   const softPollRef = useRef<() => void>(() => {});
@@ -697,6 +699,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
               <SponsoredFeaturedSlotCard
                 placement={sponsor}
                 onHouseAdClick={() => setApplyOpen(true)}
+                onAdvertisementClick={() => setAdNoticeOpen(true)}
               />
             ) : (
               <div className="mwz-card h-[150px] animate-pulse border border-amber-400/20" />
@@ -713,6 +716,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
                 key={`sponsor-${sponsor?.id || "house"}`}
                 placement={sponsor}
                 onHouseAdClick={() => setApplyOpen(true)}
+                onAdvertisementClick={() => setAdNoticeOpen(true)}
               />
             ) : null}
             {!cards.length ? (
@@ -786,6 +790,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       </div>
 
       <SponsorshipApplyDialog open={applyOpen} onOpenChange={setApplyOpen} defaultSlot={FEATURED_SPONSOR_SLOT} />
+      <AdvertisementNoticeDialog open={adNoticeOpen} onOpenChange={setAdNoticeOpen} />
     </div>
   );
 }

@@ -38,10 +38,12 @@ export function SponsoredFeaturedSlotCard({
   placement,
   className = "",
   onHouseAdClick,
+  onAdvertisementClick,
 }: {
   placement: FeaturedSponsorPlacement;
   className?: string;
   onHouseAdClick?: () => void;
+  onAdvertisementClick?: () => void;
 }) {
   const title = String(placement.name || "Sponsored").trim() || "Sponsored";
   const imageRaw = placement.imageUrl || placement.logoUri;
@@ -93,6 +95,18 @@ export function SponsoredFeaturedSlotCard({
           el.src = "/placeholder.svg";
         }}
       />
+
+      <button
+        type="button"
+        className={`absolute right-1.5 top-1.5 z-20 border border-white/20 bg-black/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 ${onAdvertisementClick ? "hover:border-orange-300/70 hover:text-orange-200" : "cursor-default"}`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onAdvertisementClick?.();
+        }}
+      >
+        Advertisement
+      </button>
 
       {isHouse ? (
         <>

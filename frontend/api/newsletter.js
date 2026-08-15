@@ -117,12 +117,47 @@ function buildNewsletterThankYou(email) {
   return { subject, text, html, unsubscribeUrl };
 }
 
-function buildInternalNotification(email) {
+function buildAdvertiseThankYou(email) {
+  const safeEmail = String(email).trim();
+  const subject = "You're on the MemeWarzone ad waitlist";
+  const text = [
+    "You're on the list.",
+    "",
+    "Thanks for asking about advertising on MemeWarzone.",
+    "Search and featured slots are paid placements. We will email you when you can book a spot.",
+    "",
+    "MemeWarzone",
+  ].join("\n");
+  const html = `
+    <div style="background:#030403;padding:32px 20px;font-family:Inter,system-ui,Arial,sans-serif;color:#f7efe3;">
+      <div style="max-width:560px;margin:0 auto;background:#0a0c0a;border:1px solid rgba(255,153,0,0.25);border-radius:8px;overflow:hidden;">
+        <div style="padding:20px 24px 8px;text-align:center;border-bottom:1px solid rgba(255,153,0,0.15);">
+          <div style="font-family:monospace;font-size:11px;letter-spacing:1px;color:#ff9900;">MWZ / ADVERTISING</div>
+          <h1 style="margin:8px 0 4px;font-size:22px;color:#fff6de;font-weight:800;text-transform:uppercase;">You're on the list.</h1>
+          <p style="margin:0;color:#b9ad9d;font-size:15px;">We'll notify you when search and featured ad slots open.</p>
+        </div>
+        <div style="padding:22px 24px 26px;font-size:14px;line-height:1.65;color:#e8d0ad;">
+          <p style="margin:0;">Thanks for your interest, ${safeEmail}. This was a paid placement notice, not a newsletter signup.</p>
+        </div>
+      </div>
+    </div>
+  `;
+  return { subject, text, html };
+}
+
+function buildInternalNotification(email, source) {
   const safe = String(email).trim();
+  const advertise = source === "advertise";
   return {
-    subject: `New MemeWarzone Dispatch subscriber: ${safe}`,
-    text: `New newsletter signup on memewar.zone landing:\n\n${safe}\n\nTime: ${new Date().toISOString()}\n`,
-    html: `<p>New newsletter signup:</p><p><strong>${safe}</strong></p><p style="color:#666;font-size:12px">${new Date().toISOString()}</p>`,
+    subject: advertise
+      ? `New advertise waitlist signup: ${safe}`
+      : `New MemeWarzone Dispatch subscriber: ${safe}`,
+    text: advertise
+      ? `New advertise-notify signup from search/featured:\n\n${safe}\n\nTime: ${new Date().toISOString()}\n`
+      : `New newsletter signup on memewar.zone landing:\n\n${safe}\n\nTime: ${new Date().toISOString()}\n`,
+    html: advertise
+      ? `<p>New advertise waitlist signup:</p><p><strong>${safe}</strong></p><p style="color:#666;font-size:12px">${new Date().toISOString()}</p>`
+      : `<p>New newsletter signup:</p><p><strong>${safe}</strong></p><p style="color:#666;font-size:12px">${new Date().toISOString()}</p>`,
   };
 }
 
@@ -131,6 +166,8 @@ export default async function handler(req, res) {
 
   const body = await readJson(req);
   const email = String(body?.email || "").trim().toLowerCase();
+  const source = String(body?.source || "newsletter").trim().toLowerCase();
+  const advertise = source === "advertise";
 
   if (!isValidEmail(email)) {
     return json(res, 400, { error: "Valid email is required." });
@@ -143,8 +180,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Thank-you to the subscriber (the important one for "newsletter")
-    const welcome = buildNewsletterThankYou(email);
+    const welcome = advertise ? buildAdvertiseThankYou(email) : buildNewsletterThankYou(email);
     await sendResendEmail({
       apiKey: cfg.apiKey,
       from: cfg.from,
@@ -153,15 +189,15 @@ export default async function handler(req, res) {
       html: welcome.html,
       text: welcome.text,
       replyTo: cfg.replyTo || undefined,
-      headers: {
-        "List-Unsubscribe": `<mailto:unsubscribe@updates.memewar.zone>, <${welcome.unsubscribeUrl || 'https://memewar.zone/unsubscribe'}>`
-      }
+      headers: advertise
+        ? undefined
+        : {
+            "List-Unsubscribe": `<mailto:unsubscribe@updates.memewar.zone>, <${welcome.unsubscribeUrl || "https://memewar.zone/unsubscribe"}>`,
+          },
     });
 
-    // 2. Light internal notification so the team sees the signup (collection)
-    //    This is minimal on purpose — not the heavy recruiter access email.
     try {
-      const note = buildInternalNotification(email);
+      const note = buildInternalNotification(email, source);
       await sendResendEmail({
         apiKey: cfg.apiKey,
         from: cfg.from,
