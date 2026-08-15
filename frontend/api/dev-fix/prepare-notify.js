@@ -1,7 +1,7 @@
-import { isSolanaChain, normalizeAddress as centralNormalize } from "../../server/http.js";
+import { normalizeAddress as centralNormalize, normalizeWalletFlexible } from "../../server/http.js";
 
 function normalizeAddress(value, chainId) {
-  // Use central server normalizer for full Solana (raw base58) + EVM support
+  // Owner / draft-chain identity only. Social inboxes use normalizeWalletFlexible.
   return centralNormalize(value, chainId);
 }
 
@@ -12,7 +12,7 @@ function cleanText(value, max = 600) {
 export async function insertPrepareNotification(pool, input) {
   if (!pool) return null;
 
-  const wallet = normalizeAddress(input?.walletAddress);
+  const wallet = normalizeWalletFlexible(input?.walletAddress);
   if (!wallet) return null;
 
   const eventType = cleanText(input?.eventType || "prepare", 80) || "prepare";
@@ -78,7 +78,7 @@ export async function notifyDraftSubscribers(pool, draft, input) {
 
     let count = 0;
     for (const row of result.rows) {
-      const wallet = normalizeAddress(row.wallet_address, chainId);
+      const wallet = normalizeWalletFlexible(row.wallet_address);
       if (!wallet || (owner && wallet === owner)) continue;
       const inserted = await insertPrepareNotification(pool, {
         walletAddress: wallet,

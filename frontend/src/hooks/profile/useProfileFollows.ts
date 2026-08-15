@@ -89,7 +89,6 @@ useEffect(() => {
 
       const draftItems: CampaignDraft[] = await fetchFollowedCampaignDrafts({
         walletAddress: viewedAddress,
-        chainId: chainId ?? 0,
       }).catch((): CampaignDraft[] => []);
 
       if (cancelled) return;
@@ -190,6 +189,7 @@ useEffect(() => {
         ticker: draft.ticker,
         draftId: draft.id,
         slug: draft.slug,
+        chainId: Number(draft.chainId || 0) || undefined,
         campaignAddress: draft.campaignAddress || "",
         href: `/prepare/${draft.slug}`,
         marketCap: "Prepare Mode",

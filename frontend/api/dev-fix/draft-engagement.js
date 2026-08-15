@@ -276,22 +276,21 @@ export async function followedDrafts(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
 
   const q = getQuery(req);
-  const chainId = Number(q.chainId || 0);
-  const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address, chainId);
+  const wallet = normalizeWalletFlexible(q.wallet || q.walletAddress || q.address);
   const pool = await getPool();
 
   if (!wallet) return json(res, 400, { error: "Wallet address required." });
   if (!pool) return json(res, 503, { error: "Followed drafts require DATABASE_URL." });
 
+  // Follows belong to the wallet, not the profile chain. Show every draft this wallet followed.
   const result = await pool.query(
     `select d.*
        from public.campaign_draft_follows f
        join public.campaign_drafts d on d.id = f.draft_id
       where f.wallet_address = $1
-        and ($2::int = 0 or d.chain_id = $2)
       order by f.created_at desc
       limit 100`,
-    [wallet, Number.isFinite(chainId) ? chainId : 0],
+    [wallet],
   );
 
   return json(res, 200, { items: result.rows.map(mapDraftRow) });

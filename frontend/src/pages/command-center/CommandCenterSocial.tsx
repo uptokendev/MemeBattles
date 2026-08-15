@@ -214,7 +214,14 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
                     <div className="flex items-center gap-3">
                       <img src={card.image || "/placeholder.svg"} alt={card.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
                       <div className="min-w-0">
-                        <div className="truncate font-retro text-sm text-foreground">{card.name}</div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="truncate font-retro text-sm text-foreground">{card.name}</div>
+                          {Number(card.chainId) === 101 || Number(card.chainId) === 102 ? (
+                            <span className="shrink-0 rounded-full border border-purple-400/40 px-2 py-0.5 text-[10px] text-purple-300">SOL</span>
+                          ) : Number(card.chainId) === 56 || Number(card.chainId) === 97 ? (
+                            <span className="shrink-0 rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">BNB</span>
+                          ) : null}
+                        </div>
                         <div className="text-xs text-muted-foreground">${card.ticker}</div>
                       </div>
                     </div>
