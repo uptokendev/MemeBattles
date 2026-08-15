@@ -187,6 +187,24 @@ function parseOperatorKey(): { keypair: Keypair | null; configured: boolean; inv
   return { keypair: null, configured: true, invalid: true };
 }
 
+export function solanaHarvestStatus() {
+  const parsed = parseOperatorKey();
+  const treasury = protocolTreasury(parsed.keypair?.publicKey || new PublicKey(DEFAULT_SOLANA_OPERATOR));
+  return {
+    ok: true,
+    chainId: SOLANA_CHAIN_ID,
+    operatorConfigured: Boolean(parsed.keypair),
+    operatorInvalid: parsed.invalid,
+    operatorAddress: parsed.keypair ? parsed.keypair.publicKey.toBase58() : null,
+    protocolTreasury: treasury.toBase58(),
+    note: parsed.keypair
+      ? "Indexer can sign Meteora fee claims."
+      : parsed.invalid
+        ? "Operator secret is set but could not be parsed."
+        : "Set SOLANA_HARVEST_OPERATOR_SECRET on the indexer (HuKfoF operator), not the web-dashboard.",
+  };
+}
+
 function toBigInt(value: unknown): bigint {
   try {
     if (typeof value === "bigint") return value;
@@ -321,13 +339,18 @@ export async function listSolanaLpFees(input: {
       });
     }
   }
+  const treasury = protocolTreasury(new PublicKey(DEFAULT_SOLANA_OPERATOR));
   return {
     ok: true,
     chainId: SOLANA_CHAIN_ID,
+    service: "realtime-indexer",
     lockerAddress: null,
+    treasuryRouter: treasury.toBase58(),
+    protocolTreasury: treasury.toBase58(),
     split: { creatorBps: CREATOR_FEE_BPS, protocolBps: PROTOCOL_FEE_BPS },
     notes: [
       "Solana LP fees accrue on the permanently locked DAMM v2 position.",
+      "There is no EVM TreasuryRouter. The 20% protocol share goes to the HuKfoF operator ATA.",
       "Harvest claims fees then splits 80% creator / 20% protocol.",
     ],
     items,

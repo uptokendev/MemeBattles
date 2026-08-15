@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
-import { harvestSolanaLpFees, listSolanaLpFees } from "./solanaLpFees.js";
+import { harvestSolanaLpFees, listSolanaLpFees, solanaHarvestStatus } from "./solanaLpFees.js";
 
 const LOCKER_ABI = [
   "function poolInfo(address) view returns (address campaign,address creator,address creatorFeeRecipient,address pool,address token0,address token1,uint256 lockedLpAmount,uint16 creatorFeeBps,uint16 protocolFeeBps,bool registered)",
@@ -546,16 +546,31 @@ export function registerLpFeesRoutes(app: express.Application) {
     }),
   );
 
-  /**
-   * Ops harvest: server wallet calls PermanentLpLocker.harvest(pair).
-   * Creator still receives 80% to their payout wallet automatically inside harvest.
-   * Set HARVEST_OPS_PRIVATE_KEY (or DEPLOYER_PK) on the indexer.
-   */
-  app.post(
-    "/api/dashboard/lp-fees/harvest",
+  app.get(
+    "/api/dashboard/lp-fees/status",
     wrap(async (req, res) => {
+      const chainId = Number(req.query.chainId ?? 101);
+      if (chainId === 101 || chainId === 102) {
+        res.status(200).json(solanaHarvestStatus());
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        chainId,
+        operatorConfigured: Boolean(resolveHarvestSignerKey()),
+        note: "BNB harvest uses HARVEST_OPS_PRIVATE_KEY / DEPLOYER_PK plus DASHBOARD_OPS_KEY.",
+      });
+    }),
+  );
+
+  /**
+   * Ops collect: server wallet claims locked LP fees.
+   * Path is /collect because POST .../harvest is blocked by the Railway edge (502 fallback).
+   * Creator still receives 80%; protocol 20%.
+   */
+  const collectHandler = wrap(async (req, res) => {
       const chainId = Number(req.body?.chainId ?? 97);
-      // Solana harvest is permissionless like BNB locker.harvest(): anyone may
+      // Solana collect is permissionless like BNB locker.harvest(): anyone may
       // trigger it. The operator key only signs the Meteora claim; 80% still
       // belongs to the campaign creator once the split ix is live.
       if (chainId === 101 || chainId === 102) {
@@ -655,6 +670,9 @@ export function registerLpFeesRoutes(app: express.Application) {
           // ignore
         }
       }
-    }),
-  );
+    });
+
+  app.post("/api/dashboard/lp-fees/collect", collectHandler);
+  // Alias kept for older clients. Railway currently 502s POST .../harvest at the edge.
+  app.post("/api/dashboard/lp-fees/harvest", collectHandler);
 }

@@ -138,7 +138,7 @@ export async function harvestSolanaLpFees(input: {
   const chainId = Number(input.chainId || 101);
   const base = getTokenIndexerBase();
   if (!base) throw new Error("Token indexer URL is not configured.");
-  const res = await fetch(`${base}/api/dashboard/lp-fees/harvest`, {
+  const res = await fetch(`${base}/api/dashboard/lp-fees/collect`, {
     method: "POST",
     headers: { "content-type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
