@@ -1,7 +1,7 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { AccountLayout } from "@solana/spl-token";
 
-import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getSolanaReadConnection } from "@/lib/solanaReadConnection";
 
 function shortAddr(address: string): string {
   return address && address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
@@ -42,12 +42,39 @@ export type SolanaOnChainHolderDistribution = {
  * Top SPL token accounts for a graduated mint. Pool vault is labeled as LP;
  * leftover campaign vault (if any) is called out separately.
  */
+const HOLDERS_TTL_MS = 90_000;
+const holdersCache = new Map<string, { at: number; value: SolanaOnChainHolderDistribution }>();
+const holdersInflight = new Map<string, Promise<SolanaOnChainHolderDistribution>>();
+
 export async function fetchSolanaOnChainHolders(input: {
   mint: string;
   poolTokenVault?: string | null;
   campaignTokenVault?: string | null;
 }): Promise<SolanaOnChainHolderDistribution> {
-  const connection = new Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+  const mintKey = String(input.mint || "").trim();
+  const cached = holdersCache.get(mintKey);
+  if (cached && Date.now() - cached.at < HOLDERS_TTL_MS) return cached.value;
+  const pending = holdersInflight.get(mintKey);
+  if (pending) return pending;
+
+  const request = loadSolanaOnChainHolders(input)
+    .then((value) => {
+      holdersCache.set(mintKey, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      holdersInflight.delete(mintKey);
+    });
+  holdersInflight.set(mintKey, request);
+  return request;
+}
+
+async function loadSolanaOnChainHolders(input: {
+  mint: string;
+  poolTokenVault?: string | null;
+  campaignTokenVault?: string | null;
+}): Promise<SolanaOnChainHolderDistribution> {
+  const connection = getSolanaReadConnection();
   const mint = new PublicKey(input.mint);
   const [supplyRes, largest] = await Promise.all([
     connection.getTokenSupply(mint),

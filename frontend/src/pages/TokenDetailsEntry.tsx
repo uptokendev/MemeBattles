@@ -188,7 +188,7 @@ const TokenDetailsEntry = () => {
     };
 
     void loadCurve();
-    const pollMs = curve?.curveClosed && !curve?.graduated ? 1_500 : 0;
+    const pollMs = curve?.curveClosed && !curve?.graduated ? 8_000 : 0;
     const timer = pollMs ? window.setInterval(() => void loadCurve(), pollMs) : 0;
 
     return () => {

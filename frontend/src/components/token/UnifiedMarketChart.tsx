@@ -290,16 +290,19 @@ function tradeSeriesPoints(
       peakCirc = Math.max(peakCirc, circulating);
     }
 
-    const supplyForMcap =
-      afterGrad && solana && frozenSolanaSupply > 0
-        ? frozenSolanaSupply
-        : !afterGrad && authoritative
-          ? authoritative.supplyWhole
-        : afterGrad && fixedGradSupply > 0
-          ? fixedGradSupply
-          : afterGrad && peakCirc > 0
-            ? peakCirc
-            : Math.max(circulating, 0);
+    // Solana headline is sold × price. Chart must use the same supply — never a
+    // reconstructed walk from a partial trade book (that is what drifted mcap).
+    const supplyForMcap = solana
+      ? !dexPrint && authoritative && authoritative.supplyWhole > 0
+        ? authoritative.supplyWhole
+        : frozenSolanaSupply > 0
+          ? frozenSolanaSupply
+          : Math.max(circulating, 0)
+      : afterGrad && fixedGradSupply > 0
+        ? fixedGradSupply
+        : afterGrad && peakCirc > 0
+          ? peakCirc
+          : Math.max(circulating, 0);
 
     const valueNative = metric === "marketcap" ? priceNative * Math.max(supplyForMcap, 1e-18) : priceNative;
     const value = denomination === "USD" ? valueNative * nativeUsd : valueNative;
@@ -318,8 +321,12 @@ function tradeSeriesPoints(
   return points;
 }
 
-/** Paint live headline price onto the open interval only — never invent a new bar. */
-function applyLiveMarkToOpenBucket(
+/**
+ * Keep the last chart value equal to the Token Details headline.
+ * Same-minute: update the open bar. Older last print: add one current-minute
+ * bar so we do not rewrite yesterday's OHLC.
+ */
+function applyLiveHeadline(
   candles: CandleRow[],
   liveValue: number | null,
   intervalSec: number,
@@ -329,14 +336,27 @@ function applyLiveMarkToOpenBucket(
   const last = candles[candles.length - 1];
   const lastTime = Number(last.time);
   const nowBucket = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
-  if (!Number.isFinite(lastTime) || lastTime !== nowBucket) return candles;
-  if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
+  if (!Number.isFinite(lastTime)) return candles;
+  if (lastTime === nowBucket) {
+    if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
+    return [
+      ...candles.slice(0, -1),
+      {
+        ...last,
+        high: Math.max(last.high, liveValue),
+        low: Math.min(last.low, liveValue),
+        close: liveValue,
+      },
+    ];
+  }
+  if (Math.abs(last.close - liveValue) < liveValue * 1e-9) return candles;
   return [
-    ...candles.slice(0, -1),
+    ...candles,
     {
-      ...last,
-      high: Math.max(last.high, liveValue),
-      low: Math.min(last.low, liveValue),
+      time: nowBucket as Time,
+      open: last.close,
+      high: Math.max(last.close, liveValue),
+      low: Math.min(last.close, liveValue),
       close: liveValue,
     },
   ];
@@ -654,7 +674,7 @@ export function UnifiedMarketChart({
       tokenDecimals,
     );
     // Client rebuild from trades is source of truth. Server candles only pad older history.
-    return applyLiveMarkToOpenBucket(
+    return applyLiveHeadline(
       prependServerCache(fromTrades, fromServer),
       liveChartValue,
       intervalSeconds,

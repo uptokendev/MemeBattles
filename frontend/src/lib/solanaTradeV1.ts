@@ -345,7 +345,7 @@ export async function getSolanaTokenBalanceRaw(input: {
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
     "https://api.devnet.solana.com";
-  const connection = new Connection(rpc, "confirmed");
+  const connection = new Connection(rpc, { commitment: "confirmed", disableRetryOnRateLimit: true });
   const mint = new PublicKey(input.mint);
   const owner = new PublicKey(input.owner);
   const [ata] = PublicKey.findProgramAddressSync(

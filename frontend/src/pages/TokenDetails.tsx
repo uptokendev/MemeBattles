@@ -779,7 +779,6 @@ const TokenDetails = () => {
     tokenDecimals,
     campaignTokenVault: solanaCurve?.tokenVault ?? null,
     enabled: isSolanaPage && Boolean(solanaCurve?.graduated),
-    refreshToken: solanaBalanceTick,
   });
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
@@ -1949,6 +1948,18 @@ const toSeconds = (ts: number): number => {
         ? stats.marketCap
         : null;
     const onChainHolderCount = solanaMeteora.holders?.totalHolders;
+    const tradeHolderCount = (() => {
+      const balances = new Map<string, bigint>();
+      for (const point of marketTradePoints || []) {
+        const addr = String(point.from || "").trim();
+        if (!addr) continue;
+        const prev = balances.get(addr) ?? 0n;
+        const delta = point.tokensWei ?? 0n;
+        balances.set(addr, point.type === "sell" ? prev - delta : prev + delta);
+      }
+      return [...balances.values()].filter((bal) => bal > 0n).length;
+    })();
+    const buyerCount = Number(solanaCurve?.buyerCount ?? 0);
 
     return {
       image: resolveImageUri(campaign?.logoURI) || "/placeholder.svg",
@@ -1977,7 +1988,13 @@ const toSeconds = (ts: number): number => {
       holders:
         onChainHolderCount != null && onChainHolderCount > 0
           ? String(onChainHolderCount)
-          : stats?.holders ?? "—",
+          : tradeHolderCount > 0
+            ? String(tradeHolderCount)
+            : buyerCount > 0
+              ? String(buyerCount)
+              : stats?.holders && stats.holders !== "—" && stats.holders !== "-"
+                ? stats.holders
+                : "—",
       price:
         isSolanaPage && solanaLivePrice != null
           ? formatPriceBnb(solanaLivePrice)
@@ -2323,75 +2340,38 @@ const toSeconds = (ts: number): number => {
     };
   }, [isSolanaPage]);
 
-  // Solana: load campaign curve snapshot and feed metrics (progress / quotes / reserve).
+  // Solana: load campaign curve snapshot (slow poll). Metrics are derived locally
+  // so a CoinGecko tick or wallet-balance tick cannot re-hit RPC.
   useEffect(() => {
     if (!isSolanaPage || !campaign?.campaign) {
       setSolanaCurve(null);
       return;
     }
     let cancelled = false;
-    (async () => {
+    const loadCurve = async () => {
       try {
         const { resolveSolanaCampaignCurve } = await import("@/lib/solanaCampaignRead");
-        // Prefer dedicated campaign PDA; URL may be mint-only.
         const candidates = [
-          (campaign as { campaignPda?: string }).campaignPda,
-          campaign.campaign !== campaign.token ? campaign.campaign : null,
-          campaign.campaign,
-          campaign.token,
-        ]
-          .map((x) => String(x || "").trim())
-          .filter(Boolean);
+          ...new Set(
+            [
+              (campaign as { campaignPda?: string }).campaignPda,
+              campaign.campaign !== campaign.token ? campaign.campaign : null,
+              campaign.campaign,
+              campaign.token,
+            ]
+              .map((x) => String(x || "").trim())
+              .filter(Boolean),
+          ),
+        ];
         let state: import("@/lib/solanaCampaignRead").SolanaCampaignCurveState | null = null;
         for (const addr of candidates) {
           state = await resolveSolanaCampaignCurve(addr);
-          if (state && state.curveTokenSupply > 0n) break;
+          if (state && (state.curveTokenSupply > 0n || state.graduated)) break;
         }
         if (cancelled) return;
         setSolanaCurve(state);
         if (!state) return;
-
         setCurveReserveWei(state.netRaisedLamports);
-
-        // $ target (micros) → SOL lamports for raised % / remaining (BNB uses oracle native target).
-        let graduationNativeTarget = 0n;
-        if (solUsdPrice && solUsdPrice > 0 && state.graduationTargetUsdMicros > 0n) {
-          const priceScaled = BigInt(Math.max(1, Math.round(solUsdPrice * 1_000_000)));
-          // lamports = usd_micros / 1e6 / price * 1e9 = usd_micros * 1e3 / price
-          // with priceScaled = price * 1e6: lamports = usd_micros * 1e9 / priceScaled
-          graduationNativeTarget =
-            (state.graduationTargetUsdMicros * 1_000_000_000n) / priceScaled;
-        }
-
-        // Marginal spot stored in CampaignMetrics is integer lamports. V3 keeps
-        // the precise sub-lamport component in solanaSpotNative for display/chart math.
-        const tokenScale = 10n ** BigInt(state.tokenDecimals);
-        const slopeDenominator = state.economicsVersion >= 3
-          ? tokenScale * 1_000_000_000n
-          : tokenScale;
-        const spot =
-          state.basePriceLamports +
-          (state.priceSlopeLamports * state.soldTokens) / slopeDenominator;
-
-        setMetrics({
-          sold: state.soldTokens,
-          curveSupply: state.curveTokenSupply,
-          liquiditySupply: 0n,
-          creatorReserve: state.tokenTotalSupply > state.curveTokenSupply
-            ? state.tokenTotalSupply - state.curveTokenSupply
-            : 0n,
-          basePrice: state.basePriceLamports,
-          priceSlope: state.priceSlopeLamports,
-          graduationTarget: state.graduationTargetUsdMicros,
-          graduationNativeTarget,
-          liquidityBps: 0n,
-          protocolFeeBps: BigInt(state.buyFeeBps),
-          currentPrice: spot > 0n ? spot : state.basePriceLamports,
-          launched: false,
-          finalizedAt: 0n,
-        } as CampaignMetrics);
-
-        // Keep campaign.token = mint when we only had a mint URL.
         if (state.mint && (!campaign.token || campaign.token === campaign.campaign)) {
           setCampaign((prev) =>
             prev
@@ -2408,11 +2388,46 @@ const toSeconds = (ts: number): number => {
         console.warn("[TokenDetails] Solana curve load failed", e);
         if (!cancelled) setSolanaCurve(null);
       }
-    })();
+    };
+    void loadCurve();
+    const timer = window.setInterval(() => void loadCurve(), 15_000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [isSolanaPage, campaign?.campaign, campaign?.token, solanaBalanceTick, solUsdPrice]);
+  }, [isSolanaPage, campaign?.campaign, campaign?.token]);
+
+  useEffect(() => {
+    if (!isSolanaPage || !solanaCurve) return;
+    const state = solanaCurve;
+    let graduationNativeTarget = 0n;
+    if (solUsdPrice && solUsdPrice > 0 && state.graduationTargetUsdMicros > 0n) {
+      const priceScaled = BigInt(Math.max(1, Math.round(solUsdPrice * 1_000_000)));
+      graduationNativeTarget = (state.graduationTargetUsdMicros * 1_000_000_000n) / priceScaled;
+    }
+    const tokenScale = 10n ** BigInt(state.tokenDecimals);
+    const slopeDenominator = state.economicsVersion >= 3 ? tokenScale * 1_000_000_000n : tokenScale;
+    const spot =
+      state.basePriceLamports + (state.priceSlopeLamports * state.soldTokens) / slopeDenominator;
+    setMetrics({
+      sold: state.soldTokens,
+      curveSupply: state.curveTokenSupply,
+      liquiditySupply: 0n,
+      creatorReserve:
+        state.tokenTotalSupply > state.curveTokenSupply
+          ? state.tokenTotalSupply - state.curveTokenSupply
+          : 0n,
+      basePrice: state.basePriceLamports,
+      priceSlope: state.priceSlopeLamports,
+      graduationTarget: state.graduationTargetUsdMicros,
+      graduationNativeTarget,
+      liquidityBps: 0n,
+      protocolFeeBps: BigInt(state.buyFeeBps),
+      currentPrice: spot > 0n ? spot : state.basePriceLamports,
+      launched: false,
+      finalizedAt: 0n,
+    } as CampaignMetrics);
+  }, [isSolanaPage, solUsdPrice, solanaCurve]);
 
   // Wallet balances (for the trading panel)
   useEffect(() => {
@@ -2439,7 +2454,7 @@ const toSeconds = (ts: number): number => {
             const web3 = await loadSolanaWeb3();
             const connection = new web3.Connection(
               String(import.meta.env.VITE_SOLANA_RPC || "").trim() || getPublicRpcUrl(SOLANA_CHAIN_ID),
-              "confirmed",
+              { commitment: "confirmed", disableRetryOnRateLimit: true },
             );
             const lamports = BigInt(await connection.getBalance(new web3.PublicKey(pubkey)));
             const mint = String(campaign?.token || campaign?.campaign || "").trim();
@@ -2575,7 +2590,7 @@ const toSeconds = (ts: number): number => {
     if (!isSolanaPage || !solanaCurveClosed) return;
     const campaignPda = String(solanaCurve?.campaignAddress || campaign?.campaign || "").trim();
     if (campaignPda) void requestSolanaGraduationHandoff(campaignPda);
-    const timer = window.setInterval(() => setSolanaBalanceTick((n) => n + 1), 1_500);
+    const timer = window.setInterval(() => setSolanaBalanceTick((n) => n + 1), 8_000);
     return () => window.clearInterval(timer);
   }, [campaign?.campaign, isSolanaPage, solanaCurve?.campaignAddress, solanaCurveClosed]);
   const verifiedMarketStage = isSolanaPage ? null : unifiedMarket.state?.marketStage;

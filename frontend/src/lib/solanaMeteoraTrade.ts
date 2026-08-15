@@ -10,7 +10,7 @@ import {
 } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getSolanaReadConnection } from "@/lib/solanaReadConnection";
 import {
   getSolanaProvider,
   getStoredSolanaWallet,
@@ -68,7 +68,7 @@ async function loadVerifiedMarket(input: {
   tokenDecimals: number;
   poolAddress?: string | null;
 }): Promise<LoadedMarket> {
-  const connection = new Connection(getPublicRpcUrl(SOLANA_CHAIN_ID), "confirmed");
+  const connection = getSolanaReadConnection();
   const mint = new PublicKey(input.mint);
   const expectedPool = deriveCustomizablePoolAddress(mint, NATIVE_MINT);
   if (input.poolAddress && !new PublicKey(input.poolAddress).equals(expectedPool)) {

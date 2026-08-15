@@ -289,7 +289,10 @@ export async function fetchSolanaCampaignCurveState(
   if (!addr) return null;
   try {
     const web3 = await loadSolanaWeb3();
-    const connection = new web3.Connection(rpcUrl(), "confirmed");
+    const connection = new web3.Connection(rpcUrl(), {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+    });
     const info = await connection.getAccountInfo(new web3.PublicKey(addr), "confirmed");
     if (!info?.data) return null;
     const data = info.data instanceof Uint8Array ? info.data : new Uint8Array(info.data);
