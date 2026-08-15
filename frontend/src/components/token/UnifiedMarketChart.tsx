@@ -328,29 +328,7 @@ function tradeSeriesPoints(
   return points;
 }
 
-/**
- * Paint live headline price onto the last *trade* candle only.
- * Never invent a Date.now() bucket — that mixed browser time with block time
- * and collapsed later fills into the wrong 1m bar.
- */
-function applyLiveHeadline(
-  candles: CandleRow[],
-  liveValue: number | null,
-  _intervalSec: number,
-): CandleRow[] {
-  if (!candles.length || liveValue == null || !Number.isFinite(liveValue) || liveValue <= 0) return candles;
-  const last = candles[candles.length - 1];
-  if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
-  return [
-    ...candles.slice(0, -1),
-    {
-      ...last,
-      high: Math.max(last.high, liveValue),
-      low: Math.min(last.low, liveValue),
-      close: liveValue,
-    },
-  ];
-}
+
 
 function timeToSec(time: Time): number {
   if (typeof time === "number") return time;
@@ -649,20 +627,6 @@ export function UnifiedMarketChart({
     nativeUsd,
   ]);
 
-  const liveChartValue = useMemo(() => {
-    const tipPrice = finite(livePriceNative);
-    if (!tipPrice) return null;
-    if (metric === "price") {
-      const value = denomination === "USD" ? tipPrice * (nativeUsd || 1) : tipPrice;
-      return Number.isFinite(value) && value > 0 ? value : null;
-    }
-    const supply = finite(liveSupplyWhole);
-    if (!supply) return null;
-    const valueNative = tipPrice * supply;
-    const value = denomination === "USD" ? valueNative * (nativeUsd || 1) : valueNative;
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }, [denomination, livePriceNative, liveSupplyWhole, metric, nativeUsd]);
-
   const data = useMemo(() => {
     if (!seriesPoints.length && !(marketCandles || []).length) return [] as CandleRow[];
     const fromTrades = buildCandles(seriesPoints, intervalSeconds, {
@@ -678,13 +642,9 @@ export function UnifiedMarketChart({
       nativeUsd || 1,
       tokenDecimals,
     );
-    // Client rebuild from trades is source of truth. Server candles only pad older history.
-    return applyLiveHeadline(
-      prependServerCache(fromTrades, fromServer),
-      liveChartValue,
-      intervalSeconds,
-    );
-  }, [denomination, intervalSeconds, liveChartValue, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
+    // Candles are trade prints only. Headline mcap/price live in the tiles, not OHLC.
+    return prependServerCache(fromTrades, fromServer);
+  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];

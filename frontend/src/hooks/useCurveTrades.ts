@@ -287,10 +287,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const prevCampaignRef = useRef<string>("");
 
   const chainId = useMemo<SupportedChainId>(() => {
-    const explicit = coerceSupportedChainId(opts?.chainId);
-    if (explicit) return explicit;
     const addr = String(campaignAddress || "");
-    if (/^0x[a-fA-F0-9]{40}$/.test(addr)) return 97;
+    const explicit = coerceSupportedChainId(opts?.chainId);
+    // A 0x market is never Solana, even if Token Details passed a latched 101.
+    if (/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+      return isEvmChainId(explicit) ? explicit : 97;
+    }
+    if (explicit) return explicit;
     if (SOLANA_ADDRESS_RE.test(addr)) return 101;
     return 97;
   }, [campaignAddress, opts?.chainId]);
@@ -370,7 +373,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
             chainId,
             limit,
             signal,
-            mode === "tip" ? 2_500 : 50_000,
+            mode === "tip" ? 8_000 : 200_000,
           );
           if (signal?.aborted) return;
           if (fallbackRows.length) applySnapshot(fallbackRows);

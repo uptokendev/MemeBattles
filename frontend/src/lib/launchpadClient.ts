@@ -930,7 +930,7 @@ export function useLaunchpad(): LaunchpadAdapter {
         bnb_amount: maxCostWei.toString(),
         tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
         block_number: Number(receipt?.blockNumber || 0),
-        log_index: 0,
+        log_index: 1_000_000,
         timestamp: await blockTimestamp(readProvider, Number(receipt?.blockNumber || 0)),
       }];
     }
@@ -987,7 +987,7 @@ export function useLaunchpad(): LaunchpadAdapter {
         bnb_amount: minAmountWei.toString(),
         tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
         block_number: Number(receipt?.blockNumber || 0),
-        log_index: 0,
+        log_index: 1_000_000,
         timestamp: await blockTimestamp(readProvider, Number(receipt?.blockNumber || 0)),
       }];
     }

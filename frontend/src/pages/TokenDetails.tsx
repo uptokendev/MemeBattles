@@ -648,7 +648,9 @@ const TokenDetails = () => {
     });
     if (next !== pageChainId) setPageChainId(next);
   }, [campaignAddress, location.pathname, location.search, pageChainId]);
-  const isSolanaPage = isSolanaChainId(chainIdForStorage);
+  const isSolanaPage =
+    isSolanaChainId(chainIdForStorage) &&
+    !/^0x[a-fA-F0-9]{40}$/i.test(String(campaignAddress || campaignAddr || ""));
 
   useEffect(() => {
     const campaignPda = String(campaign?.campaign || campaignAddr || "").trim();
@@ -1888,8 +1890,7 @@ const toSeconds = (ts: number): number => {
       "24h": 24 * 60 * 60,
     };
 
-    // End price: live DEX spot (post-grad) → bonding curve spot → realtime → latest trade.
-    const endPrice =
+    const liveSpot =
       (isSolanaPage && solanaLivePrice != null ? solanaLivePrice : undefined) ??
       (contractGraduatedEarly && topazMarket.priceBnb != null ? Number(topazMarket.priceBnb) : undefined) ??
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
@@ -1897,7 +1898,6 @@ const toSeconds = (ts: number): number => {
         ? Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18))
         : undefined);
 
-    // Continuous stream: bonding + Topaz swap history for change/volume windows.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
       marketTradePoints.map((p: any) => ({
         timestamp: Number(p.timestamp ?? 0),
@@ -1905,7 +1905,7 @@ const toSeconds = (ts: number): number => {
         nativeWei: p.nativeWei,
       }));
 
-    if (!points.length && endPrice == null) {
+    if (!points.length && liveSpot == null) {
       return {
         "5m": { change: null as number | null, volume: "—" },
         "1h": { change: null as number | null, volume: "—" },
@@ -1914,10 +1914,17 @@ const toSeconds = (ts: number): number => {
       };
     }
 
-    const tsOf = (t: number) => (t > 1e11 ? Math.floor(t / 1000) : t); // tolerate ms timestamps
-    const sorted = [...points].sort((a, b) => tsOf(a.timestamp) - tsOf(b.timestamp));
+    const tsOf = (t: number) => (t > 1e11 ? Math.floor(t / 1000) : t);
+    const sorted = [...points]
+      .filter((p) => Number.isFinite(p.pricePerToken) && p.pricePerToken > 0)
+      .sort((a, b) => tsOf(a.timestamp) - tsOf(b.timestamp));
     const latestTradePrice = sorted[sorted.length - 1]?.pricePerToken;
-    const end = endPrice ?? latestTradePrice ?? 0;
+    // Bonding spot only moves on fills. A stale Railway/headline price must not
+    // pin 5m/1h at 0.00% after a sell that already landed in the trade book.
+    const end =
+      !contractGraduatedEarly && latestTradePrice != null && latestTradePrice > 0
+        ? latestTradePrice
+        : liveSpot ?? latestTradePrice ?? 0;
 
     const out: Record<TimeframeKey, { change: number | null; volume: string }> = {
       "5m": { change: null, volume: "—" },
@@ -1928,29 +1935,19 @@ const toSeconds = (ts: number): number => {
 
     for (const k of Object.keys(windows) as TimeframeKey[]) {
       const startTs = now - windows[k];
-
-      // Start price: last trade at/before the window start, else first trade in the window.
       const before = [...sorted].reverse().find((p) => tsOf(p.timestamp) <= startTs);
-      const within = sorted.find((p) => tsOf(p.timestamp) >= startTs);
-      const startPrice = before?.pricePerToken ?? within?.pricePerToken;
+      const inWindow = sorted.filter((p) => tsOf(p.timestamp) > startTs);
+      const startPrice =
+        before?.pricePerToken ??
+        (inWindow.length >= 2 ? inWindow[0]?.pricePerToken : undefined);
 
-      const volumeWei = sorted
-        .filter((p) => tsOf(p.timestamp) >= startTs)
-        .reduce((acc, p) => acc + (p.nativeWei ?? 0n), 0n);
+      const volumeWei = inWindow.reduce((acc, p) => acc + (p.nativeWei ?? 0n), 0n);
 
-      // With a single fill (or no prior open), start≈end yields a fake 0.00%.
-      // Prefer spot-vs-trade-avg when currentPrice is available; else show "—".
       let change: number | null = null;
       if (startPrice != null && startPrice > 0 && end > 0) {
-        if (before == null && within != null && sorted.length === 1 && endPrice == null) {
-          change = null;
-        } else {
-          const pct = ((end - startPrice) / startPrice) * 100;
-          // Collapse pure float noise on a single-point window.
-          change = Number.isFinite(pct) ? (Math.abs(pct) < 0.005 ? 0 : Number(pct.toFixed(2))) : null;
-          if (before == null && sorted.length === 1 && Math.abs(pct) < 0.05 && endPrice == null) {
-            change = null;
-          }
+        const pct = ((end - startPrice) / startPrice) * 100;
+        if (Number.isFinite(pct)) {
+          change = Math.abs(pct) < 0.005 ? 0 : Number(pct.toFixed(2));
         }
       }
       out[k].change = change;
@@ -3894,11 +3891,18 @@ const toSeconds = (ts: number): number => {
         });
       }
 
-      // Refresh headline stats + balances
+      // Refresh headline stats + balances. Summary can lag the curve; read metrics
+      // directly so 5m/1h tiles close on the post-sell spot.
       try {
-        const s = await fetchCampaignSummary(campaign);
-        setSummary(s);
-        setMetrics(s.metrics ?? null);
+        const [s, nextMetrics] = await Promise.all([
+          fetchCampaignSummary(campaign).catch(() => null),
+          fetchCampaignMetrics(campaign.campaign).catch(() => null),
+        ]);
+        if (s) {
+          setSummary(s);
+          if (s.metrics) setMetrics(s.metrics);
+        }
+        if (nextMetrics) setMetrics(nextMetrics);
       } catch {
         // ignore
       }

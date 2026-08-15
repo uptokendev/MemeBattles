@@ -158,16 +158,31 @@ export function getActiveChainId(walletChainId?: number | null): SupportedChainI
  * Order: pinned token-page chain → last featured EVM feed → default EVM → 97.
  */
 export const TOKEN_DETAILS_CHAIN_KEY = "mwz:token_details_chain_id";
+export const LAST_EVM_CHAIN_KEY = "mwz:last_evm_chain_id";
 
 export function pinTokenDetailsChainId(chainId: number): void {
   if (!isEvmChainId(chainId)) return;
   try {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(TOKEN_DETAILS_CHAIN_KEY, String(chainId));
+    window.localStorage.setItem(LAST_EVM_CHAIN_KEY, String(chainId));
     window.localStorage.setItem(LAST_FEATURED_CHAIN_KEY, String(chainId));
   } catch {
     // ignore
   }
+}
+
+function readLastEvmChainId(): SupportedChainId | null {
+  try {
+    if (typeof window === "undefined") return null;
+    for (const key of [TOKEN_DETAILS_CHAIN_KEY, LAST_EVM_CHAIN_KEY, LAST_FEATURED_CHAIN_KEY]) {
+      const value = Number(window.localStorage.getItem(key) || "");
+      if (isEvmChainId(value)) return value as SupportedChainId;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 export function getEvmReadChainIdForTokenPage(): SupportedChainId {
@@ -175,16 +190,15 @@ export function getEvmReadChainIdForTokenPage(): SupportedChainId {
     if (typeof window !== "undefined") {
       const queryChainId = Number(new URLSearchParams(window.location.search).get("chainId") || "");
       if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
-      const pinned = Number(window.localStorage.getItem(TOKEN_DETAILS_CHAIN_KEY) || "");
-      if (isEvmChainId(pinned)) return pinned as SupportedChainId;
-      const featured = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
-      if (isEvmChainId(featured)) return featured as SupportedChainId;
     }
   } catch {
     // ignore
   }
-  const def = getDefaultChainId();
-  return isEvmChainId(def) ? def : BNB_TESTNET_CHAIN_ID;
+  const lastEvm = readLastEvmChainId();
+  if (lastEvm) return lastEvm;
+  // Live inventory is BSC testnet. Do not fall through to mainnet 56 just because
+  // Phantom overwrote last_featured to 101.
+  return BNB_TESTNET_CHAIN_ID;
 }
 
 /**
