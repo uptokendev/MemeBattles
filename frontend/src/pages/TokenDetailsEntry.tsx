@@ -10,6 +10,7 @@ import {
 } from "@/lib/solanaCampaignRead";
 import { requestSolanaGraduationHandoff } from "@/lib/solanaGraduationHandoff";
 import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
+import { recordRecentlyViewed } from "@/lib/searchHistory";
 
 import TokenDetails from "./TokenDetails";
 
@@ -211,6 +212,21 @@ const TokenDetailsEntry = () => {
       updatedAt: Date.now(),
     });
   }, [cachedCampaignAddress, curveLookupAddress, isSolanaRoute, resolvedCampaignAddress, routeId]);
+
+  useEffect(() => {
+    const campaignAddress = String(campaign?.campaign || resolvedCampaignAddress || (!isSolanaRoute ? routeId : "") || "").trim();
+    const tokenAddress = String(campaign?.token || (isSolanaRoute ? routeId : campaignAddress) || "").trim();
+    if (!campaignAddress && !tokenAddress) return;
+    const chainId = isSolanaRoute ? SOLANA_CHAIN_ID : Number((campaign as { chainId?: number } | null)?.chainId || 97);
+    recordRecentlyViewed({
+      name: String(campaign?.name || campaign?.symbol || tokenAddress.slice(0, 6) || "Token"),
+      symbol: campaign?.symbol,
+      logoURI: (campaign as { logoURI?: string } | null)?.logoURI,
+      tokenAddress,
+      campaignAddress,
+      chainId,
+    });
+  }, [campaign, isSolanaRoute, resolvedCampaignAddress, routeId]);
 
   return <TokenDetails key={routeId || (isSolanaRoute ? "solana" : "evm")} />;
 };

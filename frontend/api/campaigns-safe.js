@@ -60,7 +60,7 @@ async function fetchBasicCampaigns({ chainId, limit, cursor, status, search }) {
 
   if (search) {
     params.push(`%${search}%`);
-    where += ` and (c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length})`;
+    where += ` and (c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length} or c.token_address::text ilike $${params.length} or c.creator_address::text ilike $${params.length})`;
   }
 
   if (status === "live") {

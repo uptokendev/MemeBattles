@@ -182,7 +182,7 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
 
   if (searchRaw) {
     params.push(`%${searchRaw}%`);
-    where += ` and (c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length})`;
+    where += ` and (c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length} or c.token_address::text ilike $${params.length} or c.creator_address::text ilike $${params.length})`;
   }
 
   if (effectiveStatus === "live") {
@@ -420,6 +420,8 @@ export default async function handler(req, res) {
             c.name ilike $3
             or c.symbol ilike $3
             or c.campaign_address::text ilike $3
+            or c.token_address::text ilike $3
+            or c.creator_address::text ilike $3
           ))
           and (
             $4::text = 'all'

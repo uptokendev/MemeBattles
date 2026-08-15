@@ -1,10 +1,15 @@
 export type TokenStatus = "bonding" | "graduated" | "unknown";
+export type SearchResultKind = "token" | "wallet";
 
 export interface TokenSearchResult {
-  campaignAddress: string; // 0x...
-  tokenAddress?: string; // 0x...
+  kind: SearchResultKind;
+  campaignAddress: string;
+  tokenAddress?: string;
   name: string;
   symbol: string;
   status: TokenStatus;
   logoURI?: string;
+  chainId: number;
+  marketcapBnb?: string | null;
+  href: string;
 }

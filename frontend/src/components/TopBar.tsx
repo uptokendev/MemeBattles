@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Bell, Menu, Plus, Search } from "lucide-react";
-import { CommandPalette } from "@/components/search/CommandPalette";
+import { SearchPopup } from "@/components/search/SearchPopup";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,7 @@ import { warRoomEnabled } from "@/features/postgrad/config";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo } from "@/lib/launchpadClient";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+
 import { usePrepareNotificationCenter } from "@/hooks/usePrepareNotificationCenter";
 
 interface TopBarProps {
@@ -88,12 +86,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     };
   }, [notificationOpen, disconnectOpen]);
 
-  const { price: bnbUsd } = useBnbUsdPrice(true);
-
-  const [allCampaigns, setAllCampaigns] = useState<CampaignInfo[]>([]);
-
-  const { fetchCampaigns } = useLaunchpad();
-
   const {
     notifications: draftNotifications,
     unreadCount: unreadNotifications,
@@ -152,26 +144,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     ],
     []
   );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const campaigns = await fetchCampaigns();
-        if (!cancelled) {
-          setAllCampaigns(campaigns ?? []);
-        }
-      } catch (err) {
-        console.error("[TopBar] Failed to load campaigns", err);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchCampaigns]);
 
   const isActive = (path: string) => navPathMatches(location.pathname, location.search, path);
 
@@ -371,7 +343,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
         </div>
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} campaigns={allCampaigns} />
+      <SearchPopup open={paletteOpen} onOpenChange={setPaletteOpen} />
       <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
     </div>
   );

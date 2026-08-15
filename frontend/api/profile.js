@@ -105,7 +105,35 @@ export default async function handler(req, res) {
       const q = getQuery(req);
       const chainId = Number(q.chainId);
       const raw = String(q.address ?? "").trim();
+      const search = String(q.search ?? "").trim();
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+
+      if (search && !raw) {
+        if (search.length < 2) return json(res, 200, { items: [] });
+        const limit = Math.min(Math.max(Number(q.limit || 8), 1), 20);
+        const { rows } = await pool.query(
+          `SELECT address,
+                  chain_id AS "chainId",
+                  display_name AS "displayName",
+                  avatar_url AS "avatarUrl",
+                  bio
+             FROM user_profiles
+            WHERE chain_id = $1
+              AND display_name IS NOT NULL
+              AND btrim(display_name) <> ''
+              AND display_name ILIKE $2
+            ORDER BY
+              CASE
+                WHEN lower(display_name) = lower($3) THEN 0
+                WHEN lower(display_name) LIKE lower($3) || '%' THEN 1
+                ELSE 2
+              END,
+              updated_at DESC NULLS LAST
+            LIMIT $4`,
+          [chainId, `%${search}%`, search, limit],
+        );
+        return json(res, 200, { items: rows });
+      }
 
       const isSol = isSolanaChain(chainId);
       const addr = normalizeAddress(raw, chainId);

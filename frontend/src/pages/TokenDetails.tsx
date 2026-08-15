@@ -25,6 +25,7 @@ import {
   type SupportedChainId,
 } from "@/lib/chainConfig";
 import { resolveMarketIdentity, resolveMarketIdentityAcrossEvm } from "@/lib/marketIdentity";
+import { recordRecentlyViewed } from "@/lib/searchHistory";
 import { getReadProvider } from "@/lib/readProvider";
 
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -652,6 +653,20 @@ const TokenDetails = () => {
   });
   const chainIdForStorage = pageChainId;
   const isSolanaPage = isSolanaChainId(chainIdForStorage);
+
+  useEffect(() => {
+    const campaignPda = String(campaign?.campaign || campaignAddr || "").trim();
+    const token = String(campaign?.token || campaignAddress || campaignPda || "").trim();
+    if (!campaignPda && !token) return;
+    recordRecentlyViewed({
+      name: String(campaign?.name || campaign?.symbol || token.slice(0, 6) || "Token"),
+      symbol: campaign?.symbol,
+      logoURI: campaign?.logoURI,
+      tokenAddress: token,
+      campaignAddress: campaignPda || token,
+      chainId: chainIdForStorage,
+    });
+  }, [campaign, campaignAddr, campaignAddress, chainIdForStorage]);
   /** Native unit for bonding quotes/UI: SOL on Solana, BNB on EVM. Never show BNB on Solana pages. */
   const nativeUnit = isSolanaPage ? "SOL" : "BNB";
   const readProvider = useMemo(
