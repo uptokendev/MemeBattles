@@ -4,7 +4,6 @@ import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import { apiFetch } from "@/lib/apiBase";
 import {
   coerceSupportedChainId,
-  getActiveChainId,
   isEvmChainId,
   isSolanaChainId,
   type SupportedChainId,
@@ -288,11 +287,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const prevCampaignRef = useRef<string>("");
 
   const chainId = useMemo<SupportedChainId>(() => {
-    // Token Details passes the *campaign* chain. getActiveChainId follows the
-    // last-connected wallet / feed latch and would rebuild this chart as BNB
-    // while you are still on a Solana token URL (and vice versa).
-    return coerceSupportedChainId(opts?.chainId) ?? getActiveChainId(opts?.chainId ?? null);
-  }, [opts?.chainId]);
+    const explicit = coerceSupportedChainId(opts?.chainId);
+    if (explicit) return explicit;
+    const addr = String(campaignAddress || "");
+    if (/^0x[a-fA-F0-9]{40}$/.test(addr)) return 97;
+    if (SOLANA_ADDRESS_RE.test(addr)) return 101;
+    return 97;
+  }, [campaignAddress, opts?.chainId]);
 
   const inFlightRef = useRef(false);
   const tipInFlightRef = useRef(false);
@@ -398,7 +399,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     const prev = prevCampaignRef.current;
     if (curr !== prev) {
       prevCampaignRef.current = curr;
-      const cached = curr ? loadCachedTradeHistory(chainId, curr) : [];
+      const cached = curr ? loadCachedTradeHistory(chainId, campaignAddress || "") : [];
       setPoints(cached);
       setLoading(canLoadTrades && cached.length === 0);
       setError(null);

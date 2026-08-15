@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAblyWarRoomChannel } from "@/hooks/useAblyWarRoomChannel";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveWalletKind } from "@/lib/activeWalletChain";
+import { isSolanaAddress } from "@/lib/address";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 import {
   buildChatSessionMessage,
   fetchWarRoomHistory,
@@ -14,13 +18,16 @@ import {
 const FALLBACK_POLL_MS = 8000;
 const RECONCILE_POLL_MS = 30000;
 
-function normalizeAddress(value?: string | null) {
-  const v = String(value ?? "").trim().toLowerCase();
-  return /^0x[a-f0-9]{40}$/.test(v) ? v : "";
+function normalizeViewer(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw.toLowerCase();
+  if (isSolanaAddress(raw)) return raw;
+  return "";
 }
 
 function sessionStorageKey(chainId: number, campaignAddress: string, walletAddress: string) {
-  return `mwz:warroom:session:${chainId}:${campaignAddress.toLowerCase()}:${walletAddress.toLowerCase()}`;
+  const walletKey = /^0x[a-fA-F0-9]{40}$/i.test(walletAddress) ? walletAddress.toLowerCase() : walletAddress;
+  return `mwz:warroom:session:${chainId}:${campaignAddress.toLowerCase()}:${walletKey}`;
 }
 
 function readStoredSession(chainId: number, campaignAddress: string, walletAddress: string): ChatSession | null {
@@ -30,7 +37,7 @@ function readStoredSession(chainId: number, campaignAddress: string, walletAddre
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.sessionToken || !parsed?.profile?.walletAddress) return null;
-    if (normalizeAddress(parsed.profile.walletAddress) !== normalizeAddress(walletAddress)) return null;
+    if (normalizeViewer(parsed.profile.walletAddress) !== normalizeViewer(walletAddress)) return null;
     if (!parsed.expiresAt || Date.now() > new Date(parsed.expiresAt).getTime()) return null;
     return parsed as ChatSession;
   } catch {
@@ -60,8 +67,17 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]) {
 
 export function useWarRoom(args: { chainId: number; campaignAddress: string; creatorAddress?: string | null; }) {
   const wallet = useWallet();
-  const roomAddress = useMemo(() => normalizeAddress(args.campaignAddress), [args.campaignAddress]);
-  const walletAddress = useMemo(() => normalizeAddress(wallet.account), [wallet.account]);
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const roomAddress = useMemo(() => normalizeViewer(args.campaignAddress), [args.campaignAddress]);
+  const walletAddress = useMemo(() => {
+    const evm = normalizeViewer(wallet.account);
+    const solana = isSolanaConnected ? normalizeViewer(solanaAccount) : "";
+    const kind = getActiveWalletKind();
+    if (kind === "solana" && solana) return solana;
+    if (kind === "bnb" && evm) return evm;
+    return solana || evm;
+  }, [isSolanaConnected, solanaAccount, wallet.account]);
+  const isSolanaViewer = isSolanaAddress(walletAddress);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -148,13 +164,15 @@ useEffect(() => {
 }, [refreshHistory, roomAddress, ably.isConnected]);
 
   const ensureSession = useCallback(async () => {
-    if (!wallet.isConnected || !wallet.signer || !walletAddress) {
+    if (!walletAddress) {
       throw new Error("Connect your wallet first");
     }
-
-    const signerAddress = normalizeAddress(await wallet.signer.getAddress());
-    if (signerAddress !== walletAddress) {
-      throw new Error("Active signer does not match the selected wallet account");
+    if (!isSolanaViewer) {
+      if (!wallet.isConnected || !wallet.signer) throw new Error("Connect your wallet first");
+      const signerAddress = normalizeViewer(await wallet.signer.getAddress());
+      if (signerAddress !== walletAddress) {
+        throw new Error("Active signer does not match the selected wallet account");
+      }
     }
 
     const existing = readStoredSession(args.chainId, roomAddress, walletAddress);
@@ -172,7 +190,9 @@ useEffect(() => {
         campaignAddress: roomAddress,
         nonce,
       });
-      const signature = await wallet.signer.signMessage(msg);
+      const signature = isSolanaViewer
+        ? (await signSolanaMessage(msg, walletAddress)).signature
+        : await wallet.signer!.signMessage(msg);
       const nextSession = await joinWarRoom({
         chainId: args.chainId,
         campaignAddress: roomAddress,
@@ -188,12 +208,12 @@ useEffect(() => {
     } finally {
       setJoining(false);
     }
-  }, [args.chainId, args.creatorAddress, roomAddress, wallet.isConnected, wallet.signer, walletAddress]);
+  }, [args.chainId, args.creatorAddress, isSolanaViewer, roomAddress, wallet.isConnected, wallet.signer, walletAddress]);
 
   const postMessage = useCallback(async (text: string) => {
     const trimmed = String(text ?? "").trim();
     if (!trimmed) return;
-    if (!wallet.isConnected) {
+    if (!walletAddress) {
       window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       return;
     }
@@ -239,7 +259,7 @@ useEffect(() => {
     } finally {
       setPosting(false);
     }
-  }, [args.chainId, ensureSession, roomAddress, wallet.isConnected, walletAddress]);
+  }, [args.chainId, ensureSession, roomAddress, walletAddress]);
 
   return {
     messages,
@@ -247,7 +267,7 @@ useEffect(() => {
     joining,
     posting,
     error,
-    isConnected: wallet.isConnected,
+    isConnected: Boolean(walletAddress),
     walletAddress,
     hasSession: Boolean(session),
     joinRoom: ensureSession,

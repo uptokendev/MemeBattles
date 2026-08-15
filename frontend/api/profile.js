@@ -44,18 +44,67 @@ function base58Decode(value) {
 }
 
 function verifySolanaSignature({ address, message, signature }) {
-  const publicKeyBytes = base58Decode(address);
-  if (publicKeyBytes.length !== 32) return false;
-  const signatureBytes = Buffer.from(String(signature || ""), "base64");
-  if (signatureBytes.length !== 64) return false;
-  const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
-  return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+  try {
+    const publicKeyBytes = base58Decode(address);
+    if (publicKeyBytes.length !== 32) return false;
+    const signatureBytes = Buffer.from(String(signature || ""), "base64");
+    if (signatureBytes.length !== 64) return false;
+    const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+  } catch {
+    return false;
+  }
 }
 
 function verifyProfileSignature({ chainId, address, message, signature }) {
-  if (isSolanaChain(chainId)) return verifySolanaSignature({ address, message, signature });
-  const recovered = ethers.verifyMessage(message, signature).toLowerCase();
-  return recovered === address.toLowerCase();
+  try {
+    if (isSolanaChain(chainId)) return verifySolanaSignature({ address, message, signature });
+    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+    return recovered === address.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+async function dropLegacyLowercaseAddressCheck() {
+  await pool.query(`
+    ALTER TABLE IF EXISTS public.user_profiles
+      DROP CONSTRAINT IF EXISTS user_profiles_address_lowercase
+  `);
+}
+
+async function upsertUserProfile(chainId, address, displayName, avatarUrl, bio) {
+  const sql = `
+    INSERT INTO user_profiles (chain_id, address, display_name, avatar_url, bio)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (chain_id, address)
+    DO UPDATE SET
+      display_name = EXCLUDED.display_name,
+      avatar_url = EXCLUDED.avatar_url,
+      bio = EXCLUDED.bio,
+      updated_at = NOW()
+  `;
+  const params = [chainId, address, displayName || null, avatarUrl, bio];
+  try {
+    await pool.query(sql, params);
+  } catch (e) {
+    // Old BNB schema rejected mixed-case Solana pubkeys. Drop that check and retry once.
+    if (e?.code === "23514" && /lower\s*\(/i.test(String(e?.message || ""))) {
+      await dropLegacyLowercaseAddressCheck();
+      await pool.query(sql, params);
+      return;
+    }
+    throw e;
+  }
+}
+
+function profileWriteError(e) {
+  if (e?.code === "23505") {
+    return { status: 409, error: "That callsign is already claimed on this chain." };
+  }
+  const msg = String(e?.message ?? "");
+  if (/nonce|signature/i.test(msg)) return { status: 401, error: msg };
+  return { status: 500, error: "Server error" };
 }
 
 async function consumeNonce(chainId, address, nonce) {
@@ -198,20 +247,13 @@ export default async function handler(req, res) {
       const msg = buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl: avatarUrl ?? "" });
       if (!verifyProfileSignature({ chainId, address, message: msg, signature })) return json(res, 401, { error: "Invalid signature" });
 
-      await pool.query(
-        `INSERT INTO user_profiles (chain_id, address, display_name, avatar_url, bio)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (chain_id, address)
-         DO UPDATE SET display_name = EXCLUDED.display_name, avatar_url = EXCLUDED.avatar_url, bio = EXCLUDED.bio, updated_at = NOW()`,
-        [chainId, address, displayName || null, avatarUrl, bio]
-      );
+      await upsertUserProfile(chainId, address, displayName, avatarUrl, bio);
 
       return json(res, 200, { ok: true });
     } catch (e) {
-      const msg = String(e?.message ?? "");
-      const isAuth = /nonce|signature/i.test(msg);
       console.error("[api/profile POST]", e);
-      return json(res, isAuth ? 401 : 500, { error: isAuth ? msg : "Server error" });
+      const mapped = profileWriteError(e);
+      return json(res, mapped.status, { error: mapped.error });
     }
   }
 

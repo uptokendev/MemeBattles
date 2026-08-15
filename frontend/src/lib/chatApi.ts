@@ -52,12 +52,16 @@ export async function getNonce(chainId: number, address: string) {
 }
 
 export function buildChatSessionMessage(args: { chainId: number; address: string; campaignAddress: string; nonce: string; }) {
+  const address = String(args.address || "").trim();
+  const campaign = String(args.campaignAddress || "").trim();
+  const evmAddress = /^0x[a-fA-F0-9]{40}$/i.test(address);
+  const evmCampaign = /^0x[a-fA-F0-9]{40}$/i.test(campaign);
   return [
     "MemeWarzone War Room",
     "Action: CHAT_SESSION",
     `ChainId: ${args.chainId}`,
-    `Address: ${args.address.toLowerCase()}`,
-    `Campaign: ${args.campaignAddress.toLowerCase()}`,
+    `Address: ${evmAddress ? address.toLowerCase() : address}`,
+    `Campaign: ${evmCampaign ? campaign.toLowerCase() : campaign}`,
     `Nonce: ${args.nonce}`,
   ].join("\n");
 }

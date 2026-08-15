@@ -329,41 +329,24 @@ function tradeSeriesPoints(
 }
 
 /**
- * Keep the last chart value equal to the Token Details headline.
- * Same-minute: update the open bar. Older last print: add one current-minute
- * bar so we do not rewrite yesterday's OHLC.
+ * Paint live headline price onto the last *trade* candle only.
+ * Never invent a Date.now() bucket — that mixed browser time with block time
+ * and collapsed later fills into the wrong 1m bar.
  */
 function applyLiveHeadline(
   candles: CandleRow[],
   liveValue: number | null,
-  intervalSec: number,
+  _intervalSec: number,
 ): CandleRow[] {
   if (!candles.length || liveValue == null || !Number.isFinite(liveValue) || liveValue <= 0) return candles;
-  if (!intervalSec || intervalSec <= 0) return candles;
   const last = candles[candles.length - 1];
-  const lastTime = Number(last.time);
-  const nowBucket = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
-  if (!Number.isFinite(lastTime)) return candles;
-  if (lastTime === nowBucket) {
-    if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
-    return [
-      ...candles.slice(0, -1),
-      {
-        ...last,
-        high: Math.max(last.high, liveValue),
-        low: Math.min(last.low, liveValue),
-        close: liveValue,
-      },
-    ];
-  }
-  if (Math.abs(last.close - liveValue) < liveValue * 1e-9) return candles;
+  if (last.close === liveValue && last.high >= liveValue && last.low <= liveValue) return candles;
   return [
-    ...candles,
+    ...candles.slice(0, -1),
     {
-      time: nowBucket as Time,
-      open: last.close,
-      high: Math.max(last.close, liveValue),
-      low: Math.min(last.close, liveValue),
+      ...last,
+      high: Math.max(last.high, liveValue),
+      low: Math.min(last.low, liveValue),
       close: liveValue,
     },
   ];

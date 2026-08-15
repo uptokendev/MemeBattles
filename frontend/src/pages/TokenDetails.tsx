@@ -57,6 +57,7 @@ import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { useWallet } from "@/contexts/WalletContext";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
+import { useTokenTransferHolders } from "@/hooks/useTokenTransferHolders";
 import { marketTradeToCurvePoint } from "@/lib/chart/normalizeTrade";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
@@ -789,6 +790,12 @@ const TokenDetails = () => {
     tokenDecimals,
     campaignTokenVault: solanaCurve?.tokenVault ?? null,
     enabled: isSolanaPage && Boolean(solanaCurve?.graduated),
+  });
+  const transferHolders = useTokenTransferHolders({
+    tokenAddress: campaign?.token,
+    chainId: chainIdForStorage,
+    enabled: !isSolanaPage && Boolean(campaign?.token),
+    excludeAddresses: [campaign?.campaign],
   });
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
@@ -2004,6 +2011,11 @@ const toSeconds = (ts: number): number => {
       }
       return [...balances.values()].filter((bal) => bal > 0n).length;
     })();
+    const transferHolderCount = transferHolders.holders.length;
+    const useTransferHolders =
+      !isSolanaPage &&
+      transferHolderCount > 0 &&
+      (transferHolders.complete || transferHolderCount >= tradeHolderCount);
     const buyerCount = Number(solanaCurve?.buyerCount ?? 0);
 
     return {
@@ -2033,6 +2045,8 @@ const toSeconds = (ts: number): number => {
       holders:
         onChainHolderCount != null && onChainHolderCount > 0
           ? String(onChainHolderCount)
+          : useTransferHolders
+            ? String(transferHolderCount)
           : tradeHolderCount > 0
             ? String(tradeHolderCount)
             : buyerCount > 0
@@ -2060,7 +2074,7 @@ const toSeconds = (ts: number): number => {
       // Timeframe analytics (native volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, marketTradePoints, metrics, nativeUnit, solanaCurve, solanaLivePrice, solanaMeteora.holders, solanaMeteora.spot, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb]);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, marketTradePoints, metrics, nativeUnit, solanaCurve, solanaLivePrice, solanaMeteora.holders, solanaMeteora.spot, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb, transferHolders.complete, transferHolders.holders]);
   // Native/USD reference for TokenDetails conversions: BNB on EVM, SOL on Solana.
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(!isSolanaPage);
   const { price: liveSolUsdPrice, loading: solUsdLoading } = useSolUsdPrice(isSolanaPage);
@@ -2227,25 +2241,27 @@ const toSeconds = (ts: number): number => {
     const shortAddr = (a: string) =>
       a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 
-    // Estimated balances derived from bonding curve trades only (no transfers).
-    // NOTE: This is a best-effort view and does not include transfers.
-    const balances = new Map<string, bigint>();
-
-    for (const p of marketTradePoints) {
-      const rawAddr = String(p.from || "").trim();
-      const addr = isSolanaPage ? rawAddr : rawAddr.toLowerCase();
-      if (!addr) continue;
-
-      const prev = balances.get(addr) ?? 0n;
-      const delta = p.tokensWei ?? 0n; // tokensWei
-      const isBuy = (p.type ?? "buy") === "buy"; // type
-      balances.set(addr, isBuy ? prev + delta : prev - delta);
-    }
-
-    const holders = [...balances.entries()]
-      .filter(([, bal]) => bal > 0n)
-      .map(([address, bal]) => ({ address, bal }))
-      .sort((a, b) => (a.bal === b.bal ? 0 : a.bal > b.bal ? -1 : 1));
+    const tradeReplay = (() => {
+      const balances = new Map<string, bigint>();
+      for (const p of marketTradePoints) {
+        const rawAddr = String(p.from || "").trim();
+        const addr = isSolanaPage ? rawAddr : rawAddr.toLowerCase();
+        if (!addr) continue;
+        const prev = balances.get(addr) ?? 0n;
+        const delta = p.tokensWei ?? 0n;
+        const isBuy = (p.type ?? "buy") === "buy";
+        balances.set(addr, isBuy ? prev + delta : prev - delta);
+      }
+      return [...balances.entries()]
+        .filter(([, bal]) => bal > 0n)
+        .map(([address, bal]) => ({ address, bal }))
+        .sort((a, b) => (a.bal === b.bal ? 0 : a.bal > b.bal ? -1 : 1));
+    })();
+    const fromTransfers =
+      !isSolanaPage &&
+      transferHolders.holders.length > 0 &&
+      (transferHolders.complete || transferHolders.holders.length >= tradeReplay.length);
+    const holders = fromTransfers ? transferHolders.holders : tradeReplay;
 
     const holdersBal = holders.reduce((acc, x) => acc + x.bal, 0n);
 
@@ -2295,11 +2311,13 @@ const toSeconds = (ts: number): number => {
       othersPct: pct(othersBal),
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
-      source: "bonding" as const,
+      source: fromTransfers ? ("onchain" as const) : ("bonding" as const),
     };
   }, [
     isSolanaPage,
     marketTradePoints,
+    transferHolders.complete,
+    transferHolders.holders,
     metrics?.liquiditySupply,
     metrics?.launched,
     metrics?.finalizedAt,

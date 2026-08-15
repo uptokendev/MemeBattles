@@ -2,15 +2,29 @@ import crypto from "crypto";
 import Ably from "ably";
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
-import { isAddress } from "../../server/http.js";
+import { isAddress, isSolanaAddress, normalizeWalletFlexible } from "../../server/http.js";
 
 function p(v) {
   return String(v ?? "").trim().replace(/^['"]|['"]$/g, "");
 }
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
 export function normalizeAddress(value) {
-  const v = String(value ?? "").trim().toLowerCase();
-  return isAddress(v) ? v : "";
+  return normalizeWalletFlexible(value);
+}
+
+function displayAddress(value) {
+  const raw = String(value ?? "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  return raw.toLowerCase();
+}
+
+function displayCampaign(value) {
+  const raw = String(value ?? "").trim();
+  if (isAddress(raw)) return raw.toLowerCase();
+  return raw;
 }
 
 export function buildChatSessionMessage({ chainId, address, campaignAddress, nonce }) {
@@ -18,10 +32,48 @@ export function buildChatSessionMessage({ chainId, address, campaignAddress, non
     "MemeWarzone War Room",
     "Action: CHAT_SESSION",
     `ChainId: ${chainId}`,
-    `Address: ${String(address).toLowerCase()}`,
-    `Campaign: ${String(campaignAddress).toLowerCase()}`,
+    `Address: ${displayAddress(address)}`,
+    `Campaign: ${displayCampaign(campaignAddress)}`,
     `Nonce: ${nonce}`,
   ].join("\n");
+}
+
+function base58Decode(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return Buffer.alloc(0);
+  let n = 0n;
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(index);
+  }
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
+  let leadingZeros = 0;
+  for (const char of raw) {
+    if (char !== "1") break;
+    leadingZeros += 1;
+  }
+  if (leadingZeros) out = Buffer.concat([Buffer.alloc(leadingZeros), out]);
+  return out;
+}
+
+function verifySolanaSignature({ address, message, signature }) {
+  try {
+    const publicKeyBytes = base58Decode(address);
+    if (publicKeyBytes.length !== 32) return false;
+    const signatureBytes = Buffer.from(String(signature || ""), "base64");
+    if (signatureBytes.length !== 64) return false;
+    const keyObject = crypto.createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]),
+      format: "der",
+      type: "spki",
+    });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+  } catch {
+    return false;
+  }
 }
 
 export function roomChannelName(chainId, campaignAddress) {
@@ -82,6 +134,8 @@ export async function ensureAuthNonceSchema() {
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS expires_at timestamptz`);
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS nonce text`);
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
+  await pool.query(`ALTER TABLE public.auth_nonces ALTER COLUMN address TYPE text`);
+  await pool.query(`ALTER TABLE public.auth_nonces DROP CONSTRAINT IF EXISTS auth_nonces_address_lowercase`);
 }
 
 export async function ensureChatSchema() {
@@ -194,12 +248,15 @@ export async function consumeNonce(chainId, address, nonce) {
 
 export async function fetchProfile(chainId, walletAddress) {
   try {
+    const address = normalizeAddress(walletAddress);
+    if (!address) return null;
     const { rows } = await pool.query(
       `SELECT display_name, avatar_url
        FROM public.user_profiles
-       WHERE chain_id = $1 AND address = $2
+       WHERE address = $2 AND (chain_id = $1 OR chain_id = 101)
+       ORDER BY CASE WHEN chain_id = $1 THEN 0 ELSE 1 END
        LIMIT 1`,
-      [Number(chainId), normalizeAddress(walletAddress)]
+      [Number(chainId), address]
     );
     return rows[0] || null;
   } catch {
@@ -301,8 +358,8 @@ export function mapMessageRow(row) {
   return {
     id: Number(row.id),
     chainId: Number(row.chain_id),
-    campaignAddress: String(row.campaign_address).toLowerCase(),
-    walletAddress: String(row.wallet_address).toLowerCase(),
+    campaignAddress: displayCampaign(row.campaign_address),
+    walletAddress: displayAddress(row.wallet_address),
     displayName: row.display_name || null,
     avatarUrl: row.avatar_url || null,
     role: row.role || "trader",
@@ -327,5 +384,8 @@ export async function maybePublishChatMessage({ chainId, campaignAddress, messag
 
 export function verifyChatSessionSignature({ chainId, address, campaignAddress, nonce, signature }) {
   const msg = buildChatSessionMessage({ chainId, address, campaignAddress, nonce });
+  if (isSolanaAddress(address)) {
+    return verifySolanaSignature({ address, message: msg, signature }) ? address : "";
+  }
   return ethers.verifyMessage(msg, signature).toLowerCase();
 }

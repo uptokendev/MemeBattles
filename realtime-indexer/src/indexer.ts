@@ -507,7 +507,21 @@ async function insertTrade(row: {
         chain_id,campaign_address,tx_hash,log_index,block_number,block_time,
         side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb
      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     on conflict (chain_id,tx_hash,log_index) do nothing`,
+     on conflict (chain_id,tx_hash,log_index) do update set
+       block_number = excluded.block_number,
+       block_time = excluded.block_time,
+       side = excluded.side,
+       wallet = excluded.wallet,
+       token_amount_raw = excluded.token_amount_raw,
+       bnb_amount_raw = excluded.bnb_amount_raw,
+       token_amount = excluded.token_amount,
+       bnb_amount = excluded.bnb_amount,
+       price_bnb = excluded.price_bnb
+     where public.curve_trades.block_time is distinct from excluded.block_time
+        or public.curve_trades.token_amount_raw is distinct from excluded.token_amount_raw
+        or public.curve_trades.bnb_amount_raw is distinct from excluded.bnb_amount_raw
+        or public.curve_trades.side is distinct from excluded.side
+     returning (xmax = 0) as is_insert`,
     [
       row.chainId,
       row.campaign.toLowerCase(),
@@ -525,7 +539,8 @@ async function insertTrade(row: {
     ]
   );
 
-  if ((inserted.rowCount ?? 0) > 0) {
+  const isInsert = Boolean(inserted.rows[0]?.is_insert);
+  if (isInsert) {
     try {
       await recordTradeActivity(row.wallet, row.blockTime);
     } catch (e) {
@@ -535,7 +550,7 @@ async function insertTrade(row: {
 
   await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
 
-  return { inserted: (inserted.rowCount ?? 0) > 0, tokenAmount, bnbAmount, priceBnb };
+  return { inserted: isInsert, tokenAmount, bnbAmount, priceBnb };
 }
 
 async function insertVote(row: {
@@ -685,22 +700,42 @@ async function upsertCandle(
   tf: TF,
   bucketSec: number,
   price: number,
-  volBnb: number
+  volBnb: number,
+  blockNumber = 0,
+  logIndex = 0,
 ) {
   const bucketTs = new Date(bucketSec * 1000);
 
   await pool.query(
     `insert into public.token_candles(
-        chain_id,campaign_address,timeframe,bucket_start,o,h,l,c,volume_bnb,trades_count
-     ) values($1,$2,$3,$4,$5,$5,$5,$5,$6,1)
+        chain_id,campaign_address,timeframe,bucket_start,o,h,l,c,volume_bnb,trades_count,
+        last_block_number,last_log_index
+     ) values($1,$2,$3,$4,$5,$5,$5,$5,$6,1,$7,$8)
      on conflict (chain_id,campaign_address,timeframe,bucket_start) do update set
        h = greatest(public.token_candles.h, excluded.h),
        l = least(public.token_candles.l, excluded.l),
-       c = excluded.c,
+       c = case
+             when excluded.last_block_number > coalesce(public.token_candles.last_block_number, 0)
+               or (
+                 excluded.last_block_number = coalesce(public.token_candles.last_block_number, 0)
+                 and excluded.last_log_index > coalesce(public.token_candles.last_log_index, 0)
+               )
+             then excluded.c
+             else public.token_candles.c
+           end,
+       last_block_number = greatest(coalesce(public.token_candles.last_block_number, 0), excluded.last_block_number),
+       last_log_index = case
+             when excluded.last_block_number > coalesce(public.token_candles.last_block_number, 0)
+             then excluded.last_log_index
+             when excluded.last_block_number = coalesce(public.token_candles.last_block_number, 0)
+              and excluded.last_log_index > coalesce(public.token_candles.last_log_index, 0)
+             then excluded.last_log_index
+             else public.token_candles.last_log_index
+           end,
        volume_bnb = public.token_candles.volume_bnb + excluded.volume_bnb,
        trades_count = public.token_candles.trades_count + 1,
        updated_at = now()`,
-    [chainId, campaign.toLowerCase(), tf, bucketTs, price, volBnb]
+    [chainId, campaign.toLowerCase(), tf, bucketTs, price, volBnb, blockNumber, logIndex]
   );
 
   // Lightweight realtime patch (authoritative values come from REST)
@@ -1315,7 +1350,7 @@ async function scanCampaignRange(
           if (priceBnb !== null) {
             for (const tf of TIMEFRAMES) {
               const b = bucketStart(tsSec, tf);
-              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount, log.blockNumber, logIndex);
             }
           }
         }
@@ -1376,7 +1411,7 @@ async function scanCampaignRange(
           if (priceBnb !== null) {
             for (const tf of TIMEFRAMES) {
               const b = bucketStart(tsSec, tf);
-              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount, log.blockNumber, logIndex);
             }
           }
         }
@@ -1576,7 +1611,7 @@ export async function ingestCampaignTransaction(input: {
       if (priceBnb !== null) {
         for (const tf of TIMEFRAMES) {
           const b = bucketStart(tsSec, tf);
-          await upsertCandle(chain.chainId, campaign, tf, b, priceBnb, bnbAmount);
+          await upsertCandle(chain.chainId, campaign, tf, b, priceBnb, bnbAmount, Number(receipt.blockNumber), logIndex);
         }
       }
     }

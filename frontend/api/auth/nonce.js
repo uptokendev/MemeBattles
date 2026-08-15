@@ -28,6 +28,9 @@ export default async function handler(req, res) {
     if (!address) return json(res, 400, { error: "Invalid address" });
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 
+    await pool.query(`ALTER TABLE IF EXISTS public.auth_nonces ALTER COLUMN address TYPE text`);
+    await pool.query(`ALTER TABLE IF EXISTS public.auth_nonces DROP CONSTRAINT IF EXISTS auth_nonces_address_lowercase`);
+
     const nonce = makeNonce();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
