@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { CpAmm, getUnClaimLpFee } from "@meteora-ag/cp-amm-sdk";
+import { CpAmm, derivePositionNftAccount, getUnClaimLpFee } from "@meteora-ag/cp-amm-sdk";
 import {
   Connection,
   Keypair,
@@ -135,6 +135,11 @@ async function resolvePositionNftAccount(
   owner: PublicKey,
   nftMint: PublicKey,
 ): Promise<PublicKey> {
+  // DAMM v2 holds the position NFT in a program PDA, not the operator ATA.
+  const pda = derivePositionNftAccount(nftMint);
+  const pdaInfo = await connection.getAccountInfo(pda, "confirmed");
+  if (pdaInfo) return pda;
+
   const token2022 = deriveAta(owner, nftMint, TOKEN_2022_PROGRAM_ID);
   const classic = deriveAta(owner, nftMint, TOKEN_PROGRAM_ID);
   const [info22, infoClassic] = await Promise.all([
@@ -143,7 +148,39 @@ async function resolvePositionNftAccount(
   ]);
   if (info22) return token2022;
   if (infoClassic) return classic;
-  return token2022;
+  return pda;
+}
+
+async function sendClaimTransaction(
+  connection: Connection,
+  transaction: Transaction,
+  operator: Keypair,
+): Promise<string> {
+  try {
+    return await sendAndConfirmTransaction(connection, transaction as any, [operator], {
+      commitment: "confirmed",
+    });
+  } catch (error: any) {
+    let logs = "";
+    try {
+      if (typeof error?.getLogs === "function") {
+        const fetched = await error.getLogs(connection);
+        logs = Array.isArray(fetched) ? fetched.join(" | ") : String(fetched || "");
+      } else if (Array.isArray(error?.logs)) {
+        logs = error.logs.join(" | ");
+      }
+    } catch {
+      // ignore log fetch failures
+    }
+    throw Object.assign(
+      new Error(
+        logs
+          ? `Meteora claim failed: ${String(error?.message || error)} | ${logs}`
+          : `Meteora claim failed: ${String(error?.message || error)}`,
+      ),
+      { status: 500 },
+    );
+  }
 }
 
 function splitAmounts(total: bigint): { creator: bigint; protocol: bigint } {
@@ -510,9 +547,7 @@ export async function harvestSolanaLpFees(input: {
   if (!claimTransaction || typeof claimTransaction.add !== "function") {
     throw Object.assign(new Error("Meteora claimPositionFee did not return a transaction."), { status: 500 });
   }
-  const claimSignature = await sendAndConfirmTransaction(connection, claimTransaction as any, [operator], {
-    commitment: "confirmed",
-  });
+  const claimSignature = await sendClaimTransaction(connection, claimTransaction, operator);
 
   const afterA = await ownedAmount(connection, operator.publicKey, tokenAMint);
   const afterB = await ownedAmount(connection, operator.publicKey, tokenBMint);
