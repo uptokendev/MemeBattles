@@ -21,7 +21,7 @@ import {
   solanaMarginalSpotSol,
   type SolanaCurvePricingState,
 } from "@/lib/solanaCampaignRead";
-import { isValidTradeTxHash, normalizeTradeTxHash } from "@/lib/tradeDedupe";
+import { isSyntheticLogIndex, isValidTradeTxHash } from "@/lib/tradeDedupe";
 import { timestampSec } from "@/lib/chart/normalizeTrade";
 
 export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
@@ -195,9 +195,16 @@ function authoritativeSolanaTradeState(
   return { priceNative, supplyWhole };
 }
 
-function bucketStartUnix(sec: number, intervalSec: number): number {
-  if (!intervalSec || intervalSec <= 0) return sec;
-  return Math.floor(sec / intervalSec) * intervalSec;
+function chainOrder(a: CurveTradePoint, b: CurveTradePoint): number {
+  const aBlk = Number(a.blockNumber || 0);
+  const bBlk = Number(b.blockNumber || 0);
+  const aSyn = aBlk <= 0 || isSyntheticLogIndex(a.logIndex);
+  const bSyn = bBlk <= 0 || isSyntheticLogIndex(b.logIndex);
+  if (aSyn !== bSyn) return aSyn ? 1 : -1;
+  if (!aSyn && aBlk !== bBlk) return aBlk - bBlk;
+  const logCmp = Number(a.logIndex || 0) - Number(b.logIndex || 0);
+  if (logCmp) return logCmp;
+  return timestampSec(a.timestamp) - timestampSec(b.timestamp);
 }
 
 function tradeSeriesPoints(
@@ -212,8 +219,6 @@ function tradeSeriesPoints(
   solanaCurvePricing?: SolanaCurvePricingState | null,
   solanaGraduated?: boolean,
   liveSupplyWhole?: number | null,
-  intervalSec = 60,
-  clockOverrides?: Record<string, number>,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
   const tokenDecimals =
@@ -221,19 +226,7 @@ function tradeSeriesPoints(
       ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
       : 18;
   const nativeDecimals = solana ? 9 : 18;
-  const sorted = [...(trades || [])]
-    .map((trade) => {
-      const tx = normalizeTradeTxHash(trade.txHash);
-      const overrideSec = tx ? Number(clockOverrides?.[tx] || 0) : 0;
-      const ts = overrideSec > 0 ? overrideSec : timestampSec(trade.timestamp);
-      return { trade, ts };
-    })
-    .sort(
-      (a, b) =>
-        a.ts - b.ts ||
-        (a.trade.blockNumber ?? 0) - (b.trade.blockNumber ?? 0) ||
-        Number(a.trade.logIndex ?? 0) - Number(b.trade.logIndex ?? 0),
-    );
+  const sorted = [...(trades || [])].sort(chainOrder);
 
   const fixedGradSupply = postBurnSupply(marketState, tokenDecimals);
   const marketAlreadyGraduated = isGraduatedStage(marketState) || Boolean(solana && solanaGraduated);
@@ -245,9 +238,7 @@ function tradeSeriesPoints(
   // Solana bonding trade history can be partial (for example after page reload,
   // RPC pagination, or indexer catch-up). Reconstruct the delta represented by
   // the loaded *curve* trades only — DEX fills must not grow circulating.
-  const bondingTrades = sorted
-    .map((row) => row.trade)
-    .filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
+  const bondingTrades = sorted.filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
   const liveBondingSupply =
     solana && !marketAlreadyGraduated
       ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
@@ -272,11 +263,9 @@ function tradeSeriesPoints(
   let circulating = historySupplyOffset;
   let peakCirc = circulating;
   const points: ChartPoint[] = [];
-  let prevTimeSec = 0;
-  let prevBlock = 0;
 
-  for (const row of sorted) {
-    const trade = row.trade;
+  for (const trade of sorted) {
+    const reportedTimeSec = timestampSec(trade.timestamp);
     const dexPrint = solana && isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec);
     const authoritative =
       solana && !dexPrint
@@ -286,30 +275,13 @@ function tradeSeriesPoints(
     const priceNative =
       authoritative?.priceNative ?? finite(trade.pricePerToken);
 
-    let tradeTimeSec = row.ts;
-    const block = Number(trade.blockNumber || 0);
-    // Same reported clock + a much later slot/block means the indexer reused a
-    // stale block_time. Advance by the chain gap so yesterday/today cannot share a 1m bar.
-    if (
-      tradeTimeSec > 0 &&
-      prevTimeSec > 0 &&
-      block > prevBlock &&
-      bucketStartUnix(tradeTimeSec, intervalSec) === bucketStartUnix(prevTimeSec, intervalSec)
-    ) {
-      const secPerBlock = solana ? 0.4 : 3;
-      const gapSec = (block - prevBlock) * secPerBlock;
-      if (gapSec >= intervalSec) {
-        tradeTimeSec = prevTimeSec + Math.max(intervalSec, Math.round(gapSec));
-      }
-    }
-    if (!priceNative || tradeTimeSec <= 0) continue;
-    prevTimeSec = tradeTimeSec;
-    if (block > 0) prevBlock = block;
+    if (!priceNative || reportedTimeSec <= 0) continue;
 
     const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
+    // Graduation is venue / original clock — never a rewritten display time.
     const afterGrad =
       dexPrint ||
-      (graduationTimeSec > 0 && tradeTimeSec >= graduationTimeSec) ||
+      (graduationTimeSec > 0 && reportedTimeSec >= graduationTimeSec) ||
       (!solana && marketAlreadyGraduated && graduationTimeSec <= 0 && fixedGradSupply > 0);
 
     if (!afterGrad) {
@@ -335,7 +307,7 @@ function tradeSeriesPoints(
 
     const volumeNative = formatUnitsNumber(trade.nativeWei, nativeDecimals);
     points.push({
-      ts: tradeTimeSec * 1000,
+      ts: reportedTimeSec * 1000,
       value,
       volume: Number.isFinite(volumeNative) ? volumeNative : 0,
       side: trade.type === "sell" ? "sell" : "buy",
@@ -535,7 +507,6 @@ export function UnifiedMarketChart({
   denomination = "USD",
   loading,
   error,
-  marketKey,
 }: UnifiedMarketChartProps) {
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
@@ -569,64 +540,6 @@ export function UnifiedMarketChart({
       : 0;
 
   const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
-  const bookKey = marketKey || String(chainId);
-  const seenTxRef = useRef<Set<string>>(new Set());
-  const hydratedRef = useRef(false);
-  const [clockOverrides, setClockOverrides] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    seenTxRef.current = new Set();
-    hydratedRef.current = false;
-    setClockOverrides({});
-  }, [bookKey]);
-
-  useEffect(() => {
-    const newcomers: CurveTradePoint[] = [];
-    for (const trade of curvePoints) {
-      const tx = normalizeTradeTxHash(trade.txHash);
-      if (!tx) continue;
-      if (!seenTxRef.current.has(tx)) newcomers.push(trade);
-    }
-
-    if (!hydratedRef.current) {
-      if (curvePoints.length === 0) return;
-      for (const trade of newcomers) {
-        const tx = normalizeTradeTxHash(trade.txHash);
-        if (tx) seenTxRef.current.add(tx);
-      }
-      hydratedRef.current = true;
-      return;
-    }
-
-    // A late indexer snapshot can drop 20+ historical rows at once. Those are
-    // not live fills — only stamp 1–2 newly observed txs (a buy, or buy+sell).
-    if (newcomers.length >= 3) {
-      for (const trade of newcomers) {
-        const tx = normalizeTradeTxHash(trade.txHash);
-        if (tx) seenTxRef.current.add(tx);
-      }
-      return;
-    }
-
-    const nowSec = Math.floor(Date.now() / 1000);
-    const nowBucket = bucketStartUnix(nowSec, intervalSeconds);
-    setClockOverrides((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const trade of newcomers) {
-        const tx = normalizeTradeTxHash(trade.txHash);
-        if (!tx) continue;
-        seenTxRef.current.add(tx);
-        const reported = timestampSec(trade.timestamp);
-        const reportedBucket = reported > 0 ? bucketStartUnix(reported, intervalSeconds) : -1;
-        if (reportedBucket !== nowBucket) {
-          next[tx] = nowSec;
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [curvePoints, intervalSeconds]);
 
   const clearHideTooltipTimer = useCallback(() => {
     if (hideTooltipTimerRef.current) {
@@ -696,12 +609,9 @@ export function UnifiedMarketChart({
       solanaCurvePricing,
       solanaGraduated,
       liveSupplyWhole,
-      intervalSeconds,
-      clockOverrides,
     );
   }, [
     chainId,
-    clockOverrides,
     currentBondingSoldRaw,
     solanaCurvePricing,
     solanaGraduated,
@@ -709,7 +619,6 @@ export function UnifiedMarketChart({
     curvePoints,
     denomination,
     graduationTimeSec,
-    intervalSeconds,
     marketState,
     metric,
     nativeUsd,

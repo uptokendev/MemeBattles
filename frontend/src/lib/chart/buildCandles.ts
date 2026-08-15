@@ -51,9 +51,7 @@ function bucketStartSec(tsMs: number, intervalSec: number): number {
  * Build OHLC candles from raw trade points.
  *
  * - Same-bucket trades update high/low/close (buy then sell in the same 1m = one wick).
- * - A new interval opens at the first trade in that interval — never at the previous
- *   close. Linking open to a stale close after a 30m gap paints a fake wick on what
- *   should be a fresh print.
+ * - New bucket OPEN = previous close so the series stays continuous (Pump-style).
  * - Empty intervals are skipped (no flat runway). Set maxGapFillBuckets > 0 only if needed.
  */
 export function buildCandles(
@@ -110,11 +108,11 @@ export function buildCandles(
           fill += intervalSec;
         }
       }
-      // Gap (filled or not): this interval starts at the first real print.
+      // Jump to the next print. Open links to prev close so bodies stay continuous.
       curBucket = bSec;
-      open = p.value;
-      high = p.value;
-      low = p.value;
+      open = prevClose;
+      high = Math.max(prevClose, p.value);
+      low = Math.min(prevClose, p.value);
       close = p.value;
       vol = p.volume ?? 0;
       continue;
