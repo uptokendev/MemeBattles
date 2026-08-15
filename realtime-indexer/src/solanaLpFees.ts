@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { CpAmm } from "@meteora-ag/cp-amm-sdk";
+import { CpAmm, getUnClaimLpFee } from "@meteora-ag/cp-amm-sdk";
 import {
   Connection,
   Keypair,
@@ -12,6 +12,7 @@ import {
 import type { Pool } from "pg";
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const NATIVE_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
@@ -43,34 +44,49 @@ function protocolTreasury(operator: PublicKey): PublicKey {
   return operator;
 }
 
-function deriveAta(owner: PublicKey, mint: PublicKey): PublicKey {
+function tokenProgramFromFlag(flag: unknown): PublicKey {
+  return Number(flag ?? 0) === 0 ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID;
+}
+
+function deriveAta(owner: PublicKey, mint: PublicKey, tokenProgram: PublicKey = TOKEN_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    [owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
     ASSOCIATED_TOKEN_PROGRAM_ID,
   )[0];
 }
 
-function createAtaIdempotentIx(payer: PublicKey, owner: PublicKey, mint: PublicKey): TransactionInstruction {
+function createAtaIdempotentIx(
+  payer: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+  tokenProgram: PublicKey = TOKEN_PROGRAM_ID,
+): TransactionInstruction {
   return new TransactionInstruction({
     programId: ASSOCIATED_TOKEN_PROGRAM_ID,
     keys: [
       { pubkey: payer, isSigner: true, isWritable: true },
-      { pubkey: deriveAta(owner, mint), isSigner: false, isWritable: true },
+      { pubkey: deriveAta(owner, mint, tokenProgram), isSigner: false, isWritable: true },
       { pubkey: owner, isSigner: false, isWritable: false },
       { pubkey: mint, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
     ],
     data: Buffer.from([1]),
   });
 }
 
-function transferTokenIx(source: PublicKey, dest: PublicKey, owner: PublicKey, amount: bigint): TransactionInstruction {
+function transferTokenIx(
+  source: PublicKey,
+  dest: PublicKey,
+  owner: PublicKey,
+  amount: bigint,
+  tokenProgram: PublicKey = TOKEN_PROGRAM_ID,
+): TransactionInstruction {
   const data = Buffer.alloc(9);
   data[0] = 3;
   data.writeBigUInt64LE(amount, 1);
   return new TransactionInstruction({
-    programId: TOKEN_PROGRAM_ID,
+    programId: tokenProgram,
     keys: [
       { pubkey: source, isSigner: false, isWritable: true },
       { pubkey: dest, isSigner: false, isWritable: true },
@@ -87,6 +103,47 @@ async function tokenBalance(connection: Connection, ata: PublicKey): Promise<big
   } catch {
     return 0n;
   }
+}
+
+async function nativeLamports(connection: Connection, owner: PublicKey): Promise<bigint> {
+  try {
+    return BigInt(await connection.getBalance(owner, "confirmed"));
+  } catch {
+    return 0n;
+  }
+}
+
+async function ownedAmount(connection: Connection, owner: PublicKey, mint: PublicKey): Promise<bigint> {
+  if (mint.equals(NATIVE_MINT)) return nativeLamports(connection, owner);
+  return tokenBalance(connection, deriveAta(owner, mint));
+}
+
+function unclaimedFees(poolState: unknown, positionState: unknown): { tokenA: bigint; tokenB: bigint } {
+  try {
+    const fees = getUnClaimLpFee(poolState as any, positionState as any);
+    return { tokenA: toBigInt(fees.feeTokenA), tokenB: toBigInt(fees.feeTokenB) };
+  } catch {
+    return {
+      tokenA: toBigInt((positionState as any)?.feeAPending),
+      tokenB: toBigInt((positionState as any)?.feeBPending),
+    };
+  }
+}
+
+async function resolvePositionNftAccount(
+  connection: Connection,
+  owner: PublicKey,
+  nftMint: PublicKey,
+): Promise<PublicKey> {
+  const token2022 = deriveAta(owner, nftMint, TOKEN_2022_PROGRAM_ID);
+  const classic = deriveAta(owner, nftMint, TOKEN_PROGRAM_ID);
+  const [info22, infoClassic] = await Promise.all([
+    connection.getAccountInfo(token2022, "confirmed"),
+    connection.getAccountInfo(classic, "confirmed"),
+  ]);
+  if (info22) return token2022;
+  if (infoClassic) return classic;
+  return token2022;
 }
 
 function splitAmounts(total: bigint): { creator: bigint; protocol: bigint } {
@@ -283,8 +340,9 @@ export async function listSolanaLpFees(input: {
     try {
       const position = await cpAmm.fetchPositionState(new PublicKey(positionAddress));
       const poolState = await cpAmm.fetchPoolState(new PublicKey(poolAddress));
-      const tokenA = toBigInt((position as any).feeAPending);
-      const tokenB = toBigInt((position as any).feeBPending);
+      const claimed = unclaimedFees(poolState, position);
+      const tokenA = claimed.tokenA;
+      const tokenB = claimed.tokenB;
       const mintA = poolState.tokenAMint;
       const mintB = poolState.tokenBMint;
       const tokenMint = String(row.token_address || "");
@@ -313,8 +371,8 @@ export async function listSolanaLpFees(input: {
             creatorShareToken1Display: formatAmount(splitB.creator, decB),
             protocolShareToken0Display: formatAmount(splitA.protocol, decA),
             protocolShareToken1Display: formatAmount(splitB.protocol, decB),
-            source: "meteora_position_fee_pending",
-            note: "80% creator / 20% protocol on harvest. Principal stays permanently locked.",
+            source: "meteora_unclaimed_lp_fee",
+            note: "Includes pending + uncheckpointed pool fees. 80% creator / 20% protocol on collect. Principal stays locked.",
           },
           harvestedLifetime: harvested.lastTx
             ? {
@@ -418,17 +476,24 @@ export async function harvestSolanaLpFees(input: {
   const poolState = await cpAmm.fetchPoolState(poolPk);
   const tokenAMint = poolState.tokenAMint;
   const tokenBMint = poolState.tokenBMint;
+  const tokenAProgram = tokenProgramFromFlag((poolState as any).tokenAFlag);
+  const tokenBProgram = tokenProgramFromFlag((poolState as any).tokenBFlag);
   const positionState = await cpAmm.fetchPositionState(positionPk);
   const positionNftMint = (positionState as any).nftMint || (positionState as any).nft_mint;
+  if (!positionNftMint) {
+    throw Object.assign(new Error("Meteora position is missing its NFT mint."), { status: 400 });
+  }
   const nftMint = positionNftMint instanceof PublicKey ? positionNftMint : new PublicKey(String(positionNftMint));
-  const positionNftAccount = deriveAta(operator.publicKey, nftMint);
+  const positionNftAccount = await resolvePositionNftAccount(connection, operator.publicKey, nftMint);
 
-  const operatorAtaA = deriveAta(operator.publicKey, tokenAMint);
-  const operatorAtaB = deriveAta(operator.publicKey, tokenBMint);
-  const beforeA = await tokenBalance(connection, operatorAtaA);
-  const beforeB = await tokenBalance(connection, operatorAtaB);
+  const operatorAtaA = deriveAta(operator.publicKey, tokenAMint, tokenAProgram);
+  const operatorAtaB = deriveAta(operator.publicKey, tokenBMint, tokenBProgram);
+  const beforeA = await ownedAmount(connection, operator.publicKey, tokenAMint);
+  const beforeB = await ownedAmount(connection, operator.publicKey, tokenBMint);
 
-  const built = cpAmm.claimPositionFee({
+  // Do not pass `receiver`: the SDK then requires tempWSolAccount for WSOL and crashes
+  // with owner.toBuffer() undefined. Claim to the operator, then split 80/20 ourselves.
+  const claimTx = await cpAmm.claimPositionFee({
     owner: operator.publicKey,
     position: positionPk,
     pool: poolPk,
@@ -437,22 +502,20 @@ export async function harvestSolanaLpFees(input: {
     tokenBMint,
     tokenAVault: poolState.tokenAVault,
     tokenBVault: poolState.tokenBVault,
-    tokenAProgram: TOKEN_PROGRAM_ID,
-    tokenBProgram: TOKEN_PROGRAM_ID,
-    receiver: operator.publicKey,
+    tokenAProgram,
+    tokenBProgram,
     feePayer: operator.publicKey,
   });
-  const builder = built as { transaction?: () => Promise<Transaction> | Transaction; build?: () => Promise<Transaction> | Transaction };
-  const claimTx =
-    typeof builder.transaction === "function"
-      ? await builder.transaction()
-      : typeof builder.build === "function"
-        ? await builder.build()
-        : (built as unknown as Transaction);
-  const claimSignature = await sendAndConfirmTransaction(connection, claimTx, [operator], { commitment: "confirmed" });
+  const claimTransaction = claimTx as unknown as Transaction;
+  if (!claimTransaction || typeof claimTransaction.add !== "function") {
+    throw Object.assign(new Error("Meteora claimPositionFee did not return a transaction."), { status: 500 });
+  }
+  const claimSignature = await sendAndConfirmTransaction(connection, claimTransaction as any, [operator], {
+    commitment: "confirmed",
+  });
 
-  const afterA = await tokenBalance(connection, operatorAtaA);
-  const afterB = await tokenBalance(connection, operatorAtaB);
+  const afterA = await ownedAmount(connection, operator.publicKey, tokenAMint);
+  const afterB = await ownedAmount(connection, operator.publicKey, tokenBMint);
   const deltaA = afterA > beforeA ? afterA - beforeA : 0n;
   const deltaB = afterB > beforeB ? afterB - beforeB : 0n;
   const splitA = splitAmounts(deltaA);
@@ -461,18 +524,48 @@ export async function harvestSolanaLpFees(input: {
   const decB = mintDecimals(tokenBMint, tokenMint, 6);
 
   const splitIxs: TransactionInstruction[] = [];
-  const addSplit = (mint: PublicKey, source: PublicKey, split: { creator: bigint; protocol: bigint }) => {
+  const addSplit = (
+    mint: PublicKey,
+    sourceAta: PublicKey,
+    split: { creator: bigint; protocol: bigint },
+    tokenProgram: PublicKey,
+  ) => {
+    const native = mint.equals(NATIVE_MINT);
     if (split.creator > 0n && !creatorPk.equals(operator.publicKey)) {
-      splitIxs.push(createAtaIdempotentIx(operator.publicKey, creatorPk, mint));
-      splitIxs.push(transferTokenIx(source, deriveAta(creatorPk, mint), operator.publicKey, split.creator));
+      if (native) {
+        splitIxs.push(
+          SystemProgram.transfer({
+            fromPubkey: operator.publicKey,
+            toPubkey: creatorPk,
+            lamports: split.creator,
+          }),
+        );
+      } else {
+        splitIxs.push(createAtaIdempotentIx(operator.publicKey, creatorPk, mint, tokenProgram));
+        splitIxs.push(
+          transferTokenIx(sourceAta, deriveAta(creatorPk, mint, tokenProgram), operator.publicKey, split.creator, tokenProgram),
+        );
+      }
     }
     if (split.protocol > 0n && !treasury.equals(operator.publicKey)) {
-      splitIxs.push(createAtaIdempotentIx(operator.publicKey, treasury, mint));
-      splitIxs.push(transferTokenIx(source, deriveAta(treasury, mint), operator.publicKey, split.protocol));
+      if (native) {
+        splitIxs.push(
+          SystemProgram.transfer({
+            fromPubkey: operator.publicKey,
+            toPubkey: treasury,
+            lamports: split.protocol,
+          }),
+        );
+      } else {
+        splitIxs.push(createAtaIdempotentIx(operator.publicKey, treasury, mint, tokenProgram));
+        splitIxs.push(
+          transferTokenIx(sourceAta, deriveAta(treasury, mint, tokenProgram), operator.publicKey, split.protocol, tokenProgram),
+        );
+      }
     }
   };
-  addSplit(tokenAMint, operatorAtaA, splitA);
-  addSplit(tokenBMint, operatorAtaB, splitB);
+  addSplit(tokenAMint, operatorAtaA, splitA, tokenAProgram);
+  addSplit(tokenBMint, operatorAtaB, splitB, tokenBProgram);
 
   let splitSignature = "";
   if (splitIxs.length) {
