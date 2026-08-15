@@ -134,7 +134,7 @@ export async function harvestSolanaLpFees(input: {
   chainId: number;
   campaignAddress?: string | null;
   pairAddress?: string | null;
-}): Promise<{ txHash: string; pairAddress: string }> {
+}): Promise<{ txHash: string; pairAddress: string; note?: string }> {
   const chainId = Number(input.chainId || 101);
   const base = getTokenIndexerBase();
   if (!base) throw new Error("Token indexer URL is not configured.");
@@ -152,8 +152,9 @@ export async function harvestSolanaLpFees(input: {
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new Error(String(json?.error || `Solana LP harvest failed (${res.status})`));
   return {
-    txHash: String(json?.txHash || ""),
+    txHash: String(json?.txHash || json?.claimTx || ""),
     pairAddress: String(json?.pairAddress || input.pairAddress || ""),
+    note: json?.note ? String(json.note) : undefined,
   };
 }
 

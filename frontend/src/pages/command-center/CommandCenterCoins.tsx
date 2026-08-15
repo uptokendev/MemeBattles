@@ -152,7 +152,11 @@ export default function CommandCenterCoins() {
             campaignAddress: key,
             pairAddress: pair,
           });
-          toast.success(`LP fees claimed. Tx ${result.txHash.slice(0, 12)}…`);
+          toast.success(
+            result.note
+              ? `${result.note} Tx ${result.txHash.slice(0, 12)}…`
+              : `LP fees claimed (80% creator / 20% protocol). Tx ${result.txHash.slice(0, 12)}…`,
+          );
         } else {
           if (!wallet.signer || !wallet.account) {
             toast.error("Connect wallet to claim LP fees.");
