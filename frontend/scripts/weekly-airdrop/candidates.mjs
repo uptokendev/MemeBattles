@@ -1,5 +1,19 @@
 import { asBigInt, bnb, envInt, envText } from "./config.mjs";
 
+function isSolanaAirdropChain(chainId) {
+  return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function walletExpr(column, chainId) {
+  return isSolanaAirdropChain(chainId) ? column : `lower(${column})`;
+}
+
+function walletsDiffer(left, right, chainId) {
+  return isSolanaAirdropChain(chainId)
+    ? `(${left} is distinct from ${right})`
+    : `(lower(${left}) <> lower(${right}))`;
+}
+
 const REQUIRED_RELATIONS = [
   "public.curve_trades", "public.campaigns", "public.reward_calculation_inputs",
   "public.reward_batches", "public.reward_ledger", "public.reward_batch_items",
@@ -56,12 +70,12 @@ export async function exclusionSets(client, { chainId, start, end }) {
     client.query(`select lower(creator_wallet) wallet from public.creator_profiles where restricted or manual_review_required`),
     client.query(`select lower(wallet_address) wallet from public.recruiters where wallet_address is not null`),
     client.query(
-      `select lower(recipient_address) wallet from public.league_epoch_payouts
+      `select ${walletExpr("recipient_address", chainId)} wallet from public.league_epoch_payouts
         where chain_id=$1 and epoch_start >= $2 and epoch_start < $3`,
       [chainId, start, end],
     ),
     client.query(
-      `select distinct lower(wallet_address) wallet from public.reward_ledger
+      `select distinct ${walletExpr("wallet_address", chainId)} wallet from public.reward_ledger
         where reward_type='airdrop' and chain::text=$1
           and created_at >= $2::timestamptz - interval '14 days' and created_at < $2
           and status not in ('cancelled','expired')`,
@@ -73,24 +87,31 @@ export async function exclusionSets(client, { chainId, start, end }) {
 }
 
 export async function traderCandidates(client, { chainId, start, end, exclusions }) {
-  const minVolume = asBigInt(envText("AIRDROP_TRADER_MIN_VOLUME_WEI", "250000000000000000"));
-  const cap = asBigInt(envText("AIRDROP_TRADER_VOLUME_CAP_WEI", "15000000000000000000"));
+  const solana = isSolanaAirdropChain(chainId);
+  const minVolume = asBigInt(envText(
+    "AIRDROP_TRADER_MIN_VOLUME_WEI",
+    solana ? "250000000" : "250000000000000000",
+  ));
+  const cap = asBigInt(envText(
+    "AIRDROP_TRADER_VOLUME_CAP_WEI",
+    solana ? "15000000000" : "15000000000000000000",
+  ));
   const minTrades = envInt("AIRDROP_TRADER_MIN_TRADES", 3, { min: 1, max: 1000 });
   const minDays = envInt("AIRDROP_TRADER_MIN_ACTIVE_DAYS", 2, { min: 1, max: 7 });
   const { rows } = await client.query(
-    `select lower(t.wallet) wallet_address,sum(t.bnb_amount_raw)::text total_volume_raw,
+    `select ${walletExpr("t.wallet", chainId)} wallet_address,sum(t.bnb_amount_raw)::text total_volume_raw,
             count(*)::int trade_count,count(distinct (t.block_time at time zone 'utc')::date)::int active_days,
             count(distinct t.campaign_address)::int campaign_count
        from public.curve_trades t join public.campaigns c
          on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
        left join public.campaign_security_states s on s.campaign_address=t.campaign_address
-       left join public.wallet_risk_profiles bw on lower(bw.wallet_address)=lower(t.wallet)
-       left join public.wallet_risk_profiles cw on lower(cw.wallet_address)=lower(c.creator_address)
+       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", chainId)}=${walletExpr("t.wallet", chainId)}
+       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", chainId)}=${walletExpr("c.creator_address", chainId)}
       where t.chain_id=$1 and t.block_time >= $2 and t.block_time < $3 and t.side in ('buy','sell')
-        and lower(t.wallet)<>lower(c.creator_address) and not coalesce(s.paused,false)
+        and ${walletsDiffer("t.wallet", "c.creator_address", chainId)} and not coalesce(s.paused,false)
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
-      group by lower(t.wallet)
+      group by ${walletExpr("t.wallet", chainId)}
      having sum(t.bnb_amount_raw) >= $4::numeric and count(*) >= $5
         and count(distinct (t.block_time at time zone 'utc')::date) >= $6`,
     [chainId, start, end, minVolume.toString(), minTrades, minDays],
@@ -114,24 +135,31 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
 }
 
 export async function creatorCandidates(client, { chainId, start, end, exclusions }) {
-  const minVolume = asBigInt(envText("AIRDROP_CREATOR_MIN_VOLUME_WEI", "3000000000000000000"));
-  const cap = asBigInt(envText("AIRDROP_CREATOR_VOLUME_CAP_WEI", "25000000000000000000"));
-  const minBuyers = envInt("AIRDROP_CREATOR_MIN_UNIQUE_BUYERS", 10, { min: 1, max: 100000 });
+  const solana = isSolanaAirdropChain(chainId);
+  const minVolume = asBigInt(envText(
+    "AIRDROP_CREATOR_MIN_VOLUME_WEI",
+    solana ? "3000000000" : "3000000000000000000",
+  ));
+  const cap = asBigInt(envText(
+    "AIRDROP_CREATOR_VOLUME_CAP_WEI",
+    solana ? "25000000000" : "25000000000000000000",
+  ));
+  const minBuyers = envInt("AIRDROP_CREATOR_MIN_UNIQUE_BUYERS", solana ? 3 : 10, { min: 1, max: 100000 });
   const maxCampaigns = envInt("AIRDROP_CREATOR_MAX_CAMPAIGNS", 2, { min: 1, max: 20 });
   const { rows } = await client.query(
-    `select lower(c.creator_address) wallet_address,t.campaign_address,
-            sum(t.bnb_amount_raw)::text qualified_buy_volume_raw,count(distinct lower(t.wallet))::int unique_buyers
+    `select ${walletExpr("c.creator_address", chainId)} wallet_address,t.campaign_address,
+            sum(t.bnb_amount_raw)::text qualified_buy_volume_raw,count(distinct ${walletExpr("t.wallet", chainId)})::int unique_buyers
        from public.curve_trades t join public.campaigns c
          on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
        left join public.campaign_security_states s on s.campaign_address=t.campaign_address
-       left join public.wallet_risk_profiles bw on lower(bw.wallet_address)=lower(t.wallet)
-       left join public.wallet_risk_profiles cw on lower(cw.wallet_address)=lower(c.creator_address)
+       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", chainId)}=${walletExpr("t.wallet", chainId)}
+       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", chainId)}=${walletExpr("c.creator_address", chainId)}
       where t.chain_id=$1 and t.block_time >= $2 and t.block_time < $3 and t.side='buy'
-        and lower(t.wallet)<>lower(c.creator_address) and not coalesce(s.paused,false) and not coalesce(s.buy_paused,false)
+        and ${walletsDiffer("t.wallet", "c.creator_address", chainId)} and not coalesce(s.paused,false) and not coalesce(s.buy_paused,false)
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
-      group by lower(c.creator_address),t.campaign_address
-     having sum(t.bnb_amount_raw) >= $4::numeric and count(distinct lower(t.wallet)) >= $5`,
+      group by ${walletExpr("c.creator_address", chainId)},t.campaign_address
+     having sum(t.bnb_amount_raw) >= $4::numeric and count(distinct ${walletExpr("t.wallet", chainId)}) >= $5`,
     [chainId, start, end, minVolume.toString(), minBuyers],
   );
   const grouped = new Map();

@@ -80,10 +80,11 @@ function normalizeCabinet(raw: any): LeagueCabinet {
 }
 
 export async function fetchLeagueCabinet(chainId: number, address: string): Promise<LeagueCabinet> {
-  if (isSolanaChain(chainId)) return emptyCabinet();
+  const wallet = isSolanaChain(chainId) ? String(address || "").trim() : String(address || "").toLowerCase();
+  if (!wallet) return emptyCabinet();
 
   const url = buildUrl(
-    `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address.toLowerCase())}`
+    `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(wallet)}`
   );
 
   const res = await fetch(url, { method: "GET" });
