@@ -157,7 +157,9 @@ export default function CommandCenterAirdrops() {
             </div>
           ) : winners.length === 0 ? (
             <div className="rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">
-              No previous winners yet.
+              {isSolanaAirdrop(chainId)
+                ? "No published Solana winners yet. Estimates can appear from bonding volume; claims stay closed."
+                : "No previous winners yet."}
             </div>
           ) : (
             <div className="space-y-3">

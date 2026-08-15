@@ -68,6 +68,12 @@ export interface LeaguePrizeMeta {
   capApplies?: boolean;
   capReached?: boolean;
   bnbUsdPrice?: number | null;
+  solUsdPrice?: number | null;
+  nativeUsdPrice?: number | null;
+  nativeUsdPriceSource?: string;
+  nativeSymbol?: string;
+  nativeDecimals?: number;
+  claimsOpen?: boolean;
   byLeague?: Record<string, unknown>;
   warning?: string;
 }

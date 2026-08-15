@@ -207,6 +207,9 @@ export async function requestRewardClaim(input: {
 
 export async function fetchAirdropCurrent(chainId?: number | null): Promise<AirdropCurrent> {
   const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/current${buildQuery({ chainId })}`));
+  if (res.status === 404) {
+    return { status: "empty", currentEpochId: null, current: null, prizePool: null, materializedAt: null };
+  }
   const json = await parseJson(res);
   return {
     status: String(json?.status || "empty"),
@@ -231,6 +234,7 @@ export async function fetchAirdropWinners(params: {
   limit?: number;
 } = {}): Promise<AirdropWinner[]> {
   const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/winners${buildQuery(params)}`));
+  if (res.status === 404) return [];
   const json = await parseJson(res);
   return Array.isArray(json?.items) ? json.items as AirdropWinner[] : [];
 }

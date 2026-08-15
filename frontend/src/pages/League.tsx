@@ -41,19 +41,19 @@ function shortAddr(value?: string | null) {
   return text.length > 12 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
 }
 
-function rawToBnb(raw?: string | null) {
+function rawToNative(raw?: string | null, decimals = 18) {
   try {
-    return Number(ethers.formatUnits(BigInt(String(raw ?? "0")), 18));
+    return Number(ethers.formatUnits(BigInt(String(raw ?? "0")), decimals));
   } catch {
     return 0;
   }
 }
 
-function formatBnb(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0 BNB";
-  if (value >= 100) return `${value.toFixed(2)} BNB`;
-  if (value >= 1) return `${value.toFixed(4)} BNB`;
-  return `${value.toFixed(6)} BNB`;
+function formatNative(value: number, symbol = "BNB") {
+  if (!Number.isFinite(value) || value <= 0) return `0 ${symbol}`;
+  if (value >= 100) return `${value.toFixed(2)} ${symbol}`;
+  if (value >= 1) return `${value.toFixed(4)} ${symbol}`;
+  return `${value.toFixed(6)} ${symbol}`;
 }
 
 function formatUsd(value: number) {
@@ -100,12 +100,15 @@ function getPrizeRaw(prize?: LeaguePrizeMeta) {
   return "0";
 }
 
-function resolveGeneratedUsd(prize: LeaguePrizeMeta | undefined, prizeBnb: number, bnbUsd: number | null | undefined) {
+function resolveGeneratedUsd(
+  prize: LeaguePrizeMeta | undefined,
+  prizeNative: number,
+  nativeUsd: number | null | undefined,
+) {
   const fromApi = Number(prize?.generatedUsd);
-  // `??` does not treat 0 as missing — server often returns generatedUsd:0 when BNB_USD_PRICE unset.
   if (Number.isFinite(fromApi) && fromApi > 0) return fromApi;
-  const price = Number(bnbUsd || prize?.bnbUsdPrice || 0);
-  if (prizeBnb > 0 && price > 0) return prizeBnb * price;
+  const price = Number(nativeUsd || prize?.nativeUsdPrice || prize?.solUsdPrice || prize?.bnbUsdPrice || 0);
+  if (prizeNative > 0 && price > 0) return prizeNative * price;
   return 0;
 }
 
@@ -126,7 +129,7 @@ function formatDurationSeconds(seconds?: number | null) {
   return `${sec}s`;
 }
 
-function rowMetric(def: LeagueDef, row: any) {
+function rowMetric(def: LeagueDef, row: any, native = { decimals: 18, symbol: "BNB" }) {
   if (def.key === "perfect_run") {
     return row?.duration_seconds != null
       ? `${formatDurationSeconds(row.duration_seconds)} · ${Number(row?.sells_count ?? 0)} sells`
@@ -136,7 +139,7 @@ function rowMetric(def: LeagueDef, row: any) {
     return row?.duration_seconds != null ? formatDurationSeconds(row.duration_seconds) : def.metricLabel;
   }
   if (def.key === "biggest_hit") {
-    const buy = row?.bnb_amount_raw ? formatBnb(rawToBnb(row.bnb_amount_raw)) : null;
+    const buy = row?.bnb_amount_raw ? formatNative(rawToNative(row.bnb_amount_raw, native.decimals), native.symbol) : null;
     const buyer = row?.buyer_address ? shortAddr(row.buyer_address) : null;
     if (buy && buyer) return `${buy} · ${buyer}`;
     return buy || def.metricLabel;
@@ -144,7 +147,7 @@ function rowMetric(def: LeagueDef, row: any) {
   if (def.key === "top_earner") {
     if (!row?.profit_raw) return def.metricLabel;
     const trades = row?.trades_count != null ? ` · ${Number(row.trades_count)} trades` : "";
-    return `${formatBnb(rawToBnb(row.profit_raw))}${trades}`;
+    return `${formatNative(rawToNative(row.profit_raw, native.decimals), native.symbol)}${trades}`;
   }
   if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
@@ -152,10 +155,14 @@ function rowMetric(def: LeagueDef, row: any) {
 }
 
 function tokenHref(row: any) {
-  const token = String(row?.token_address || row?.tokenAddress || "").toLowerCase();
-  const campaign = String(row?.campaign_address || row?.campaignAddress || "").toLowerCase();
-  const target = /^0x[a-f0-9]{40}$/.test(token) ? token : campaign;
-  return /^0x[a-f0-9]{40}$/.test(target) ? `/token/${target}` : null;
+  const token = String(row?.token_address || row?.tokenAddress || "").trim();
+  const campaign = String(row?.campaign_address || row?.campaignAddress || "").trim();
+  const evm = (value: string) => /^0x[a-f0-9]{40}$/i.test(value);
+  const sol = (value: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+  const target = evm(token) || sol(token) ? token : campaign;
+  if (evm(target)) return `/token/${target.toLowerCase()}`;
+  if (sol(target)) return `/token/${target}`;
+  return null;
 }
 
 function getEpochOptions(period: Period) {
@@ -287,7 +294,21 @@ function RecruiterEmptyActions() {
   );
 }
 
-function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { league: LeagueDef; rows: unknown[]; status?: string; pendingCopy?: string; warningCopy?: string }) {
+function StandingsTable({
+  league,
+  rows,
+  status,
+  pendingCopy,
+  warningCopy,
+  native,
+}: {
+  league: LeagueDef;
+  rows: unknown[];
+  status?: string;
+  pendingCopy?: string;
+  warningCopy?: string;
+  native?: { decimals: number; symbol: string };
+}) {
   if (status === "pending") {
     return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground"><div className="font-retro text-base text-foreground">{league.title} pending</div><p className="mt-2 max-w-2xl">{pendingCopy || league.emptyStateCopy}</p></div>;
   }
@@ -351,7 +372,7 @@ function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { le
                   : row?.campaign_address || row?.campaignAddress || "Campaign"}
               </div>
             </div>
-            <div className="text-sm font-semibold text-accent">{rowMetric(league, row)}</div>
+            <div className="text-sm font-semibold text-accent">{rowMetric(league, row, native)}</div>
           </div>
         );
         const key = `${league.key}-${rank}-${row?.campaign_address ?? row?.campaignAddress ?? row?.wallet ?? row?.tx_hash ?? index}`;
@@ -431,29 +452,31 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   // Hub prize uses total epoch league-fee pot; selected category pot is secondary.
   const hubPrizeRaw = getPrizeRaw(summaryPrize) !== "0" ? getPrizeRaw(summaryPrize) : getPrizeRaw(selectedPrize);
   const categoryPrizeRaw = getPrizeRaw(selectedPrize);
-  const rawPrizeBnb = rawToBnb(hubPrizeRaw);
-  const categoryPrizeBnb = rawToBnb(categoryPrizeRaw);
-  const displayPrizeBnb = rawPrizeBnb > 0 ? rawPrizeBnb : categoryPrizeBnb;
-  const rawGeneratedUsd = resolveGeneratedUsd(summaryPrize || selectedPrize, displayPrizeBnb, bnbUsd);
+  const nativeDecimals = Number(summaryPrize?.nativeDecimals || selectedPrize?.nativeDecimals || (isSolana ? 9 : 18));
+  const nativeSymbol = String(summaryPrize?.nativeSymbol || selectedPrize?.nativeSymbol || (isSolana ? "SOL" : "BNB"));
+  const rawPrizeNative = rawToNative(hubPrizeRaw, nativeDecimals);
+  const categoryPrizeNative = rawToNative(categoryPrizeRaw, nativeDecimals);
+  const displayPrizeNative = rawPrizeNative > 0 ? rawPrizeNative : categoryPrizeNative;
+  const rawGeneratedUsd = resolveGeneratedUsd(
+    summaryPrize || selectedPrize,
+    displayPrizeNative,
+    isSolana ? (summaryPrize?.solUsdPrice ?? summaryPrize?.nativeUsdPrice ?? null) : bnbUsd,
+  );
   const policy = summary?.payoutPolicy || getPayoutPolicy(period);
   const playerPoolFromApi = Number(summaryPrize?.playerPrizePoolUsd);
   const cappedPlayerPoolUsd =
     Number.isFinite(playerPoolFromApi) && playerPoolFromApi > 0
       ? playerPoolFromApi
-      : isSolana
-        ? 0
-        : period === "monthly"
-          ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd)
-          : rawGeneratedUsd;
+      : period === "monthly"
+        ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd)
+        : rawGeneratedUsd;
   const charityFromApi = Number(summaryPrize?.charityReserveUsd);
   const charityReserveUsd =
     Number.isFinite(charityFromApi) && charityFromApi > 0
       ? charityFromApi
-      : isSolana
-        ? 0
-        : period === "monthly"
-          ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd)
-          : 0;
+      : period === "monthly"
+        ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd)
+        : 0;
   // Hub "active paid places": use the strongest field size this epoch (any league with entrants).
   const maxLeagueEntrants = Math.max(
         0,
@@ -471,9 +494,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   );
   const selectedStatus = selectedCard?.status || (isSolana ? "live" : undefined);
   const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
-  const showCapNotification = !isSolana && period === "monthly" && capReached;
-  const solanaPendingCopy =
-    "Solana standings are live and separate from BNB. Prize claims stay closed until the SOL league pot is funded.";
+  const showCapNotification = period === "monthly" && capReached;
   const trendMetrics = summary?.trendMetrics;
   const trendBasis = String(trendMetrics?.basis || "live_epoch").replace(/frontend_empty|insufficient_history/gi, "live_epoch");
   const hallOfFame = summary?.hallOfFame;
@@ -551,20 +572,14 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               Prize pool
             </div>
             <div className="mt-2 font-retro text-xl">
-              {isSolana
-                ? "Claims pending"
-                : displayPrizeBnb > 0
-                  ? formatBnb(displayPrizeBnb)
-                  : "No fees yet"}
+              {displayPrizeNative > 0 ? formatNative(displayPrizeNative, nativeSymbol) : "No fees yet"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {isSolana
-                ? "Standings are live. SOL prize claims stay closed until the league pot is funded."
-                : displayPrizeBnb > 0
-                  ? rawGeneratedUsd > 0
-                    ? `≈ ${formatUsd(rawGeneratedUsd)} · league fee share this epoch`
-                    : "BNB pot live · USD estimate unavailable"
-                  : "Waiting for bonding-curve volume in this epoch."}
+              {displayPrizeNative > 0
+                ? rawGeneratedUsd > 0
+                  ? `≈ ${formatUsd(rawGeneratedUsd)} · league fee share this epoch${isSolana ? " · claims closed" : ""}`
+                  : `${nativeSymbol} pot live · USD estimate unavailable${isSolana ? " · claims closed" : ""}`
+                : "Waiting for bonding-curve volume in this epoch."}
             </div>
           </div>
           <div className="mwz-hud-frame p-4">
@@ -577,31 +592,27 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="mwz-hud-frame p-4">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div>
             <div className="mt-2 font-retro text-xl">
-              {isSolana
-                ? "Pending"
-                : rawGeneratedUsd > 0
-                  ? formatUsd(cappedPlayerPoolUsd)
-                  : displayPrizeBnb > 0
-                    ? formatBnb(displayPrizeBnb)
-                    : "—"}
+              {rawGeneratedUsd > 0
+                ? formatUsd(cappedPlayerPoolUsd)
+                : displayPrizeNative > 0
+                  ? formatNative(displayPrizeNative, nativeSymbol)
+                  : "—"}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {isSolana
-                ? "No BNB-derived pool on Solana."
-                : categoryPrizeBnb > 0
-                  ? `This board: ${formatBnb(categoryPrizeBnb)}`
-                  : displayPrizeBnb > 0 && rawGeneratedUsd <= 0
-                    ? "Shown in BNB until USD price is available."
-                    : "Shared across live boards this epoch."}
+              {categoryPrizeNative > 0
+                ? `This board: ${formatNative(categoryPrizeNative, nativeSymbol)}`
+                : displayPrizeNative > 0 && rawGeneratedUsd <= 0
+                  ? `Shown in ${nativeSymbol} until USD price is available.`
+                  : "Shared across live boards this epoch."}
             </div>
           </div>
           <div className="mwz-hud-frame p-4">
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div>
             <div className="mt-2 font-retro text-xl">
-              {isSolana ? "Pending" : period === "monthly" ? formatUsd(charityReserveUsd) : formatUsd(0)}
+              {period === "monthly" ? formatUsd(charityReserveUsd) : formatUsd(0)}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {isSolana ? "Available after Solana prize publication." : "Overflow past monthly player cap (monthly only)."}
+              Overflow past monthly player cap (monthly only).
             </div>
           </div>
           <div className="mwz-hud-frame p-4">
@@ -659,8 +670,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                     league={selectedLeague}
                     rows={rows}
                     status={selectedStatus}
-                    pendingCopy={isSolana ? solanaPendingCopy : selectedCard?.warning || selectedLeague.emptyStateCopy}
+                    pendingCopy={selectedCard?.warning || selectedLeague.emptyStateCopy}
                     warningCopy={selectedCard?.warning}
+                    native={{ decimals: nativeDecimals, symbol: nativeSymbol }}
                   />
                 )}
               </div>
@@ -668,7 +680,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
             <section className="grid gap-5 lg:grid-cols-2">
               <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize breakdown</div><h3 className="mt-1 font-retro text-xl"></h3><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><span className="text-muted-foreground">Minimum winners</span><span>{policy.minWinners}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Paid field</span><span>{Math.round(policy.paidFieldPct * 100)}%</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Curve alpha</span><span>{policy.alpha}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Future option</span><span>20% paid field ready</span></div></div></div>
-              <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Payout curve preview</div><h3 className="mt-1 font-retro text-xl">Top / mid / min paid</h3><div className="mt-4 space-y-3">{previewRanks.length ? previewRanks.map((row) => <div key={row.rank} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2"><div className="flex items-center justify-between gap-3"><span className="font-retro text-sm">Rank #{row.rank}</span><span className="text-sm font-semibold">{formatUsd(row.payoutUsd)}</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-background/70"><div className="h-full bg-accent" style={{ width: `${Math.max(4, row.percentage * 100)}%` }} /></div></div>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana payout curve appears after Solana prize data is published." : "Preview appears when qualified entrants and prize data are available."}</div>}</div></div>
+              <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Payout curve preview</div><h3 className="mt-1 font-retro text-xl">Top / mid / min paid</h3><div className="mt-4 space-y-3">{previewRanks.length ? previewRanks.map((row) => <div key={row.rank} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2"><div className="flex items-center justify-between gap-3"><span className="font-retro text-sm">Rank #{row.rank}</span><span className="text-sm font-semibold">{formatUsd(row.payoutUsd)}</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-background/70"><div className="h-full bg-accent" style={{ width: `${Math.max(4, row.percentage * 100)}%` }} /></div></div>) : <div className="text-sm text-muted-foreground">Preview appears when qualified entrants and prize data are available.</div>}</div></div>
             </section>
           </div>
 

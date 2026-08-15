@@ -721,3 +721,136 @@ export async function ensurePublishedAirdropDrawForEpoch(
     publish: true,
   });
 }
+
+export async function getCurrentAirdropSnapshot(chainId: number) {
+  const solana = Number(chainId) === 101 || Number(chainId) === 102;
+  const tokenSymbol = solana ? "SOL" : "BNB";
+
+  try {
+    const draws = await pool.query(
+      `select *
+         from public.airdrop_draws
+        where chain_id = $1
+        order by published_at desc nulls last, updated_at desc, id desc
+        limit 1`,
+      [chainId],
+    );
+    const draw = draws.rows[0];
+    if (draw) {
+      const mapped = mapDrawRow(draw);
+      return {
+        status: mapped.status || "draft",
+        currentEpochId: mapped.epochId,
+        current: {
+          id: String(mapped.id),
+          rewardType: "airdrop",
+          chain: String(chainId),
+          chainId,
+          tokenSymbol,
+          status: mapped.status,
+          totalAmount: mapped.poolAmount,
+          recipientCount: mapped.winnerCount,
+          claimableCount: mapped.status === "published" ? mapped.winnerCount : 0,
+          claimedCount: 0,
+          failedCount: 0,
+          source: "airdrop_draws",
+          metadata: { ...mapped.configJson, program: mapped.program },
+          createdAt: mapped.createdAt,
+          publishedAt: mapped.publishedAt,
+          closedAt: null,
+        },
+        prizePool: {
+          chain: String(chainId),
+          tokenSymbol,
+          amount: mapped.poolAmount,
+          status: mapped.status,
+        },
+        materializedAt: new Date().toISOString(),
+      };
+    }
+  } catch {
+    // airdrop_draws may not exist yet
+  }
+
+  try {
+    const batches = await pool.query(
+      `select *
+         from public.reward_batches
+        where reward_type = 'airdrop'
+          and chain::text = $1
+        order by coalesce(published_at, created_at) desc, created_at desc
+        limit 1`,
+      [String(chainId)],
+    );
+    const batch = batches.rows[0];
+    if (batch) {
+      const amount = String(batch.total_amount ?? "0");
+      return {
+        status: String(batch.status || "empty"),
+        currentEpochId: Number(batch.metadata?.epochId || 0) || null,
+        current: {
+          id: String(batch.id),
+          rewardType: "airdrop",
+          chain: String(batch.chain ?? chainId),
+          chainId,
+          tokenSymbol: String(batch.token_symbol || tokenSymbol),
+          status: String(batch.status || "pending"),
+          totalAmount: amount,
+          recipientCount: Number(batch.recipient_count || 0),
+          claimableCount: Number(batch.claimable_count || 0),
+          claimedCount: Number(batch.claimed_count || 0),
+          failedCount: Number(batch.failed_count || 0),
+          source: batch.source || "reward_batches",
+          metadata: batch.metadata || {},
+          createdAt: toIso(batch.created_at),
+          publishedAt: toIso(batch.published_at),
+          closedAt: toIso(batch.closed_at),
+        },
+        prizePool: {
+          chain: String(batch.chain ?? chainId),
+          tokenSymbol: String(batch.token_symbol || tokenSymbol),
+          amount,
+          status: String(batch.status || "pending"),
+        },
+        materializedAt: new Date().toISOString(),
+      };
+    }
+  } catch {
+    // reward_batches may not exist yet
+  }
+
+  let estimated = "0";
+  let tradeCount = 0;
+  try {
+    const { rows } = await pool.query(
+      `select coalesce(sum(bnb_amount_raw), 0)::numeric as volume_raw, count(*)::int as trade_count
+         from public.curve_trades
+        where chain_id = $1
+          and block_time >= now() - interval '7 days'`,
+      [chainId],
+    );
+    const volume = BigInt(String(rows[0]?.volume_raw || "0").split(".")[0] || "0");
+    tradeCount = Number(rows[0]?.trade_count || 0);
+    // Display-only estimate: 0.50% of last-7d trade notional (protocol-fee slice, not a funded pot).
+    estimated = ((volume * 50n) / 10_000n).toString();
+  } catch {
+    // ignore
+  }
+
+  return {
+    status: "estimated",
+    currentEpochId: null,
+    current: null,
+    prizePool: {
+      chain: String(chainId),
+      tokenSymbol,
+      amount: estimated,
+      status: estimated === "0" ? "empty" : "estimated",
+    },
+    note:
+      estimated === "0"
+        ? "No published Solana airdrop yet. Claims stay closed."
+        : `Estimated from ${tradeCount} bonding trades in the last 7 days. Not a funded pot — claims stay closed.`,
+    materializedAt: new Date().toISOString(),
+  };
+}

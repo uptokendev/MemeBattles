@@ -3,6 +3,7 @@ import league from './league.js';
 import leagueRecruiter from './leagueRecruiter.js';
 import { calculatePayoutCurve, getPayoutPolicy, getCapMeta } from './leaguePayoutPolicy.js';
 import { resolveBnbUsdPrice } from './lib/bnbUsdPrice.js';
+import { resolveSolUsdPrice } from './lib/solUsdPrice.js';
 
 const LEAGUES = [
   { key: 'perfect_run', title: 'Perfect Run' },
@@ -139,14 +140,23 @@ function firstDefined(...values) {
   return undefined;
 }
 
-function rawToUsd(raw, bnbUsd) {
+function isSolanaChainId(chainId) {
+  return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function nativeDecimals(chainId) {
+  return isSolanaChainId(chainId) ? 9 : 18;
+}
+
+function rawToUsd(raw, nativeUsd, decimals = 18) {
   let whole = 0n;
   try {
     whole = BigInt(String(raw ?? '0'));
   } catch {
     return 0;
   }
-  const usd = Number(whole) / 1e18 * bnbUsd;
+  const scale = 10 ** Number(decimals || 18);
+  const usd = Number(whole) / scale * nativeUsd;
   return Number.isFinite(usd) ? usd : 0;
 }
 
@@ -162,16 +172,16 @@ function sumEntrants(leagues) {
 }
 
 /** @type {{ price: number, source: string }} */
-let lastBnbUsd = { price: 0, source: 'none' };
+let lastNativeUsd = { price: 0, source: 'none', chainId: 0 };
 
-async function ensureBnbUsd() {
-  const resolved = await resolveBnbUsdPrice();
-  lastBnbUsd = { price: resolved.price || 0, source: resolved.source || 'none' };
-  return lastBnbUsd;
+async function ensureNativeUsd(chainId) {
+  const resolved = isSolanaChainId(chainId) ? await resolveSolUsdPrice() : await resolveBnbUsdPrice();
+  lastNativeUsd = { price: resolved.price || 0, source: resolved.source || 'none', chainId: Number(chainId) };
+  return lastNativeUsd;
 }
 
-function readBnbUsd() {
-  return lastBnbUsd.price > 0 ? lastBnbUsd.price : 0;
+function readNativeUsd() {
+  return lastNativeUsd.price > 0 ? lastNativeUsd.price : 0;
 }
 
 function captureJson() {
@@ -217,9 +227,13 @@ async function callLegacyLeague(req, { category, chainId, period, epochOffset, l
   return { statusCode: res.statusCode || 200, payload: body() || {} };
 }
 
-function rankRows(rows, prize, policy) {
+function rankRows(rows, prize, policy, chainId) {
   const safeRows = Array.isArray(rows) ? rows : [];
-  const generatedUsd = rawToUsd(firstDefined(prize?.availablePotRaw, prize?.potRaw), readBnbUsd());
+  const generatedUsd = rawToUsd(
+    firstDefined(prize?.availablePotRaw, prize?.potRaw),
+    readNativeUsd(),
+    nativeDecimals(chainId),
+  );
   const curve = calculatePayoutCurve(safeRows.length, generatedUsd, policy);
 
   return safeRows.map((row, index) => ({
@@ -230,9 +244,9 @@ function rankRows(rows, prize, policy) {
   }));
 }
 
-function normalizeLeagueResult(meta, result, policy) {
+function normalizeLeagueResult(meta, result, policy, chainId) {
   const payload = result?.payload || {};
-  const rows = rankRows(payload.items || payload.rows || [], payload.prize, policy);
+  const rows = rankRows(payload.items || payload.rows || [], payload.prize, policy, chainId);
   const warning = firstDefined(payload.warning, result?.statusCode >= 400 ? payload.error : undefined);
 
   return {
@@ -248,9 +262,12 @@ function normalizeLeagueResult(meta, result, policy) {
   };
 }
 
-function summarizePrize(leagues, period, policy) {
-  const bnbUsd = readBnbUsd();
-  const priceSource = lastBnbUsd.source || 'none';
+function summarizePrize(leagues, period, policy, chainId) {
+  const nativeUsd = readNativeUsd();
+  const priceSource = lastNativeUsd.source || 'none';
+  const decimals = nativeDecimals(chainId);
+  const solana = isSolanaChainId(chainId);
+  const nativeSymbol = solana ? 'SOL' : 'BNB';
   let generatedUsd = 0;
   let totalLeagueFeeRaw = '0';
   const byLeague = {};
@@ -260,7 +277,7 @@ function summarizePrize(leagues, period, policy) {
     if (!prize) continue;
     if (prize.totalLeagueFeeRaw && totalLeagueFeeRaw === '0') totalLeagueFeeRaw = String(prize.totalLeagueFeeRaw);
     const raw = firstDefined(prize.availablePotRaw, prize.potRaw, '0');
-    const usd = rawToUsd(raw, bnbUsd);
+    const usd = rawToUsd(raw, nativeUsd, decimals);
     generatedUsd += usd;
     byLeague[leagueResult.key] = {
       potRaw: prize.potRaw,
@@ -275,20 +292,26 @@ function summarizePrize(leagues, period, policy) {
 
   const cap = getCapMeta(period, generatedUsd, policy);
   return {
-    basis: 'bnb_aggregated_legacy_categories',
+    basis: solana ? 'solana_aggregated_legacy_categories' : 'bnb_aggregated_legacy_categories',
+    nativeSymbol,
+    nativeDecimals: decimals,
     generatedUsd: cap.generatedUsd,
     playerPrizePoolUsd: cap.playerPrizePoolUsd,
     charityReserveUsd: cap.charityReserveUsd,
     monthlyPlayerPrizeCapUsd: cap.monthlyPlayerPrizeCapUsd,
     capApplies: cap.capApplies,
     capReached: cap.capReached,
-    bnbUsdPrice: bnbUsd || null,
-    bnbUsdPriceSource: priceSource,
+    bnbUsdPrice: solana ? null : nativeUsd || null,
+    solUsdPrice: solana ? nativeUsd || null : null,
+    bnbUsdPriceSource: solana ? undefined : priceSource,
+    nativeUsdPrice: nativeUsd || null,
+    nativeUsdPriceSource: priceSource,
     totalLeagueFeeRaw,
     byLeague,
-    warning:
-      bnbUsd > 0
-        ? undefined
+    warning: nativeUsd > 0
+      ? undefined
+      : solana
+        ? 'SOL/USD price unavailable (set SOL_USD_PRICE or allow spot fetch). SOL prize pools still show from curve fees.'
         : 'BNB/USD price unavailable (set BNB_USD_PRICE or allow spot fetch). BNB prize pools still show from curve fees.',
   };
 }
@@ -462,15 +485,14 @@ function buildHallOfFame(history) {
 }
 
 async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = false }) {
-  // Resolve BNB/USD once per request (env override or live spot) so prize USD is go-live ready.
-  await ensureBnbUsd();
+  await ensureNativeUsd(chainId);
   const policy = getPayoutPolicy(period);
   // Live categories first (parallel). History is expensive — only when asked.
   const results = await Promise.all(
     LEAGUES.map(async (leagueMeta) => {
       try {
         const result = await callLegacyLeague(req, { category: leagueMeta.key, chainId, period, epochOffset, limit });
-        return normalizeLeagueResult(leagueMeta, result, policy);
+        return normalizeLeagueResult(leagueMeta, result, policy, chainId);
       } catch (error) {
         console.error(`[api/league/summary] ${leagueMeta.key} failed`, error);
         return { key: leagueMeta.key, title: leagueMeta.title, status: 'error', entrants: 0, rows: [], warning: 'League aggregation failed.' };
@@ -480,7 +502,7 @@ async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, l
 
   const epoch = pickEpoch(results, period, epochOffset);
   const season = buildSeasonMeta({ chain, chainId, period, epochOffset, epoch });
-  const prize = summarizePrize(results, period, policy);
+  const prize = summarizePrize(results, period, policy, chainId);
   const currentLeaders = pickCurrentLeaders(results);
   // History multiplies category fan-out (3 epochs × 6 boards). Keep first paint lean.
   const history = includeHistory ? await buildHistory(req, { chainId, limit }) : { weekly: [], monthly: [] };
@@ -534,14 +556,11 @@ export default async function handler(req, res) {
     if (chain === "solana" && payload) {
       payload.prize = {
         ...(payload.prize || {}),
-        warning: "Solana standings are live. Prize claims stay closed until the SOL league pot is funded.",
+        claimsOpen: false,
+        warning:
+          payload.prize?.warning ||
+          "Solana prize estimate is live from bonding fees. Claims stay closed until the SOL league pot is funded.",
       };
-      if (Array.isArray(payload.leagues)) {
-        payload.leagues = payload.leagues.map((league) => ({
-          ...league,
-          warning: league?.warning || "Standings only. SOL claims open after league payouts are live.",
-        }));
-      }
     }
     return json(res, 200, payload);
   } catch (error) {
