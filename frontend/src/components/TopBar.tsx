@@ -16,6 +16,7 @@ import { warRoomEnabled } from "@/features/postgrad/config";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveWalletKind } from "@/lib/activeWalletChain";
 
 import { usePrepareNotificationCenter } from "@/hooks/usePrepareNotificationCenter";
 
@@ -57,8 +58,17 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const location = useLocation();
   const wallet = useWallet();
   const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
-  const preferEvmWallet = wallet.isConnected && /^\/token\/0x[a-fA-F0-9]{40}/.test(location.pathname);
-  const account = preferEvmWallet ? wallet.account : isSolanaConnected ? (solanaAccount || wallet.account) : wallet.account;
+  // Last connected wallet owns the chrome. Opening a BNB Token Details URL must
+  // not silently swap the TopBar to MetaMask while Phantom is the active session.
+  const walletKind = getActiveWalletKind();
+  const account =
+    walletKind === "solana" && isSolanaConnected
+      ? solanaAccount || wallet.account
+      : walletKind === "bnb" && wallet.isConnected
+        ? wallet.account
+        : isSolanaConnected
+          ? solanaAccount || wallet.account
+          : wallet.account;
   const connected = wallet.isConnected || isSolanaConnected;
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);

@@ -297,6 +297,31 @@ async function getState(chainId: number, cursor: string): Promise<number> {
   return Number(r.rows[0].last_indexed_block);
 }
 
+/** If a campaign cursor is millions of blocks behind, tip-scan still works but
+ *  the normal history pass stays wedged on an Aug-old window and never publishes
+ *  live fills. Jump the cursor to the recent tip so catch-up is finite. */
+async function snapStaleCampaignCursor(
+  chainId: number,
+  campaign: string,
+  head: number,
+  tipBlocks: number,
+): Promise<void> {
+  const cursor = `campaign:${String(campaign || "").toLowerCase()}`;
+  const last = await getState(chainId, cursor);
+  if (last <= 0 || head <= 0) return;
+  if (head - last < 50_000) return;
+  const next = Math.max(0, head - Math.max(3_000, tipBlocks));
+  if (next <= last) return;
+  await setStateMax(chainId, cursor, next);
+  console.warn("[indexer] snapped stale campaign cursor to tip", {
+    chainId,
+    campaign: campaign.toLowerCase(),
+    from: last,
+    to: next,
+    head,
+  });
+}
+
 async function setStateMax(chainId: number, cursor: string, nextBlock: number) {
   // Do NOT allow the state to move backwards (repair jobs may scan earlier windows)
   await pool.query(
@@ -1675,6 +1700,8 @@ export async function runTipScanOnce() {
 
     for (const c of campaigns) {
       if (Date.now() >= deadlineMs) break;
+      await snapStaleCampaignCursor(chain.chainId, c.campaign, head, tipScanBlocks);
+      const campaignDeadline = Math.min(deadlineMs, Date.now() + 7_000);
       for (const tipUrl of tipRpcList) {
         try {
           const tipProvider = createStaticJsonRpcProvider(tipUrl, chain.chainId, { timeoutMs: 8_000 });
@@ -1682,7 +1709,7 @@ export async function runTipScanOnce() {
             advanceCursor: false,
             label: "tip-only",
             tradesOnly: true,
-            deadlineMs,
+            deadlineMs: campaignDeadline,
           });
           break;
         } catch (err) {
@@ -1958,6 +1985,8 @@ async function runIndexerCore(opts: {
           break;
         }
         const campaign = c.campaign;
+        await snapStaleCampaignCursor(chain.chainId, campaign, target, tipScanBlocks);
+        const campaignDeadline = Math.min(deadlineMs || Date.now() + 7_000, Date.now() + 7_000);
         let tipOk = false;
         for (const tipUrl of tipRpcList) {
           try {
@@ -1968,7 +1997,7 @@ async function runIndexerCore(opts: {
               advanceCursor: false,
               label: "tip",
               tradesOnly: true,
-              deadlineMs: deadlineMs || undefined,
+              deadlineMs: campaignDeadline,
             });
             tipOk = true;
             break;
