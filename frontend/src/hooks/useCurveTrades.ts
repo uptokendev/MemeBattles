@@ -73,6 +73,8 @@ type UseCurveTradesOptions = {
   chainId?: number;
   limit?: number;
   reconcileMs?: number;
+  /** ERC-20 mint when the public URL is the token, not the LaunchCampaign. */
+  tokenAddress?: string;
 };
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
@@ -333,7 +335,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       if (!initialLoadedRef.current) setLoading(true);
       let apiRows: any[] = [];
       try {
-        apiRows = await fetchIndexerTrades(campaignAddress, chainId, limit, signal);
+        const tokenAddress = String(opts?.tokenAddress || "").trim();
+        const lookups = [campaignAddress];
+        if (tokenAddress && tokenAddress.toLowerCase() !== String(campaignAddress).toLowerCase()) {
+          lookups.push(tokenAddress);
+        }
+        const pages = await Promise.all(lookups.map((addr) => fetchIndexerTrades(addr, chainId, limit, signal)));
+        apiRows = pages.flat();
         if (signal?.aborted) return;
         if (apiRows.length) {
           applySnapshot(apiRows);
@@ -351,7 +359,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         console.warn("[useCurveTrades] indexer trade API failed", apiError);
       }
 
-      if (isEvmChainId(chainId) && (!apiRows.length || forceOnChainReconcile || ENABLE_ONCHAIN_TRADE_FALLBACK)) {
+      if (isEvmChainId(chainId)) {
         try {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           if (signal?.aborted) return;
@@ -373,7 +381,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [canLoadTrades, campaignAddress, applySnapshot, chainId, limit]);
+  }, [canLoadTrades, campaignAddress, applySnapshot, chainId, limit, opts?.tokenAddress]);
 
   useEffect(() => {
     const ac = new AbortController();

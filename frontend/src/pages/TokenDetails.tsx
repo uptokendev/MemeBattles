@@ -81,7 +81,7 @@ import {
   saveLocalTopazTrades,
 } from "@/lib/localTopazTrades";
 import { fetchTopazTradeReports, reportTopazTrade } from "@/lib/topazTradeReports";
-import { mergeTradePoints, normalizeTradeTxHash, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
+import { isValidTradeTxHash, mergeTradePoints, normalizeTradeTxHash, SYNTHETIC_LOG_INDEX_MIN, tradeDedupeKey } from "@/lib/tradeDedupe";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -373,6 +373,49 @@ function tradeTimestampSeconds(value: unknown): number {
 
 function mergeCurveTradePoints(prev: CurveTradePoint[], next: CurveTradePoint[]) {
   return mergeTradePoints(prev, next);
+}
+
+const BONDING_TRADE_IFACE = new ethers.Interface([
+  "event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost)",
+  "event TokensSold(address indexed seller, uint256 amountIn, uint256 payout)",
+]);
+
+function curvePointsFromBondingReceipt(receipt: any, campaignAddress: string): CurveTradePoint[] {
+  const campaign = String(campaignAddress || "").toLowerCase();
+  if (!campaign || !receipt) return [];
+  const txHash = normalizeTradeTxHash(receipt.hash || receipt.transactionHash);
+  const blockNumber = Number(receipt.blockNumber || 0);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const out: CurveTradePoint[] = [];
+  for (const log of receipt.logs || []) {
+    if (String(log.address || "").toLowerCase() !== campaign) continue;
+    try {
+      const parsed = BONDING_TRADE_IFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
+      if (!parsed) continue;
+      const isSell = parsed.name === "TokensSold";
+      if (parsed.name !== "TokensPurchased" && !isSell) continue;
+      const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
+      const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
+      if (tokensWei <= 0n) continue;
+      out.push({
+        type: isSell ? "sell" : "buy",
+        from: String(isSell ? parsed.args.seller : parsed.args.buyer || "").toLowerCase(),
+        to: campaign,
+        tokensWei,
+        nativeWei,
+        pricePerToken: Number(ethers.formatUnits(tokensWei, 18)) > 0
+          ? Number(ethers.formatUnits(nativeWei, 18)) / Number(ethers.formatUnits(tokensWei, 18))
+          : 0,
+        timestamp,
+        txHash,
+        blockNumber,
+        logIndex: Number(log.index ?? log.logIndex ?? 0),
+      });
+    } catch {
+      // ignore unrelated logs
+    }
+  }
+  return out.filter((point) => isValidTradeTxHash(point.txHash));
 }
 
 function confirmedRowsToCurvePoints(
@@ -1396,6 +1439,7 @@ const TokenDetails = () => {
     {
       chainId: chainIdForStorage,
       enabled: hasValidCampaignAddress,
+      tokenAddress: isSolanaPage ? undefined : String(campaign?.token || campaignAddress || "").trim() || undefined,
     },
   );
   const liveCurvePointsSafe = useMemo<CurveTradePoint[]>(
@@ -1418,7 +1462,13 @@ const TokenDetails = () => {
       const kind = String(detail?.kind || "").toLowerCase();
       const confirmedRaw = String(detail?.campaignAddress || "").trim();
       const confirmedCampaign = isSolanaPage ? confirmedRaw : confirmedRaw.toLowerCase();
-      if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== resolvedCampaignAddress) return;
+      const tokenKey = isSolanaPage
+        ? String(campaign?.token || campaignAddress || "").trim()
+        : String(campaign?.token || campaignAddress || "").trim().toLowerCase();
+      const sameMarket =
+        confirmedCampaign === resolvedCampaignAddress ||
+        (tokenKey && confirmedCampaign === tokenKey);
+      if ((kind !== "buy" && kind !== "sell") || !sameMarket) return;
 
       const points = confirmedRowsToCurvePoints(
         detail?.trades || [],
@@ -1462,7 +1512,7 @@ const TokenDetails = () => {
 
     window.addEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
     return () => window.removeEventListener("memewarzone:txConfirmed", onConfirmed as EventListener);
-  }, [hasValidCampaignAddress, resolvedCampaignAddress, isSolanaPage, chainIdForStorage, tokenDecimals]);
+  }, [hasValidCampaignAddress, resolvedCampaignAddress, isSolanaPage, chainIdForStorage, tokenDecimals, campaign?.token, campaignAddress]);
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
   const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
@@ -3787,10 +3837,14 @@ const toSeconds = (ts: number): number => {
         });
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
+        const immediate = curvePointsFromBondingReceipt(receipt, campaign.campaign);
+        if (immediate.length) setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, immediate));
 
         toast({
           title: "Buy confirmed",
-          description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
+          description: (receipt?.hash || receipt?.transactionHash)
+            ? `Tx: ${String(receipt.hash || receipt.transactionHash).slice(0, 10)}...`
+            : "Transaction confirmed.",
         });
       } else {
         let payoutWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
@@ -3830,10 +3884,14 @@ const toSeconds = (ts: number): number => {
         });
 
         const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
+        const immediate = curvePointsFromBondingReceipt(receipt, campaign.campaign);
+        if (immediate.length) setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, immediate));
 
         toast({
           title: "Sell confirmed",
-          description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
+          description: (receipt?.hash || receipt?.transactionHash)
+            ? `Tx: ${String(receipt.hash || receipt.transactionHash).slice(0, 10)}...`
+            : "Transaction confirmed.",
         });
       }
 

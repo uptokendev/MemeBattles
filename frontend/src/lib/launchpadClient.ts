@@ -446,6 +446,11 @@ async function blockTimestamp(provider: ethers.AbstractProvider, blockNumber?: n
   }
 }
 
+const LIVE_BONDING_TRADE_IFACE = new ethers.Interface([
+  "event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost)",
+  "event TokensSold(address indexed seller, uint256 amountIn, uint256 payout)",
+]);
+
 async function extractReceiptTrades(receipt: any, campaignAddress: string, provider: ethers.AbstractProvider) {
   const normalizedCampaign = normalizeAddress(campaignAddress);
   if (!normalizedCampaign) return [];
@@ -455,7 +460,12 @@ async function extractReceiptTrades(receipt: any, campaignAddress: string, provi
   for (const log of receipt?.logs ?? []) {
     if (normalizeAddress(log?.address) !== normalizedCampaign) continue;
     try {
-      const parsed = CAMPAIGN_INTERFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
+      let parsed = null as ethers.LogDescription | null;
+      try {
+        parsed = LIVE_BONDING_TRADE_IFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
+      } catch {
+        parsed = CAMPAIGN_INTERFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
+      }
       if (!parsed || (parsed.name !== "TokensPurchased" && parsed.name !== "TokensSold")) continue;
       const isSell = parsed.name === "TokensSold";
       trades.push({
