@@ -43,6 +43,20 @@ pub const BPS_DENOMINATOR: u16 = 10_000;
 pub const LOCKED_BUY_FEE_BPS: u16 = 200;
 pub const LOCKED_SELL_FEE_BPS: u16 = 200;
 pub const LOCKED_FINALIZE_FEE_BPS: u16 = 200;
+/// Carved from the 200 bps protocol fee — not an extra tax on the trader.
+pub const LEAGUE_FEE_BPS: u16 = 75;
+pub const LEAGUE_VAULT_SEED: &[u8] = b"league_vault";
+pub const AIRDROP_VAULT_SEED: &[u8] = b"airdrop_vault";
+pub const MONTHLY_LEAGUE_VAULT_SEED: &[u8] = b"monthly_league_vault";
+pub const RECRUITER_VAULT_SEED: &[u8] = b"recruiter_vault";
+pub const SQUAD_VAULT_SEED: &[u8] = b"squad_vault";
+pub const PROTOCOL_VAULT_SEED: &[u8] = b"protocol_vault";
+pub const ROUTE_KIND_TRADE: u8 = 0;
+pub const ROUTE_PROFILE_UNLINKED: u8 = 1;
+
+pub fn rewards_treasury_program_id() -> Pubkey {
+    pubkey!("2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX")
+}
 pub const LOCKED_CREATOR_POST_FINALIZE_BPS: u16 = 2_000;
 pub const LOCKED_LIQUIDITY_POST_FINALIZE_BPS: u16 = 8_000;
 
@@ -1574,4 +1588,6 @@ pub enum LaunchpadError {
     GraduationPriceDrift,
     #[msg("Bonding curve is closed after the graduation threshold. Awaiting Meteora.")]
     CurveClosed,
+    #[msg("League or airdrop vault PDA is missing or does not match the rewards treasury.")]
+    InvalidRewardsVault,
 }

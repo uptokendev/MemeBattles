@@ -33,6 +33,7 @@ export type SolanaTradeAuthResponse = {
     deadline: string;
     nonce: number[];
     nativeTargetLamports?: string;
+    routeProfile?: number;
   };
   accounts: {
     trader: string;
@@ -47,6 +48,13 @@ export type SolanaTradeAuthResponse = {
     instructions: string;
     tokenProgram: string;
     systemProgram: string;
+    leagueVault?: string | null;
+    airdropVault?: string | null;
+    monthlyLeagueVault?: string | null;
+    recruiterVault?: string | null;
+    squadVault?: string | null;
+    protocolVault?: string | null;
+    rewardsTreasuryProgramId?: string | null;
   };
   authorization: {
     digestHex: string;
@@ -453,6 +461,16 @@ export async function submitSolanaTradeV1(
     { pubkey: new PublicKey(a.tokenProgram || TOKEN_PROGRAM), isSigner: false, isWritable: false },
     { pubkey: new PublicKey(a.systemProgram || SYSTEM_PROGRAM), isSigner: false, isWritable: false },
   ];
+  if (a.leagueVault && a.airdropVault && a.monthlyLeagueVault && a.recruiterVault && a.squadVault && a.protocolVault) {
+    keys.push(
+      { pubkey: new PublicKey(a.leagueVault), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(a.airdropVault), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(a.monthlyLeagueVault), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(a.recruiterVault), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(a.squadVault), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(a.protocolVault), isSigner: false, isWritable: true },
+    );
+  }
 
   const tradeIx = new TransactionInstruction({
     programId: new PublicKey(auth.programId),

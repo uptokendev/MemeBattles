@@ -124,6 +124,24 @@ export async function submitLeagueClaim(params: {
       amountRaw: string;
       proof: string[];
     }
+  | {
+      ok: true;
+      mode: "solana_treasury";
+      programId: string;
+      vaultAddress: string;
+      configAddress: string;
+      epochAddress: string;
+      claimReceiptAddress: string;
+      periodCode: number;
+      epochStartSec: number;
+      epochTotal: string;
+      root: string;
+      categoryHash: string;
+      recipient: string;
+      rank: number;
+      amountRaw: string;
+      proof: string[];
+    }
 > {
   const { apiFetch } = await import("@/lib/apiBase");
   const r = await apiFetch(`/api/league`, {

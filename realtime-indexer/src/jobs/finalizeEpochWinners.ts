@@ -34,6 +34,19 @@ function readBps(raw: any, def: number) {
   return Math.trunc(n);
 }
 
+function isSolanaChain(chainId: number) {
+  return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function sqlWallet(expr: string, chainId: number) {
+  return isSolanaChain(chainId) ? expr : `lower(${expr})`;
+}
+
+function preserveRecipient(value: unknown, chainId: number) {
+  const raw = String(value || "").trim();
+  return isSolanaChain(chainId) ? raw : raw.toLowerCase();
+}
+
 function startOfUtcDay(d: Date) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
@@ -189,17 +202,17 @@ async function leaderboard(
       )
       SELECT creator_address as recipient, duration_seconds
       FROM grads
-      WHERE unique_buyers >= 25
+      WHERE unique_buyers >= $5
       ORDER BY duration_seconds ASC NULLS LAST
       LIMIT $4
       `,
-      [chainId, epochStartIso, epochEndIso, limit]
+      [chainId, epochStartIso, epochEndIso, limit, isSolanaChain(chainId) || chainId === 97 ? 0 : 25]
     );
 
     return rows
       .filter((r: any) => r.recipient)
       .map((r: any) => ({
-        recipient: String(r.recipient).toLowerCase(),
+        recipient: preserveRecipient(r.recipient, chainId),
         score: BigInt(String(r.duration_seconds ?? "0")),
         meta: { duration_seconds: Number(r.duration_seconds) }
       }));
@@ -247,7 +260,7 @@ async function leaderboard(
     return rows
       .filter((r: any) => r.recipient)
       .map((r: any) => ({
-        recipient: String(r.recipient).toLowerCase(),
+        recipient: preserveRecipient(r.recipient, chainId),
         score: BigInt(String(r.duration_seconds ?? "0")),
         meta: { duration_seconds: Number(r.duration_seconds) }
       }));
@@ -257,7 +270,7 @@ async function leaderboard(
     // Largest single buy during epoch; winner is the buyer.
     const { rows } = await pool.query(
       `
-      SELECT lower(t.wallet) as recipient,
+      SELECT ${sqlWallet("t.wallet", chainId)} as recipient,
              t.bnb_amount_raw::numeric(78,0) as score_raw,
              t.tx_hash,
              t.block_number,
@@ -303,7 +316,7 @@ async function leaderboard(
           AND status='confirmed'
         GROUP BY chain_id, campaign_address
       )
-      SELECT lower(c.creator_address) as recipient,
+      SELECT ${sqlWallet("c.creator_address", chainId)} as recipient,
              v.votes_count as score,
              v.unique_voters,
              v.amount_raw_sum,
@@ -345,13 +358,13 @@ async function leaderboard(
       `
       WITH flows AS (
         SELECT
-          lower(t.wallet) as wallet,
+          ${sqlWallet("t.wallet", chainId)} as wallet,
           sum(case when t.side='sell' then (t.bnb_amount_raw::numeric) else -(t.bnb_amount_raw::numeric) end)::numeric(78,0) as pnl_raw
         FROM public.curve_trades t
         WHERE t.chain_id=$1
           AND t.block_time >= $2::timestamptz
           AND t.block_time <  $3::timestamptz
-        GROUP BY lower(t.wallet)
+        GROUP BY ${sqlWallet("t.wallet", chainId)}
       )
       SELECT wallet as recipient, pnl_raw
       FROM flows
@@ -364,7 +377,7 @@ async function leaderboard(
     return rows
       .filter((r: any) => r.recipient)
       .map((r: any) => ({
-        recipient: String(r.recipient),
+        recipient: preserveRecipient(r.recipient, chainId),
         score: BigInt(String(r.pnl_raw ?? "0")),
         meta: { pnl_raw: String(r.pnl_raw ?? "0") }
       }));
@@ -478,7 +491,7 @@ async function main() {
   // LEAGUE_CHAINS is an optional runtime-only knob for cron execution.
   // It's not part of the strict ENV typing, so read directly from process.env.
   // Example: "97,56"
-  const chains = String(process.env.LEAGUE_CHAINS || "97,56")
+  const chains = String(process.env.LEAGUE_CHAINS || "97,56,101")
     .split(",")
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n));

@@ -4,9 +4,11 @@ skip-lint = false
 
 [programs.localnet]
 memewarzone_solana = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt"
+mwz_rewards_treasury = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX"
 
 [programs.devnet]
 memewarzone_solana = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt"
+mwz_rewards_treasury = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX"
 
 [registry]
 url = "https://api.apr.dev"

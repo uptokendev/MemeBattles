@@ -102,6 +102,22 @@ pub struct TokensSold {
     pub net_raised_after: u64,
 }
 
+#[event]
+pub struct FeeSlicesRouted {
+    pub campaign: Pubkey,
+    pub trader: Pubkey,
+    pub side: u8,
+    pub route_profile: u8,
+    pub gross_lamports: u64,
+    pub fee_lamports: u64,
+    pub weekly_league_lamports: u64,
+    pub monthly_league_lamports: u64,
+    pub recruiter_lamports: u64,
+    pub airdrop_lamports: u64,
+    pub squad_lamports: u64,
+    pub protocol_lamports: u64,
+}
+
 // ── Curve math ──────────────────────────────────────────────────────────────
 //
 // economics_version V1 (legacy): cost = n*base + slope*(sold*n + n*(n-1)/2)
@@ -748,6 +764,15 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             ctx.accounts.system_program.to_account_info(),
         ],
     )?;
+    maybe_route_fee_slices(
+        ctx.remaining_accounts,
+        &ctx.accounts.sol_vault.to_account_info(),
+        campaign_key,
+        trader,
+        TRADE_SIDE_BUY,
+        net,
+        crate::ROUTE_PROFILE_UNLINKED,
+    )?;
 
     let bump_seed = [campaign_bump];
     let seeds: &[&[u8]] = &[CAMPAIGN_SEED, campaign_id.as_ref(), &bump_seed];
@@ -960,6 +985,15 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             .checked_add(lamports_out)
             .ok_or(LaunchpadError::MathOverflow)?;
     }
+    maybe_route_fee_slices(
+        ctx.remaining_accounts,
+        &ctx.accounts.sol_vault.to_account_info(),
+        campaign_key,
+        trader,
+        TRADE_SIDE_SELL,
+        gross,
+        crate::ROUTE_PROFILE_UNLINKED,
+    )?;
 
     let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
     let mut slice: &[u8] = &data;
@@ -995,6 +1029,130 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+fn maybe_route_fee_slices(
+    remaining: &[AccountInfo],
+    sol_vault: &AccountInfo,
+    campaign: Pubkey,
+    trader: Pubkey,
+    side: u8,
+    gross_lamports: u64,
+    route_profile: u8,
+) -> Result<()> {
+    // Full BNB table needs weekly, airdrop, monthly, recruiter, squad, protocol.
+    if remaining.len() < 6 {
+        return Ok(());
+    }
+    let fee_lamports = calculate_fee(gross_lamports, crate::LOCKED_BUY_FEE_BPS)?;
+    if fee_lamports == 0 {
+        return Ok(());
+    }
+    let amounts = preview_bnb_route(crate::ROUTE_KIND_TRADE, route_profile, fee_lamports)?;
+    let treasury = crate::rewards_treasury_program_id();
+    let expected = [
+        Pubkey::find_program_address(&[crate::LEAGUE_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::AIRDROP_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::MONTHLY_LEAGUE_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::RECRUITER_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::SQUAD_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::PROTOCOL_VAULT_SEED], &treasury).0,
+    ];
+    let slices = [
+        amounts.weekly_league,
+        amounts.airdrop,
+        amounts.monthly_league,
+        amounts.recruiter,
+        amounts.squad,
+        amounts.protocol,
+    ];
+    let mut need = 0u64;
+    for i in 0..6 {
+        require_keys_eq!(*remaining[i].key, expected[i], LaunchpadError::InvalidRewardsVault);
+        require!(remaining[i].is_writable, LaunchpadError::InvalidRewardsVault);
+        require!(remaining[i].lamports() > 0, LaunchpadError::InvalidRewardsVault);
+        need = need
+            .checked_add(slices[i])
+            .ok_or(LaunchpadError::MathOverflow)?;
+    }
+    if need == 0 {
+        return Ok(());
+    }
+    {
+        let mut vault_lamports = sol_vault.try_borrow_mut_lamports()?;
+        **vault_lamports = vault_lamports
+            .checked_sub(need)
+            .ok_or(LaunchpadError::MathOverflow)?;
+    }
+    for i in 0..6 {
+        if slices[i] == 0 {
+            continue;
+        }
+        let mut dest = remaining[i].try_borrow_mut_lamports()?;
+        **dest = dest
+            .checked_add(slices[i])
+            .ok_or(LaunchpadError::MathOverflow)?;
+    }
+
+    emit!(FeeSlicesRouted {
+        campaign,
+        trader,
+        side,
+        route_profile,
+        gross_lamports,
+        fee_lamports,
+        weekly_league_lamports: amounts.weekly_league,
+        monthly_league_lamports: amounts.monthly_league,
+        recruiter_lamports: amounts.recruiter,
+        airdrop_lamports: amounts.airdrop,
+        squad_lamports: amounts.squad,
+        protocol_lamports: amounts.protocol,
+    });
+    Ok(())
+}
+
+struct BnbRouteAmounts {
+    weekly_league: u64,
+    monthly_league: u64,
+    recruiter: u64,
+    airdrop: u64,
+    squad: u64,
+    protocol: u64,
+}
+
+fn preview_bnb_route(kind: u8, profile: u8, fee_amount: u64) -> Result<BnbRouteAmounts> {
+    let (league_bps, recruiter_bps, airdrop_bps, squad_bps) = if kind == crate::ROUTE_KIND_TRADE {
+        match profile {
+            0 => (3750u16, 1250u16, 0u16, 250u16),
+            2 => (3750, 1500, 0, 250),
+            _ => (3750, 0, 1500, 0),
+        }
+    } else {
+        match profile {
+            0 => (0u16, 1500u16, 0u16, 250u16),
+            2 => (0, 1750, 0, 250),
+            _ => (0, 0, 1750, 0),
+        }
+    };
+    let league = calculate_fee(fee_amount, league_bps)?;
+    let weekly = calculate_fee(league, 3_000)?;
+    let monthly = league.saturating_sub(weekly);
+    let recruiter = calculate_fee(fee_amount, recruiter_bps)?;
+    let airdrop = calculate_fee(fee_amount, airdrop_bps)?;
+    let squad = calculate_fee(fee_amount, squad_bps)?;
+    let used = weekly
+        .saturating_add(monthly)
+        .saturating_add(recruiter)
+        .saturating_add(airdrop)
+        .saturating_add(squad);
+    Ok(BnbRouteAmounts {
+        weekly_league: weekly,
+        monthly_league: monthly,
+        recruiter,
+        airdrop,
+        squad,
+        protocol: fee_amount.saturating_sub(used),
+    })
+}
 
 fn validate_trade_risk_profile(risk: &RiskProfile, trader: Pubkey) -> Result<()> {
     require_keys_eq!(risk.wallet, trader, LaunchpadError::InvalidRiskProfile);

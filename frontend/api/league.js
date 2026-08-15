@@ -1,6 +1,17 @@
+import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../server/http.js";
+import {
+  buildMerkleProof as buildSolanaMerkleProof,
+  buildMerkleRoot as buildSolanaMerkleRoot,
+  categoryHashBytes,
+  deriveLeagueClaimPda,
+  deriveLeagueEpochPda,
+  deriveRewardsVaults,
+  leagueLeaf,
+  periodCode as solanaPeriodCode,
+} from "./solanaLeagueMerkle.js";
 
 // League categories (LOCKED):
 // - perfect_run (monthly only)
@@ -22,6 +33,58 @@ const PERIOD_SET = new Set(["weekly", "monthly", "all", "all_time", "alltime"]);
 
 function isSolanaLeagueChain(chainId) {
   return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Decode(value) {
+  const raw = String(value || "").trim();
+  let n = 0n;
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(index);
+  }
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
+  let leading = 0;
+  for (const char of raw) {
+    if (char !== "1") break;
+    leading += 1;
+  }
+  if (leading) out = Buffer.concat([Buffer.alloc(leading), out]);
+  return out;
+}
+
+function verifySolanaLeagueSignature(address, message, signature) {
+  try {
+    const publicKeyBytes = base58Decode(address);
+    if (publicKeyBytes.length !== 32) return false;
+    let signatureBytes;
+    const sig = String(signature || "").trim();
+    if (/^[1-9A-HJ-NP-Za-km-z]+$/.test(sig) && sig.length >= 64) {
+      signatureBytes = base58Decode(sig);
+    } else {
+      signatureBytes = Buffer.from(sig, "base64");
+    }
+    if (signatureBytes.length !== 64) return false;
+    const keyObject = crypto.createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]),
+      format: "der",
+      type: "spki",
+    });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+  } catch {
+    return false;
+  }
+}
+
+function walletsEqual(a, b, solana) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  return solana ? left === right : left.toLowerCase() === right.toLowerCase();
 }
 
 function sqlWalletNeq(left, right, solana) {
@@ -176,11 +239,12 @@ async function getEpochStats(chainId, periodNorm, epochStartIso, rangeEndIso) {
 // ---------------------------
 
 function buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce }) {
+  const addr = isSolanaLeagueChain(chainId) ? String(recipient).trim() : String(recipient).toLowerCase();
   return [
     "MemeWarzone League",
     "Action: LEAGUE_CLAIM",
     `ChainId: ${chainId}`,
-    `Recipient: ${String(recipient).toLowerCase()}`,
+    `Recipient: ${addr}`,
     `Period: ${period}`,
     `EpochStart: ${epochStart}`,
     `Category: ${category}`,
@@ -565,14 +629,18 @@ export default async function handler(req, res) {
       const epochStart = String(b.epochStart ?? "").trim();
       const category = String(b.category ?? "").toLowerCase().trim();
       const rank = Number(b.rank);
-      const recipient = String(b.recipient ?? b.address ?? "").toLowerCase().trim();
+      const rawRecipient = String(b.recipient ?? b.address ?? "").trim();
+      const solanaClaim = isSolanaLeagueChain(chainId);
+      const recipient = solanaClaim ? rawRecipient : rawRecipient.toLowerCase();
       const nonce = String(b.nonce ?? "");
       const signature = String(b.signature ?? "");
 
       const txHash = String(b.txHash ?? "").trim();
 
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(recipient)) return json(res, 400, { error: "Invalid recipient" });
+      if (solanaClaim ? !isSolanaAddress(recipient) : !isAddress(recipient)) {
+        return json(res, 400, { error: "Invalid recipient" });
+      }
       if (!(period === "weekly" || period === "monthly")) return json(res, 400, { error: "Invalid period" });
       if (!CATEGORY_SET.has(category)) return json(res, 400, { error: "Invalid category" });
       if (!Number.isFinite(rank) || rank < 1 || rank > 5) return json(res, 400, { error: "Invalid rank" });
@@ -580,16 +648,26 @@ export default async function handler(req, res) {
       if (!nonce) return json(res, 400, { error: "Nonce missing" });
       if (!signature) return json(res, 400, { error: "Signature missing" });
       if (action === "record") {
-        if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return json(res, 400, { error: "Invalid txHash" });
+        const evmTx = /^0x[0-9a-fA-F]{64}$/.test(txHash);
+        const solTx = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(txHash);
+        if (!txHash || (solanaClaim ? !solTx : !evmTx)) return json(res, 400, { error: "Invalid txHash" });
       }
       if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 
       const msg = buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce });
-      const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
-      if (recovered !== recipient) return json(res, 401, { error: "Invalid signature" });
+      if (solanaClaim) {
+        const ok = verifySolanaLeagueSignature(recipient, msg, signature);
+        if (!ok) return json(res, 401, { error: "Invalid signature" });
+      } else {
+        const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
+        if (recovered !== recipient) return json(res, 401, { error: "Invalid signature" });
+      }
 
-      const vaultAddress = getTreasuryVaultV2Address(chainId);
-      if (!isAddress(vaultAddress)) return json(res, 500, { error: "Server misconfigured: bad TreasuryVaultV2 address" });
+      if (!solanaClaim) {
+        const vaultAddress = getTreasuryVaultV2Address(chainId);
+        if (!isAddress(vaultAddress)) return json(res, 500, { error: "Server misconfigured: bad TreasuryVaultV2 address" });
+      }
+      const vaultAddress = solanaClaim ? deriveRewardsVaults().leagueVault : getTreasuryVaultV2Address(chainId);
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
@@ -618,7 +696,7 @@ export default async function handler(req, res) {
           await client.query("ROLLBACK");
           return json(res, 404, { error: "Winner not found" });
         }
-        if (String(w.recipientAddress ?? "").toLowerCase() !== recipient) {
+        if (!walletsEqual(w.recipientAddress, recipient, solanaClaim)) {
           await client.query("ROLLBACK");
           return json(res, 403, { error: "Not the winner" });
         }
@@ -690,21 +768,32 @@ export default async function handler(req, res) {
             const row = arows[i];
             const rowCat = String(row.category || "").toLowerCase().trim();
             const rowRank = Number(row.rank);
-            const rowRecipient = String(row.recipientAddress || "").toLowerCase();
+            const rowRecipient = solanaClaim
+              ? String(row.recipientAddress || "").trim()
+              : String(row.recipientAddress || "").toLowerCase();
             const rowAmt = BigInt(String(row.amountRaw));
             epochTotal += rowAmt;
 
-            const rowLeaf = leafHash({
-              epochId: eid,
-              categoryHash: categoryHashFromString(rowCat),
-              rank: rowRank,
-              recipient: rowRecipient,
-              amountRaw: rowAmt,
-            });
+            const rowLeaf = solanaClaim
+              ? leagueLeaf({
+                  epochStartSec,
+                  period,
+                  category: rowCat,
+                  rank: rowRank,
+                  recipient: rowRecipient,
+                  amountRaw: rowAmt,
+                })
+              : leafHash({
+                  epochId: eid,
+                  categoryHash: categoryHashFromString(rowCat),
+                  rank: rowRank,
+                  recipient: rowRecipient,
+                  amountRaw: rowAmt,
+                });
 
             leaves.push(rowLeaf);
 
-            if (rowCat === category && rowRank === rank && rowRecipient === recipient) {
+            if (rowCat === category && rowRank === rank && walletsEqual(rowRecipient, recipient, solanaClaim)) {
               leafIndex = i;
             }
           }
@@ -714,8 +803,8 @@ export default async function handler(req, res) {
             return json(res, 500, { error: "Leaf not found (winner mismatch)" });
           }
 
-          const root = buildMerkleRoot(leaves);
-          const proof = buildMerkleProof(leaves, leafIndex);
+          const root = solanaClaim ? buildSolanaMerkleRoot(leaves) : buildMerkleRoot(leaves);
+          const proof = solanaClaim ? buildSolanaMerkleProof(leaves, leafIndex) : buildMerkleProof(leaves, leafIndex);
 
           // Record the claim request for UX/audit, but do NOT mark paid here.
           await client.query(
@@ -727,6 +816,27 @@ export default async function handler(req, res) {
           );
 
           await client.query("COMMIT");
+          if (solanaClaim) {
+            const vaults = deriveRewardsVaults();
+            return json(res, 200, {
+              ok: true,
+              mode: "solana_treasury",
+              programId: vaults.programId,
+              vaultAddress: vaults.leagueVault,
+              configAddress: vaults.config,
+              epochAddress: deriveLeagueEpochPda(period, epochStartSec),
+              claimReceiptAddress: deriveLeagueClaimPda(period, epochStartSec, category, rank),
+              periodCode: solanaPeriodCode(period),
+              epochStartSec,
+              epochTotal: epochTotal.toString(),
+              root,
+              categoryHash: `0x${categoryHashBytes(category).toString("hex")}`,
+              recipient,
+              rank,
+              amountRaw: String(w.amountRaw),
+              proof,
+            });
+          }
           return json(res, 200, {
             ok: true,
             mode: "merkle",

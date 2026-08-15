@@ -112,7 +112,8 @@ export function useProfileRewards({
         toast.error("Connect the winning wallet to claim this prize.");
         return null;
       }
-      if (!wallet?.signer) {
+      const solana = Number(chainId) === 101 || Number(chainId) === 102;
+      if (!solana && !wallet?.signer) {
         toast.error("Wallet signer is unavailable. Reconnect and try again.");
         return null;
       }
@@ -149,7 +150,7 @@ export function useProfileRewards({
           await tx.wait();
           txHash = tx.hash;
         } else {
-          const nonce = await requestNonce(chainId, account.toLowerCase());
+          const nonce = await requestNonce(chainId, account);
           const message = buildLeagueClaimMessage({
             chainId,
             recipient: account,
@@ -159,7 +160,13 @@ export function useProfileRewards({
             rank: reward.rank,
             nonce,
           });
-          const signature = await wallet.signer.signMessage(message);
+          let signature = "";
+          if (solana) {
+            const { signSolanaMessage } = await import("@/lib/solanaWallet");
+            signature = (await signSolanaMessage(message, account)).signature;
+          } else {
+            signature = await wallet.signer.signMessage(message);
+          }
           const prepared = await submitLeagueClaim({
             chainId,
             period: reward.period,
@@ -171,7 +178,21 @@ export function useProfileRewards({
             signature,
           });
 
-          if ("mode" in prepared && prepared.mode === "merkle") {
+          if ("mode" in prepared && prepared.mode === "solana_treasury") {
+            const { submitSolanaLeagueClaim } = await import("@/lib/solanaLeagueClaim");
+            txHash = await submitSolanaLeagueClaim(prepared);
+            await recordLeagueClaimTx({
+              chainId,
+              period: reward.period,
+              epochStart: reward.epochStart,
+              category: reward.category,
+              rank: reward.rank,
+              recipient: account,
+              nonce,
+              signature,
+              txHash,
+            });
+          } else if ("mode" in prepared && prepared.mode === "merkle") {
             const treasury = new (await import("ethers")).ethers.Contract(
               prepared.vaultAddress,
               [
@@ -216,7 +237,7 @@ export function useProfileRewards({
             eyebrow: "Reward secured",
             title: "Victory Unlocked",
             subtitle: "Your reward is secured and your trophy is entering the League Cabinet.",
-            currency: "BNB",
+            currency: solana ? "SOL" : "BNB",
             destinationLabel: "View Cabinet",
             destinationPath: `/profile/${account}`,
             destinationHash: "league-cabinet",

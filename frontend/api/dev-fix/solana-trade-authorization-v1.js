@@ -42,6 +42,9 @@ import {
 
 const TRADE_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_TRADE_V1", "utf8");
 const TRADE_AUTH_SCHEMA_VERSION = 2;
+const ROUTE_PROFILE_LINKED = 0;
+const ROUTE_PROFILE_UNLINKED = 1;
+const ROUTE_PROFILE_OG = 2;
 const TRADE_SIDE_BUY = 1;
 const TRADE_SIDE_SELL = 2;
 const DEFAULT_AUTH_TTL_SECONDS = 5 * 60;
@@ -50,6 +53,44 @@ const TRADE_AUTH_SEED = Buffer.from("trade-auth", "utf8");
 const TOKEN_VAULT_SEED = Buffer.from("token-vault", "utf8");
 const SOL_VAULT_SEED = Buffer.from("sol-vault", "utf8");
 const ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const REWARDS_TREASURY_PROGRAM_ID = String(
+  process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX",
+).trim();
+const LEAGUE_VAULT_SEED = Buffer.from("league_vault", "utf8");
+const AIRDROP_VAULT_SEED = Buffer.from("airdrop_vault", "utf8");
+
+function deriveRewardsVaults() {
+  if (!REWARDS_TREASURY_PROGRAM_ID) return { leagueVault: null, airdropVault: null, programId: "" };
+  const pid = REWARDS_TREASURY_PROGRAM_ID;
+  return {
+    programId: pid,
+    leagueVault: findProgramAddressSync([LEAGUE_VAULT_SEED], pid).publicKey,
+    airdropVault: findProgramAddressSync([AIRDROP_VAULT_SEED], pid).publicKey,
+    monthlyLeagueVault: findProgramAddressSync([Buffer.from("monthly_league_vault")], pid).publicKey,
+    recruiterVault: findProgramAddressSync([Buffer.from("recruiter_vault")], pid).publicKey,
+    squadVault: findProgramAddressSync([Buffer.from("squad_vault")], pid).publicKey,
+    protocolVault: findProgramAddressSync([Buffer.from("protocol_vault")], pid).publicKey,
+  };
+}
+
+async function resolveRouteProfile(walletAddress) {
+  if (!pool || !walletAddress) return ROUTE_PROFILE_UNLINKED;
+  try {
+    const { rows } = await pool.query(
+      `select r.is_og
+         from public.wallet_recruiter_links l
+         join public.recruiters r
+           on r.id = l.recruiter_id
+        where l.wallet_address = $1
+        limit 1`,
+      [walletAddress],
+    );
+    if (!rows[0]) return ROUTE_PROFILE_UNLINKED;
+    return rows[0].is_og ? ROUTE_PROFILE_OG : ROUTE_PROFILE_LINKED;
+  } catch {
+    return ROUTE_PROFILE_UNLINKED;
+  }
+}
 
 class SolanaTradeAuthorizationError extends Error {
   constructor(message, { code = "SOLANA_TRADE_AUTHORIZATION_ERROR", httpStatus = 409, cause = null } = {}) {
@@ -627,6 +668,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
     }
     assertCurveOpen(curve, eligibilityTargetLamports);
     const signedNativeTargetLamports = side === TRADE_SIDE_BUY ? eligibilityTargetLamports : 0n;
+    const routeProfile = await resolveRouteProfile(traderAddress);
 
     const digest = buildTradeAuthorizationDigest({
       programId,
@@ -639,8 +681,10 @@ export async function solanaTradeAuthorizationV1(req, res) {
       deadline,
       nonce,
       nativeTargetLamports: signedNativeTargetLamports,
+      routeProfile,
     });
     const signature = signer.sign(digest);
+    const rewardsVaults = deriveRewardsVaults();
 
     return json(res, 200, {
       schemaVersion: TRADE_AUTH_SCHEMA_VERSION,
@@ -660,6 +704,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
         deadline: deadline.toString(),
         nonce: Array.from(nonce),
         nativeTargetLamports: signedNativeTargetLamports.toString(),
+        routeProfile,
       },
       accounts: {
         trader: traderAddress,
@@ -677,6 +722,13 @@ export async function solanaTradeAuthorizationV1(req, res) {
         instructions: SYSVAR_INSTRUCTIONS_ID,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SYSTEM_PROGRAM_ID,
+        leagueVault: rewardsVaults.leagueVault,
+        airdropVault: rewardsVaults.airdropVault,
+        monthlyLeagueVault: rewardsVaults.monthlyLeagueVault,
+        recruiterVault: rewardsVaults.recruiterVault,
+        squadVault: rewardsVaults.squadVault,
+        protocolVault: rewardsVaults.protocolVault,
+        rewardsTreasuryProgramId: rewardsVaults.programId,
       },
       authorization: {
         signedMessageMode: "sha256_canonical_payload",

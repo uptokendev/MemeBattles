@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "programs/memewarzone_solana",
+  "programs/mwz_rewards_treasury",
 ]
 resolver = "2"
 
