@@ -212,17 +212,7 @@ const TokenDetailsEntry = () => {
     });
   }, [cachedCampaignAddress, curveLookupAddress, isSolanaRoute, resolvedCampaignAddress, routeId]);
 
-  if (!isSolanaRoute) return <TokenDetails />;
-
-  if (!campaignResolved || !curveResolved) {
-    return (
-      <div className="mx-auto flex min-h-[55vh] max-w-6xl items-center justify-center px-4 text-sm text-muted-foreground">
-        Loading Solana token...
-      </div>
-    );
-  }
-
-  return <TokenDetails />;
+  return <TokenDetails key={routeId || (isSolanaRoute ? "solana" : "evm")} />;
 };
 
 export default TokenDetailsEntry;

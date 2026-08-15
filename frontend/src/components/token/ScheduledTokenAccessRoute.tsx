@@ -5,7 +5,8 @@ import { Clock3, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { isSolanaTokenRouteId } from "@/lib/tokenDetailsPath";
 import { fetchPublicCampaignLifecycleDrafts, timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 
 function sameAddress(a?: string | null, b?: string | null) {
@@ -37,8 +38,10 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
 
   const chainId = useMemo(() => {
     const configured = Number(new URLSearchParams(location.search).get("chainId") || 0);
-    return configured > 0 ? configured : Number(getActiveChainId(wallet.chainId));
-  }, [location.search, wallet.chainId]);
+    if (configured > 0) return configured;
+    if (isSolanaTokenRouteId(campaignAddress)) return SOLANA_CHAIN_ID;
+    return Number(getActiveChainId(wallet.chainId));
+  }, [campaignAddress, location.search, wallet.chainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +67,15 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
   }, [campaignAddress, chainId]);
 
   const launchAt = timestampSeconds(draft?.scheduledLaunchAt);
-  const restricted = Boolean(draft && launchAt && launchAt > Math.floor(nowMs / 1000));
+  const draftStatus = String(draft?.status || "").toLowerCase();
+  // Only unpublished timed launches are gated. Deployed / DEX coins must open
+  // TokenDetails even if an old scheduled_launch_at row is still hanging around.
+  const restricted = Boolean(
+    draft &&
+      draftStatus === "scheduled" &&
+      launchAt &&
+      launchAt > Math.floor(nowMs / 1000),
+  );
   const isCreator =
     sameAddress(wallet.account, draft?.creatorWallet) ||
     sameAddress(solanaWallet.solanaAccount, draft?.creatorWallet);
@@ -74,10 +85,6 @@ export function ScheduledTokenAccessRoute({ children }: { children: ReactNode })
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [restricted]);
-
-  if (loading) {
-    return <div className="mx-auto max-w-4xl py-20 text-center font-retro text-muted-foreground">Checking launch access...</div>;
-  }
 
   if (restricted && !isCreator && draft && launchAt) {
     return (
