@@ -931,7 +931,7 @@ export function useLaunchpad(): LaunchpadAdapter {
         tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
         block_number: Number(receipt?.blockNumber || 0),
         log_index: 0,
-        timestamp: Math.floor(Date.now() / 1000),
+        timestamp: await blockTimestamp(readProvider, Number(receipt?.blockNumber || 0)),
       }];
     }
     emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });
@@ -988,7 +988,7 @@ export function useLaunchpad(): LaunchpadAdapter {
         tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
         block_number: Number(receipt?.blockNumber || 0),
         log_index: 0,
-        timestamp: Math.floor(Date.now() / 1000),
+        timestamp: await blockTimestamp(readProvider, Number(receipt?.blockNumber || 0)),
       }];
     }
     emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });

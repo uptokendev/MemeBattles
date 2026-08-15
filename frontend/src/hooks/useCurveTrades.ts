@@ -394,7 +394,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
   useEffect(() => {
     const ac = new AbortController();
-    const curr = canLoadTrades ? normalizeAddress(chainId, campaignAddress || "") : "";
+    const curr = canLoadTrades ? `${chainId}:${normalizeAddress(chainId, campaignAddress || "")}` : "";
     const prev = prevCampaignRef.current;
     if (curr !== prev) {
       prevCampaignRef.current = curr;

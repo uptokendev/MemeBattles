@@ -375,49 +375,6 @@ function mergeCurveTradePoints(prev: CurveTradePoint[], next: CurveTradePoint[])
   return mergeTradePoints(prev, next);
 }
 
-const BONDING_TRADE_IFACE = new ethers.Interface([
-  "event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost)",
-  "event TokensSold(address indexed seller, uint256 amountIn, uint256 payout)",
-]);
-
-function curvePointsFromBondingReceipt(receipt: any, campaignAddress: string): CurveTradePoint[] {
-  const campaign = String(campaignAddress || "").toLowerCase();
-  if (!campaign || !receipt) return [];
-  const txHash = normalizeTradeTxHash(receipt.hash || receipt.transactionHash);
-  const blockNumber = Number(receipt.blockNumber || 0);
-  const timestamp = Math.floor(Date.now() / 1000);
-  const out: CurveTradePoint[] = [];
-  for (const log of receipt.logs || []) {
-    if (String(log.address || "").toLowerCase() !== campaign) continue;
-    try {
-      const parsed = BONDING_TRADE_IFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
-      if (!parsed) continue;
-      const isSell = parsed.name === "TokensSold";
-      if (parsed.name !== "TokensPurchased" && !isSell) continue;
-      const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
-      const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
-      if (tokensWei <= 0n) continue;
-      out.push({
-        type: isSell ? "sell" : "buy",
-        from: String(isSell ? parsed.args.seller : parsed.args.buyer || "").toLowerCase(),
-        to: campaign,
-        tokensWei,
-        nativeWei,
-        pricePerToken: Number(ethers.formatUnits(tokensWei, 18)) > 0
-          ? Number(ethers.formatUnits(nativeWei, 18)) / Number(ethers.formatUnits(tokensWei, 18))
-          : 0,
-        timestamp,
-        txHash,
-        blockNumber,
-        logIndex: Number(log.index ?? log.logIndex ?? 0),
-      });
-    } catch {
-      // ignore unrelated logs
-    }
-  }
-  return out.filter((point) => isValidTradeTxHash(point.txHash));
-}
-
 function confirmedRowsToCurvePoints(
   rows: any[],
   campaignAddress: string,
@@ -1516,9 +1473,15 @@ const TokenDetails = () => {
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
   const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
+  const lastCurveMarketRef = useRef(`${chainIdForStorage}:${resolvedCampaignAddress}`);
   useEffect(() => {
+    const market = `${chainIdForStorage}:${resolvedCampaignAddress}`;
+    if (lastCurveMarketRef.current !== market) {
+      lastCurveMarketRef.current = market;
+      lastCurvePointsRef.current = [];
+    }
     if (combinedCurvePointsSafe.length) lastCurvePointsRef.current = combinedCurvePointsSafe;
-  }, [combinedCurvePointsSafe]);
+  }, [chainIdForStorage, combinedCurvePointsSafe, resolvedCampaignAddress]);
 
   const curvePointsForUi: CurveTradePoint[] = useMemo(() => {
     return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
@@ -1759,10 +1722,9 @@ const TokenDetails = () => {
       localTopazTrades,
       unifiedAsPoints,
     );
-    // After DB cleanup, free RPC often cannot re-scan old Chapel logs. Top bar still
-    // has sold/volume from view calls — seed a synthetic anchor so chart/trade tab
-    // are not blank (same product path that worked when DB still had rows).
-    if (merged.length === 0 && metrics?.sold != null && metrics.sold > 0n && metrics.currentPrice != null && metrics.currentPrice > 0n) {
+    // Never invent a fake EVM fill with Date.now()-3600. That polluted
+    // holders, the trade tab, and 1m candles when the real book was empty.
+    if (merged.length === 0 && metrics?.sold != null && metrics.sold > 0n && metrics.currentPrice != null && metrics.currentPrice > 0n && isSolanaPage) {
       const price = Number(ethers.formatUnits(metrics.currentPrice, isSolanaPage ? 9 : 18));
       const tokens = Number(ethers.formatUnits(metrics.sold, 18));
       let nativeWei = 0n;
@@ -2628,7 +2590,7 @@ const toSeconds = (ts: number): number => {
     }
     const mcap = tokenData.marketCap ?? "—";
 
-    const seenTx = new Set<string>();
+    const seenFill = new Set<string>();
     const next: TxRow[] = [...marketTradePoints]
       .slice()
       .reverse()
@@ -2639,8 +2601,9 @@ const toSeconds = (ts: number): number => {
           ? /^[1-9A-HJ-NP-Za-km-z]{64,96}$/.test(tx)
           : /^0x[a-f0-9]{64}$/.test(tx);
         if (!valid) return false;
-        if (seenTx.has(tx)) return false;
-        seenTx.add(tx);
+        const fillKey = tradeDedupeKey(p);
+        if (!fillKey || seenFill.has(fillKey)) return false;
+        seenFill.add(fillKey);
         return true;
       })
       .slice(0, 100)
@@ -2658,7 +2621,7 @@ const toSeconds = (ts: number): number => {
         const ts = Number(p.timestamp ?? 0);
 
         return {
-          id: txHash,
+          id: tradeDedupeKey(p) || txHash,
           time: formatAgo(ts),
           type: (p.type ?? "buy") as "buy" | "sell",
           amount: formatCompact(tokenAmount),
@@ -3859,8 +3822,6 @@ const toSeconds = (ts: number): number => {
         });
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
-        const immediate = curvePointsFromBondingReceipt(receipt, campaign.campaign);
-        if (immediate.length) setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, immediate));
 
         toast({
           title: "Buy confirmed",
@@ -3906,8 +3867,6 @@ const toSeconds = (ts: number): number => {
         });
 
         const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
-        const immediate = curvePointsFromBondingReceipt(receipt, campaign.campaign);
-        if (immediate.length) setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, immediate));
 
         toast({
           title: "Sell confirmed",

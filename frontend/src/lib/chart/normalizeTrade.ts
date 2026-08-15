@@ -1,3 +1,4 @@
+import { ethers } from "ethers";
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import { isSolanaChainId } from "@/lib/chainConfig";
 import type { MarketTrade } from "@/lib/marketContinuityApi";
@@ -35,6 +36,19 @@ function parseRawAmount(rawValue: unknown): bigint {
   if (!/^\d+$/.test(raw)) return 0n;
   try {
     return BigInt(raw);
+  } catch {
+    return 0n;
+  }
+}
+
+/** Accept raw integer strings or decimal human amounts from Ably (`tokenAmount`, `bnbAmount`). */
+function parseAmountToRaw(value: unknown, decimals: number): bigint {
+  const raw = parseRawAmount(value);
+  if (raw > 0n) return raw;
+  const text = String(value ?? "").trim();
+  if (!text || text === "0") return 0n;
+  try {
+    return ethers.parseUnits(text, decimals);
   } catch {
     return 0n;
   }
@@ -114,16 +128,29 @@ export function indexerRowToCurvePoint(
   const soldTokensAfterRaw =
     soldAfterRaw != null && String(soldAfterRaw).trim() !== "" ? parseRawAmount(soldAfterRaw) : null;
 
+  const tokenDecimals = decimals?.token ?? (isSolanaChainId(chainId) ? 6 : 18);
+  const nativeDecimals = decimals?.native ?? (isSolanaChainId(chainId) ? 9 : 18);
   const tokensWei =
-    row.tokensWei != null ? parseRawAmount(row.tokensWei) : parseRawAmount(row.token_amount_raw ?? row.tokenAmountRaw);
+    row.tokensWei != null
+      ? parseRawAmount(row.tokensWei)
+      : parseAmountToRaw(
+          row.token_amount_raw ?? row.tokenAmountRaw ?? row.token_amount ?? row.tokenAmount,
+          tokenDecimals,
+        );
   const nativeWei =
     row.nativeWei != null
       ? parseRawAmount(row.nativeWei)
-      : parseRawAmount(row.bnb_amount_raw ?? row.native_amount_raw ?? row.nativeAmountRaw);
+      : parseAmountToRaw(
+          row.bnb_amount_raw ??
+            row.native_amount_raw ??
+            row.nativeAmountRaw ??
+            row.bnb_amount ??
+            row.bnbAmount ??
+            row.nativeAmount,
+          nativeDecimals,
+        );
 
   const suppliedPrice = Number(row.price_bnb ?? row.pricePerToken ?? row.priceBnb ?? 0);
-  const tokenDecimals = decimals?.token ?? (isSolanaChainId(chainId) ? 6 : 18);
-  const nativeDecimals = decimals?.native ?? (isSolanaChainId(chainId) ? 9 : 18);
   const tokens = formatUnitsNumber(tokensWei, tokenDecimals);
   const native = formatUnitsNumber(nativeWei, nativeDecimals);
   const pricePerToken =
@@ -142,7 +169,7 @@ export function indexerRowToCurvePoint(
     pricePerToken,
     soldTokensAfterRaw,
     venue: venueFromSource(row.venue ?? row.source, soldTokensAfterRaw),
-    timestamp: timestampSec(row.block_time ?? row.timestamp ?? row.time ?? row.blockTime),
+    timestamp: timestampSec(row.block_time ?? row.timestamp ?? row.time ?? row.blockTime ?? row.ts),
     txHash,
     blockNumber: Number(row.block_number ?? row.blockNumber ?? 0),
     logIndex: Number(row.log_index ?? row.logIndex ?? 0),
