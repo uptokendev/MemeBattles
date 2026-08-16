@@ -69,6 +69,10 @@ import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
+import CommandCenterSupport from "@/pages/command-center/CommandCenterSupport";
+import CommandCenterReportAbuse from "@/pages/command-center/CommandCenterReportAbuse";
+import CommandCenterAbuseReports from "@/pages/command-center/CommandCenterAbuseReports";
+import CommandCenterAbuseReportDetail from "@/pages/command-center/CommandCenterAbuseReportDetail";
 import { isPostGradRouteEnabled, postGradFlags, warRoomEnabled } from "@/features/postgrad/config";
 import { DocumentTitleSync } from "@/hooks/useDocumentTitle";
 
@@ -158,7 +162,6 @@ function AppShellLayout({
       <main
         ref={mainRef}
         className={[
-          /* overflow-x-hidden kills the awkward horizontal scroll from footer/frame overflow */
           "flex-1 overflow-x-hidden overflow-y-auto pb-10 md:pb-12 lg:pb-14 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]",
           isShowcaseRoute
             ? "scroll-pt-2 pt-2 md:scroll-pt-3 md:pt-3"
@@ -195,6 +198,9 @@ function AppShellLayout({
           <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
           <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
           <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="coins" />} />
+          <Route path="/command/support" element={<LegacyCommandCenterRedirect section="support" />} />
+          <Route path="/command/support/report" element={<LegacyCommandCenterRedirect section="support/report" />} />
+          <Route path="/command/support/reports" element={<LegacyCommandCenterRedirect section="support/reports" />} />
           <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
           <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
@@ -206,6 +212,10 @@ function AppShellLayout({
           <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterCoins /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/support" element={<CommandCenterShell><CommandCenterSupport /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/support/report" element={<CommandCenterShell><CommandCenterReportAbuse /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/support/reports/:reportId" element={<CommandCenterShell><CommandCenterAbuseReportDetail /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/support/reports" element={<CommandCenterShell><CommandCenterAbuseReports /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
           <Route path="/profile/:identifier" element={<ProfilePage />} />
           <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
@@ -226,7 +236,6 @@ function AppShellLayout({
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      {/* Fixed footer: copyright sits under ScreenFrame bottom edge (frame z-index higher). */}
       <Footer />
       <ScreenFrame />
     </div>
