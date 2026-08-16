@@ -79,6 +79,7 @@ function DraftTextBlock({ label, value }: { label: string; value: string }) {
 
 export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [chartExpanded, setChartExpanded] = useState(false);
 
   const tokenRoute = getPostGradTokenDetailRoute(campaign.token || campaign.campaign);
   const websiteHref = resolveExternalHref(campaign.website);
@@ -303,7 +304,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <span><span className="text-white/40">ATH</span> {metrics.athLabel}</span>
             </div>
 
-            <div className="order-2 flex h-[300px] flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:h-[380px] md:rounded-[18px] md:p-3 xl:order-1">
+            <div className={`order-2 flex flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:rounded-[18px] md:p-3 xl:order-1 ${chartExpanded ? "h-auto min-h-[580px] md:min-h-[660px]" : "h-[300px] md:h-[380px]"}`}>
               <div className="mb-1.5 flex shrink-0 items-center justify-between gap-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-300">
                   {chartSourceLabel}
@@ -315,6 +316,8 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 creatorAddress={(campaign as any).creator || (campaign as any).creatorAddress}
                 chainId={rowChainId}
                 compact
+                expanded={chartExpanded}
+                onExpandedChange={setChartExpanded}
                 className="flex min-h-0 w-full flex-1 flex-col"
               />
             </div>

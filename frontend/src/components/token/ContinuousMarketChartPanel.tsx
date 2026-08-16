@@ -27,6 +27,8 @@ type ContinuousMarketChartPanelProps = {
   compact?: boolean;
   className?: string;
   showDenomToggle?: boolean;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 };
 
 /**
@@ -44,10 +46,17 @@ export function ContinuousMarketChartPanel({
   compact = false,
   className,
   showDenomToggle = true,
+  expanded: controlledExpanded,
+  onExpandedChange,
 }: ContinuousMarketChartPanelProps) {
   const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");
   const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");
-  const [chartExpanded, setChartExpanded] = useState(false);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const chartExpanded = controlledExpanded ?? internalExpanded;
+  const handleExpandedChange = (next: boolean) => {
+    if (controlledExpanded == null) setInternalExpanded(next);
+    onExpandedChange?.(next);
+  };
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
   const { price: nativeUsd } = useNativeUsdPrice(chainId);
@@ -156,7 +165,7 @@ export function ContinuousMarketChartPanel({
           error={market.error}
           marketKey={`${chainId}:${campaignAddress || tokenAddress || ""}`}
           expanded={chartExpanded}
-          onExpandedChange={setChartExpanded}
+          onExpandedChange={handleExpandedChange}
         />
       </div>
     </div>

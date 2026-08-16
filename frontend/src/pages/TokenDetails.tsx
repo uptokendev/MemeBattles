@@ -4334,7 +4334,7 @@ const toSeconds = (ts: number): number => {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 md:gap-4 items-start">
         <div className="min-w-0 flex flex-col gap-3 md:gap-4">
           <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
+            className={`bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col ${chartExpanded ? "h-auto min-h-[640px] md:min-h-[720px] xl:min-h-[760px]" : "min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"}`}
           >
             <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20">
               <AthBar
