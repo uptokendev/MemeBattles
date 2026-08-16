@@ -432,6 +432,7 @@ export function UnifiedMarketChart({
   currentBondingSoldRaw,
   solanaCurvePricing,
   solanaGraduated = false,
+  livePriceNative = null,
   liveSupplyWhole = null,
   nativeUsdPrice,
   resolution,
@@ -509,8 +510,58 @@ export function UnifiedMarketChart({
       genesisFromZero: false,
     }).candles as CandleRow[];
     const fromServer = marketCandlesForChart(marketCandles, marketState, metric, denomination, nativeUsd, tokenDecimals);
-    return authoritativeCandleData(fromTrades, fromServer);
-  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, seriesPoints, tokenDecimals]);
+    const authoritative = authoritativeCandleData(fromTrades, fromServer);
+
+    // Graduated Solana pages poll the verified Meteora pool directly for spot.
+    // Server candles remain the durable trade history, but a token may graduate
+    // without a post-graduation swap. In that case the latest durable candle is
+    // still the final bonding print while the headline correctly shows live DEX
+    // reserves. Append one ephemeral current-bucket spot candle so the chart's
+    // latest value uses the exact same live price x frozen curve-sold supply as
+    // TokenDetails. This does not create or persist an artificial trade.
+    const livePrice = Number(livePriceNative);
+    const liveSupply = Number(liveSupplyWhole);
+    const canUseLiveSolanaSpot =
+      solana &&
+      solanaGraduated &&
+      Number.isFinite(livePrice) &&
+      livePrice > 0 &&
+      (metric === "price" || (Number.isFinite(liveSupply) && liveSupply > 0)) &&
+      (denomination !== "USD" || nativeUsd > 0);
+
+    if (!canUseLiveSolanaSpot) return authoritative;
+
+    const liveNative = metric === "marketcap" ? livePrice * liveSupply : livePrice;
+    const liveValue = denomination === "USD" ? liveNative * nativeUsd : liveNative;
+    if (!Number.isFinite(liveValue) || liveValue <= 0) return authoritative;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const bucketSec = Math.floor(nowSec / intervalSeconds) * intervalSeconds;
+    const next = [...authoritative];
+    const last = next[next.length - 1];
+    const lastSec = last ? timeToSec(last.time) : 0;
+
+    if (last && lastSec === bucketSec) {
+      next[next.length - 1] = {
+        ...last,
+        high: Math.max(last.high, liveValue),
+        low: Math.min(last.low, liveValue),
+        close: liveValue,
+      };
+      return next;
+    }
+
+    if (!last || bucketSec > lastSec) {
+      next.push({
+        time: bucketSec as Time,
+        open: liveValue,
+        high: liveValue,
+        low: liveValue,
+        close: liveValue,
+      });
+    }
+    return next;
+  }, [denomination, intervalSeconds, livePriceNative, liveSupplyWhole, marketCandles, marketState, metric, nativeUsd, seriesPoints, solana, solanaGraduated, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];
