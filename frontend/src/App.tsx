@@ -201,6 +201,7 @@ function AppShellLayout({
           <Route path="/command/support" element={<LegacyCommandCenterRedirect section="support" />} />
           <Route path="/command/support/report" element={<LegacyCommandCenterRedirect section="support/report" />} />
           <Route path="/command/support/reports" element={<LegacyCommandCenterRedirect section="support/reports" />} />
+          <Route path="/command/support/reports/:reportId" element={<LegacyCommandCenterRedirect section="support/reports/:reportId" />} />
           <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
           <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
