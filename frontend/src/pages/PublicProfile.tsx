@@ -497,7 +497,7 @@ export default function PublicProfile({
       try {
         const qs = new URLSearchParams({
           chainId: String(activeChainId),
-          address: profileWallet.toLowerCase(),
+          wallet: profileWallet,
           limit: "12",
         });
         const res = await fetch(buildRealtimeApiUrl(`/api/activity/trades?${qs.toString()}`), {

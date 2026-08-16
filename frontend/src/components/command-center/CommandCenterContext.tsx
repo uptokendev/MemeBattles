@@ -201,6 +201,7 @@ export function CommandCenterDataProvider({
     fetchCampaigns,
     fetchCampaignSummary,
     profileCreatedAt: profile?.createdAt,
+    chainId,
   });
 
   const { liveRank } = useProfileRank({

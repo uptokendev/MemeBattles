@@ -346,18 +346,15 @@ type TxRow = {
 function parseRawOrDecimalUnits(rawValue: unknown, decimalValue: unknown, decimals: number): bigint {
   if (typeof rawValue === "bigint") return rawValue;
   if (typeof decimalValue === "bigint") return decimalValue;
-  const minRawDigits = Math.max(16, decimals);
-  for (const value of [rawValue, decimalValue]) {
-    const text = String(value ?? "").trim();
-    if (/^\d+$/.test(text) && text.length >= minRawDigits) {
-      try {
-        return BigInt(text);
-      } catch {
-        // try next
-      }
+  const rawText = String(rawValue ?? "").trim();
+  if (/^\d+$/.test(rawText)) {
+    try {
+      return BigInt(rawText);
+    } catch {
+      // fall through to human decimals
     }
   }
-  const human = String(decimalValue ?? rawValue ?? "0").trim();
+  const human = String(decimalValue ?? "0").trim();
   if (!human || human === "0") return 0n;
   try {
     return ethers.parseUnits(human, decimals);
@@ -3076,7 +3073,9 @@ const toSeconds = (ts: number): number => {
                   setEffectiveTokenWei(maxTokens);
                   setEffectiveBnbWei(maxQuote.lamportsOut);
                   setQuoteWei(maxQuote.lamportsOut);
-                  setQuoteError(`Wallet cannot receive ${ethers.formatUnits(targetLamports, 9)} SOL from the available token balance.`);
+                  setQuoteError(
+                    `That field is target SOL out, not token size. Selling your whole bag only returns ~${ethers.formatUnits(maxQuote.lamportsOut, 9)} SOL (you asked for ${ethers.formatUnits(targetLamports, 9)} SOL). Switch to tokens to sell an exact amount.`,
+                  );
                 }
                 return;
               }
@@ -3120,7 +3119,11 @@ const toSeconds = (ts: number): number => {
                 setEffectiveBnbWei(q.lamportsOut);
                 setQuoteWei(q.lamportsOut);
                 setQuoteError(
-                  sold < tokensIn ? "Cannot sell more than the curve has sold." : q.lamportsOut <= 0n ? "Sell quote is zero." : null,
+                  sold < tokensIn
+                    ? "Cannot sell more than the curve has sold."
+                    : q.lamportsOut <= 0n
+                      ? "0.001 in token mode is 0.001 tokens, not 0.001 SOL. That size pays 0 lamports. Switch the unit to SOL to sell a SOL amount."
+                      : null,
                 );
               }
             }
@@ -4279,7 +4282,13 @@ const toSeconds = (ts: number): number => {
           <Card
             className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
           >
-            <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20">
+              <AthBar
+                currentLabel={marketCapUsdLabel ?? undefined}
+                storageKey={`ath:${String(chainIdForStorage)}:${isSolanaPage ? String((campaignAddress ?? campaign?.campaign ?? "")) : String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
+                className="w-full min-w-0"
+              />
+              <div className="flex min-w-0 flex-col gap-2 w-full xl:flex-row xl:items-center xl:justify-between">
               <div className="flex items-center gap-2 min-w-0 shrink-0">
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
@@ -4291,7 +4300,6 @@ const toSeconds = (ts: number): number => {
                   {stagePill}
                 </span>
               </div>
-              <div className="flex min-w-0 flex-col gap-2 w-full xl:w-auto xl:flex-row xl:items-center xl:justify-end">
                 <div className="flex flex-wrap items-center gap-1.5 xl:flex-nowrap xl:justify-end">
                   {Object.entries(tokenData.metrics).map(([key, data]) => {
                     const ch = (data as any).change as number | null;
@@ -4344,13 +4352,6 @@ const toSeconds = (ts: number): number => {
                     </Button>
                   </div>
                 </div>
-
-                <AthBar
-                  currentLabel={marketCapUsdLabel ?? undefined}
-                  storageKey={`ath:${String(chainIdForStorage)}:${isSolanaPage ? String((campaignAddress ?? campaign?.campaign ?? "")) : String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
-                  className="w-full min-w-0 xl:w-auto xl:max-w-[280px]"
-                />
-
               </div>
             </div>
 

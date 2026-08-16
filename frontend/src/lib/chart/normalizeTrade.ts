@@ -138,25 +138,17 @@ export function indexerRowToCurvePoint(
 
   const tokenDecimals = decimals?.token ?? (isSolanaChainId(chainId) ? 6 : 18);
   const nativeDecimals = decimals?.native ?? (isSolanaChainId(chainId) ? 9 : 18);
+  const explicitTokenRaw = row.token_amount_raw ?? row.tokenAmountRaw ?? row.tokensWei;
+  const explicitNativeRaw =
+    row.bnb_amount_raw ?? row.native_amount_raw ?? row.nativeAmountRaw ?? row.nativeWei;
   const tokensWei =
-    row.tokensWei != null
-      ? parseRawAmount(row.tokensWei)
-      : parseAmountToRaw(
-          row.token_amount_raw ?? row.tokenAmountRaw ?? row.token_amount ?? row.tokenAmount,
-          tokenDecimals,
-        );
+    explicitTokenRaw != null && String(explicitTokenRaw).trim() !== ""
+      ? parseRawAmount(explicitTokenRaw)
+      : parseAmountToRaw(row.token_amount ?? row.tokenAmount, tokenDecimals);
   const nativeWei =
-    row.nativeWei != null
-      ? parseRawAmount(row.nativeWei)
-      : parseAmountToRaw(
-          row.bnb_amount_raw ??
-            row.native_amount_raw ??
-            row.nativeAmountRaw ??
-            row.bnb_amount ??
-            row.bnbAmount ??
-            row.nativeAmount,
-          nativeDecimals,
-        );
+    explicitNativeRaw != null && String(explicitNativeRaw).trim() !== ""
+      ? parseRawAmount(explicitNativeRaw)
+      : parseAmountToRaw(row.bnb_amount ?? row.bnbAmount ?? row.nativeAmount, nativeDecimals);
 
   const suppliedPrice = Number(row.price_bnb ?? row.pricePerToken ?? row.priceBnb ?? 0);
   const tokens = formatUnitsNumber(tokensWei, tokenDecimals);

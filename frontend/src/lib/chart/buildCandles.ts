@@ -40,6 +40,8 @@ type BuildOpts = {
    * Default 0: no empty candles. Only intervals that contain at least one trade are drawn.
    */
   maxGapFillBuckets?: number;
+  /** First bonding print: open at 0, close at first mcap/price. */
+  genesisFromZero?: boolean;
 };
 
 function bucketStartSec(tsMs: number, intervalSec: number): number {
@@ -85,9 +87,10 @@ export function buildCandles(
   };
 
   let curBucket = bucketStartSec(sorted[0].ts, intervalSec);
-  let open = sorted[0].value;
+  const genesis = opts?.genesisFromZero === true;
+  let open = genesis ? 0 : sorted[0].value;
   let high = sorted[0].value;
-  let low = sorted[0].value;
+  let low = genesis ? 0 : sorted[0].value;
   let close = sorted[0].value;
   let vol = sorted[0].volume ?? 0;
 

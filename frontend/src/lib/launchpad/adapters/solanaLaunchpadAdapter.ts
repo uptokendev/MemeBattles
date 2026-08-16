@@ -572,9 +572,9 @@ export function getSolanaLaunchpadSafetyStatus(params: {
       },
       {
         id: "protocol",
-        label: "Legacy scaffold mutations",
-        state: "blocked",
-        detail: V4_ONLY_MUTATION_MESSAGE,
+        label: "V4 deploy path",
+        state: "ready",
+        detail: "Old scaffold create/buy/sell is disabled on purpose. Push Live uses the V4 authorized program.",
       },
     ],
     milestones: [

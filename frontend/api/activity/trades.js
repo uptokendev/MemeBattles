@@ -1,5 +1,5 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json } from "../../server/http.js";
 
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
@@ -8,8 +8,10 @@ function clampInt(value, min, max, fallback) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
 }
 
 function makeCursor(row) {
@@ -93,7 +95,9 @@ export default async function handler(req, res) {
       blockNumber: Number(row.blockNumber || 0),
       blockTime: row.blockTime ? new Date(row.blockTime).toISOString() : null,
       side: String(row.side || "buy") === "sell" ? "sell" : "buy",
-      wallet: row.wallet ? String(row.wallet).toLowerCase() : "",
+      wallet: row.wallet
+        ? (isSolanaAddress(row.wallet) ? String(row.wallet) : String(row.wallet).toLowerCase())
+        : "",
       tokenAmount: row.tokenAmount == null ? null : Number(row.tokenAmount),
       bnbAmount: row.bnbAmount == null ? null : Number(row.bnbAmount),
       priceBnb: row.priceBnb == null ? null : Number(row.priceBnb),

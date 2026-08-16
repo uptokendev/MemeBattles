@@ -54,6 +54,8 @@ interface UseProfileBalancesArgs {
   fetchCampaignSummary: FetchCampaignSummary;
   /** Wallet-age timestamp from the profile service. */
   profileCreatedAt?: string | null;
+  /** Address-driven chain. Do not re-derive from the global wallet latch. */
+  chainId?: number | null;
 }
 
 export function useProfileBalances({
@@ -63,6 +65,7 @@ export function useProfileBalances({
   fetchCampaigns,
   fetchCampaignSummary,
   profileCreatedAt,
+  chainId: chainIdOverride,
 }: UseProfileBalancesArgs) {
   const [nativeBalance, setNativeBalance] = useState<string>("");
   const [tokenBalances, setTokenBalances] = useState<TokenBalanceRow[]>([]);
@@ -81,8 +84,9 @@ export function useProfileBalances({
     let cancelled = false;
 
     const resolveReadProvider = (): ethers.Provider | null => {
-      const chainId = getActiveChainId(walletChainId);
-      return isEvmChainId(chainId) ? getReadProvider(chainId) as ethers.Provider : null;
+      const chainId = Number(chainIdOverride);
+      const resolved = isEvmChainId(chainId) ? chainId : getActiveChainId(walletChainId);
+      return isEvmChainId(resolved) ? getReadProvider(resolved) as ethers.Provider : null;
     };
 
     const loadBalances = async () => {
@@ -94,12 +98,49 @@ export function useProfileBalances({
           setLoadingPortfolioMetrics(true);
           try {
             const { PublicKey } = await import("@solana/web3.js");
-            const lamports = await getSolanaReadConnection().getBalance(new PublicKey(targetRaw), "confirmed");
+            const conn = getSolanaReadConnection();
+            const owner = new PublicKey(targetRaw);
+            const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+            const [lamports, tokenAccounts, campaigns] = await Promise.all([
+              conn.getBalance(owner, "confirmed"),
+              conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM }).catch(() => ({ value: [] as any[] })),
+              fetchCampaigns().catch(() => [] as any[]),
+            ]);
             const sol = (Number(lamports) / 1_000_000_000).toFixed(4);
+            const campaignByMint = new Map<string, any>();
+            for (const campaign of campaigns || []) {
+              const mint = String(campaign?.token || campaign?.tokenAddress || "").trim();
+              if (mint) campaignByMint.set(mint, campaign);
+            }
+            const rows: TokenBalanceRow[] = [];
+            for (const item of tokenAccounts.value || []) {
+              const info = item?.account?.data?.parsed?.info;
+              const mint = String(info?.mint || "").trim();
+              const amount = String(info?.tokenAmount?.amount || "0");
+              const ui = Number(info?.tokenAmount?.uiAmount ?? 0);
+              if (!mint || !Number.isFinite(ui) || ui <= 0) continue;
+              const campaign = campaignByMint.get(mint);
+              rows.push({
+                campaignAddress: String(campaign?.campaign || campaign?.campaignAddress || mint),
+                tokenAddress: mint,
+                image: String(campaign?.logoURI || campaign?.logoUri || "/placeholder.svg"),
+                name: String(campaign?.name || "Solana token"),
+                ticker: String(campaign?.symbol || campaign?.ticker || mint.slice(0, 4)),
+                balanceRaw: BigInt(amount),
+                balanceFormatted: String(info?.tokenAmount?.uiAmountString || ui),
+              });
+            }
             if (!cancelled) {
               setNativeBalance(`${sol} SOL`);
-              setTokenBalances([]);
-              setPortfolioMetrics(null);
+              setTokenBalances(rows);
+              setPortfolioMetrics({
+                totalValueUsd: null,
+                topHolding: rows[0]
+                  ? { ticker: rows[0].ticker, percentOfPortfolio: 0, valueUsd: 0 }
+                  : null,
+                coinsCount: rows.length,
+                walletAge: profileCreatedAt ? "on-chain" : "new",
+              });
             }
           } catch {
             if (!cancelled) {
@@ -264,7 +305,7 @@ export function useProfileBalances({
     return () => {
       cancelled = true;
     };
-  }, [viewedAddress, account, fetchCampaigns, fetchCampaignSummary, walletChainId, profileCreatedAt, bnbUsd]);
+  }, [viewedAddress, account, fetchCampaigns, fetchCampaignSummary, walletChainId, profileCreatedAt, bnbUsd, chainIdOverride]);
 
   return {
     nativeBalance,

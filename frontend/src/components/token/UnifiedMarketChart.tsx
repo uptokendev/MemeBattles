@@ -632,6 +632,7 @@ export function UnifiedMarketChart({
     const fromTrades = buildCandles(seriesPoints, intervalSeconds, {
       extendToNow: false,
       maxGapFillBuckets: 0,
+      genesisFromZero: Boolean(solana && !solanaGraduated),
     }).candles as CandleRow[];
     // Solana post-grad Meteora candles are not wired yet; marketCandles is empty on that path.
     const fromServer = marketCandlesForChart(
@@ -644,7 +645,7 @@ export function UnifiedMarketChart({
     );
     // Candles are trade prints only. Headline mcap/price live in the tiles, not OHLC.
     return prependServerCache(fromTrades, fromServer);
-  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, tokenDecimals]);
+  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, solana, solanaGraduated, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];

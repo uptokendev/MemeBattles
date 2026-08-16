@@ -111,6 +111,11 @@ function AppShellLayout({
   const postGradEnabled = isPostGradRouteEnabled();
   const location = useLocation();
   const isShowcaseRoute = location.pathname === "/";
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [location.pathname, location.search]);
 
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -151,12 +156,13 @@ function AppShellLayout({
       <CreatorArmEligibilityDialog />
 
       <main
+        ref={mainRef}
         className={[
           /* overflow-x-hidden kills the awkward horizontal scroll from footer/frame overflow */
           "flex-1 overflow-x-hidden overflow-y-auto pb-10 md:pb-12 lg:pb-14 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]",
           isShowcaseRoute
             ? "scroll-pt-2 pt-2 md:scroll-pt-3 md:pt-3"
-            : "scroll-pt-5 pt-5 md:scroll-pt-[4.5rem] md:pt-[4.5rem] [&>:first-child]:!pt-0",
+            : "scroll-pt-[4.5rem] pt-[4.5rem] [&>:first-child]:!pt-0",
         ].join(" ")}
       >
         <Routes>

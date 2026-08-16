@@ -52,7 +52,9 @@ type FeaturedCard = FeaturedItem & {
 };
 
 function isAddress(value: unknown) {
-  return /^0x[a-fA-F0-9]{40}$/.test(String(value ?? "").trim());
+  const raw = String(value ?? "").trim();
+  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return true;
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
 }
 
 function usefulImage(value: unknown) {
@@ -91,7 +93,8 @@ function getAthLabel(chainId: number, campaignAddress: string, currentUsd: numbe
 }
 
 function normalizeItem(raw: any, fallbackChainId: number): FeaturedItem | null {
-  const campaignAddress = String(raw?.campaignAddress ?? raw?.campaign_address ?? raw?.campaign ?? "").trim().toLowerCase();
+  const rawAddress = String(raw?.campaignAddress ?? raw?.campaign_address ?? raw?.campaign ?? "").trim();
+  const campaignAddress = /^0x[a-fA-F0-9]{40}$/i.test(rawAddress) ? rawAddress.toLowerCase() : rawAddress;
   if (!isAddress(campaignAddress)) return null;
   return {
     chainId: Number(raw?.chainId ?? raw?.chain_id ?? fallbackChainId),

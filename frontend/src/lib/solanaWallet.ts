@@ -204,18 +204,31 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
   }
 
+  const previousId = getStoredSolanaWalletId();
+  if (previousId && previousId !== wallet.id) {
+    try {
+      await getSolanaProvider(previousId)?.disconnect?.();
+    } catch {
+      // previous wallet may already be disconnected
+    }
+  }
+
+  // Persist the chosen provider before connect so its accountChanged is not ignored.
+  try {
+    window.localStorage.setItem(SOLANA_WALLET_ID_STORAGE_KEY, wallet.id);
+    window.localStorage.setItem(SOLANA_WALLET_NAME_STORAGE_KEY, wallet.name);
+  } catch {
+    // ignore
+  }
+
   let result: { publicKey?: { toString: () => string } } | undefined;
 
-  if (wallet.id === "phantom") {
-    try {
-      await wallet.provider.disconnect?.();
-    } catch {
-      // ignore Phantom disconnect errors
-    }
-    result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
-  } else {
-    result = await wallet.provider.connect();
+  try {
+    await wallet.provider.disconnect?.();
+  } catch {
+    // ignore
   }
+  result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
 
   const publicKey = normalizePublicKey(result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "");
   if (!publicKey) throw new Error("No Solana public key returned.");

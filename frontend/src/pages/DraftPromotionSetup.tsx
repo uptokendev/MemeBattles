@@ -203,7 +203,7 @@ export default function DraftPromotionSetup() {
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
-        setMissionStatement(data.promotion.missionStatement || "");
+        setMissionStatement(data.promotion.missionStatement || data.draft.description || "");
         setLaunchStrategy(data.promotion.launchStrategy || "");
         setTelegramUrl(data.promotion.telegramUrl || "");
         setDiscordUrl(data.promotion.discordUrl || "");
