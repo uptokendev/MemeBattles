@@ -1,0 +1,62 @@
+name: Weekly Recruiter Rewards - Solana
+
+on:
+  schedule:
+    - cron: "25 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Calculate recruiter settlement only; do not publish"
+        required: true
+        default: true
+        type: boolean
+      chain_id:
+        description: "Solana chain ID"
+        required: true
+        default: "102"
+        type: choice
+        options:
+          - "102"
+          - "101"
+
+concurrency:
+  group: weekly-recruiter-solana-${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_RECRUITER_CHAIN_ID || '101' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  settle:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SOLANA_RECRUITER_AUTOMATION_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && 'recruiter-solana-devnet' || 'recruiter-solana-production' }}
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      RECRUITER_SOLANA_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_RECRUITER_CHAIN_ID || '101' }}
+      RECRUITER_SOLANA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      RECRUITER_SOLANA_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_RECRUITER_AUTOMATION_ENABLED || 'false' }}
+      RECRUITER_CLAIM_WINDOW_DAYS: ${{ vars.RECRUITER_CLAIM_WINDOW_DAYS || '7' }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Syntax checks
+        run: |
+          node --check api/lib/solanaRewardLane.js
+          node --check scripts/weekly-recruiter-solana.mjs
+      - name: Run guarded recruiter settlement
+        run: node --import ./api/load-local-env.mjs scripts/weekly-recruiter-solana.mjs
