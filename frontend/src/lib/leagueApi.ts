@@ -273,6 +273,8 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
           ...row,
           wallet,
           profit_raw: row?.profit_raw ?? row?.profitRaw ?? null,
+          sells_raw: row?.sells_raw ?? row?.sellsRaw ?? null,
+          buys_raw: row?.buys_raw ?? row?.buysRaw ?? null,
           trades_count: row?.trades_count != null ? Number(row.trades_count) : row?.tradesCount != null ? Number(row.tradesCount) : null,
           campaigns_traded: row?.campaigns_traded != null ? Number(row.campaigns_traded) : null,
           // Strip token fields so UI never renders this as a memecoin card.

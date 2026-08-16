@@ -51,10 +51,15 @@ function rawToNative(raw?: string | null, decimals = 18) {
 }
 
 function formatNative(value: number, symbol = "BNB") {
-  if (!Number.isFinite(value) || value <= 0) return `0 ${symbol}`;
-  if (value >= 100) return `${value.toFixed(2)} ${symbol}`;
-  if (value >= 1) return `${value.toFixed(4)} ${symbol}`;
-  return `${value.toFixed(6)} ${symbol}`;
+  if (!Number.isFinite(value) || value === 0) return `0 ${symbol}`;
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  let body: string;
+  if (abs >= 100) body = abs.toFixed(2);
+  else if (abs >= 1) body = abs.toFixed(4);
+  else if (abs >= 0.000001) body = abs.toFixed(6);
+  else body = abs.toFixed(9).replace(/0+$/, "").replace(/\.$/, "") || "0";
+  return `${sign}${body} ${symbol}`;
 }
 
 function formatUsd(value: number) {
@@ -146,9 +151,18 @@ function rowMetric(def: LeagueDef, row: any, native = { decimals: 18, symbol: "B
     return buy || def.metricLabel;
   }
   if (def.key === "top_earner") {
-    if (!row?.profit_raw) return def.metricLabel;
+    if (row?.profit_raw == null && row?.sells_raw == null) return def.metricLabel;
     const trades = row?.trades_count != null ? ` · ${Number(row.trades_count)} trades` : "";
-    return `${formatNative(rawToNative(row.profit_raw, native.decimals), native.symbol)}${trades}`;
+    const pnl = rawToNative(row.profit_raw, native.decimals);
+    const sold = rawToNative(row.sells_raw, native.decimals);
+    // Cashflow PnL is sells - buys. Early curve sellers are often still red;
+    // still show what they actually took out so "0 SOL" is not a lie.
+    if (pnl > 0) return `${formatNative(pnl, native.symbol)}${trades}`;
+    if (sold > 0) return `${formatNative(sold, native.symbol)} sold${trades}`;
+    if (row?.profit_raw != null && String(row.profit_raw).trim() !== "") {
+      return `${formatNative(pnl, native.symbol)}${trades}`;
+    }
+    return def.metricLabel;
   }
   if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
@@ -458,7 +472,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   // Hub prize uses total epoch league-fee pot; selected category pot is secondary.
   const hubPrizeRaw = getPrizeRaw(summaryPrize) !== "0" ? getPrizeRaw(summaryPrize) : getPrizeRaw(selectedPrize);
   const categoryPrizeRaw = getPrizeRaw(selectedPrize);
-  const nativeDecimals = Number(summaryPrize?.nativeDecimals || selectedPrize?.nativeDecimals || (isSolana ? 9 : 18));
+  const nativeDecimals = isSolana ? 9 : Number(summaryPrize?.nativeDecimals || selectedPrize?.nativeDecimals || 18);
   const nativeSymbol = String(summaryPrize?.nativeSymbol || selectedPrize?.nativeSymbol || (isSolana ? "SOL" : "BNB"));
   const rawPrizeNative = rawToNative(hubPrizeRaw, nativeDecimals);
   const categoryPrizeNative = rawToNative(categoryPrizeRaw, nativeDecimals);

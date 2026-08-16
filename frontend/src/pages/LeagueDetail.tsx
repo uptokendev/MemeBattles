@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
-import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, isAllowedChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { loadLeagueSummary } from "@/lib/leagueApi";
 import { LEAGUES, getLimit, periodLabel, type LeagueKey, type Period } from "@/lib/leagues";
 
@@ -38,6 +38,7 @@ type CrowdFavoriteRow = LeagueBase & {
 type TopEarnerRow = {
   wallet: string;
   profit_raw: string;
+  sells_raw?: string;
   trades_count?: number;
 };
 
@@ -93,14 +94,18 @@ function formatDuration(seconds?: number | null) {
   return `${sec}s`;
 }
 
-function formatBnbFromRaw(raw?: string | null) {
+function formatBnbFromRaw(raw?: string | null, decimals = 18) {
   try {
     const v = BigInt(String(raw ?? "0"));
-    const n = Number(ethers.formatUnits(v, 18));
+    const n = Number(ethers.formatUnits(v, decimals));
     if (!Number.isFinite(n)) return "0";
-    if (n >= 100) return n.toFixed(2);
-    if (n >= 1) return n.toFixed(4);
-    return n.toFixed(6);
+    if (n === 0) return "0";
+    const sign = n < 0 ? "-" : "";
+    const abs = Math.abs(n);
+    if (abs >= 100) return `${sign}${abs.toFixed(2)}`;
+    if (abs >= 1) return `${sign}${abs.toFixed(4)}`;
+    if (abs >= 0.000001) return `${sign}${abs.toFixed(6)}`;
+    return `${sign}${abs.toFixed(9).replace(/0+$/, "").replace(/\.$/, "") || "0"}`;
   } catch {
     return "0";
   }
@@ -566,8 +571,21 @@ useEffect(() => {
                   if (def.key === "top_earner") {
                     const r = rowAny as TopEarnerRow;
                     const w = String(r.wallet ?? "");
+                    const decimals = Number(activeChainId) === SOLANA_CHAIN_ID ? 9 : 18;
+                    const symbol = Number(activeChainId) === SOLANA_CHAIN_ID ? "SOL" : "BNB";
+                    let pnlPositive = false;
+                    try {
+                      pnlPositive = BigInt(String(r.profit_raw ?? "0")) > 0n;
+                    } catch {
+                      pnlPositive = false;
+                    }
                     leftEl = <RowWallet address={w} />;
-                    metricTop = `${formatBnbFromRaw(String(r.profit_raw ?? "0"))} BNB`;
+                    metricTop =
+                      pnlPositive
+                        ? `${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol}`
+                        : r.sells_raw
+                          ? `${formatBnbFromRaw(r.sells_raw, decimals)} ${symbol} sold`
+                          : `${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol}`;
                     metricSub = `${Number(r.trades_count ?? 0)} trades`;
                     key = `${def.key}:${w}:${idx}`;
                     onClick = () => {

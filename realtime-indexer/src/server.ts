@@ -2357,10 +2357,14 @@ app.get("/api/league", wrap(async (req, res) => {
     // Trader PnL inside bonding curve for the selected epoch.
     // Creator buys/sells on *their own* campaign are excluded.
     // The same wallet trading *other* campaigns counts (creator can be a trader elsewhere).
+    const solana = chainId === 101;
+    const walletSel = solana ? "t.wallet" : "lower(t.wallet)";
+    const walletEq = (left: string, right: string) =>
+      solana ? `${left} = ${right}` : `lower(${left}) = lower(${right})`;
     const r = await pool.query(
       `with wallet_pnl as (
          select
-           lower(t.wallet) as wallet,
+           ${walletSel} as wallet,
            sum(
              case
                when t.side = 'sell' then (t.bnb_amount_raw::numeric)
@@ -2368,7 +2372,9 @@ app.get("/api/league", wrap(async (req, res) => {
                else 0
              end
            ) as profit_raw_num,
+           sum(case when t.side = 'sell' then (t.bnb_amount_raw::numeric) else 0 end) as sells_raw_num,
            count(*)::int as trades_count,
+           count(*) filter (where t.side = 'sell')::int as sell_trades,
            count(distinct t.campaign_address)::int as campaigns_traded
          from public.curve_trades t
          join public.campaigns c
@@ -2376,26 +2382,27 @@ app.get("/api/league", wrap(async (req, res) => {
          where t.chain_id = $1
            and ${periodFilterTrades}
            and t.wallet is not null
-           and lower(t.wallet) <> lower(c.campaign_address)
-           and (c.fee_recipient_address is null or lower(t.wallet) <> lower(c.fee_recipient_address))
-           -- own-campaign exclusion only (not a global creator ban)
-           and lower(t.wallet) <> lower(c.creator_address)
-         group by lower(t.wallet)
-         having sum(
-           case
-             when t.side = 'sell' then (t.bnb_amount_raw::numeric)
-             when t.side = 'buy' then -(t.bnb_amount_raw::numeric)
-             else 0
-           end
-         ) > 0
+           and ${walletEq("t.wallet", "c.campaign_address")} is false
+           and (c.fee_recipient_address is null or ${walletEq("t.wallet", "c.fee_recipient_address")} is false)
+           and ${walletEq("t.wallet", "c.creator_address")} is false
+         group by ${walletSel}
+         having count(*) filter (where t.side = 'sell') > 0
+             or sum(
+               case
+                 when t.side = 'sell' then (t.bnb_amount_raw::numeric)
+                 when t.side = 'buy' then -(t.bnb_amount_raw::numeric)
+                 else 0
+               end
+             ) > 0
        )
        select
          wallet,
          trunc(profit_raw_num)::text as profit_raw,
+         trunc(sells_raw_num)::text as sells_raw,
          trades_count,
          campaigns_traded
        from wallet_pnl
-       order by profit_raw_num desc, trades_count desc, wallet asc
+       order by profit_raw_num desc, sells_raw_num desc, trades_count desc, wallet asc
        limit $2`,
       [chainId, limit]
     );
