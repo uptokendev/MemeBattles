@@ -1,0 +1,35 @@
+name: Canonical candle PR validation
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/pump-style-candle-stabilization'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout pull request source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend without rewriting lockfile
+        run: npm install --prefix frontend --package-lock=false --no-audit --no-fund
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Install realtime indexer without rewriting lockfile
+        run: npm install --prefix realtime-indexer --package-lock=false --no-audit --no-fund
+
+      - name: Build realtime indexer
+        run: npm --prefix realtime-indexer run build
