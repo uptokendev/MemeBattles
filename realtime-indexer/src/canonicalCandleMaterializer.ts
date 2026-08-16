@@ -308,6 +308,7 @@ async function campaignTrades(chainId: number, campaign: string): Promise<TradeR
             token_amount_raw,bnb_amount,sold_tokens_after_raw
        from public.curve_trades
       where chain_id=$1 and campaign_address=$2
+        and (chain_id <> 101 or sold_tokens_after_raw is not null)
       order by block_number asc, log_index asc`,
     [chainId, campaign],
   );
@@ -444,10 +445,14 @@ async function staleCampaigns() {
        left join public.token_candles tc
          on tc.chain_id=t.chain_id and tc.campaign_address=t.campaign_address
       where t.chain_id in (56,97,101)
+        and (t.chain_id <> 101 or t.sold_tokens_after_raw is not null)
       group by t.chain_id,t.campaign_address
       having max(tc.canonical_updated_at) is null
           or max(tc.canonical_updated_at) < max(t.block_time)
-          or min(coalesce(tc.canonical_version,0)) < $2
+          or bool_or(
+            coalesce(tc.dex_trade_count,0)=0
+            and coalesce(tc.canonical_version,0) < $2
+          )
       order by max(t.block_time) asc
       limit $1`,
     [campaignBatchSize(), VERSION],
