@@ -310,22 +310,33 @@ function marketCandlesForChart(
 ): CandleRow[] {
   const supply = postBurnSupply(state, tokenDecimals);
   if (denomination === "USD" && nativeUsd <= 0) return [];
-  // token_candles currently stores price OHLC. A fixed post-burn supply makes
-  // post-grad market-cap OHLC deterministic; pre-grad historical supply changes
-  // inside each bucket, so keep using the trade-derived fallback until the
-  // backend materializes market-cap OHLC explicitly.
-  if (metric === "marketcap" && supply <= 0) return [];
-
   const denomMul = denomination === "USD" ? nativeUsd : 1;
-  const mcapMul = metric === "marketcap" ? supply : 1;
+
   return (rows || [])
     .filter((row) => Number(row.trades_count || 0) > 0 || Number(row.bonding_trade_count || 0) > 0 || Number(row.dex_trade_count || 0) > 0)
-    .map((row) => {
+    .map((row): CandleRow | null => {
       const timestamp = Math.floor(new Date(row.bucket_start).getTime() / 1000);
-      const mapValue = (value: unknown) => Number(value) * mcapMul * denomMul;
-      return { time: timestamp as Time, open: mapValue(row.o), high: mapValue(row.h), low: mapValue(row.l), close: mapValue(row.c) };
+      const canonicalValues = metric === "marketcap"
+        ? [row.mcap_o, row.mcap_h, row.mcap_l, row.mcap_c]
+        : [row.price_o, row.price_h, row.price_l, row.price_c];
+      const hasCanonical = canonicalValues.every((value) => value != null && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0);
+
+      let values: number[];
+      if (hasCanonical) {
+        values = canonicalValues.map((value) => Number(value));
+      } else {
+        const multiplier = metric === "marketcap" ? supply : 1;
+        if (metric === "marketcap" && multiplier <= 0) return null;
+        values = [row.o, row.h, row.l, row.c].map((value) => Number(value) * multiplier);
+      }
+
+      const [open, high, low, close] = values.map((value) => value * denomMul);
+      if (![open, high, low, close].every(Number.isFinite)) return null;
+      if (metric === "price" && (open <= 0 || high <= 0 || low <= 0 || close <= 0)) return null;
+      if (metric === "marketcap" && (open < 0 || high <= 0 || low < 0 || close <= 0)) return null;
+      return { time: timestamp as Time, open, high, low, close };
     })
-    .filter((row) => Number.isFinite(row.open) && row.open > 0 && Number.isFinite(row.high) && row.high > 0 && Number.isFinite(row.low) && row.low > 0 && Number.isFinite(row.close) && row.close > 0);
+    .filter((row): row is CandleRow => row != null);
 }
 
 function authoritativeCandleData(client: CandleRow[], server: CandleRow[]): CandleRow[] {
@@ -467,7 +478,6 @@ export function UnifiedMarketChart({
       if (!target) return;
       const root = overlayRef.current;
       if (root && root.contains(target)) return;
-      clearHideTooltipTimer();
       setHoverPinId(null);
     };
     document.addEventListener("pointerdown", onPointerDown, true);
