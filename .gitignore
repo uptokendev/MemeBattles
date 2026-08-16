@@ -64,5 +64,31 @@ AGENTS.md
 # Local agent workflow scripts (do not ignore GitHub CI under .github/workflows/)
 /workflows/
 
+# Local Grok / agent scratch (screenshots, copies, one-off scripts)
+.grok-tmp/
+
+# Nested git worktrees checked out inside this repo
+.wt-*/
+
+# Partial port / copy directories that are not source of truth
+.port-to-dev/
+
+# External checkout symlink — real Solana programs live in programs/ and solana/
+/contracts/solana
+
+# Unused one-off patch files
+*.patch
+
+# Accidental shell typo output (e.g. `git tatus --short`)
+/tatus --short
+
+# Rust / Anchor build output (never commit)
+/target/
+.anchor/
+test-ledger/
+
+# Incremental TS build info
+*.tsbuildinfo
+
 # Confidential build planning docs (local only)
 docs/build_plans/

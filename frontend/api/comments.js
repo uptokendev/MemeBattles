@@ -1,15 +1,31 @@
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, isSolanaChain, json, readJson } from "../server/http.js";
+import { verifySolanaSignature } from "./lib/walletActionAuth.js";
+
+function canonCampaign(chainId, value) {
+  const raw = String(value ?? "").trim();
+  if (isSolanaChain(chainId)) return isSolanaAddress(raw) ? raw : "";
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
+}
+
+function canonWallet(chainId, value) {
+  const raw = String(value ?? "").trim();
+  if (isSolanaChain(chainId) || isSolanaAddress(raw)) return isSolanaAddress(raw) ? raw : "";
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
+}
 
 function buildCommentMessage({ chainId, address, campaignAddress, nonce, body }) {
   const bodyPreview = String(body ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
+  const solana = isSolanaChain(chainId) || isSolanaAddress(address);
   return [
     "MemeWarzone Comment",
     "Action: COMMENT_CREATE",
     `ChainId: ${chainId}`,
-    `Address: ${String(address).toLowerCase()}`,
-    `Campaign: ${String(campaignAddress).toLowerCase()}`,
+    `Address: ${solana ? address : String(address).toLowerCase()}`,
+    `Campaign: ${solana ? campaignAddress : String(campaignAddress).toLowerCase()}`,
     `Nonce: ${nonce}`,
     "",
     bodyPreview,
@@ -44,12 +60,12 @@ export default async function handler(req, res) {
     try {
       const q = getQuery(req);
       const chainId = Number(q.chainId);
-      const campaignAddress = String(q.campaignAddress ?? "").toLowerCase();
+      const campaignAddress = canonCampaign(chainId, q.campaignAddress);
       const limitRaw = Number(q.limit ?? 50);
       const beforeIdRaw = q.beforeId != null ? Number(q.beforeId) : null;
 
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(campaignAddress)) return json(res, 400, { error: "Invalid campaignAddress" });
+      if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
       const limit = Math.min(100, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50));
       const beforeId = beforeIdRaw != null && Number.isFinite(beforeIdRaw) ? beforeIdRaw : null;
 
@@ -89,18 +105,21 @@ export default async function handler(req, res) {
     try {
       const b = await readJson(req);
       const chainId = Number(b.chainId);
-      const campaignAddress = String(b.campaignAddress ?? "").toLowerCase();
-      const tokenAddress = b.tokenAddress ? String(b.tokenAddress).toLowerCase() : null;
-      const address = String(b.address ?? "").toLowerCase();
+      const campaignAddress = canonCampaign(chainId, b.campaignAddress);
+      const rawToken = b.tokenAddress ? String(b.tokenAddress).trim() : "";
+      const tokenAddress = rawToken
+        ? (isSolanaChain(chainId) ? (isSolanaAddress(rawToken) ? rawToken : "") : (isAddress(rawToken.toLowerCase()) ? rawToken.toLowerCase() : ""))
+        : null;
+      const address = canonWallet(chainId, b.address);
       const body = String(b.body ?? "");
       const nonce = String(b.nonce ?? "");
       const signature = String(b.signature ?? "");
       const parentId = b.parentId != null ? Number(b.parentId) : null;
 
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(campaignAddress)) return json(res, 400, { error: "Invalid campaignAddress" });
-      if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
-      if (tokenAddress && !isAddress(tokenAddress)) return json(res, 400, { error: "Invalid tokenAddress" });
+      if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
+      if (!address) return json(res, 400, { error: "Invalid address" });
+      if (rawToken && !tokenAddress) return json(res, 400, { error: "Invalid tokenAddress" });
 
       const trimmed = body.trim();
       if (!trimmed) return json(res, 400, { error: "Comment is empty" });
@@ -111,8 +130,13 @@ export default async function handler(req, res) {
       await consumeNonce(chainId, address, nonce);
 
       const msg = buildCommentMessage({ chainId, address, campaignAddress, nonce, body: trimmed });
-      const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
-      if (recovered !== address) return json(res, 401, { error: "Invalid signature" });
+      const solana = isSolanaChain(chainId) || isSolanaAddress(address);
+      if (solana) {
+        if (!verifySolanaSignature(msg, signature, address)) return json(res, 401, { error: "Invalid signature" });
+      } else {
+        const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
+        if (recovered !== address) return json(res, 401, { error: "Invalid signature" });
+      }
 
       const { rows } = await pool.query(
         `INSERT INTO token_comments (

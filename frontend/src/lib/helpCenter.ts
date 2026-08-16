@@ -546,7 +546,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "rewards",
     title: "Where can I see and claim my rewards?",
-    body: "Command Center → Claims. Categories include League, Airdrop, Recruiter, Squad and other campaign/manual rewards. BNB stays BNB. SOL stays SOL.",
+    body: "Command Center → Claims. BNB League, Airdrop, Recruiter and Squad rewards claim from the BNB distributor. Solana League prizes can be claimed from Profile → Rewards when the treasury is unsealed. Generic SOL Airdrop/Squad Command Center claims are not open yet — Recruiter SOL payouts stay on the recruiter rail.",
     categories: ["rewards"],
     keywords: ["claim", "rewards", "claim center", "solana claim"],
     popular: true,

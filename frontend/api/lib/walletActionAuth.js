@@ -44,7 +44,7 @@ function decodeBase58(value) {
   return Buffer.concat([Buffer.alloc(leadingZeroes), body]);
 }
 
-function verifySolanaSignature(message, signature, walletAddress) {
+export function verifySolanaSignature(message, signature, walletAddress) {
   try {
     const publicKeyBytes = decodeBase58(walletAddress);
     const signatureBytes = Buffer.from(String(signature || ""), "base64");

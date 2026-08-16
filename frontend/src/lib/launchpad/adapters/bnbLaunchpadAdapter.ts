@@ -13,17 +13,17 @@ function contractChecks(readiness: BnbContractReadiness): LaunchpadSafetyCheck[]
   const groups = [
     {
       id: "coreContracts",
-      label: "Core launchpad contracts",
+      label: "Launch availability",
       keys: ["launchFactory", "launchCampaignImplementation", "graduationOracle", "permanentLpLocker"],
     },
     {
       id: "securityContracts",
-      label: "Creator and risk registries",
+      label: "Creator eligibility",
       keys: ["creatorRegistry", "riskRegistry"],
     },
     {
       id: "treasuryContracts",
-      label: "Treasury and reward vaults",
+      label: "MemeWarzone services",
       keys: ["treasuryRouter", "treasuryVault", "recruiterRewardsVault", "communityRewardsVault", "protocolRevenueVault", "voteTreasury"],
     },
     {
@@ -68,9 +68,9 @@ export function getBnbLaunchpadSafetyStatus(params: {
     chainId: params.chainId,
     chainLabel: getBnbChainLabel(params.chainId),
     protocolStatus: protocolReady ? "ready" : "unavailable",
-    protocolLabel: protocolReady ? "Live" : wrongWalletNetwork ? "Switch Network" : "Config Required",
-    title: protocolReady ? "BNB launch route ready" : wrongWalletNetwork ? "Switch wallet network" : "BNB contract wiring incomplete",
-    primaryActionLabel: protocolReady ? "BNB Live Route" : wrongWalletNetwork ? "Switch Network" : "Contracts Required",
+    protocolLabel: protocolReady ? "Live" : wrongWalletNetwork ? "Switch Network" : "Temporarily unavailable",
+    title: protocolReady ? "BNB launch route ready" : wrongWalletNetwork ? "Switch wallet network" : "BNB launches are temporarily unavailable",
+    primaryActionLabel: protocolReady ? "BNB Live Route" : wrongWalletNetwork ? "Switch Network" : "Temporarily unavailable",
     description: wrongWalletNetwork
       ? `${getBnbChainLabel(params.chainId)} contracts are configured. Switch your wallet from chain ${params.walletChainId} to chain ${params.chainId} before an on-chain launch.`
       : protocolReady
@@ -82,14 +82,14 @@ export function getBnbLaunchpadSafetyStatus(params: {
         label: "Wallet network",
         state: wrongWalletNetwork ? "blocked" : params.hasAccount ? "ready" : "pending",
         detail: wrongWalletNetwork
-          ? `Wallet is on chain ${params.walletChainId}; this launch route uses chain ${params.chainId}.`
+          ? `Your wallet is connected to chain ${params.walletChainId}. Switch to ${getBnbChainLabel(params.chainId)} (chain ${params.chainId}) to continue.`
           : params.hasAccount
             ? `Wallet is connected to chain ${params.chainId}.`
             : `Connect a wallet on chain ${params.chainId}.`,
       },
       {
         id: "routeAuth",
-        label: "Route authorization",
+        label: "Transaction protection",
         state: "ready",
         detail: "Create, buy, and sell request server authorization before contract writes.",
       },
@@ -110,9 +110,9 @@ export function getBnbLaunchpadSafetyStatus(params: {
       },
       {
         id: "contracts",
-        label: "Contract env wiring",
+        label: "Launch availability",
         state: contractsReady ? "ready" : "blocked",
-        detail: contractsReady ? "Launchpad, vault, registry, locker, and Topaz addresses are configured." : "Run the final deployment and export frontend env values.",
+        detail: contractsReady ? "Launchpad, vault, registry, locker, and Topaz addresses are configured." : "Launching is temporarily unavailable on this network. Your draft is safe. Please try again later.",
       },
       {
         id: "trading",

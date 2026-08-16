@@ -4,8 +4,12 @@ import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { AbuseReportShortcut, currentPageUrl } from "@/components/abuse/AbuseReportShortcut";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useWallet } from "@/contexts/WalletContext";
+import { isSolanaAddress } from "@/lib/address";
 import { apiFetch } from "@/lib/apiBase";
+import { isSolanaChainId } from "@/lib/chainConfig";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 import { toast } from "sonner";
 
 type TokenCommentsProps = {
@@ -29,7 +33,13 @@ type CommentRow = {
   authorAvatarUrl?: string | null;
 };
 
-const isAddress = (v?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(String(v ?? ""));
+const isEvmAddress = (v?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(String(v ?? ""));
+const isCampaignAddress = (v?: string | null) => isEvmAddress(v) || isSolanaAddress(v);
+const canonAddress = (v?: string | null, solana = false) => {
+  const raw = String(v || "").trim();
+  if (solana || isSolanaAddress(raw)) return isSolanaAddress(raw) ? raw : "";
+  return isEvmAddress(raw) ? raw.toLowerCase() : "";
+};
 
 const shorten = (addr: string) =>
   addr.length > 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
@@ -93,8 +103,8 @@ function buildCommentMessage(args: {
     "MemeWarzone Comment",
     `Action: COMMENT_CREATE`,
     `ChainId: ${args.chainId}`,
-    `Address: ${args.address.toLowerCase()}`,
-    `Campaign: ${args.campaignAddress.toLowerCase()}`,
+    `Address: ${isSolanaAddress(args.address) ? args.address : args.address.toLowerCase()}`,
+    `Campaign: ${isSolanaAddress(args.campaignAddress) ? args.campaignAddress : args.campaignAddress.toLowerCase()}`,
     `Nonce: ${args.nonce}`,
     "",
     bodyPreview,
@@ -112,24 +122,24 @@ export function TokenComments({
   emptyStateText,
 }: TokenCommentsProps) {
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
+  const solana = isSolanaChainId(chainId) || isSolanaAddress(campaignAddress);
+  const account = solana ? String(solanaWallet.solanaAccount || "").trim() : String(wallet.account || "").trim();
   const [items, setItems] = useState<CommentRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const normalizedCampaign = useMemo(() => (campaignAddress ?? "").toLowerCase(), [campaignAddress]);
-  const normalizedToken = useMemo(() => {
-    const t = (tokenAddress ?? "").toLowerCase();
-    return isAddress(t) ? t : undefined;
-  }, [tokenAddress]);
-  const normalizedAuthorFilter = useMemo(() => {
-    const a = (authorFilterAddress ?? "").toLowerCase();
-    return isAddress(a) ? a : "";
-  }, [authorFilterAddress]);
+  const normalizedCampaign = useMemo(() => canonAddress(campaignAddress, solana), [campaignAddress, solana]);
+  const normalizedToken = useMemo(() => canonAddress(tokenAddress, solana) || undefined, [solana, tokenAddress]);
+  const normalizedAuthorFilter = useMemo(
+    () => canonAddress(authorFilterAddress, solana),
+    [authorFilterAddress, solana],
+  );
 
   const load = useCallback(async () => {
-    if (!isAddress(normalizedCampaign)) return;
+    if (!isCampaignAddress(normalizedCampaign)) return;
     try {
       setLoading(true);
       setError(null);
@@ -166,7 +176,7 @@ export function TokenComments({
   const filteredItems = useMemo(() => {
     let next = [...items];
     if (normalizedAuthorFilter) {
-      next = next.filter((item) => item.authorAddress?.toLowerCase() === normalizedAuthorFilter);
+      next = next.filter((item) => canonAddress(item.authorAddress, solana) === normalizedAuthorFilter);
     }
     next.sort((a, b) => {
       const at = new Date(a.createdAt).getTime();
@@ -174,7 +184,7 @@ export function TokenComments({
       return mode === "chat" ? bt - at : at - bt;
     });
     return next;
-  }, [items, mode, normalizedAuthorFilter]);
+  }, [items, mode, normalizedAuthorFilter, solana]);
 
   const effectiveEmptyState = useMemo(() => {
     if (emptyStateText) return emptyStateText;
@@ -185,19 +195,23 @@ export function TokenComments({
 
   const handlePost = useCallback(async () => {
     try {
-      if (!isAddress(normalizedCampaign)) return;
+      if (!isCampaignAddress(normalizedCampaign)) return;
       if (!canPost) return;
 
-      if (!wallet.account) {
+      if (!account) {
         window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
         return;
       }
-      if (!wallet.signer || !wallet.account) {
+      if (!solana && !wallet.signer) {
         toast("Connect your wallet to comment.");
         return;
       }
 
-      const author = wallet.account.toLowerCase();
+      const author = canonAddress(account, solana);
+      if (!author) {
+        toast("Connect the matching wallet to comment.");
+        return;
+      }
       const nonce = await getNonce(chainId, author);
       const msg = buildCommentMessage({
         chainId,
@@ -206,7 +220,9 @@ export function TokenComments({
         nonce,
         body,
       });
-      const signature = await wallet.signer.signMessage(msg);
+      const signature = solana
+        ? (await signSolanaMessage(msg, author)).signature
+        : await wallet.signer!.signMessage(msg);
 
       setPosting(true);
 
@@ -237,7 +253,7 @@ export function TokenComments({
     } finally {
       setPosting(false);
     }
-  }, [body, canPost, chainId, load, mode, normalizedCampaign, normalizedToken, wallet]);
+  }, [account, body, canPost, chainId, load, mode, normalizedCampaign, normalizedToken, solana, wallet.signer]);
 
   const showComposer = !hideComposer && mode !== "updates";
 
@@ -249,7 +265,7 @@ export function TokenComments({
             <Avatar className="h-9 w-9">
               <AvatarImage src={undefined} />
               <AvatarFallback className="text-xs">
-                {wallet.account ? initials(wallet.account) : "?"}
+                {account ? initials(account) : "?"}
               </AvatarFallback>
             </Avatar>
 
@@ -258,7 +274,7 @@ export function TokenComments({
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder={
-                  wallet.account
+                  account
                     ? mode === "chat"
                       ? "Jump into the war room…"
                       : "Write a comment…"
@@ -275,7 +291,7 @@ export function TokenComments({
                   {mode === "chat" ? "Fast lane · newest first" : `${body.trim().length}/500`}
                 </span>
                 <div className="flex items-center gap-2">
-                  {!wallet.account ? (
+                  {!account ? (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -288,7 +304,7 @@ export function TokenComments({
                   <Button
                     size="sm"
                     onClick={handlePost}
-                    disabled={posting || !wallet.account || !canPost}
+                    disabled={posting || !account || !canPost}
                   >
                     {posting ? (mode === "chat" ? "Sending…" : "Posting…") : mode === "chat" ? "Send" : "Post"}
                   </Button>
@@ -358,7 +374,7 @@ export function TokenComments({
                     <p className={`mt-1 whitespace-pre-wrap break-words ${mode === "chat" ? "text-[12px]" : "text-xs"} text-foreground/90`}>
                       {c.body}
                     </p>
-                    {wallet.account && c.authorAddress?.toLowerCase() === wallet.account.toLowerCase() ? null : (
+                    {account && c.authorAddress && canonAddress(c.authorAddress, solana) === account ? null : (
                       <div className="mt-2">
                         <AbuseReportShortcut
                           prefill={{
