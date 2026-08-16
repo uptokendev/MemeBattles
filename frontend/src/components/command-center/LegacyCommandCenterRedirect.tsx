@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useParams } from "react-router-dom";
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
@@ -16,7 +16,8 @@ type CommandCenterSection =
   | "coins"
   | "support"
   | "support/report"
-  | "support/reports";
+  | "support/reports"
+  | "support/reports/:reportId";
 
 type LegacyCommandCenterRedirectProps = {
   section: CommandCenterSection;
@@ -26,12 +27,17 @@ export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedi
   const evmWallet = useWallet();
   const feedWallet = useActiveFeedWallet();
   const location = useLocation();
+  const { reportId = "" } = useParams();
   const accountWallet = normalizeRouteWallet(feedWallet.address || evmWallet.account);
 
   if (!accountWallet) {
     return <Navigate to="/profile" replace />;
   }
 
-  const suffix = section === "overview" ? "" : `/${section}`;
-  return <Navigate to={`/profile/${accountWallet}/command${suffix}${location.search}`} replace />;
+  const suffix = section === "overview"
+    ? ""
+    : section === "support/reports/:reportId" && reportId
+      ? `/support/reports/${encodeURIComponent(reportId)}`
+      : `/${section}`;
+  return <Navigate to={`/profile/${accountWallet}/command${suffix}${location.search}${location.hash}`} replace />;
 }
