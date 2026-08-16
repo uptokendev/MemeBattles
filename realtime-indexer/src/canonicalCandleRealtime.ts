@@ -31,7 +31,7 @@ function batchSize(): number {
 
 function nextCursor(row: any): Cursor {
   return {
-    updatedAt: new Date(row.updated_at).toISOString(),
+    updatedAt: new Date(row.effective_updated_at).toISOString(),
     chainId: Number(row.chain_id),
     campaignAddress: String(row.campaign_address || ""),
     timeframe: String(row.timeframe || ""),
@@ -59,6 +59,9 @@ async function readChangedCandles(cursor: Cursor) {
        timeframe,
        bucket_start,
        o,h,l,c,
+       price_o,price_h,price_l,price_c,
+       mcap_o,mcap_h,mcap_l,mcap_c,
+       canonical_version,
        volume_bnb,
        trades_count,
        coalesce(source_mask, 1) as source_mask,
@@ -68,15 +71,15 @@ async function readChangedCandles(cursor: Cursor) {
        coalesce(dex_volume_bnb, 0) as dex_volume_bnb,
        last_block_number,
        last_log_index,
-       updated_at
+       greatest(updated_at,coalesce(canonical_updated_at,updated_at)) as effective_updated_at
      from public.token_candles
      where
-       updated_at > $1::timestamptz
+       greatest(updated_at,coalesce(canonical_updated_at,updated_at)) > $1::timestamptz
        or (
-         updated_at = $1::timestamptz
+         greatest(updated_at,coalesce(canonical_updated_at,updated_at)) = $1::timestamptz
          and (chain_id, campaign_address, timeframe, bucket_start) > ($2,$3,$4,$5::timestamptz)
        )
-     order by updated_at asc, chain_id asc, campaign_address asc, timeframe asc, bucket_start asc
+     order by effective_updated_at asc, chain_id asc, campaign_address asc, timeframe asc, bucket_start asc
      limit $6`,
     [
       cursor.updatedAt,
@@ -106,6 +109,15 @@ async function publishRow(row: any) {
     high: String(row.h),
     low: String(row.l),
     close: String(row.c),
+    priceOpen: row.price_o == null ? null : String(row.price_o),
+    priceHigh: row.price_h == null ? null : String(row.price_h),
+    priceLow: row.price_l == null ? null : String(row.price_l),
+    priceClose: row.price_c == null ? null : String(row.price_c),
+    marketCapOpen: row.mcap_o == null ? null : String(row.mcap_o),
+    marketCapHigh: row.mcap_h == null ? null : String(row.mcap_h),
+    marketCapLow: row.mcap_l == null ? null : String(row.mcap_l),
+    marketCapClose: row.mcap_c == null ? null : String(row.mcap_c),
+    canonicalVersion: row.canonical_version == null ? null : Number(row.canonical_version),
     volumeBnb: String(row.volume_bnb ?? 0),
     tradesCount: Number(row.trades_count || 0),
     sourceMask: Number(row.source_mask || 0),
@@ -122,8 +134,6 @@ export async function runCanonicalCandleRealtimeOnce(cursor: Cursor): Promise<Cu
   const result = await readChangedCandles(cursor);
   let next = cursor;
   for (const row of result.rows) {
-    // Move the cursor even when realtime fanout fails. REST remains authoritative
-    // and reconnect reconciliation repairs missed Ably delivery.
     next = nextCursor(row);
     try {
       await publishRow(row);
