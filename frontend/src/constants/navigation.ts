@@ -48,7 +48,7 @@ export const socialLinks: SocialItem[] = [
     svgUrl: twitterIcon,
   },
   {
-    href: "https://discord.gg/aXTkn3Asu",
+    href: "https://discord.gg/hhfgQNzt5Z",
     ariaLabel: "Discord",
     tooltip: "Discord",
     color: "#5865F2",
