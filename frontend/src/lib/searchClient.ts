@@ -38,7 +38,11 @@ function mapCampaignRow(raw: Record<string, unknown>, fallbackChainId: number): 
     { chainId },
   );
   if (!href) return null;
-  const graduated = Boolean(raw.isDexTrading ?? raw.is_dex_trading ?? raw.status === "graduated" ?? raw.graduatedAtChain);
+  const graduated = Boolean(
+    raw.isDexTrading ??
+      raw.is_dex_trading ??
+      (raw.status === "graduated" || Boolean(raw.graduatedAtChain)),
+  );
   return {
     kind: "token",
     campaignAddress: campaignAddress || tokenAddress,

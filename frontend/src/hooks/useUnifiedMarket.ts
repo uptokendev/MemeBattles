@@ -16,8 +16,8 @@ import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
 export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
-// Chart composition is always available from bonding curve points + browser Topaz scans.
-// Remote Topaz candles/trades only load when market continuity API is enabled.
+// Durable server market data is additive to the existing curve/browser fallback.
+// When canonical candles exist, UnifiedMarketChart treats them as the source of truth.
 const ENABLE_MARKET_API = isMarketContinuityApiEnabled();
 
 function tradeKey(trade: Pick<MarketTrade, "txHash" | "logIndex">) {
@@ -70,6 +70,80 @@ function mergeCandles(current: MarketCandle[], incoming: MarketCandle[]) {
   return Array.from(map.values()).sort((a, b) => candleKey(a) - candleKey(b));
 }
 
+function numberOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return value == null || value === "" ? null : String(value);
+}
+
+function realtimeCandle(data: any, resolution: MarketResolution): MarketCandle | null {
+  const tf = String(data?.resolution || data?.timeframe || data?.tf || "").trim();
+  if (tf && tf !== resolution) return null;
+
+  const bucketRaw = data?.bucket_start ?? data?.bucketStart ?? data?.time ?? data?.bucket;
+  let bucketMs = 0;
+  if (typeof bucketRaw === "number" || /^\d+(?:\.\d+)?$/.test(String(bucketRaw || ""))) {
+    const numeric = Number(bucketRaw);
+    bucketMs = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+  } else {
+    bucketMs = new Date(String(bucketRaw || "")).getTime();
+  }
+  if (!Number.isFinite(bucketMs) || bucketMs <= 0) return null;
+
+  const o = data?.open ?? data?.o;
+  const h = data?.high ?? data?.h;
+  const l = data?.low ?? data?.l;
+  const c = data?.close ?? data?.c;
+  const volume = data?.volume_bnb ?? data?.volumeBnb ?? data?.volume_native ?? data?.volumeNative ?? data?.volume;
+  const tradesCount = numberOrNull(data?.trades_count ?? data?.tradesCount);
+
+  // Legacy indexers published only close + per-trade volume (`c`/`v`). That is
+  // not enough to mutate an authoritative OHLC candle safely. Let the caller
+  // reconcile those events from REST until every publisher has been upgraded.
+  if ([o, h, l, c, volume].some((value) => value == null || value === "") || tradesCount == null) {
+    return null;
+  }
+
+  return {
+    bucket_start: new Date(bucketMs).toISOString(),
+    o: String(o),
+    h: String(h),
+    l: String(l),
+    c: String(c),
+    price_o: stringOrNull(data?.price_o ?? data?.priceOpen),
+    price_h: stringOrNull(data?.price_h ?? data?.priceHigh),
+    price_l: stringOrNull(data?.price_l ?? data?.priceLow),
+    price_c: stringOrNull(data?.price_c ?? data?.priceClose),
+    mcap_o: stringOrNull(data?.mcap_o ?? data?.marketCapOpen),
+    mcap_h: stringOrNull(data?.mcap_h ?? data?.marketCapHigh),
+    mcap_l: stringOrNull(data?.mcap_l ?? data?.marketCapLow),
+    mcap_c: stringOrNull(data?.mcap_c ?? data?.marketCapClose),
+    canonical_version: numberOrNull(data?.canonical_version ?? data?.canonicalVersion),
+    canonical_updated_at: stringOrNull(data?.canonical_updated_at ?? data?.canonicalUpdatedAt),
+    volume_bnb: String(volume),
+    trades_count: Math.max(0, Math.trunc(tradesCount)),
+    source_mask: Math.max(0, Math.trunc(numberOrNull(data?.source_mask ?? data?.sourceMask) ?? 1)),
+    bonding_trade_count: Math.max(
+      0,
+      Math.trunc(numberOrNull(data?.bonding_trade_count ?? data?.bondingTradeCount) ?? tradesCount),
+    ),
+    dex_trade_count: Math.max(
+      0,
+      Math.trunc(numberOrNull(data?.dex_trade_count ?? data?.dexTradeCount) ?? 0),
+    ),
+    bonding_volume_bnb: String(
+      data?.bonding_volume_bnb ?? data?.bondingVolumeBnb ?? volume,
+    ),
+    dex_volume_bnb: String(data?.dex_volume_bnb ?? data?.dexVolumeBnb ?? "0"),
+    last_block_number: numberOrNull(data?.last_block_number ?? data?.lastBlockNumber ?? data?.lastBlock),
+    last_log_index: numberOrNull(data?.last_log_index ?? data?.lastLogIndex),
+  };
+}
+
 function realtimeTrade(data: any, chainId: number): MarketTrade | null {
   const txHash = normalizeTradeTxHash(data?.txHash || data?.tx_hash);
   const blockNumber = Number(data?.blockNumber || data?.block_number || 0);
@@ -105,7 +179,7 @@ export function useUnifiedMarket(input: {
 }) {
   const campaignAddress = campaignKey(input.chainId, input.campaignAddress || "");
   const resolution = input.resolution ?? "1m";
-  // Chart is always "enabled" for a valid campaign so TokenDetails can render continuous history from curve points.
+  // Chart stays available for a valid campaign even if durable market data is unavailable.
   const enabled = (input.enabled ?? true) && isCampaignAddress(input.chainId, campaignAddress);
   const apiEnabled = enabled && ENABLE_MARKET_API;
 
@@ -179,7 +253,7 @@ export function useUnifiedMarket(input: {
       if (requestId !== requestRef.current || signal?.aborted) return;
 
       // Missing market-state row is normal for pre-handoff / older campaigns.
-      // Do not surface as an outage — chart still uses bonding + Topaz browser scan.
+      // Do not surface as an outage — the chart keeps its local trade fallback.
       if (!nextState && !nextSummary) {
         setState((prev) =>
           prev || {
@@ -228,7 +302,9 @@ export function useUnifiedMarket(input: {
       if (nextState) setState(nextState);
       if (nextSummary) setSummary(nextSummary);
       setTrades((current) => mergeTrades(current, nextTrades?.items || [], input.chainId));
-      setCandles((current) => mergeCandles(current, nextCandles?.items || []));
+      // REST is the authoritative snapshot. Do not merge a stale prior snapshot
+      // into it; realtime patches will build forward from this exact state.
+      setCandles(nextCandles?.items || []);
       setGraduationMarker(nextCandles?.graduationMarker || null);
       setError(null);
     } catch (caught: any) {
@@ -288,9 +364,33 @@ export function useUnifiedMarket(input: {
     const onTrade = (message: any) => {
       const trade = realtimeTrade(message?.data, input.chainId);
       if (trade) setTrades((current) => mergeTrades(current, [trade], input.chainId));
-      scheduleRefresh(180);
+      // The candle event, not the trade event, owns chart movement.
     };
-    const onCandle = () => scheduleRefresh(80);
+    const onCandle = (message: any) => {
+      const candle = realtimeCandle(message?.data, resolution);
+      if (!candle) {
+        // Compatibility path for legacy c/v-only publishers and malformed events.
+        scheduleRefresh(80);
+        return;
+      }
+
+      setCandles((current) => {
+        if (!current.length) return [candle];
+        const incomingKey = candleKey(candle);
+        const lastKey = candleKey(current[current.length - 1]);
+        if (!Number.isFinite(incomingKey) || incomingKey <= 0) {
+          scheduleRefresh(0);
+          return current;
+        }
+        if (incomingKey < lastKey) {
+          // A changed historical bucket means late indexing/backfill/reorg. The
+          // server snapshot is safer than mutating history blindly in-browser.
+          scheduleRefresh(0);
+          return current;
+        }
+        return mergeCandles(current, [candle]);
+      });
+    };
     const onStats = (message: any) => {
       const patch = message?.data || {};
       setSummary((current) => current ? { ...current, ...patch } : current);
@@ -314,7 +414,7 @@ export function useUnifiedMarket(input: {
       try { channel.unsubscribe("market_health_changed", onHealth); } catch { /* noop */ }
       try { realtime.client?.connection?.off?.("connected", onConnected); } catch { /* noop */ }
     };
-  }, [apiEnabled, realtime.channel, realtime.client, scheduleRefresh]);
+  }, [apiEnabled, input.chainId, realtime.channel, realtime.client, resolution, scheduleRefresh]);
 
   useEffect(() => () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);

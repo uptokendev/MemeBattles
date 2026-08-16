@@ -586,7 +586,7 @@ async function patchStats(campaign: string) {
   const soldAfterRaw = latest.rows[0]?.sold_after_raw;
   const curve = await fetchCampaignCurveSpot(campaign);
   // True mcap is current marginal spot × circulating sold, not last-fill VWAP × sold.
-  const lastPrice = curve?.spotSol ?? (Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null);
+  const lastPrice = curve?.spotSol ?? (fillPrice != null && Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null);
   const soldTokens =
     curve?.soldWhole ??
     (soldAfterRaw != null && String(soldAfterRaw).trim() !== ""
