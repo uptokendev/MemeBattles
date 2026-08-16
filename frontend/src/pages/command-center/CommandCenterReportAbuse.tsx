@@ -33,12 +33,13 @@ const ENTITIES: { value: AbuseEntityType | ""; label: string }[] = [
 
 const fieldClass = "border-border/60 bg-background/40 font-sans";
 
-export default function CommandCenterReportAbuse() {
+export default function CommandCenterReportAbuse({ embedded = false }: { embedded?: boolean }) {
   const { walletAddress, chainId } = useCommandCenterData();
   const { busy, withSession } = useAbuseReporterSession(walletAddress, chainId);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const base = `/profile/${walletAddress}/command/support`;
+  const [filedId, setFiledId] = useState("");
 
   const [category, setCategory] = useState<AbuseCategory | "">((searchParams.get("category") as AbuseCategory) || "");
   const [entityType, setEntityType] = useState<AbuseEntityType | "">((searchParams.get("entity") as AbuseEntityType) || "");
@@ -73,7 +74,8 @@ export default function CommandCenterReportAbuse() {
         await withSession((token) => uploadAbuseEvidence(token, report.id, file));
       }
       toast.success(`Report ${report.id} sent. Wait for the Abuse department.`);
-      navigate(`${base}/reports/${report.id}?filed=1`);
+      if (embedded) setFiledId(report.id);
+      else navigate(`${base}/reports/${report.id}?filed=1`);
     } catch (error) {
       const existingId = String((error as Error & { reportId?: string })?.reportId || "").trim();
       toast.error(String((error as Error)?.message || "Could not file the abuse report."));
@@ -83,13 +85,28 @@ export default function CommandCenterReportAbuse() {
     }
   };
 
+  if (embedded && filedId) {
+    return (
+      <CommandCenterCard eyebrow="Report submitted" title={filedId}>
+        <p className="text-sm leading-6 text-muted-foreground">
+          The Abuse department has the case. Stand by here. Email is only a ping.
+        </p>
+        <Button asChild className="mt-4 font-retro">
+          <Link to={`${base}/reports/${filedId}?filed=1`}>View case file</Link>
+        </Button>
+      </CommandCenterCard>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        eyebrow="Support & Safety"
-        title="Report Abuse"
-        description="Use this form only for impersonation, identity theft, stolen images or branding, fake official profiles, and phishing that pretends to represent you or MemeWarzone."
-      />
+      {embedded ? null : (
+        <CommandCenterPageHeader
+          eyebrow="Support & Safety"
+          title="Report Abuse"
+          description="Use this form only for impersonation, identity theft, stolen images or branding, fake official profiles, and phishing that pretends to represent you or MemeWarzone."
+        />
+      )}
 
       <CommandCenterCard title="This is not Discord support">
         <p className="text-sm leading-6 text-muted-foreground">
@@ -197,9 +214,11 @@ export default function CommandCenterReportAbuse() {
           <Button type="submit" className="font-retro" disabled={submitting || busy}>
             {submitting || busy ? "Signing / filing..." : "Submit abuse report"}
           </Button>
-          <Button type="button" variant="outline" className="font-retro" asChild>
-            <Link to={base}>Back to Help</Link>
-          </Button>
+          {embedded ? null : (
+            <Button type="button" variant="outline" className="font-retro" asChild>
+              <Link to={base}>Back to Help</Link>
+            </Button>
+          )}
         </div>
       </form>
     </div>

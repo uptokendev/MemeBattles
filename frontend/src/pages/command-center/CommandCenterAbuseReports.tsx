@@ -16,7 +16,7 @@ function formatWhen(value?: string | null) {
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function CommandCenterAbuseReports() {
+export default function CommandCenterAbuseReports({ embedded = false }: { embedded?: boolean }) {
   const { walletAddress, chainId } = useCommandCenterData();
   const { busy, withSession } = useAbuseReporterSession(walletAddress, chainId);
   const base = `/profile/${walletAddress}/command/support`;
@@ -43,15 +43,17 @@ export default function CommandCenterAbuseReports() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        eyebrow="Support & Safety"
-        title="My Abuse Reports"
-        description="Private cases filed from this wallet. Staff replies appear here, not in email or Discord."
-      >
-        <Button asChild className="font-retro">
-          <Link to={`${base}/report`}>New report</Link>
-        </Button>
-      </CommandCenterPageHeader>
+      {embedded ? null : (
+        <CommandCenterPageHeader
+          eyebrow="Support & Safety"
+          title="My Abuse Reports"
+          description="Private cases filed from this wallet. Staff replies appear here, not in email or Discord."
+        >
+          <Button asChild className="font-retro">
+            <Link to={`${base}/report`}>New report</Link>
+          </Button>
+        </CommandCenterPageHeader>
+      )}
 
       <div className="rounded-2xl border border-accent/40 bg-accent/5 p-4">
         <div className="font-retro text-[10px] uppercase tracking-[0.16em] text-accent">Abuse department</div>

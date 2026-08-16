@@ -1,67 +1,116 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { Flag, LifeBuoy, Search, ShieldAlert } from "lucide-react";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
-import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ABUSE_HELP_ARTICLES, DISCORD_SUPPORT_URL, searchAbuseHelp } from "@/lib/abuseHelpArticles";
+import {
+  DISCORD_SUPPORT_URL,
+  HELP_CATEGORIES,
+  searchHelpArticles,
+  type HelpCategoryId,
+} from "@/lib/helpCenter";
+import CommandCenterReportAbuse from "@/pages/command-center/CommandCenterReportAbuse";
+import CommandCenterAbuseReports from "@/pages/command-center/CommandCenterAbuseReports";
+
+type SupportPanel = "help" | "report" | "reports";
 
 export default function CommandCenterSupport() {
-  const { walletAddress } = useCommandCenterData();
-  const base = `/profile/${walletAddress}/command/support`;
   const [query, setQuery] = useState("");
-  const articles = useMemo(() => searchAbuseHelp(query), [query]);
+  const [category, setCategory] = useState<HelpCategoryId>("popular");
+  const [panel, setPanel] = useState<SupportPanel>("help");
+  const searching = query.trim().length > 0;
+  const articles = useMemo(() => searchHelpArticles(query, category), [category, query]);
 
   return (
     <div className="space-y-4">
       <CommandCenterPageHeader
         eyebrow="Support & Safety"
-        title="Help desk"
-        description="Search MemeWarzone Help for product questions. Identity theft, impersonation and fake official accounts go to Abuse — not Discord."
+        title="How can we help?"
+        description="Search first. Product questions stay in Discord. Impersonation and stolen identity stay in Abuse."
       />
 
-      <CommandCenterCard title="Search MemeWarzone Help">
-        <label className="sr-only" htmlFor="mwz-help-search">Search help</label>
+      <CommandCenterCard>
+        <label className="sr-only" htmlFor="mwz-help-search">Search MemeWarzone Help</label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             id="mwz-help-search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search Help"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPanel("help");
+            }}
+            placeholder="Search MemeWarzone Help"
             className="border-border/60 bg-background/40 pl-10 font-sans"
           />
         </div>
+        <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1">
+          {HELP_CATEGORIES.map((item) => {
+            const active = !searching && category === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setCategory(item.id);
+                  setQuery("");
+                  setPanel("help");
+                }}
+                className={`shrink-0 rounded-full border px-3 py-1.5 font-retro text-[10px] uppercase tracking-[0.14em] transition-colors ${
+                  active
+                    ? "border-accent/60 bg-accent/15 text-accent"
+                    : "border-border/50 bg-background/30 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
       </CommandCenterCard>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {(articles.length ? articles : []).map((article) => (
-          <CommandCenterCard key={article.id} title={article.title} description={article.summary}>
-            <p className="text-sm leading-6 text-muted-foreground">{article.body}</p>
-          </CommandCenterCard>
-        ))}
-        {articles.length === 0 && (
-          <CommandCenterCard title="No matching briefing">
+      {panel === "help" ? (
+        <CommandCenterCard
+          eyebrow={searching ? "Search results" : HELP_CATEGORIES.find((item) => item.id === category)?.label}
+          title={searching ? `Results for “${query.trim()}”` : "Help questions"}
+        >
+          {articles.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing in Help matches that search. Product questions go to Discord. Targeted abuse stays in Report Abuse.
+              Nothing in Help matches that. Product questions go to Discord. Targeted abuse stays in Report Abuse.
             </p>
-          </CommandCenterCard>
-        )}
-      </div>
+          ) : (
+            <Accordion type="single" collapsible className="w-full">
+              {articles.map((article) => (
+                <AccordionItem key={article.id} value={article.id} className="border-border/40">
+                  <AccordionTrigger className="py-3 text-left text-sm font-medium hover:no-underline">
+                    {article.title}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-sm leading-6 text-muted-foreground">
+                    {article.body}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+        </CommandCenterCard>
+      ) : null}
+
+      {panel === "report" ? <CommandCenterReportAbuse embedded /> : null}
+      {panel === "reports" ? <CommandCenterAbuseReports embedded /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <CommandCenterCard
-          eyebrow="Normal support"
-          title="Can't find what you're looking for?"
-          description="Wallet, trade, rewards and product questions stay in Discord. They are not Abuse reports."
+          eyebrow="General support"
+          title="Still need help?"
+          description="Wallets, trading, launches, rewards and product questions stay in Discord."
         >
           <Button asChild className="font-retro">
             <a href={DISCORD_SUPPORT_URL} target="_blank" rel="noreferrer">
               <LifeBuoy className="mr-2 h-4 w-4" />
-              Join Discord and open a support ticket
+              Open Discord Support
             </a>
           </Button>
         </CommandCenterCard>
@@ -69,30 +118,30 @@ export default function CommandCenterSupport() {
         <CommandCenterCard
           eyebrow="Restricted lane"
           title="Report abuse"
-          description="Impersonation, stolen content, fake official profiles, and phishing pretending to be you or MemeWarzone. After you file, you get a case number and wait here for the Abuse department."
+          description="Impersonation, stolen images, fake official profiles and phishing. Not failed trades."
         >
           <div className="flex flex-wrap gap-2">
-            <Button asChild className="font-retro">
-              <Link to={`${base}/report`}>
-                <ShieldAlert className="mr-2 h-4 w-4" />
-                File an abuse report
-              </Link>
+            <Button
+              type="button"
+              className="font-retro"
+              onClick={() => setPanel((current) => (current === "report" ? "help" : "report"))}
+            >
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              {panel === "report" ? "Hide report form" : "File Abuse Report"}
             </Button>
-            <Button asChild variant="outline" className="font-retro">
-              <Link to={`${base}/reports`}>
-                <Flag className="mr-2 h-4 w-4" />
-                My abuse reports
-              </Link>
+            <Button
+              type="button"
+              variant="outline"
+              className="font-retro"
+              onClick={() => setPanel((current) => (current === "reports" ? "help" : "reports"))}
+            >
+              <Flag className="mr-2 h-4 w-4" />
+              {panel === "reports" ? "Hide my reports" : "My Abuse Reports"}
             </Button>
+
           </div>
         </CommandCenterCard>
       </div>
-
-      {query.trim() === "" && (
-        <p className="px-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-          {ABUSE_HELP_ARTICLES.length} popular topics on station
-        </p>
-      )}
     </div>
   );
 }

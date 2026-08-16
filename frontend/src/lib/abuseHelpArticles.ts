@@ -88,4 +88,4 @@ export function searchAbuseHelp(query: string): AbuseHelpArticle[] {
   });
 }
 
-export const DISCORD_SUPPORT_URL = "https://discord.gg/aXTkn3Asu";
+export { DISCORD_SUPPORT_URL } from "@/lib/helpCenter";
