@@ -254,6 +254,29 @@ async function loadPoolPair(market: GraduatedMarket): Promise<PoolPair> {
   return { tokenA, tokenB, tokenDecimals: mintData[44] };
 }
 
+async function fixedBondingSupplyWhole(campaign: string, tokenDecimals: number): Promise<number> {
+  const latest = await pool.query(
+    `select sold_tokens_after_raw
+       from public.curve_trades
+      where chain_id=$1 and campaign_address=$2 and sold_tokens_after_raw is not null
+      order by block_number desc,log_index desc
+      limit 1`,
+    [SOLANA_CHAIN_ID, campaign],
+  );
+  const raw = bigintValue(latest.rows[0]?.sold_tokens_after_raw ?? 0);
+  if (raw > 0n) {
+    const whole = Number(raw) / 10 ** tokenDecimals;
+    if (Number.isFinite(whole) && whole > 0) return whole;
+  }
+
+  const fallback = await pool.query(
+    `select sold_tokens from public.token_stats where chain_id=$1 and campaign_address=$2 limit 1`,
+    [SOLANA_CHAIN_ID, campaign],
+  );
+  const whole = Number(fallback.rows[0]?.sold_tokens ?? 0);
+  return Number.isFinite(whole) && whole > 0 ? whole : 0;
+}
+
 async function touchCampaignActivity(campaign: string, at: Date) {
   await pool.query(
     `insert into public.campaign_activity(chain_id,campaign_address,last_activity_at,updated_at)
@@ -311,19 +334,74 @@ async function insertActivityEvent(row: {
   });
 }
 
-async function upsertCandle(campaign: string, tf: TF, bucketSec: number, priceSol: number, volumeSol: number) {
+async function upsertCandle(
+  campaign: string,
+  tf: TF,
+  bucketSec: number,
+  priceSol: number,
+  volumeSol: number,
+  fixedSupplyWhole: number,
+  blockNumber: number,
+  logIndex: number,
+) {
+  const mcapSol = Number.isFinite(fixedSupplyWhole) && fixedSupplyWhole > 0
+    ? priceSol * fixedSupplyWhole
+    : null;
   await pool.query(
     `insert into public.token_candles(
-       chain_id,campaign_address,timeframe,bucket_start,o,h,l,c,volume_bnb,trades_count
-     ) values($1,$2,$3,$4,$5,$5,$5,$5,$6,1)
+       chain_id,campaign_address,timeframe,bucket_start,o,h,l,c,volume_bnb,trades_count,
+       source_mask,bonding_trade_count,dex_trade_count,bonding_volume_bnb,dex_volume_bnb,
+       last_block_number,last_log_index,
+       price_o,price_h,price_l,price_c,mcap_o,mcap_h,mcap_l,mcap_c,
+       canonical_version,canonical_updated_at
+     ) values(
+       $1,$2,$3,$4,$5,$5,$5,$5,$6,1,
+       2,0,1,0,$6,
+       $7,$8,
+       $5,$5,$5,$5,$9,$9,$9,$9,
+       2,now()
+     )
      on conflict (chain_id,campaign_address,timeframe,bucket_start) do update set
        h=greatest(public.token_candles.h,excluded.h),
        l=least(public.token_candles.l,excluded.l),
        c=excluded.c,
        volume_bnb=public.token_candles.volume_bnb+excluded.volume_bnb,
        trades_count=public.token_candles.trades_count+1,
+       source_mask=((coalesce(public.token_candles.source_mask,0)::int | 2)::smallint),
+       bonding_trade_count=coalesce(public.token_candles.bonding_trade_count,0),
+       dex_trade_count=coalesce(public.token_candles.dex_trade_count,0)+1,
+       bonding_volume_bnb=coalesce(public.token_candles.bonding_volume_bnb,0),
+       dex_volume_bnb=coalesce(public.token_candles.dex_volume_bnb,0)+excluded.dex_volume_bnb,
+       last_block_number=excluded.last_block_number,
+       last_log_index=excluded.last_log_index,
+       price_o=coalesce(public.token_candles.price_o,excluded.price_o),
+       price_h=greatest(coalesce(public.token_candles.price_h,excluded.price_h),excluded.price_h),
+       price_l=least(coalesce(public.token_candles.price_l,excluded.price_l),excluded.price_l),
+       price_c=excluded.price_c,
+       mcap_o=coalesce(public.token_candles.mcap_o,excluded.mcap_o),
+       mcap_h=case
+         when excluded.mcap_h is null then public.token_candles.mcap_h
+         else greatest(coalesce(public.token_candles.mcap_h,excluded.mcap_h),excluded.mcap_h)
+       end,
+       mcap_l=case
+         when excluded.mcap_l is null then public.token_candles.mcap_l
+         else least(coalesce(public.token_candles.mcap_l,excluded.mcap_l),excluded.mcap_l)
+       end,
+       mcap_c=coalesce(excluded.mcap_c,public.token_candles.mcap_c),
+       canonical_version=greatest(coalesce(public.token_candles.canonical_version,0),excluded.canonical_version),
+       canonical_updated_at=now(),
        updated_at=now()`,
-    [SOLANA_CHAIN_ID, campaign, tf, new Date(bucketSec * 1000), priceSol, volumeSol],
+    [
+      SOLANA_CHAIN_ID,
+      campaign,
+      tf,
+      new Date(bucketSec * 1000),
+      priceSol,
+      volumeSol,
+      blockNumber,
+      logIndex,
+      mcapSol,
+    ],
   );
   await publishCandle(SOLANA_CHAIN_ID, campaign, {
     type: "candle_upsert",
@@ -351,7 +429,8 @@ async function patchStats(campaign: string) {
     `select
        coalesce(sum(case when side='buy' then token_amount else 0 end),0)-
        coalesce(sum(case when side='sell' then token_amount else 0 end),0) as sold
-     from public.curve_trades where chain_id=$1 and campaign_address=$2`,
+     from public.curve_trades
+     where chain_id=$1 and campaign_address=$2 and sold_tokens_after_raw is not null`,
     [SOLANA_CHAIN_ID, campaign],
   );
   const lastPrice = latest.rows[0]?.last_price_bnb ?? null;
@@ -383,6 +462,7 @@ async function patchStats(campaign: string) {
 async function insertSwap(input: {
   market: GraduatedMarket;
   pair: PoolPair;
+  fixedSupplyWhole: number;
   swap: MeteoraSwap;
   wallet: string;
   signature: string;
@@ -477,7 +557,16 @@ async function insertSwap(input: {
   if (priceNative !== null && priceNative > 0) {
     const tsSec = Math.floor(input.blockTime.getTime() / 1000);
     for (const tf of TIMEFRAMES) {
-      await upsertCandle(input.market.campaign, tf, bucketStart(tsSec, tf), priceNative, nativeAmount);
+      await upsertCandle(
+        input.market.campaign,
+        tf,
+        bucketStart(tsSec, tf),
+        priceNative,
+        nativeAmount,
+        input.fixedSupplyWhole,
+        input.slot,
+        logIndex,
+      );
     }
   }
   await patchStats(input.market.campaign);
@@ -490,6 +579,7 @@ async function indexMarket(market: GraduatedMarket, head: number) {
   const fromSlot = currentState > 0 ? currentState : startSlot;
   const signatures = await getSignatures(market.pool, fromSlot, currentState);
   const pair = await loadPoolPair(market);
+  const fixedSupplyWhole = await fixedBondingSupplyWhole(market.campaign, pair.tokenDecimals);
   let maxSlot = currentState;
 
   for (const item of signatures) {
@@ -505,6 +595,7 @@ async function indexMarket(market: GraduatedMarket, head: number) {
       await insertSwap({
         market,
         pair,
+        fixedSupplyWhole,
         swap: swaps[eventIndex],
         wallet,
         signature: item.signature,

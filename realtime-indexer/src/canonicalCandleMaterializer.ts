@@ -6,7 +6,7 @@ import { TIMEFRAMES, bucketStart, type TF } from "./timeframes.js";
 
 const LOOP_SYMBOL = Symbol.for("memewarzone.canonicalCandleMaterializerStarted");
 const globalState = globalThis as any;
-const VERSION = 1;
+const VERSION = 2;
 const WAD = 1_000_000_000_000_000_000n;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const DEFAULT_SOLANA_RPC = "https://api.devnet.solana.com";
@@ -15,6 +15,7 @@ const DEFAULT_SOLANA_PROGRAM = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt";
 const BNB_CURVE_ABI = [
   "function basePrice() view returns (uint256)",
   "function priceSlope() view returns (uint256)",
+  "function sold() view returns (uint256)",
 ];
 
 type TradeRow = {
@@ -54,6 +55,11 @@ type CanonicalBucket = {
 };
 
 type SpotCalculator = (soldRaw: bigint) => CurveState;
+
+type SpotModel = {
+  calculate: SpotCalculator;
+  currentSoldRaw: bigint | null;
+};
 
 function enabled(): boolean {
   return String(process.env.ENABLE_CANONICAL_CANDLE_MATERIALIZER ?? "1").trim() !== "0";
@@ -110,15 +116,16 @@ async function bscProvider(chainId: number): Promise<ethers.JsonRpcProvider> {
   return provider;
 }
 
-async function bnbSpotCalculator(chainId: number, campaign: string): Promise<SpotCalculator> {
+async function bnbSpotCalculator(chainId: number, campaign: string): Promise<SpotModel> {
   const provider = await bscProvider(chainId);
   const contract = new ethers.Contract(campaign, BNB_CURVE_ABI, provider) as any;
-  const [basePriceRaw, priceSlopeRaw] = await Promise.all([
+  const [basePriceRaw, priceSlopeRaw, currentSoldRaw] = await Promise.all([
     contract.basePrice() as Promise<bigint>,
     contract.priceSlope() as Promise<bigint>,
+    contract.sold() as Promise<bigint>,
   ]);
 
-  return (soldRaw: bigint) => {
+  const calculate: SpotCalculator = (soldRaw: bigint) => {
     const safeSold = soldRaw > 0n ? soldRaw : 0n;
     const spotRaw = basePriceRaw + (priceSlopeRaw * safeSold) / WAD;
     const spotNative = bigintRatio(spotRaw, WAD);
@@ -129,6 +136,8 @@ async function bnbSpotCalculator(chainId: number, campaign: string): Promise<Spo
       mcapNative: spotNative * soldWhole,
     };
   };
+
+  return { calculate, currentSoldRaw };
 }
 
 function readU64LE(data: Buffer, offset: number): bigint {
@@ -197,7 +206,7 @@ async function solanaRpc<T>(method: string, params: unknown[]): Promise<T> {
   throw lastError instanceof Error ? lastError : new Error(String(lastError || `${method} failed`));
 }
 
-async function solanaSpotCalculator(campaign: string): Promise<SpotCalculator> {
+async function solanaSpotCalculator(campaign: string): Promise<SpotModel> {
   const info = await solanaRpc<{ value?: { data?: [string, string]; owner?: string } | null }>("getAccountInfo", [
     campaign,
     { encoding: "base64", commitment: "confirmed" },
@@ -213,25 +222,28 @@ async function solanaSpotCalculator(campaign: string): Promise<SpotCalculator> {
   const curve = decodeSolanaCurve(Buffer.from(encoded, "base64"));
   if (!curve) throw new Error(`Could not decode Solana curve parameters: ${campaign}`);
   const tokenUnits = pow10(curve.tokenDecimals);
-  const slopeScale = curve.economicsVersion >= 3 ? tokenUnits * 1_000_000_000n : tokenUnits;
 
-  return (soldRaw: bigint) => {
+  const calculate: SpotCalculator = (soldRaw: bigint) => {
     const safeSold = soldRaw > 0n ? soldRaw : 0n;
-    const slopeComponentLamports = slopeScale > 0n
-      ? (curve.priceSlopeLamports * safeSold) / slopeScale
-      : 0n;
-    const spotLamports = curve.basePriceLamports + slopeComponentLamports;
-    const spotNative = bigintRatio(spotLamports, 1_000_000_000n);
     const soldWhole = bigintRatio(safeSold, tokenUnits);
+    const baseLamports = Number(curve.basePriceLamports);
+    const slopeRaw = Number(curve.priceSlopeLamports);
+    const slopeLamports = curve.economicsVersion >= 3
+      ? (slopeRaw * soldWhole) / 1_000_000_000
+      : slopeRaw * soldWhole;
+    const spotNative = (baseLamports + slopeLamports) / LAMPORTS_PER_SOL;
+    const safeSpotNative = Number.isFinite(spotNative) && spotNative > 0 ? spotNative : 0;
     return {
       soldRaw: safeSold,
-      spotNative,
-      mcapNative: spotNative * soldWhole,
+      spotNative: safeSpotNative,
+      mcapNative: safeSpotNative * soldWhole,
     };
   };
+
+  return { calculate, currentSoldRaw: null };
 }
 
-async function spotCalculator(chainId: number, campaign: string): Promise<SpotCalculator> {
+async function spotCalculator(chainId: number, campaign: string): Promise<SpotModel> {
   if (chainId === 101) return solanaSpotCalculator(campaign);
   if (chainId === 56 || chainId === 97) return bnbSpotCalculator(chainId, campaign);
   throw new Error(`Unsupported canonical candle chain ${chainId}`);
@@ -296,15 +308,38 @@ async function campaignTrades(chainId: number, campaign: string): Promise<TradeR
             token_amount_raw,bnb_amount,sold_tokens_after_raw
        from public.curve_trades
       where chain_id=$1 and campaign_address=$2
+        and (chain_id <> 101 or sold_tokens_after_raw is not null)
       order by block_number asc, log_index asc`,
     [chainId, campaign],
   );
   return result.rows as TradeRow[];
 }
 
-function deriveBuckets(chainId: number, trades: TradeRow[], calculate: SpotCalculator): Map<string, CanonicalBucket> {
+function indexedNetSold(trades: TradeRow[]): bigint {
+  let net = 0n;
+  for (const trade of trades) {
+    const amount = toBigInt(trade.token_amount_raw);
+    net += String(trade.side || "").toLowerCase() === "sell" ? -amount : amount;
+  }
+  return net;
+}
+
+function deriveBuckets(
+  chainId: number,
+  trades: TradeRow[],
+  calculate: SpotCalculator,
+  currentSoldRaw: bigint | null = null,
+): Map<string, CanonicalBucket> {
   const buckets = new Map<string, CanonicalBucket>();
   let reconstructedSold = 0n;
+
+  // Older BNB campaigns can have valid trades before the durable trade mirror began.
+  // Anchor the reconstructed history to the live contract sold() state so the latest
+  // canonical close uses the exact same circulating-supply basis as TokenDetails.
+  if ((chainId === 56 || chainId === 97) && currentSoldRaw != null && currentSoldRaw >= 0n) {
+    const inferredOpeningSold = currentSoldRaw - indexedNetSold(trades);
+    if (inferredOpeningSold > 0n) reconstructedSold = inferredOpeningSold;
+  }
 
   for (const trade of trades) {
     const amount = toBigInt(trade.token_amount_raw);
@@ -388,8 +423,8 @@ export async function materializeCanonicalCandles(chainId: number, campaign: str
   const trades = await campaignTrades(chainId, normalizedCampaign);
   if (!trades.length) return { chainId, campaign: normalizedCampaign, trades: 0, candles: 0 };
 
-  const calculate = await spotCalculator(chainId, normalizedCampaign);
-  const buckets = deriveBuckets(chainId, trades, calculate);
+  const model = await spotCalculator(chainId, normalizedCampaign);
+  const buckets = deriveBuckets(chainId, trades, model.calculate, model.currentSoldRaw);
   for (const candle of buckets.values()) {
     await writeBucket(chainId, normalizedCampaign, candle);
   }
@@ -410,12 +445,17 @@ async function staleCampaigns() {
        left join public.token_candles tc
          on tc.chain_id=t.chain_id and tc.campaign_address=t.campaign_address
       where t.chain_id in (56,97,101)
+        and (t.chain_id <> 101 or t.sold_tokens_after_raw is not null)
       group by t.chain_id,t.campaign_address
       having max(tc.canonical_updated_at) is null
           or max(tc.canonical_updated_at) < max(t.block_time)
+          or bool_or(
+            coalesce(tc.dex_trade_count,0)=0
+            and coalesce(tc.canonical_version,0) < $2
+          )
       order by max(t.block_time) asc
       limit $1`,
-    [campaignBatchSize()],
+    [campaignBatchSize(), VERSION],
   );
 }
 
