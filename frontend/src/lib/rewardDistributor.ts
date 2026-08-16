@@ -1,6 +1,7 @@
 import type { JsonRpcSigner } from "ethers";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 import { signWalletAction, type WalletActionAuthPayload } from "@/lib/walletActionAuth";
+import type { SolanaAirdropClaimCall } from "@/lib/solanaRewardClaim";
 
 export const REWARD_DISTRIBUTOR_ABI = [
   {
@@ -47,12 +48,13 @@ export type RewardClaimConfig = {
   chainId: number;
   tokenSymbol: string;
   enabled: boolean;
-  mode: "reward_distributor_merkle" | "disabled";
+  mode: "reward_distributor_merkle" | "solana_treasury" | "disabled";
   reason: string | null;
   distributorAddress: string;
+  supportedRewardTypes?: string[];
 };
 
-export type RewardClaimCall = {
+export type EvmRewardClaimCall = {
   rewardLedgerId: string;
   chainId: number;
   tokenSymbol: string;
@@ -72,11 +74,13 @@ export type RewardClaimCall = {
   explorerTxBase: string;
 };
 
+export type RewardClaimCall = EvmRewardClaimCall | SolanaAirdropClaimCall;
+
 export type RewardClaimIntent = {
   id: string;
   walletAddress: string;
   chainId: number;
-  mode: "reward_distributor_merkle";
+  mode: "reward_distributor_merkle" | "solana_treasury";
   requiresWalletTransaction: true;
   calls: RewardClaimCall[];
 };
@@ -97,7 +101,6 @@ export async function fetchRewardClaimConfig(chainId: number): Promise<RewardCla
 type ClaimAuthOpts = {
   signer?: JsonRpcSigner | null;
   signMessage?: (message: string) => Promise<string>;
-  /** Pre-built auth (rare); otherwise signed when signer/signMessage provided. */
   auth?: WalletActionAuthPayload | null;
 };
 
@@ -119,7 +122,6 @@ async function maybeSignClaimAuth(
       signMessage: opts?.signMessage,
     });
   } catch (error) {
-    // Dual-auth period: allow unsigned when signing fails (enforce still off).
     console.warn(`[rewardDistributor] ${action} sign skipped:`, error);
     return null;
   }
@@ -160,7 +162,6 @@ export async function recordRewardClaimTx(params: {
   signMessage?: (message: string) => Promise<string>;
   auth?: WalletActionAuthPayload | null;
 }) {
-  // Public claim-record path (do not call /api/internal/* from the browser).
   const auth = await maybeSignClaimAuth("claim_record", params, params);
   const response = await fetch(buildRealtimeApiUrl("/api/rewards/me/claim-record"), {
     method: "POST",
@@ -191,7 +192,6 @@ export async function recordRewardClaimFailure(params: {
   signMessage?: (message: string) => Promise<string>;
   auth?: WalletActionAuthPayload | null;
 }) {
-  // Public claim-record path (do not call /api/internal/* from the browser).
   const auth = params.walletAddress
     ? await maybeSignClaimAuth("claim_record", params, params)
     : null;
