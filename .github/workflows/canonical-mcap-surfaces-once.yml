@@ -1,0 +1,104 @@
+name: Canonical MCap surfaces once
+
+on:
+  push:
+    branches: [agent/canonical-mcap-surfaces]
+    paths: [.github/workflows/canonical-mcap-surfaces-once.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/canonical-mcap-surfaces
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Patch MCap sources and chain-native USD conversion
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def rep(path, old, new, n=1):
+              p=Path(path); t=p.read_text(); c=t.count(old)
+              if c != n: raise SystemExit(f'{path}: expected {n}, found {c}: {old[:80]}')
+              p.write_text(t.replace(old,new))
+
+          # Campaign grid: chain-native USD + canonical REST beats legacy realtime mcap.
+          f='frontend/src/components/home/CampaignGrid.tsx'
+          rep(f,'import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
+          rep(f,'  const { price: bnbUsd } = useBnbUsdPrice(true);','  const { price: nativeUsd } = useNativeUsdPrice(activeChainId);')
+          rep(f,'    bnbUsd: bnbUsd ? bnbUsd : null,','    // Legacy API key; value is USD per selected chain-native coin.\n    bnbUsd: nativeUsd ? nativeUsd : null,')
+          rep(f,'  }), [activeChainId, query, bnbUsd, includeTestnet]);','  }), [activeChainId, query, nativeUsd, includeTestnet]);')
+          rep(f,'        (patch?.marketcapBnb ?? onChain?.marketcapBnb ?? it.marketcapBnb) ?? NaN,\n      );\n      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;','        // Canonical REST/on-chain values outrank legacy token_stats realtime patches.\n        (onChain?.marketcapBnb ?? it.marketcapBnb ?? patch?.marketcapBnb) ?? NaN,\n      );\n      const mcapUsd = Number.isFinite(mcapBnb) && nativeUsd ? mcapBnb * nativeUsd : NaN;')
+          rep(f,'      const athUsd = Number.isFinite(athBnb) && bnbUsd ? athBnb * bnbUsd : NaN;','      const athUsd = Number.isFinite(athBnb) && nativeUsd ? athBnb * nativeUsd : NaN;')
+          rep(f,'  }, [items, patchByCampaign, onChainByCampaign, bnbUsd, logoCache, baseParams]);','  }, [items, patchByCampaign, onChainByCampaign, nativeUsd, logoCache, baseParams]);')
+
+          # Featured: same rules.
+          f='frontend/src/components/home/FeaturedCampaigns.tsx'
+          rep(f,'import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
+          rep(f,'  const { price: bnbUsd } = useBnbUsdPrice(true);','  const { price: nativeUsd } = useNativeUsdPrice(featuredChainId);')
+          rep(f,'      const mcapBnb = Number((patch as { marketcapBnb?: string | number }).marketcapBnb ?? it.marketcapBnb ?? NaN);\n      const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;','      // Canonical REST value wins; legacy realtime marketcap is fallback only.\n      const mcapBnb = Number(it.marketcapBnb ?? (patch as { marketcapBnb?: string | number }).marketcapBnb ?? NaN);\n      const mcapUsdLabel = Number.isFinite(mcapBnb) && nativeUsd ? formatCompactUsd(mcapBnb * nativeUsd) : null;')
+          rep(f,'  }, [items, patchByCampaign, bnbUsd, logoCache, voteMode, featuredChainId]);','  }, [items, patchByCampaign, nativeUsd, logoCache, voteMode, featuredChainId]);')
+
+          # War Trade Room expanded chart needs BNB/USD as well as SOL/USD.
+          f='frontend/src/components/token/ContinuousMarketChartPanel.tsx'
+          rep(f,'import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
+          rep(f,'  const { price: solUsd } = useSolUsdPrice(solana);','  const { price: nativeUsd } = useNativeUsdPrice(chainId);')
+          rep(f,'          nativeUsdPrice={solana ? solUsd : undefined}','          nativeUsdPrice={nativeUsd}')
+
+          # Campaign feed: canonical-v2 latest close is current price/MCap source of truth.
+          p=Path('frontend/api/campaigns-base.js'); t=p.read_text()
+          old='       ts.last_price_bnb,\n       ts.sold_tokens,\n       ts.marketcap_bnb,'
+          if t.count(old)!=1: raise SystemExit(f'campaigns select count {t.count(old)}')
+          t=t.replace(old,'       COALESCE(cc.price_c, ts.last_price_bnb) AS last_price_bnb,\n       ts.sold_tokens,\n       COALESCE(cc.mcap_c, ts.marketcap_bnb) AS marketcap_bnb,',1)
+          a='    LEFT JOIN public.token_stats ts\n      ON ts.chain_id=c.chain_id AND ts.campaign_address=c.campaign_address\n'
+          j=a+'''    LEFT JOIN LATERAL (\n      SELECT tc.price_c, tc.mcap_c\n      FROM public.token_candles tc\n      WHERE tc.chain_id=c.chain_id\n        AND tc.campaign_address=c.campaign_address\n        AND tc.timeframe='5s'\n        AND COALESCE(tc.canonical_version,0) >= 2\n        AND tc.price_c IS NOT NULL\n        AND tc.mcap_c IS NOT NULL\n      ORDER BY tc.bucket_start DESC\n      LIMIT 1\n    ) cc ON true\n'''
+          if t.count(a)!=1: raise SystemExit(f'campaigns join count {t.count(a)}')
+          t=t.replace(a,j,1)
+          t=t.replace('max(tc.h) * b.sold_tokens as ath_marketcap_bnb','max(COALESCE(tc.mcap_h, tc.h * b.sold_tokens)) as ath_marketcap_bnb')
+          p.write_text(t)
+
+          # Featured feed: same canonical current MCap and canonical sort fallback.
+          p=Path('frontend/api/featured.js'); t=p.read_text()
+          m='ts.marketcap_bnb AS "marketcapBnb"'
+          if t.count(m)!=2: raise SystemExit(f'featured mcap count {t.count(m)}')
+          t=t.replace(m,'COALESCE(cc.mcap_c, ts.marketcap_bnb) AS "marketcapBnb"')
+          a='     LEFT JOIN token_stats ts\n       ON ts.chain_id = c.chain_id\n      AND ts.campaign_address = c.campaign_address\n'
+          j=a+'''     LEFT JOIN LATERAL (\n       SELECT tc.mcap_c\n       FROM token_candles tc\n       WHERE tc.chain_id = c.chain_id\n         AND tc.campaign_address = c.campaign_address\n         AND tc.timeframe = '5s'\n         AND COALESCE(tc.canonical_version,0) >= 2\n         AND tc.mcap_c IS NOT NULL\n       ORDER BY tc.bucket_start DESC\n       LIMIT 1\n     ) cc ON true\n'''
+          if t.count(a)!=2: raise SystemExit(f'featured join count {t.count(a)}')
+          t=t.replace(a,j)
+          t=t.replace('ORDER BY COALESCE(ts.marketcap_bnb,0) DESC','ORDER BY COALESCE(cc.mcap_c, ts.marketcap_bnb, 0) DESC')
+          p.write_text(t)
+
+      - name: Audit MCap source changes
+        run: |
+          ! grep -R "useBnbUsdPrice" frontend/src/components/home/CampaignGrid.tsx frontend/src/components/home/FeaturedCampaigns.tsx frontend/src/components/token/ContinuousMarketChartPanel.tsx
+          grep -q "canonical_version" frontend/api/campaigns-base.js
+          grep -q "canonical_version" frontend/api/featured.js
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Build and lint frontend
+        run: |
+          npm --prefix frontend run build
+          npm --prefix frontend run lint
+      - name: Build realtime indexer
+        run: |
+          npm ci --prefix realtime-indexer
+          npm --prefix realtime-indexer run build
+      - name: Remove one-shot workflow
+        run: git rm .github/workflows/canonical-mcap-surfaces-once.yml
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/api/campaigns-base.js frontend/api/featured.js frontend/src/components/home/CampaignGrid.tsx frontend/src/components/home/FeaturedCampaigns.tsx frontend/src/components/token/ContinuousMarketChartPanel.tsx
+          git commit -m "Unify market cap across public surfaces"
+          git push origin HEAD:agent/canonical-mcap-surfaces
