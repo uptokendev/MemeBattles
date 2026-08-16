@@ -39,7 +39,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "which-chains",
     title: "Which chains does MemeWarzone support?",
-    body: "BNB Chain and Solana. Wallets, campaigns, trading and rewards stay chain-aware.",
+    body: "BNB Chain and Solana. Wallets, campaigns and bonding trades stay chain-aware. Reward claims are not the same on both chains yet — BNB claims from Command Center; Solana League/Airdrop/Squad claims stay closed until the treasury is unsealed.",
     categories: ["wallets", "create"],
     keywords: ["bnb", "solana", "chain", "network", "multichain"],
   },
@@ -304,7 +304,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "graduation",
     title: "What happens when a token graduates?",
-    body: "Graduation moves the token from the bonding curve into DEX liquidity. The MemeWarzone page, chart and trade panel stay. Only the liquidity venue changes.",
+    body: "Graduation moves the token from the bonding curve into DEX liquidity. On BNB the campaign finalizes into Topaz. On Solana the curve can freeze at the threshold, then an operator TX seeds Meteora — you do not press a BNB-style Graduate button. The page stays on MemeWarzone either way.",
     categories: ["trading"],
     keywords: ["graduate", "graduation", "dex", "bonding complete", "100%"],
     popular: true,
@@ -327,7 +327,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "solana-after-grad",
     title: "Where do Solana tokens trade after graduation?",
-    body: "Graduated Solana campaigns use Meteora through the MemeWarzone interface.",
+    body: "After a Solana campaign is actually graduated on-chain (not just at 100% of the bar), trading uses Meteora DAMM v2 inside MemeWarzone. Until that TX confirms, the campaign is still bonding or waiting for Meteora.",
     categories: ["trading"],
     keywords: ["meteora", "solana dex", "graduated sol"],
   },
@@ -468,7 +468,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "lp-fees",
     title: "How do I claim creator LP fees?",
-    body: "After graduation, open Command Center → My Coins and use the campaign's LP/DEX claim when fees are available. If the DEX pool is still indexing, wait — that is not a failed claim. If nothing is claimable, the UI says so instead of showing an error.",
+    body: "BNB: after Topaz graduation, the creator signs Permanent LP locker harvest from Command Center → My Coins (80% creator / 20% protocol). Solana: harvest only works after a real Meteora pool exists, and the indexer operator signs it — not a creator-signed locker tx. If the pool is not ready, wait. If nothing is claimable, the UI says so.",
     categories: ["rewards", "create"],
     keywords: ["lp fees", "harvest", "creator fees", "pool not ready"],
     popular: true,
@@ -511,7 +511,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: "recruiter-bnb-sol",
     title: "Can recruiters earn both BNB and SOL?",
-    body: "Yes. Recruiter identity is multichain. Earnings stay native to the chain that generated them and are claimed separately.",
+    body: "Yes. Recruiter identity is multichain and earnings stay native (BNB stays BNB, SOL stays SOL). Recruiter SOL payouts are tracked on the recruiter rail. They are not a live on-chain vault claim yet.",
     categories: ["recruiters", "rewards"],
     keywords: ["recruiter sol", "recruiter bnb", "payout"],
   },
