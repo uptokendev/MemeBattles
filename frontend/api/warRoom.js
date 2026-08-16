@@ -210,20 +210,53 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
         on ca.chain_id = c.chain_id and ca.campaign_address = c.campaign_address
       where ${filters.join(" and ")}
     ),
+    fills as (
+      select
+        t.chain_id,
+        t.campaign_address,
+        t.wallet,
+        t.side,
+        t.block_time,
+        t.block_number,
+        t.log_index,
+        t.price_bnb,
+        case
+          when t.bnb_amount_raw::text ~ '^[0-9]+(\.0+)?$'
+            then t.bnb_amount_raw::numeric / case when t.chain_id = 101 then 1e9 else 1e18 end
+          else coalesce(t.bnb_amount, 0)
+        end as native_amt,
+        case
+          when t.token_amount_raw::text ~ '^[0-9]+(\.0+)?$'
+            then t.token_amount_raw::numeric / case when t.chain_id = 101 then 1e6 else 1e18 end
+          else coalesce(t.token_amount, 0)
+        end as token_amt
+      from public.curve_trades t
+      inner join base b
+        on b.chain_id = t.chain_id and b.campaign_address = t.campaign_address
+    ),
     rt as (
       select
         b.chain_id,
         b.campaign_address,
-        coalesce(sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end), 0) as raised_total_bnb,
+        coalesce(sum(case when f.side = 'buy' then f.native_amt else -f.native_amt end), 0) as raised_total_bnb,
         coalesce(
-          sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end)
-            filter (where t.block_time >= now() - interval '10 minutes'),
+          sum(case when f.side = 'buy' then f.native_amt else -f.native_amt end)
+            filter (where f.block_time >= now() - interval '10 minutes'),
           0
         ) as raised_10m_bnb,
-        coalesce(count(distinct t.wallet) filter (where t.side = 'buy'), 0) as holder_count
+        coalesce((
+          select count(*)::int
+          from (
+            select f2.wallet
+            from fills f2
+            where f2.chain_id = b.chain_id and f2.campaign_address = b.campaign_address
+            group by f2.wallet
+            having sum(case when f2.side = 'buy' then f2.token_amt else -f2.token_amt end) > 0
+          ) holders
+        ), 0) as holder_count
       from base b
-      left join public.curve_trades t
-        on t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+      left join fills f
+        on f.chain_id = b.chain_id and f.campaign_address = b.campaign_address
       group by b.chain_id, b.campaign_address
     ),
     trade_stats as (
@@ -239,18 +272,18 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
         end as indexed_marketcap_bnb
       from base b
       left join lateral (
-        select t.price_bnb
-        from public.curve_trades t
-        where t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
-        order by t.block_number desc, t.log_index desc
+        select f.price_bnb
+        from fills f
+        where f.chain_id = b.chain_id and f.campaign_address = b.campaign_address
+        order by f.block_number desc, f.log_index desc
         limit 1
       ) latest on true
       left join lateral (
         select
-          coalesce(sum(case when t.side = 'buy' then t.token_amount else -t.token_amount end), 0) as sold_tokens,
-          coalesce(sum(t.bnb_amount) filter (where t.block_time >= now() - interval '24 hours'), 0) as vol_24h_bnb
-        from public.curve_trades t
-        where t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+          coalesce(sum(case when f.side = 'buy' then f.token_amt else -f.token_amt end), 0) as sold_tokens,
+          coalesce(sum(f.native_amt) filter (where f.block_time >= now() - interval '24 hours'), 0) as vol_24h_bnb
+        from fills f
+        where f.chain_id = b.chain_id and f.campaign_address = b.campaign_address
       ) stats on true
     ),
     ath as (

@@ -5,7 +5,7 @@ import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { RadarLoader } from "@/components/ui/RadarLoader";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import {
   useWarRoomCampaignFeed,
   warRoomCampaignMatchesSearch,
@@ -51,8 +51,8 @@ function draftMetricValue(campaign: WarRoomCampaign, key: "follows" | "optIns" |
   return Number.isFinite(n) ? n : 0;
 }
 
-function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKey) {
-  const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
+function getSortValue(campaign: WarRoomCampaign, nativeUsd: number, sortKey: SortKey) {
+  const metrics = getWarRoomCampaignMetrics(campaign, nativeUsd);
   switch (sortKey) {
     case "marketCap":
       return metrics.marketCapUsd;
@@ -77,7 +77,7 @@ function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKe
 
 const WarRoom = () => {
   const [selectedChainId] = useSelectedFeedChainId();
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+  const { price: nativeUsd } = useNativeUsdPrice(selectedChainId);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -87,7 +87,7 @@ const WarRoom = () => {
   const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(selectedChainId || 97),
-    bnbUsd,
+    bnbUsd: nativeUsd,
   });
 
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
@@ -150,8 +150,8 @@ const WarRoom = () => {
 
     return filtered.slice().sort((left, right) => {
       if (sortKey) {
-        const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
-        const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
+        const leftValue = getSortValue(left, nativeUsd ?? 0, sortKey);
+        const rightValue = getSortValue(right, nativeUsd ?? 0, sortKey);
         const delta = rightValue - leftValue;
         if (delta !== 0) return sortDirection === "desc" ? delta : -delta;
       }
@@ -165,8 +165,8 @@ const WarRoom = () => {
       }
 
       // Trending (default): most trending first, least trending last — bonding + graduated together.
-      const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
-      const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
+      const leftMetrics = getWarRoomCampaignMetrics(left, nativeUsd ?? 0);
+      const rightMetrics = getWarRoomCampaignMetrics(right, nativeUsd ?? 0);
       if (rightMetrics.trendScore !== leftMetrics.trendScore) {
         return rightMetrics.trendScore - leftMetrics.trendScore;
       }
@@ -175,7 +175,7 @@ const WarRoom = () => {
       if (rightMetrics.marketCapUsd !== leftMetrics.marketCapUsd) return rightMetrics.marketCapUsd - leftMetrics.marketCapUsd;
       return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
     });
-  }, [activeMode, bnbUsd, campaigns, search, sortDirection, sortKey]);
+  }, [activeMode, nativeUsd, campaigns, search, sortDirection, sortKey]);
 
   const handleSortClick = (nextKey: SortKey) => {
     if (sortKey === nextKey) {
@@ -288,7 +288,7 @@ const WarRoom = () => {
               <RadarLoader label="Scanning trade radar…" size="md" />
             </div>
           ) : filteredCampaigns.length ? (
-            filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} bnbUsd={bnbUsd ?? 0} />)
+            filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} bnbUsd={nativeUsd ?? 0} />)
           ) : (
             <div className="py-10 text-center text-sm text-white/55">
               {source === "empty"

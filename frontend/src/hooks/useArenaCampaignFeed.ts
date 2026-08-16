@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchPostGradCampaignFeed } from "@/features/postgrad/apiClient";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
@@ -71,6 +71,8 @@ function normalizeCampaign(item: any, index: number): CampaignInfo | null {
     marketCapBnb: toNumber(item?.marketcapBnb ?? item?.marketcap_bnb),
     athMarketCapBnb: toNumber(item?.athMarketcapBnb ?? item?.ath_marketcap_bnb),
     raisedTotalBnb: toNumber(item?.raisedTotalBnb ?? item?.raised_total_bnb),
+    priceBnb: toNumber(item?.lastPriceBnb ?? item?.last_price_bnb ?? item?.priceBnb ?? item?.price_bnb),
+    soldTokens: toNumber(item?.soldTokens ?? item?.sold_tokens),
     raised10mBnb: toNumber(item?.raised10mBnb ?? item?.raised_10m_bnb),
     progressPct: toNumber(item?.progressPct ?? item?.progress_pct) ?? null,
     etaSec: toNumber(item?.etaSec ?? item?.eta_sec) ?? null,
@@ -90,7 +92,7 @@ function resolveStatus(campaign: CampaignInfo) {
 
 export function useArenaCampaignFeed(limit = 12) {
   const { activeChainId } = useLaunchpad();
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+  const { price: nativeUsd } = useNativeUsdPrice(activeChainId);
   const [campaigns, setCampaigns] = useState<CampaignInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<ArenaCampaignFeedSource>("empty");
@@ -105,7 +107,7 @@ export function useArenaCampaignFeed(limit = 12) {
         const json = await fetchPostGradCampaignFeed({
           chainId: activeChainId || 97,
           limit,
-          bnbUsd,
+          bnbUsd: nativeUsd,
           signal: controller.signal,
         });
         if (cancelled) return;
@@ -131,7 +133,7 @@ export function useArenaCampaignFeed(limit = 12) {
       cancelled = true;
       controller.abort();
     };
-  }, [activeChainId, bnbUsd, limit]);
+  }, [activeChainId, nativeUsd, limit]);
 
   const railItems = useMemo<ArenaCampaignRailItem[]>(() => {
     return campaigns
@@ -139,7 +141,7 @@ export function useArenaCampaignFeed(limit = 12) {
         const href = getPostGradTokenDetailRoute(campaign.campaign);
         if (!href) return null;
 
-        const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd ?? 0);
+        const metrics = getWarRoomCampaignMetrics(campaign, nativeUsd ?? 0);
         const status = resolveStatus(campaign);
         return {
           id: campaign.campaign,
@@ -158,7 +160,7 @@ export function useArenaCampaignFeed(limit = 12) {
         };
       })
       .filter(Boolean) as ArenaCampaignRailItem[];
-  }, [bnbUsd, campaigns]);
+  }, [nativeUsd, campaigns]);
 
   return {
     loading,

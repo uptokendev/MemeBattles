@@ -88,9 +88,9 @@ export function getWarRoomCampaignStatus(campaign: CampaignInfo): WarRoomCampaig
   return "draft";
 }
 
-export function getWarRoomCampaignMetrics(campaign: CampaignInfo, bnbUsd = 0): WarRoomCampaignMetrics {
+export function getWarRoomCampaignMetrics(campaign: CampaignInfo, nativeUsd = 0): WarRoomCampaignMetrics {
   const rich = campaign as any;
-  const usd = Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0 ? Number(bnbUsd) : 0;
+  const usd = Number.isFinite(Number(nativeUsd)) && Number(nativeUsd) > 0 ? Number(nativeUsd) : 0;
 
   const marketCapBnb = toNumber(rich.rtMarketcapBnb ?? rich.marketCapBnb ?? rich.marketcapBnb ?? rich.marketcap_bnb);
   const volumeBnb = toNumber(rich.rtVol24hBnb ?? rich.volumeBnb ?? rich.vol24hBnb ?? rich.vol_24h_bnb);
