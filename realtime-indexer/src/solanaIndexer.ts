@@ -228,6 +228,101 @@ function toTokens(raw: bigint): number {
   return Number(raw) / TOKEN_UNITS;
 }
 
+function readU64LE(data: Buffer, offset: number): bigint {
+  return data.readBigUInt64LE(offset);
+}
+
+/** Same field order as frontend decodeSolanaCampaignAccount. */
+function decodeCampaignSpot(data: Buffer): {
+  economicsVersion: number;
+  tokenDecimals: number;
+  basePriceLamports: number;
+  priceSlopeLamports: number;
+  soldTokens: bigint;
+  netRaisedLamports: bigint;
+} | null {
+  if (data.length < 8 + 400) return null;
+  let o = 8;
+  const skip = (n: number) => {
+    o += n;
+  };
+  skip(32 * 12); // campaign id, generation, hashes, creator, mint, vaults
+  skip(8); // reservation_version
+  skip(8); // launch_at
+  skip(8); // graduation_target
+  skip(1); // cluster_kind
+  const economicsVersion = data.readUInt16LE(o);
+  o += 2;
+  skip(1); // curve_kind
+  skip(8 * 4); // supplies
+  const tokenDecimals = data.readUInt8(o);
+  o += 1;
+  skip(2); // curve_supply_bps
+  skip(2); // liquidity_token_bps
+  const basePriceLamports = Number(readU64LE(data, o));
+  o += 8;
+  const priceSlopeLamports = Number(readU64LE(data, o));
+  o += 8;
+  skip(2 * 5); // fee bps
+  skip(1); // dex_adapter
+  skip(32 * 5); // route/treasury/dex/oracle profiles
+  skip(8); // creator_buy_lock
+  skip(2); // creator_buy_cap_bps
+  skip(8); // created_at
+  if (o + 16 > data.length) return null;
+  const soldTokens = readU64LE(data, o);
+  o += 8;
+  const netRaisedLamports = readU64LE(data, o);
+  return {
+    economicsVersion,
+    tokenDecimals,
+    basePriceLamports,
+    priceSlopeLamports,
+    soldTokens,
+    netRaisedLamports,
+  };
+}
+
+function spotSolFromCurve(curve: NonNullable<ReturnType<typeof decodeCampaignSpot>>): number {
+  const decimals = Math.max(0, Number(curve.tokenDecimals || 6));
+  const soldWhole = Number(curve.soldTokens) / 10 ** decimals;
+  const slopeLamports =
+    curve.economicsVersion >= 3
+      ? (curve.priceSlopeLamports * soldWhole) / 1_000_000_000
+      : curve.priceSlopeLamports * soldWhole;
+  const spot = (curve.basePriceLamports + slopeLamports) / LAMPORTS_PER_SOL;
+  return Number.isFinite(spot) && spot > 0 ? spot : 0;
+}
+
+async function fetchCampaignCurveSpot(campaign: string): Promise<{
+  soldWhole: number;
+  spotSol: number;
+  marketcapSol: number;
+} | null> {
+  try {
+    const info = await rpc<{ value?: { data?: [string, string] } | null }>("getAccountInfo", [
+      campaign,
+      { encoding: "base64", commitment: "confirmed" },
+    ]);
+    const encoded = info?.value?.data?.[0];
+    if (!encoded) return null;
+    const curve = decodeCampaignSpot(Buffer.from(encoded, "base64"));
+    if (!curve || curve.soldTokens <= 0n) return null;
+    const decimals = Math.max(0, Number(curve.tokenDecimals || 6));
+    const soldWhole = Number(curve.soldTokens) / 10 ** decimals;
+    const spotSol = spotSolFromCurve(curve);
+    if (!(soldWhole > 0) || !(spotSol > 0)) return null;
+    return { soldWhole, spotSol, marketcapSol: spotSol * soldWhole };
+  } catch (error) {
+    console.warn(
+      "[solana-indexer] curve spot read failed",
+      campaign,
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
+}
+
 function timestampFrom(blockTime: number | null | undefined): Date {
   return new Date(Number(blockTime || Math.floor(Date.now() / 1000)) * 1000);
 }
@@ -463,36 +558,43 @@ async function upsertCandle(campaign: string, tf: TF, bucketSec: number, priceSo
 async function patchStats(campaign: string) {
   const latest = await pool.query(
     `with t as (
-       select price_bnb, block_time
+       select price_bnb, sold_tokens_after_raw, block_time
        from public.curve_trades
        where chain_id=$1 and campaign_address=$2
        order by block_number desc, log_index desc
        limit 1
      ),
      v as (
-       select coalesce(sum(bnb_amount),0) as vol24h
+       select coalesce(sum(
+         case
+           when bnb_amount_raw::text ~ '^[0-9]+(\.0+)?$' then bnb_amount_raw::numeric / 1e9
+           else coalesce(bnb_amount, 0)
+         end
+       ), 0) as vol24h
        from public.curve_trades
        where chain_id=$1 and campaign_address=$2
          and block_time >= now() - interval '24 hours'
      )
-     select (select price_bnb from t) as last_price_bnb,
+     select (select price_bnb from t) as last_fill_price,
+            (select sold_tokens_after_raw from t) as sold_after_raw,
             (select vol24h from v) as vol24h_bnb`,
     [SOLANA_CHAIN_ID, campaign],
   );
 
-  const sold = await pool.query(
-    `select
-       coalesce(sum(case when side='buy' then token_amount else 0 end),0) -
-       coalesce(sum(case when side='sell' then token_amount else 0 end),0) as sold
-     from public.curve_trades
-     where chain_id=$1 and campaign_address=$2`,
-    [SOLANA_CHAIN_ID, campaign],
-  );
-
-  const lastPrice = latest.rows[0]?.last_price_bnb ?? null;
-  const soldTokens = Number(sold.rows[0]?.sold ?? 0);
   const vol24h = Number(latest.rows[0]?.vol24h_bnb ?? 0);
-  const marketcap = lastPrice !== null ? Number(lastPrice) * soldTokens : null;
+  const fillPrice = latest.rows[0]?.last_fill_price != null ? Number(latest.rows[0].last_fill_price) : null;
+  const soldAfterRaw = latest.rows[0]?.sold_after_raw;
+  const curve = await fetchCampaignCurveSpot(campaign);
+  // True mcap is current marginal spot × circulating sold, not last-fill VWAP × sold.
+  const lastPrice = curve?.spotSol ?? (Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : null);
+  const soldTokens =
+    curve?.soldWhole ??
+    (soldAfterRaw != null && String(soldAfterRaw).trim() !== ""
+      ? Number(soldAfterRaw) / TOKEN_UNITS
+      : 0);
+  const marketcap =
+    curve?.marketcapSol ??
+    (lastPrice != null && soldTokens > 0 ? lastPrice * soldTokens : null);
 
   await pool.query(
     `insert into public.token_stats(

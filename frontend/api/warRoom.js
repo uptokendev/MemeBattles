@@ -220,6 +220,7 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
         t.block_number,
         t.log_index,
         t.price_bnb,
+        t.sold_tokens_after_raw,
         case
           when t.bnb_amount_raw::text ~ '^[0-9]+(\.0+)?$'
             then t.bnb_amount_raw::numeric / case when t.chain_id = 101 then 1e9 else 1e18 end
@@ -264,15 +265,24 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
         b.chain_id,
         b.campaign_address,
         latest.price_bnb as latest_price_bnb,
-        stats.sold_tokens as indexed_sold_tokens,
+        coalesce(latest.sold_after, stats.sold_tokens) as indexed_sold_tokens,
         stats.vol_24h_bnb as indexed_vol_24h_bnb,
         case
-          when latest.price_bnb is not null then latest.price_bnb * stats.sold_tokens
+          -- Solana: last fill price is VWAP, not spot. Keep token_stats mcap
+          -- (indexer writes spot × sold). Only fall back to VWAP × sold on EVM.
+          when b.chain_id = 101 then null
+          when latest.price_bnb is not null then latest.price_bnb * coalesce(latest.sold_after, stats.sold_tokens)
           else null
         end as indexed_marketcap_bnb
       from base b
       left join lateral (
-        select f.price_bnb
+        select f.price_bnb,
+          case
+            when f.sold_tokens_after_raw::text ~ '^[0-9]+(\.0+)?$'
+              then f.sold_tokens_after_raw::numeric
+                / case when b.chain_id = 101 then 1e6 else 1e18 end
+            else null
+          end as sold_after
         from fills f
         where f.chain_id = b.chain_id and f.campaign_address = b.campaign_address
         order by f.block_number desc, f.log_index desc

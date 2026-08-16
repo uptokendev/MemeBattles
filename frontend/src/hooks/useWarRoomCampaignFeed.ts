@@ -350,7 +350,33 @@ function needsMarketStats(campaign: WarRoomCampaign): boolean {
   return mcap <= 0 || ath <= 0;
 }
 
+async function hydrateSolanaBondingMetrics(campaign: WarRoomCampaign): Promise<WarRoomCampaign> {
+  const address = String(campaign.campaign || "").trim();
+  if (!address || String(campaign.campaign).startsWith("draft:")) return campaign;
+  if (isGraduatedCampaign(campaign) || isDraftOnlyRow(campaign)) return campaign;
+  try {
+    const { resolveSolanaCampaignCurve, solanaMarginalSpotSol } = await import("@/lib/solanaCampaignRead");
+    const state = await resolveSolanaCampaignCurve(address, address);
+    if (!state || state.graduated || state.soldTokens <= 0n) return campaign;
+    const decimals = Number(state.tokenDecimals || 6);
+    const soldWhole = Number(state.soldTokens) / 10 ** decimals;
+    const spot = solanaMarginalSpotSol(state, state.soldTokens);
+    if (!(soldWhole > 0) || !(spot > 0)) return campaign;
+    const raised = Number(state.netRaisedLamports) / 1_000_000_000;
+    return {
+      ...campaign,
+      marketCapBnb: spot * soldWhole,
+      priceBnb: spot,
+      soldTokens: soldWhole,
+      raisedTotalBnb: raised > 0 ? raised : toNumber((campaign as any).raisedTotalBnb),
+    } as WarRoomCampaign;
+  } catch {
+    return campaign;
+  }
+}
+
 async function hydrateCampaignMarketStats(campaign: WarRoomCampaign, chainId: number): Promise<WarRoomCampaign> {
+  if (isSolanaChainId(chainId)) return hydrateSolanaBondingMetrics(campaign);
   if (!needsMarketStats(campaign) || !campaign.campaign || String(campaign.campaign).startsWith("draft:")) {
     return campaign;
   }
@@ -706,8 +732,12 @@ export function useWarRoomCampaignFeed({
           }
         }
 
-        // ── Phase 3: light mcap hydrate for missing stats (non-blocking after paint) ──
-        const needStats = painted.filter(needsMarketStats).slice(0, MAX_ONCHAIN_STATS);
+        // ── Phase 3: Solana bonding always hydrates spot × sold (API fill VWAP is not mcap).
+        const needStats = (
+          isSolanaChainId(chainId)
+            ? painted.filter((row) => !isDraftOnlyRow(row) && !String(row.campaign || "").startsWith("draft:"))
+            : painted.filter(needsMarketStats)
+        ).slice(0, isSolanaChainId(chainId) ? 40 : MAX_ONCHAIN_STATS);
         if (needStats.length) {
           const hydrated = await mapPool(
             needStats,
