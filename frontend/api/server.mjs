@@ -146,6 +146,12 @@ import {
 import { rewardClaimConfig, rewardClaimIntent, rewardClaimRecord } from "./dev-fix/reward-claim-intent.js";
 import dashboardLpFees from "./dashboard/lp-fees.js";
 import prepareOg from "./prepare-og.js";
+import adminAbuseMe from "./admin/abuse/me.js";
+import adminAbuseReports from "./admin/abuse/reports.js";
+import adminAbusePermissions from "./admin/abuse/permissions.js";
+import adminAbuseStaff from "./admin/abuse/staff.js";
+import abuseSession from "./abuse/session.js";
+import abuseReports from "./abuse/reports.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -449,6 +455,24 @@ router.all("/admin/rewards/batches/:id", wrap(withAdminOrOps(adminRewardBatchByI
 router.all("/admin/rewards/ledger", wrap(withAdminOrOps(adminRewardLedger, "admin/rewards/ledger")));
 router.all("/admin/rewards/alerts", wrap(withAdminOrOps(adminRewardAlerts, "admin/rewards/alerts")));
 router.all("/admin/rewards/audit-log", wrap(withAdminOrOps(adminRewardAuditLog, "admin/rewards/audit-log")));
+router.all("/admin/abuse/me", wrap(adminAbuseMe));
+router.all("/admin/abuse/staff", wrap(adminAbuseStaff));
+router.all("/admin/abuse/reports/:reportId/reply", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId/internal-note", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId/status", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId/priority", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId/assignment", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId/evidence/:evidenceId", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports/:reportId", wrap(adminAbuseReports));
+router.all("/admin/abuse/reports", wrap(adminAbuseReports));
+router.all("/admin/abuse/permissions/revoke", wrap(adminAbusePermissions));
+router.all("/admin/abuse/permissions", wrap(adminAbusePermissions));
+router.all("/abuse/session", wrap(abuseSession));
+router.all("/abuse/reports/:reportId/messages", wrap(abuseReports));
+router.all("/abuse/reports/:reportId/evidence/:evidenceId", wrap(abuseReports));
+router.all("/abuse/reports/:reportId/evidence", wrap(abuseReports));
+router.all("/abuse/reports/:reportId", wrap(abuseReports));
+router.all("/abuse/reports", wrap(abuseReports));
 router.all("/squads", wrap(squadsLeaderboard));
 router.all("/squads/members", wrap(squadMembers));
 router.all("/squads/:code/summary", wrap(squadSummary));
