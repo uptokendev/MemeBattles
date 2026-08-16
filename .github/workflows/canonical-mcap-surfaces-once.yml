@@ -31,7 +31,6 @@ jobs:
               if c != n: raise SystemExit(f'{path}: expected {n}, found {c}: {old[:80]}')
               p.write_text(t.replace(old,new))
 
-          # Campaign grid: chain-native USD + canonical REST beats legacy realtime mcap.
           f='frontend/src/components/home/CampaignGrid.tsx'
           rep(f,'import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
           rep(f,'  const { price: bnbUsd } = useBnbUsdPrice(true);','  const { price: nativeUsd } = useNativeUsdPrice(activeChainId);')
@@ -39,22 +38,19 @@ jobs:
           rep(f,'  }), [activeChainId, query, bnbUsd, includeTestnet]);','  }), [activeChainId, query, nativeUsd, includeTestnet]);')
           rep(f,'        (patch?.marketcapBnb ?? onChain?.marketcapBnb ?? it.marketcapBnb) ?? NaN,\n      );\n      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;','        // Canonical REST/on-chain values outrank legacy token_stats realtime patches.\n        (onChain?.marketcapBnb ?? it.marketcapBnb ?? patch?.marketcapBnb) ?? NaN,\n      );\n      const mcapUsd = Number.isFinite(mcapBnb) && nativeUsd ? mcapBnb * nativeUsd : NaN;')
           rep(f,'      const athUsd = Number.isFinite(athBnb) && bnbUsd ? athBnb * bnbUsd : NaN;','      const athUsd = Number.isFinite(athBnb) && nativeUsd ? athBnb * nativeUsd : NaN;')
-          rep(f,'  }, [items, patchByCampaign, onChainByCampaign, bnbUsd, logoCache, baseParams]);','  }, [items, patchByCampaign, onChainByCampaign, nativeUsd, logoCache, baseParams]);')
+          rep(f,'  }, [items, bnbUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);','  }, [items, nativeUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);')
 
-          # Featured: same rules.
           f='frontend/src/components/home/FeaturedCampaigns.tsx'
           rep(f,'import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
           rep(f,'  const { price: bnbUsd } = useBnbUsdPrice(true);','  const { price: nativeUsd } = useNativeUsdPrice(featuredChainId);')
           rep(f,'      const mcapBnb = Number((patch as { marketcapBnb?: string | number }).marketcapBnb ?? it.marketcapBnb ?? NaN);\n      const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;','      // Canonical REST value wins; legacy realtime marketcap is fallback only.\n      const mcapBnb = Number(it.marketcapBnb ?? (patch as { marketcapBnb?: string | number }).marketcapBnb ?? NaN);\n      const mcapUsdLabel = Number.isFinite(mcapBnb) && nativeUsd ? formatCompactUsd(mcapBnb * nativeUsd) : null;')
           rep(f,'  }, [items, patchByCampaign, bnbUsd, logoCache, voteMode, featuredChainId]);','  }, [items, patchByCampaign, nativeUsd, logoCache, voteMode, featuredChainId]);')
 
-          # War Trade Room expanded chart needs BNB/USD as well as SOL/USD.
           f='frontend/src/components/token/ContinuousMarketChartPanel.tsx'
           rep(f,'import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";','import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";')
           rep(f,'  const { price: solUsd } = useSolUsdPrice(solana);','  const { price: nativeUsd } = useNativeUsdPrice(chainId);')
           rep(f,'          nativeUsdPrice={solana ? solUsd : undefined}','          nativeUsdPrice={nativeUsd}')
 
-          # Campaign feed: canonical-v2 latest close is current price/MCap source of truth.
           p=Path('frontend/api/campaigns-base.js'); t=p.read_text()
           old='       ts.last_price_bnb,\n       ts.sold_tokens,\n       ts.marketcap_bnb,'
           if t.count(old)!=1: raise SystemExit(f'campaigns select count {t.count(old)}')
@@ -66,7 +62,6 @@ jobs:
           t=t.replace('max(tc.h) * b.sold_tokens as ath_marketcap_bnb','max(COALESCE(tc.mcap_h, tc.h * b.sold_tokens)) as ath_marketcap_bnb')
           p.write_text(t)
 
-          # Featured feed: same canonical current MCap and canonical sort fallback.
           p=Path('frontend/api/featured.js'); t=p.read_text()
           m='ts.marketcap_bnb AS "marketcapBnb"'
           if t.count(m)!=2: raise SystemExit(f'featured mcap count {t.count(m)}')
