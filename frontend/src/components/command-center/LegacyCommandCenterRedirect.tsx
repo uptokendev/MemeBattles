@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useActiveFeedWallet } from "@/hooks/useActiveFeedWallet";
@@ -25,6 +25,7 @@ type LegacyCommandCenterRedirectProps = {
 export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedirectProps) {
   const evmWallet = useWallet();
   const feedWallet = useActiveFeedWallet();
+  const location = useLocation();
   const accountWallet = normalizeRouteWallet(feedWallet.address || evmWallet.account);
 
   if (!accountWallet) {
@@ -32,5 +33,5 @@ export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedi
   }
 
   const suffix = section === "overview" ? "" : `/${section}`;
-  return <Navigate to={`/profile/${accountWallet}/command${suffix}`} replace />;
+  return <Navigate to={`/profile/${accountWallet}/command${suffix}${location.search}`} replace />;
 }

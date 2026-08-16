@@ -11,6 +11,7 @@ import {
   writeReportEvent,
 } from "../../lib/abuseReports.js";
 import { createEvidenceSignedUrl } from "../../lib/abuseEvidence.js";
+import { notifyAbuseReporter, notifyEventForAdminAction } from "../../lib/abuseNotify.js";
 
 function methodNotAllowed(res) {
   return res.status(405).json({ ok: false, error: "Method not allowed" });
@@ -150,6 +151,11 @@ export function createAbuseCaseHandlers({ pool, auth }) {
       newValue: visibility,
     });
 
+    const notifyType = notifyEventForAdminAction({ visibility, eventType });
+    if (notifyType) {
+      void notifyAbuseReporter({ eventType: notifyType, report: { ...report, status: nextStatus } });
+    }
+
     return res.status(200).json({
       ok: true,
       status: nextStatus,
@@ -186,14 +192,19 @@ export function createAbuseCaseHandlers({ pool, auth }) {
     const reopened = (report.status === ABUSE_STATUSES.RESOLVED || report.status === ABUSE_STATUSES.CLOSED)
       && status !== ABUSE_STATUSES.RESOLVED
       && status !== ABUSE_STATUSES.CLOSED;
+    const eventType = reopened ? "REPORT_REOPENED" : status === ABUSE_STATUSES.RESOLVED ? "REPORT_RESOLVED" : status === ABUSE_STATUSES.CLOSED ? "REPORT_CLOSED" : "STATUS_CHANGED";
     await writeReportEvent(pool, {
       reportId: report.id,
-      eventType: reopened ? "REPORT_REOPENED" : status === ABUSE_STATUSES.RESOLVED ? "REPORT_RESOLVED" : status === ABUSE_STATUSES.CLOSED ? "REPORT_CLOSED" : "STATUS_CHANGED",
+      eventType,
       actorType: "admin",
       actorId: actor.id,
       oldValue: report.status,
       newValue: status,
     });
+    const notifyType = notifyEventForAdminAction({ status, previousStatus: report.status, eventType });
+    if (notifyType) {
+      void notifyAbuseReporter({ eventType: notifyType, report: { ...report, status } });
+    }
     return res.status(200).json({ ok: true, status, previousStatus: report.status });
   }
 

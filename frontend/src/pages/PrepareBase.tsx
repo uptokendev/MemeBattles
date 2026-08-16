@@ -11,6 +11,7 @@ import {
   MessageSquareReply,
   Rocket,
   Send,
+  Flag,
   Share2,
   Shield,
   Star,
@@ -37,6 +38,7 @@ import {
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
+import { buildAbuseReportPath } from "@/lib/abuseReportLink";
 import { buildPrepareTweetText } from "@/lib/prepareShareText";
 import {
   downloadPrepareShareCard,
@@ -1174,6 +1176,19 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
             >
               <Share2 className="mr-2 h-4 w-4" />
               Generate share card
+            </Button>
+            <Button asChild variant="ghost" className="h-13 px-4 font-retro text-xs text-muted-foreground">
+              <Link
+                to={buildAbuseReportPath({
+                  entityType: draft.campaignAddress ? "campaign" : "other",
+                  reportedCampaignAddress: draft.campaignAddress || "",
+                  reportedWallet: draft.creatorWallet || "",
+                  reportedUrl: typeof window !== "undefined" ? window.location.href : `/prepare/${draft.slug || slug}`,
+                })}
+              >
+                <Flag className="mr-2 h-4 w-4" />
+                Report abuse
+              </Link>
             </Button>
           </div>
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
@@ -37,16 +37,17 @@ export default function CommandCenterReportAbuse() {
   const { walletAddress, chainId } = useCommandCenterData();
   const { busy, withSession } = useAbuseReporterSession(walletAddress, chainId);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const base = `/profile/${walletAddress}/command/support`;
 
-  const [category, setCategory] = useState<AbuseCategory | "">("");
-  const [entityType, setEntityType] = useState<AbuseEntityType | "">("");
+  const [category, setCategory] = useState<AbuseCategory | "">((searchParams.get("category") as AbuseCategory) || "");
+  const [entityType, setEntityType] = useState<AbuseEntityType | "">((searchParams.get("entity") as AbuseEntityType) || "");
   const [email, setEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [reportedWallet, setReportedWallet] = useState("");
-  const [reportedCampaignAddress, setReportedCampaignAddress] = useState("");
-  const [reportedTokenAddress, setReportedTokenAddress] = useState("");
-  const [reportedUrl, setReportedUrl] = useState("");
+  const [reportedWallet, setReportedWallet] = useState(searchParams.get("wallet") || "");
+  const [reportedCampaignAddress, setReportedCampaignAddress] = useState(searchParams.get("campaign") || "");
+  const [reportedTokenAddress, setReportedTokenAddress] = useState(searchParams.get("token") || "");
+  const [reportedUrl, setReportedUrl] = useState(searchParams.get("url") || "");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 

@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { Copy, ExternalLink, Globe, Star } from "lucide-react";
+import { Copy, ExternalLink, Flag, Globe, Star } from "lucide-react";
+import { buildAbuseReportPath } from "@/lib/abuseReportLink";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -4257,6 +4258,25 @@ const toSeconds = (ts: number): number => {
                       buttonSize="sm"
                       className="h-8 px-3 text-xs flex-shrink-0"
                     />
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-[11px] text-muted-foreground flex-shrink-0"
+                    >
+                      <Link
+                        to={buildAbuseReportPath({
+                          entityType: "campaign",
+                          reportedCampaignAddress: campaignAddr,
+                          reportedTokenAddress: String(campaign?.token || ""),
+                          reportedWallet: String(campaign?.creator || ""),
+                          reportedUrl: typeof window !== "undefined" ? window.location.href : `/token/${campaignAddr}`,
+                        })}
+                      >
+                        <Flag className="mr-1 h-3.5 w-3.5" />
+                        Report
+                      </Link>
+                    </Button>
 
                     {/* CrypticPump badge / list CTA sits to the right of upvote */}
                     {crypticPumpListing?.listingUrl ? (

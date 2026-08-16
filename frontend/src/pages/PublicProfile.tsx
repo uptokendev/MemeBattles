@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -25,7 +25,8 @@ import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 import type { ActivityTradeRow } from "@/types/profilePage";
 import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
 import { normalizeRank, type RankName } from "@/lib/ranks";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, Flag } from "lucide-react";
+import { buildAbuseReportPath } from "@/lib/abuseReportLink";
 import { toast } from "sonner";
 
 type PublicCoin = {
@@ -609,6 +610,22 @@ export default function PublicProfile({
                   className="w-full font-retro"
                 >
                   {followBusy ? "Updating…" : isFollowing ? "Unfollow" : "Follow"}
+                </Button>
+                <Button
+                  asChild
+                  variant="ghost"
+                  className="w-full font-retro text-xs text-muted-foreground"
+                >
+                  <Link
+                    to={buildAbuseReportPath({
+                      entityType: "profile",
+                      reportedWallet: profileWallet,
+                      reportedUrl: typeof window !== "undefined" ? window.location.href : `/profile/${profileWallet}`,
+                    })}
+                  >
+                    <Flag className="mr-2 h-3.5 w-3.5" />
+                    Report abuse
+                  </Link>
                 </Button>
               )}
             </div>
