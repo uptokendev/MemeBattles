@@ -1,0 +1,314 @@
+name: Agent professional chart launch
+
+on:
+  push:
+    branches:
+      - agent/professional-chart-launch
+    paths:
+      - .github/workflows/agent-professional-chart-launch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/professional-chart-launch
+          fetch-depth: 0
+
+      - name: Apply professional chart upgrade
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"anchor missing in {path}: {old[:140]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # -----------------------------------------------------------------
+          # Real 1-second candles: shared bonding materializer + both DEX paths
+          # -----------------------------------------------------------------
+          replace_once(
+              "realtime-indexer/src/timeframes.ts",
+              'export type TF = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+              'export type TF = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+          )
+          replace_once(
+              "realtime-indexer/src/timeframes.ts",
+              'export const TIMEFRAMES: TF[] = ["5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"];',
+              'export const TIMEFRAMES: TF[] = ["1s", "5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"];',
+          )
+          replace_once(
+              "realtime-indexer/src/timeframes.ts",
+              'const TF_SECONDS: Record<TF, number> = {\n  "5s": 5,',
+              'const TF_SECONDS: Record<TF, number> = {\n  "1s": 1,\n  "5s": 5,',
+          )
+          replace_once(
+              "realtime-indexer/src/canonicalCandleMaterializer.ts",
+              'const VERSION = 2;',
+              'const VERSION = 3;',
+          )
+          replace_once(
+              "realtime-indexer/src/topazPoolIndexer.ts",
+              'type CandleResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+              'type CandleResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+          )
+          replace_once(
+              "realtime-indexer/src/topazPoolIndexer.ts",
+              'const RESOLUTION_MS: Record<CandleResolution, number> = {\n  "5s": 5_000,',
+              'const RESOLUTION_MS: Record<CandleResolution, number> = {\n  "1s": 1_000,\n  "5s": 5_000,',
+          )
+          replace_once(
+              "realtime-indexer/src/meteoraSwapIndexer.ts",
+              '       2,now()\n',
+              '       3,now()\n',
+          )
+
+          # Canonical endpoint doubles as the authoritative clock sync source.
+          replace_once(
+              "realtime-indexer/src/canonicalCandleApi.ts",
+              '        marketStage: state?.market_stage ?? "BONDING",\n        canonicalVersion: 1,',
+              '        marketStage: state?.market_stage ?? "BONDING",\n        serverTime: new Date().toISOString(),\n        canonicalVersion: 3,',
+          )
+
+          # -----------------------------------------------------------------
+          # Frontend API/hook: expose 1s + server UTC timestamp
+          # -----------------------------------------------------------------
+          replace_once(
+              "frontend/src/lib/marketContinuityApi.ts",
+              '  marketStage: MarketStage;\n  canonicalVersion?: number | null;\n};',
+              '  marketStage: MarketStage;\n  serverTime?: string | null;\n  canonicalVersion?: number | null;\n};',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              'export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+              'export type MarketResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '  const [graduationMarker, setGraduationMarker] = useState<any | null>(null);\n  const [loading, setLoading] = useState(false);',
+              '  const [graduationMarker, setGraduationMarker] = useState<any | null>(null);\n  const [serverTime, setServerTime] = useState<string | null>(null);\n  const [loading, setLoading] = useState(false);',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '      const emptyCandles = {\n        items: [] as MarketCandle[],\n        graduationMarker: null,\n        marketStage: "BONDING" as const,\n      };',
+              '      const emptyCandles = {\n        items: [] as MarketCandle[],\n        graduationMarker: null,\n        marketStage: "BONDING" as const,\n        serverTime: null as string | null,\n      };',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '      setCandles(nextCandles?.items || []);\n      setGraduationMarker(nextCandles?.graduationMarker || null);\n      setError(null);',
+              '      setCandles(nextCandles?.items || []);\n      setGraduationMarker(nextCandles?.graduationMarker || null);\n      setServerTime(nextCandles?.serverTime || null);\n      setError(null);',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '      setCandles([]);\n      setGraduationMarker(null);\n      setLoading(false);',
+              '      setCandles([]);\n      setGraduationMarker(null);\n      setServerTime(null);\n      setLoading(false);',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '    graduationMarker,\n    stageTransition,',
+              '    graduationMarker,\n    serverTime,\n    stageTransition,',
+          )
+          replace_once(
+              "frontend/src/hooks/useUnifiedMarket.ts",
+              '    graduationMarker,\n    stageTransition,\n    topazActive,',
+              '    graduationMarker,\n    serverTime,\n    stageTransition,\n    topazActive,',
+          )
+
+          # -----------------------------------------------------------------
+          # Unified chart: professional controls, UTC axis, marker lanes, autoscale
+          # -----------------------------------------------------------------
+          chart = Path("frontend/src/components/token/UnifiedMarketChart.tsx")
+          text = chart.read_text(encoding="utf-8")
+
+          def cr(old, new):
+              global text
+              if old not in text:
+                  raise SystemExit(f"UnifiedMarketChart anchor missing: {old[:160]!r}")
+              text = text.replace(old, new, 1)
+
+          cr(
+              'export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+              'export type UnifiedChartResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";',
+          )
+          cr(
+              'const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [\n  { key: "5s", seconds: 5 },',
+              'const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [\n  { key: "1s", seconds: 1 },\n  { key: "5s", seconds: 5 },',
+          )
+          cr('const MIN_BAR_SPACING = 7;', 'const MIN_BAR_SPACING = 3;')
+          cr('const MAX_VISIBLE_SLOTS = 140;', 'const MAX_VISIBLE_SLOTS = 320;')
+          cr(
+              '  loading?: boolean;\n  error?: string | null;\n  marketKey?: string;\n};',
+              '  loading?: boolean;\n  error?: string | null;\n  marketKey?: string;\n  serverTime?: string | null;\n  expanded?: boolean;\n  onExpandedChange?: (expanded: boolean) => void;\n};',
+          )
+          cr(
+              'function formatTickLabel(time: Time, intervalSec: number): string {\n  const sec = timeToSec(time);\n  if (!sec) return "";\n  const date = new Date(sec * 1000);\n  if (intervalSec >= 86400) return `${date.getDate()} ${date.toLocaleString(undefined, { month: "short" })}`;\n  const hh = String(date.getHours()).padStart(2, "0");\n  const mm = String(date.getMinutes()).padStart(2, "0");\n  if (intervalSec <= 60) return `${hh}:${mm}`;\n  return `${date.getDate()} ${hh}:${mm}`;\n}\n\nfunction formatCrosshairTime(time: Time): string {\n  const sec = timeToSec(time);\n  if (!sec) return "";\n  return new Date(sec * 1000).toLocaleString(undefined, {\n    day: "numeric",\n    month: "short",\n    year: "numeric",\n    hour: "2-digit",\n    minute: "2-digit",\n  });\n}',
+              'function formatTickLabel(time: Time, intervalSec: number): string {\n  const sec = timeToSec(time);\n  if (!sec) return "";\n  const date = new Date(sec * 1000);\n  const hh = String(date.getUTCHours()).padStart(2, "0");\n  const mm = String(date.getUTCMinutes()).padStart(2, "0");\n  const ss = String(date.getUTCSeconds()).padStart(2, "0");\n  if (intervalSec <= 5) return `${hh}:${mm}:${ss}`;\n  if (intervalSec <= 60) return `${hh}:${mm}`;\n  const day = String(date.getUTCDate()).padStart(2, "0");\n  const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });\n  if (intervalSec < 86400) return `${day} ${month} ${hh}:${mm}`;\n  return `${day} ${month}`;\n}\n\nfunction formatCrosshairTime(time: Time): string {\n  const sec = timeToSec(time);\n  if (!sec) return "";\n  return `${new Date(sec * 1000).toLocaleString("en-GB", {\n    timeZone: "UTC",\n    day: "2-digit",\n    month: "short",\n    year: "numeric",\n    hour: "2-digit",\n    minute: "2-digit",\n    second: "2-digit",\n    hour12: false,\n  })} UTC`;\n}',
+          )
+          cr(
+              '  loading,\n  error,\n}: UnifiedMarketChartProps) {',
+              '  loading,\n  error,\n  marketKey = "default",\n  serverTime = null,\n  expanded,\n  onExpandedChange,\n}: UnifiedMarketChartProps) {',
+          )
+          cr(
+              '  const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");\n  const containerRef = useRef<HTMLDivElement | null>(null);',
+              '  const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");\n  const [internalExpanded, setInternalExpanded] = useState(false);\n  const [autoScaleEnabled, setAutoScaleEnabled] = useState(true);\n  const [serverNowMs, setServerNowMs] = useState(Date.now());\n  const serverOffsetRef = useRef(0);\n  const isExpanded = expanded ?? internalExpanded;\n  const containerRef = useRef<HTMLDivElement | null>(null);',
+          )
+          cr(
+              '  const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;\n\n  const clearHideTooltipTimer',
+              '  const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;\n  const desiredBarPx = intervalSeconds <= 1 ? 5 : intervalSeconds <= 5 ? 8 : DESIRED_BAR_PX;\n\n  const clearHideTooltipTimer',
+          )
+          cr(
+              '  useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);\n\n  useEffect(() => {\n    if (!hoverPinId) return;',
+              '  useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);\n\n  useEffect(() => {\n    try {\n      const stored = window.localStorage.getItem(`mwz:chart-expanded:${marketKey}`);\n      if (expanded == null && stored != null) setInternalExpanded(stored === "1");\n    } catch { /* storage unavailable */ }\n  }, [expanded, marketKey]);\n\n  useEffect(() => {\n    const parsed = Date.parse(String(serverTime || ""));\n    if (Number.isFinite(parsed) && parsed > 0) serverOffsetRef.current = parsed - Date.now();\n    const tick = () => setServerNowMs(Date.now() + serverOffsetRef.current);\n    tick();\n    const timer = window.setInterval(tick, 1000);\n    return () => window.clearInterval(timer);\n  }, [serverTime]);\n\n  const toggleExpanded = useCallback(() => {\n    const next = !isExpanded;\n    if (expanded == null) setInternalExpanded(next);\n    onExpandedChange?.(next);\n    try { window.localStorage.setItem(`mwz:chart-expanded:${marketKey}`, next ? "1" : "0"); } catch { /* storage unavailable */ }\n  }, [expanded, isExpanded, marketKey, onExpandedChange]);\n\n  useEffect(() => {\n    if (!hoverPinId) return;',
+          )
+          cr(
+              '    const liftPx = 26;\n    const next: PlacedCreatorPin[] = [];\n    for (const group of groups) {\n      group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));\n      const stackCount = group.length;\n      const anchorY = Math.min(...group.map((pin) => pin.y));\n      const anchorX = group.reduce((sum, pin) => sum + pin.x, 0) / stackCount;\n      group.forEach((pin, stackIndex) => next.push({ ...pin, x: anchorX, y: anchorY - liftPx - stackIndex * 22, stackIndex, stackCount }));\n    }',
+              '    const liftPx = 44;\n    const next: PlacedCreatorPin[] = [];\n    const overlayWidth = overlayRef.current?.clientWidth || 0;\n    for (const group of groups) {\n      group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));\n      const stackCount = group.length;\n      const anchorY = Math.min(...group.map((pin) => pin.y));\n      const anchorX = group.reduce((sum, pin) => sum + pin.x, 0) / stackCount;\n      const safeX = overlayWidth > 0 ? Math.min(Math.max(anchorX, 18), overlayWidth - 18) : anchorX;\n      group.forEach((pin, stackIndex) => next.push({\n        ...pin,\n        x: safeX,\n        y: Math.max(30, anchorY - liftPx - stackIndex * 30),\n        stackIndex,\n        stackCount,\n      }));\n    }',
+          )
+          cr(
+              'rightPriceScale: { visible: true, autoScale: true, borderVisible: true, borderColor: "rgba(255,255,255,0.18)", ticksVisible: true, minimumWidth: 88, scaleMargins: { top: 0.14, bottom: 0.12 } },',
+              'rightPriceScale: { visible: true, autoScale: true, borderVisible: true, borderColor: "rgba(255,255,255,0.18)", ticksVisible: true, minimumWidth: 88, scaleMargins: { top: 0.20, bottom: 0.12 } },',
+          )
+          cr(
+              'timeScale: { borderVisible: true, borderColor: "rgba(255,255,255,0.12)", timeVisible: true, secondsVisible: intervalSeconds <= 60, rightOffset: 8, barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING, lockVisibleTimeRangeOnResize: false },',
+              'timeScale: { borderVisible: true, borderColor: "rgba(255,255,255,0.12)", timeVisible: true, secondsVisible: intervalSeconds <= 60, rightOffset: 10, barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING, lockVisibleTimeRangeOnResize: false },',
+          )
+          cr(
+              'handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },',
+              'handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: false } },',
+          )
+          cr(
+              '      timeScale: { secondsVisible: intervalSeconds <= 60, barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING },',
+              '      timeScale: { secondsVisible: intervalSeconds <= 60, barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING },',
+          )
+          cr(
+              '  }, [intervalSeconds]);\n\n  useEffect(() => {\n    seriesRef.current?.applyOptions({',
+              '  }, [desiredBarPx, intervalSeconds]);\n\n  useEffect(() => {\n    const chart = chartRef.current;\n    if (!chart) return;\n    chart.applyOptions({\n      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: !autoScaleEnabled } },\n    });\n    try {\n      chart.priceScale("right").applyOptions({ autoScale: autoScaleEnabled, scaleMargins: { top: 0.20, bottom: 0.12 } });\n    } catch { /* chart may be disposing */ }\n  }, [autoScaleEnabled]);\n\n  useEffect(() => {\n    seriesRef.current?.applyOptions({',
+          )
+          cr(
+              '    previousDataRef.current = data;\n\n    if (data.length === 0) {',
+              '    previousDataRef.current = data;\n\n    // Hard launch invariant: while Auto is enabled, every incoming candle body + wick\n    // must remain inside the visible price scale. Reassert autoscale on every canonical\n    // update so a sudden buy/sell cannot shoot outside the chart.\n    if (autoScaleEnabled && data.length > 0) {\n      try { chart.priceScale("right").applyOptions({ autoScale: true, scaleMargins: { top: 0.20, bottom: 0.12 } }); } catch { /* ignore */ }\n    }\n\n    if (data.length === 0) {',
+          )
+          cr(
+              '      const slotsThatFit = Math.max(MIN_VISIBLE_SLOTS, Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / DESIRED_BAR_PX)));\n      chart.timeScale().applyOptions({ barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING, rightOffset: 8 });',
+              '      const slotsThatFit = Math.max(MIN_VISIBLE_SLOTS, Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / desiredBarPx)));\n      chart.timeScale().applyOptions({ barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING, rightOffset: 10 });',
+          )
+          cr(
+              '  }, [data, repositionCreatorPins]);',
+              '  }, [autoScaleEnabled, data, desiredBarPx, repositionCreatorPins]);',
+          )
+          cr(
+              '  const hasData = data.length > 0;\n\n  return (\n    <div className="relative flex h-full min-h-0 w-full flex-col">',
+              '  const hasData = data.length > 0;\n  const serverClock = new Date(serverNowMs).toLocaleTimeString("en-GB", {\n    timeZone: "UTC",\n    hour: "2-digit",\n    minute: "2-digit",\n    second: "2-digit",\n    hour12: false,\n  });\n\n  const showTrailingRange = (seconds: number) => {\n    const chart = chartRef.current;\n    if (!chart || !data.length) return;\n    const bars = Math.max(20, Math.min(data.length, Math.ceil(seconds / Math.max(1, intervalSeconds))));\n    try { chart.timeScale().setVisibleLogicalRange({ from: data.length - bars - 1, to: data.length + 6 }); } catch { /* ignore */ }\n    requestAnimationFrame(() => repositionCreatorPins());\n  };\n\n  const goLive = () => {\n    try { chartRef.current?.timeScale().scrollToRealTime(); } catch { /* ignore */ }\n    if (autoScaleEnabled) {\n      try { chartRef.current?.priceScale("right").applyOptions({ autoScale: true }); } catch { /* ignore */ }\n    }\n    requestAnimationFrame(() => repositionCreatorPins());\n  };\n\n  return (\n    <div\n      data-chart-expanded={isExpanded ? "true" : "false"}\n      className={`relative flex w-full flex-col transition-[min-height] duration-200 ${isExpanded ? "min-h-[560px] md:min-h-[640px]" : "h-full min-h-0"}`}\n    >',
+          )
+          cr(
+              '          <div className="flex flex-wrap justify-end gap-1">\n            {TIMEFRAMES.map((item) => <button type="button" key={item.key} onClick={() => onResolutionChange(item.key)} className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${resolution === item.key ? "border-orange-400/50 bg-orange-500/25 text-orange-300" : "border-border/60 text-muted-foreground hover:text-orange-200"}`}>{item.key}</button>)}\n          </div>\n        </div>',
+              '          <div className="flex flex-wrap justify-end gap-1">\n            {TIMEFRAMES.map((item) => <button type="button" key={item.key} onClick={() => onResolutionChange(item.key)} className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${resolution === item.key ? "border-orange-400/50 bg-orange-500/25 text-orange-300" : "border-border/60 text-muted-foreground hover:text-orange-200"}`}>{item.key}</button>)}\n          </div>\n          <button type="button" onClick={toggleExpanded} className="rounded border border-border/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-orange-400/40 hover:text-orange-200" title={isExpanded ? "Collapse chart" : "Expand chart"}>{isExpanded ? "Collapse" : "Expand"}</button>\n        </div>',
+          )
+          cr(
+              'className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-orange-400 bg-black/80 p-0 shadow-[0_0_12px_rgba(249,115,22,0.55)] transition-transform hover:z-30 hover:scale-125 ${active ? "z-30 scale-125" : ""}`}',
+              'className={`pointer-events-auto absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/90 p-0 transition-transform hover:z-30 hover:scale-125 ${pin.side === "buy" ? "border-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.55)]" : "border-red-400 shadow-[0_0_14px_rgba(248,113,113,0.55)]"} ${active ? "z-30 scale-125" : ""}`}',
+          )
+          cr(
+              '                <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />\n              </button>',
+              '                <span className="relative block h-full w-full">\n                  <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />\n                  <span className={`absolute -bottom-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-black px-0.5 text-[7px] font-black text-black ${pin.side === "buy" ? "bg-emerald-400" : "bg-red-400"}`}>{pin.side === "buy" ? "B" : "S"}</span>\n                </span>\n              </button>',
+          )
+          cr(
+              '        {!hasData && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">{loading ? "Loading trade history…" : error ? error : "No trades in the loaded window yet. Buys/sells appear as continuous candles once history is recovered."}</div>}\n      </div>\n    </div>\n  );',
+              '        {!hasData && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">{loading ? "Loading trade history…" : error ? error : "No trades in the loaded window yet. Buys/sells appear as continuous candles once history is recovered."}</div>}\n      </div>\n\n      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 px-2 py-1.5 text-[10px] text-muted-foreground">\n        <div className="flex items-center gap-1">\n          {[\n            ["1D", 86400],\n            ["5D", 5 * 86400],\n            ["1M", 30 * 86400],\n            ["3M", 90 * 86400],\n            ["1Y", 365 * 86400],\n          ].map(([label, seconds]) => (\n            <button key={String(label)} type="button" onClick={() => showTrailingRange(Number(seconds))} className="rounded px-1.5 py-1 font-semibold text-muted-foreground hover:bg-white/5 hover:text-foreground">{label}</button>\n          ))}\n        </div>\n        <div className="flex items-center gap-2">\n          <button type="button" onClick={goLive} className="rounded px-1.5 py-1 font-semibold text-muted-foreground hover:bg-white/5 hover:text-orange-200">LIVE</button>\n          <span className="tabular-nums text-foreground/90" title={serverTime ? "Synchronized to MemeWarzone server UTC" : "UTC clock; server sync pending"}>{serverClock} UTC</span>\n          <button type="button" onClick={() => setAutoScaleEnabled((current) => !current)} className={`rounded px-1.5 py-1 font-semibold ${autoScaleEnabled ? "text-emerald-300" : "text-muted-foreground hover:text-foreground"}`}>auto</button>\n        </div>\n      </div>\n    </div>\n  );',
+          )
+
+          chart.write_text(text, encoding="utf-8")
+
+          # -----------------------------------------------------------------
+          # Parent containers: expansion must actually grow the page / War Room row
+          # -----------------------------------------------------------------
+          replace_once(
+              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
+              '  const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");\n  const solana = isSolanaChainId(chainId);',
+              '  const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");\n  const [chartExpanded, setChartExpanded] = useState(false);\n  const solana = isSolanaChainId(chainId);',
+          )
+          replace_once(
+              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
+              '    <div className={className ?? "flex h-full min-h-[220px] w-full flex-col"}>',
+              '    <div className={`${className ?? "flex h-full min-h-[220px] w-full flex-col"} ${chartExpanded ? "!h-auto !min-h-[560px] md:!min-h-[640px]" : ""}`}>',
+          )
+          replace_once(
+              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
+              '          marketState={market.unifiedMarket.state}\n          graduationMarker={market.unifiedMarket.graduationMarker}',
+              '          marketState={market.unifiedMarket.state}\n          serverTime={market.unifiedMarket.serverTime}\n          graduationMarker={market.unifiedMarket.graduationMarker}',
+          )
+          replace_once(
+              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
+              '          marketKey={`${chainId}:${campaignAddress || tokenAddress || ""}`}\n        />',
+              '          marketKey={`${chainId}:${campaignAddress || tokenAddress || ""}`}\n          expanded={chartExpanded}\n          onExpandedChange={setChartExpanded}\n        />',
+          )
+
+          replace_once(
+              "frontend/src/pages/TokenDetails.tsx",
+              '  const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");\n  const [topazSlippageBps, setTopazSlippageBps] = useState(100);',
+              '  const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");\n  const [chartExpanded, setChartExpanded] = useState(false);\n  const [topazSlippageBps, setTopazSlippageBps] = useState(100);',
+          )
+          replace_once(
+              "frontend/src/pages/TokenDetails.tsx",
+              '              <div className="w-full h-full min-h-[260px]">\n                {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}',
+              '              <div className={chartExpanded ? "w-full min-h-[560px] md:min-h-[640px]" : "w-full h-full min-h-[260px]"}>\n                {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}',
+          )
+          replace_once(
+              "frontend/src/pages/TokenDetails.tsx",
+              '                  marketState={unifiedMarket.state}\n                  graduationMarker={unifiedMarket.graduationMarker || solanaGraduationMarker}',
+              '                  marketState={unifiedMarket.state}\n                  serverTime={unifiedMarket.serverTime}\n                  graduationMarker={unifiedMarket.graduationMarker || solanaGraduationMarker}',
+          )
+          replace_once(
+              "frontend/src/pages/TokenDetails.tsx",
+              '                  marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}\n                  resolution={marketResolution}',
+              '                  marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}\n                  expanded={chartExpanded}\n                  onExpandedChange={setChartExpanded}\n                  resolution={marketResolution}',
+          )
+          PY
+
+      - name: Diff sanity
+        run: |
+          git diff --check
+          git diff --stat
+          git diff -- realtime-indexer/src/timeframes.ts realtime-indexer/src/canonicalCandleMaterializer.ts realtime-indexer/src/topazPoolIndexer.ts realtime-indexer/src/meteoraSwapIndexer.ts realtime-indexer/src/canonicalCandleApi.ts frontend/src/lib/marketContinuityApi.ts frontend/src/hooks/useUnifiedMarket.ts frontend/src/components/token/UnifiedMarketChart.tsx frontend/src/components/token/ContinuousMarketChartPanel.tsx frontend/src/pages/TokenDetails.tsx | sed -n '1,1600p'
+
+      - name: Frontend install
+        run: npm ci --prefix frontend
+
+      - name: Frontend build
+        run: npm run build --prefix frontend
+
+      - name: Frontend lint
+        run: npm run lint --prefix frontend
+
+      - name: Indexer install
+        run: npm ci --prefix realtime-indexer
+
+      - name: Indexer build
+        run: npm run build --prefix realtime-indexer
+
+      - name: Commit chart upgrade
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            realtime-indexer/src/timeframes.ts \
+            realtime-indexer/src/canonicalCandleMaterializer.ts \
+            realtime-indexer/src/topazPoolIndexer.ts \
+            realtime-indexer/src/meteoraSwapIndexer.ts \
+            realtime-indexer/src/canonicalCandleApi.ts \
+            frontend/src/lib/marketContinuityApi.ts \
+            frontend/src/hooks/useUnifiedMarket.ts \
+            frontend/src/components/token/UnifiedMarketChart.tsx \
+            frontend/src/components/token/ContinuousMarketChartPanel.tsx \
+            frontend/src/pages/TokenDetails.tsx
+          git commit -m "Build professional launch chart"
+          git push origin HEAD:agent/professional-chart-launch
