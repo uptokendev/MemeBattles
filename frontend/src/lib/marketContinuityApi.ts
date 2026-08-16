@@ -102,6 +102,16 @@ export type MarketCandle = {
   h: string;
   l: string;
   c: string;
+  price_o?: string | null;
+  price_h?: string | null;
+  price_l?: string | null;
+  price_c?: string | null;
+  mcap_o?: string | null;
+  mcap_h?: string | null;
+  mcap_l?: string | null;
+  mcap_c?: string | null;
+  canonical_version?: number | null;
+  canonical_updated_at?: string | null;
   volume_bnb: string;
   trades_count: number;
   source_mask: number;
@@ -126,6 +136,7 @@ export type MarketCandleResponse = {
     postBurnTotalSupplyRaw: string | null;
   } | null;
   marketStage: MarketStage;
+  canonicalVersion?: number | null;
 };
 
 export type MarketSummary = {
@@ -219,7 +230,7 @@ export function fetchMarketCandles(
   if (options?.from != null) params.set("from", String(options.from));
   if (options?.to != null) params.set("to", String(options.to));
   return readJson<MarketCandleResponse>(
-    `/api/token/${campaignPath(campaignAddress, chainId)}/market-candles?${params.toString()}`,
+    `/api/token/${campaignPath(campaignAddress, chainId)}/canonical-market-candles?${params.toString()}`,
     options?.signal,
   );
 }
