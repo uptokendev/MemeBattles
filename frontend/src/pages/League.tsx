@@ -135,6 +135,14 @@ function formatDurationSeconds(seconds?: number | null) {
   return `${sec}s`;
 }
 
+function metricToneClass(def: LeagueDef, row: any, native = { decimals: 18, symbol: "BNB" }) {
+  if (def.key !== "top_earner") return "text-accent";
+  const pnl = rawToNative(row?.profit_raw, native.decimals);
+  if (pnl > 0) return "text-emerald-400";
+  if (pnl < 0) return "text-red-400";
+  return "text-muted-foreground";
+}
+
 function rowMetric(def: LeagueDef, row: any, native = { decimals: 18, symbol: "BNB" }) {
   if (def.key === "perfect_run") {
     return row?.duration_seconds != null
@@ -151,18 +159,11 @@ function rowMetric(def: LeagueDef, row: any, native = { decimals: 18, symbol: "B
     return buy || def.metricLabel;
   }
   if (def.key === "top_earner") {
-    if (row?.profit_raw == null && row?.sells_raw == null) return def.metricLabel;
+    if (row?.profit_raw == null || String(row.profit_raw).trim() === "") return def.metricLabel;
     const trades = row?.trades_count != null ? ` · ${Number(row.trades_count)} trades` : "";
     const pnl = rawToNative(row.profit_raw, native.decimals);
-    const sold = rawToNative(row.sells_raw, native.decimals);
-    // Rank is still sells − buys. Always print that PnL first so a bigger
-    // "sold" number cannot look like a better score.
-    if (row?.profit_raw == null || String(row.profit_raw).trim() === "") {
-      return sold > 0 ? `${formatNative(sold, native.symbol)} sold${trades}` : def.metricLabel;
-    }
-    const pnlLabel = `${pnl > 0 ? "+" : ""}${formatNative(pnl, native.symbol)} PnL`;
-    if (sold > 0) return `${pnlLabel} · ${formatNative(sold, native.symbol)} sold${trades}`;
-    return `${pnlLabel}${trades}`;
+    const signed = `${pnl > 0 ? "+" : ""}${formatNative(pnl, native.symbol)}`;
+    return `${signed}${trades}`;
   }
   if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
@@ -387,7 +388,7 @@ function StandingsTable({
                   : row?.campaign_address || row?.campaignAddress || "Campaign"}
               </div>
             </div>
-            <div className="text-sm font-semibold text-accent">{rowMetric(league, row, native)}</div>
+            <div className={`text-sm font-semibold ${metricToneClass(league, row, native)}`}>{rowMetric(league, row, native)}</div>
           </div>
         );
         const key = `${league.key}-${rank}-${row?.campaign_address ?? row?.campaignAddress ?? row?.wallet ?? row?.tx_hash ?? index}`;

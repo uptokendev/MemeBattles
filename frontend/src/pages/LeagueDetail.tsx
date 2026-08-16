@@ -565,6 +565,7 @@ useEffect(() => {
                   let leftEl: JSX.Element;
                   let metricTop = "";
                   let metricSub = "";
+                  let metricTopClass = "text-sm font-semibold";
                   let onClick: (() => void) | undefined;
                   let key = "";
 
@@ -574,17 +575,21 @@ useEffect(() => {
                     const decimals = Number(activeChainId) === SOLANA_CHAIN_ID ? 9 : 18;
                     const symbol = Number(activeChainId) === SOLANA_CHAIN_ID ? "SOL" : "BNB";
                     let pnlSign = "";
+                    let pnlTone = "text-muted-foreground";
                     try {
                       const pnlRaw = BigInt(String(r.profit_raw ?? "0"));
-                      if (pnlRaw > 0n) pnlSign = "+";
+                      if (pnlRaw > 0n) {
+                        pnlSign = "+";
+                        pnlTone = "text-emerald-400";
+                      } else if (pnlRaw < 0n) {
+                        pnlTone = "text-red-400";
+                      }
                     } catch {
                       pnlSign = "";
                     }
-                    const pnlLabel = `${pnlSign}${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol} PnL`;
                     leftEl = <RowWallet address={w} />;
-                    metricTop = r.sells_raw
-                      ? `${pnlLabel} · ${formatBnbFromRaw(r.sells_raw, decimals)} ${symbol} sold`
-                      : pnlLabel;
+                    metricTop = `${pnlSign}${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol}`;
+                    metricTopClass = `text-sm font-semibold ${pnlTone}`;
                     metricSub = `${Number(r.trades_count ?? 0)} trades`;
                     key = `${def.key}:${w}:${idx}`;
                     onClick = () => {
@@ -627,7 +632,7 @@ useEffect(() => {
                       </div>
                       <div className="min-w-0 flex-1">{leftEl}</div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold">{metricTop}</div>
+                        <div className={metricTopClass}>{metricTop}</div>
                         <div className="text-[11px] text-muted-foreground">{metricSub}</div>
                       </div>
                     </button>
