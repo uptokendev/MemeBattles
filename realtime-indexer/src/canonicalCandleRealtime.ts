@@ -15,7 +15,8 @@ type Cursor = {
 };
 
 function enabled(): boolean {
-  return String(process.env.ENABLE_CANONICAL_CANDLE_REALTIME ?? "1").trim() !== "0";
+  // Launch-safe rollout: explicitly opt in after shadow/acceptance testing.
+  return String(process.env.ENABLE_CANONICAL_CANDLE_REALTIME ?? "0").trim() === "1";
 }
 
 function pollMs(): number {
@@ -141,7 +142,7 @@ export async function runCanonicalCandleRealtimeOnce(cursor: Cursor): Promise<Cu
 
 export function startCanonicalCandleRealtimeLoop() {
   if (!enabled()) {
-    console.log("[canonical-candles] realtime publisher disabled");
+    console.log("[canonical-candles] realtime publisher disabled; set ENABLE_CANONICAL_CANDLE_REALTIME=1 after acceptance");
     return;
   }
   if (globalState[LOOP_SYMBOL]) return;
