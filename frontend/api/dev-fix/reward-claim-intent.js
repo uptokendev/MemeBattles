@@ -1,5 +1,6 @@
 import { pool } from "../../server/db.js";
 import { readJson } from "../../server/http.js";
+import { requireWalletActionAuth } from "../lib/walletActionAuth.js";
 
 const EVM_CHAINS = new Set([56, 97]);
 const SOLANA_CHAINS = new Set([101, 102]);
