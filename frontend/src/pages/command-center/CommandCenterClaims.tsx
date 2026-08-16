@@ -19,6 +19,8 @@ import {
   recordRewardClaimTx,
 } from "@/lib/rewardDistributor";
 import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
+import { submitSolanaAirdropClaim } from "@/lib/solanaRewardClaim";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 
 type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
 
@@ -99,7 +101,7 @@ function formatNativeAmount(raw: string, chainId?: number | null, symbol?: strin
   try {
     if (isSolana(chainId)) {
       const value = Number(BigInt(raw || "0")) / LAMPORTS_PER_SOL;
-      return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "SOL"}`;
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 9 })} ${symbol || "SOL"}`;
     }
     const value = Number(formatEther(BigInt(raw || "0")));
     return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "BNB"}`;
@@ -126,10 +128,7 @@ function rewardState(items: RewardLedgerItem[]): RewardCardState {
   return "empty";
 }
 
-function getRewardStateCopy(state: RewardCardState, solanaDisabled: boolean) {
-  if (solanaDisabled && state === "claimable") {
-    return { label: "Tracked", amountCaption: "Solana claiming disabled", disabled: true };
-  }
+function getRewardStateCopy(state: RewardCardState) {
   switch (state) {
     case "claimable":
       return { label: "Ready", amountCaption: "Available to claim", disabled: false };
@@ -149,7 +148,6 @@ function hasRecruiterAccess(recruiterLinkState?: string | null, isRecruiterFlag?
   if (isRecruiterFlag) return true;
   const state = String(recruiterLinkState || "").trim().toLowerCase();
   if (!state || state === "unlinked") return false;
-  // Accept self_recruiter_wallet, self_recruiter_inactive, recruiter_owner, etc.
   return (
     state.includes("self_recruiter") ||
     state.includes("recruiter_wallet") ||
@@ -171,16 +169,10 @@ function buildRewardCards(
   const grouped = new Map<string, RewardLedgerItem[]>();
   for (const item of items) {
     const type = String(item.rewardType || "future").toLowerCase();
-    // Keep ledger rows even if attribution is slow/missing; filter empty baselines below.
     if (!grouped.has(type)) grouped.set(type, []);
     grouped.get(type)!.push(item);
   }
 
-  // Visibility rules:
-  // - everyone: league + airdrop
-  // - recruiter only: + recruiter claim
-  // - squad only: + squad claim
-  // - both: both
   const baseline = ["league", "airdrop"];
   if (recruiterOk || grouped.has("recruiter")) baseline.push("recruiter");
   if (squadOk || grouped.has("squad")) baseline.push("squad");
@@ -261,21 +253,31 @@ export default function CommandCenterClaims() {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
     if (!claimable.length) return;
 
-    if (claimable.some((item) => item.chainId === SOLANA_CHAIN_ID)) {
-      setMessage("Solana rewards are tracked, but Solana claiming is not enabled yet.");
+    const hasSolana = claimable.some((item) => item.chainId === SOLANA_CHAIN_ID);
+    const hasEvm = claimable.some((item) => item.chainId !== SOLANA_CHAIN_ID);
+    if (hasSolana && hasEvm) {
+      setMessage("Mixed-chain rewards must be claimed separately.");
       return;
     }
 
-    const signer = wallet?.signer;
-    if (!signer) {
+    const signer = hasSolana ? null : wallet?.signer;
+    const solanaSignMessage = hasSolana
+      ? async (text: string) => (await signSolanaMessage(text, walletAddress)).signature
+      : undefined;
+
+    if (hasSolana) {
+      if (!solanaAccount || solanaAccount !== walletAddress) {
+        setMessage("Connect the same Solana wallet that owns these rewards before claiming.");
+        try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
+        return;
+      }
+    } else if (!signer) {
       setMessage("Connect the wallet that owns these rewards before claiming.");
-      try {
-        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
-      } catch {}
+      try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
       return;
     }
 
-    if (!addressesMatch(wallet.account, walletAddress) && !addressesMatch(solanaAccount, walletAddress)) {
+    if (!addressesMatch(wallet.account, walletAddress) && solanaAccount !== walletAddress) {
       setMessage("Connect the same wallet that owns these rewards before claiming.");
       return;
     }
@@ -287,30 +289,44 @@ export default function CommandCenterClaims() {
     const completed: string[] = [];
 
     try {
-      const intent = await createRewardClaimIntent({ walletAddress, chainId, rewardLedgerIds, signer });
+      const intent = await createRewardClaimIntent({
+        walletAddress,
+        chainId,
+        rewardLedgerIds,
+        signer: signer || undefined,
+        signMessage: solanaSignMessage,
+      });
       claimIntentId = intent.id;
 
       for (const call of intent.calls) {
-        const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
         const toastId = toast.loading(`Confirm ${formatNativeAmount(call.amount, call.chainId, call.tokenSymbol)} claim in your wallet...`);
         try {
-          const tx = await contract.claim(call.batchId, call.amount, call.proof);
-          toast.dismiss(toastId);
-          const waitToast = toast.loading("Waiting for claim confirmation...");
-          try {
-            await tx.wait();
-          } finally {
-            toast.dismiss(waitToast);
+          let txHash = "";
+          if (call.mode === "solana_airdrop") {
+            txHash = await submitSolanaAirdropClaim(call);
+          } else {
+            if (!signer) throw new Error("BNB signer is unavailable for this reward claim.");
+            const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
+            const tx = await contract.claim(call.batchId, call.amount, call.proof);
+            toast.dismiss(toastId);
+            const waitToast = toast.loading("Waiting for claim confirmation...");
+            try {
+              await tx.wait();
+            } finally {
+              toast.dismiss(waitToast);
+            }
+            txHash = String(tx.hash || "");
           }
+          toast.dismiss(toastId);
 
-          const txHash = String(tx.hash || "");
           await recordRewardClaimTx({
             walletAddress,
             chainId,
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             txHash,
-            signer,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
           });
           completed.push(call.rewardLedgerId);
         } catch (err: any) {
@@ -322,7 +338,8 @@ export default function CommandCenterClaims() {
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             error: reason,
-            signer,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
           }).catch(() => {});
           throw err;
         }
@@ -346,8 +363,7 @@ export default function CommandCenterClaims() {
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {
             const Icon = card.icon;
-            const solanaDisabled = card.items.some((item) => item.chainId === SOLANA_CHAIN_ID);
-            const stateCopy = getRewardStateCopy(card.state, solanaDisabled);
+            const stateCopy = getRewardStateCopy(card.state);
             return (
               <div key={card.rewardType} className="rounded-2xl border border-border/50 bg-background/25 p-4">
                 <div className="flex items-start justify-between gap-3">
