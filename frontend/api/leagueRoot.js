@@ -1,19 +1,12 @@
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
 import { badMethod, isAddress, json, readJson } from "../server/http.js";
+import { publishSolanaLeagueRoot } from "./lib/solanaLeagueRootPublisher.js";
+
+const SOLANA_CHAINS = new Set([101, 102]);
 
 // POST /api/leagueRoot
 // Admin-only helper to publish a weekly epoch root or seal a monthly league root.
-//
-// Body:
-// {
-//   chainId: 56|97,
-//   period: "weekly"|"monthly",
-//   epochStart: "<ISO>"
-// }
-//
-// Headers:
-// - x-admin-key: must equal process.env.ADMIN_API_KEY
 export default async function handler(req, res) {
   if (req.method !== "POST") return badMethod(res);
 
@@ -36,18 +29,6 @@ export default async function handler(req, res) {
     const epochDate = new Date(epochStart);
     if (Number.isNaN(epochDate.getTime())) return json(res, 400, { error: "Invalid epochStart" });
 
-    const rpc = rpcForChain(chainId);
-    if (!rpc) return json(res, 500, { error: "Server misconfigured: missing RPC url" });
-
-    const pk = process.env.LEAGUE_ROOT_POSTER_PK;
-    if (!pk) return json(res, 500, { error: "Server misconfigured: missing LEAGUE_ROOT_POSTER_PK" });
-
-    const claimId = period === "monthly"
-      ? monthIdFromDate(epochDate)
-      : computeEpochId(chainId, period, Math.floor(epochDate.getTime() / 1000));
-
-    // Load all winners for the period and compute the exact leaves expected by
-    // TreasuryVaultV2 (weekly) or MonthlyLeagueTreasury (monthly).
     const { rows } = await pool.query(
       `SELECT category, rank, recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
          FROM league_epoch_winners
@@ -57,6 +38,52 @@ export default async function handler(req, res) {
     );
 
     if (!rows?.length) return json(res, 404, { error: "No winners for epoch" });
+
+    if (SOLANA_CHAINS.has(chainId)) {
+      const winners = rows.map((row) => ({
+        category: String(row.category || "").toLowerCase().trim(),
+        rank: Number(row.rank),
+        recipient: String(row.recipientAddress || "").trim(),
+        amountRaw: String(row.amountRaw || "0"),
+      }));
+      for (const winner of winners) {
+        if (!winner.category) return json(res, 400, { error: "Winner category missing" });
+        if (!Number.isInteger(winner.rank) || winner.rank < 1 || winner.rank > 5) {
+          return json(res, 400, { error: "Winner rank outside League range" });
+        }
+        if (!/^\d+$/.test(winner.amountRaw) || BigInt(winner.amountRaw) <= 0n) {
+          return json(res, 400, { error: "Winner amount must be positive lamports" });
+        }
+      }
+
+      const publication = await publishSolanaLeagueRoot({ chainId, period, epochStart, winners });
+      return json(res, 200, {
+        ok: true,
+        chainId,
+        period,
+        epochStart,
+        root: publication.root,
+        winnerTotal: publication.totalLamports,
+        txHash: publication.txHash,
+        claimsEnableTxHash: publication.claimsEnableTxHash,
+        programId: publication.programId,
+        configAddress: publication.configAddress,
+        vaultAddress: publication.vaultAddress,
+        epochAddress: publication.epochAddress,
+        epochStartSec: publication.epochStartSec,
+        alreadyExisted: publication.alreadyExisted,
+      });
+    }
+
+    const rpc = rpcForChain(chainId);
+    if (!rpc) return json(res, 500, { error: "Server misconfigured: missing RPC url" });
+
+    const pk = process.env.LEAGUE_ROOT_POSTER_PK;
+    if (!pk) return json(res, 500, { error: "Server misconfigured: missing LEAGUE_ROOT_POSTER_PK" });
+
+    const claimId = period === "monthly"
+      ? monthIdFromDate(epochDate)
+      : computeEpochId(chainId, period, Math.floor(epochDate.getTime() / 1000));
 
     const leaves = [];
     let winnerTotal = 0n;
@@ -99,7 +126,7 @@ export default async function handler(req, res) {
     return publishWeeklyRoot({ res, chainId, claimId, root, winnerTotal, wallet });
   } catch (e) {
     console.error("[api/leagueRoot]", e);
-    return json(res, 500, { error: "Server error" });
+    return json(res, 500, { error: e?.message || "Server error" });
   }
 }
 
