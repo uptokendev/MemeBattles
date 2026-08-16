@@ -26,10 +26,10 @@ jobs:
           from pathlib import Path
           p = Path('frontend/src/components/token/UnifiedMarketChart.tsx')
           text = p.read_text(encoding='utf-8')
-          old = '''              className="pointer-events-auto absolute z-30 w-[228px] -translate-x-1/2 rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
-              style={{ left: Math.min(Math.max(hoverPin.x, 114), (overlayRef.current?.clientWidth || 400) - 114), top: Math.max(8, hoverPin.y - 124) }}'''
-          new = '''              className="pointer-events-auto absolute z-30 w-[228px] rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
-              style={{
+          old_class = 'className="pointer-events-auto absolute z-30 w-[228px] -translate-x-1/2 rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"'
+          new_class = 'className="pointer-events-auto absolute z-30 w-[228px] rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"'
+          old_style = 'style={{ left: Math.min(Math.max(hoverPin.x, 114), (overlayRef.current?.clientWidth || 400) - 114), top: Math.max(8, hoverPin.y - 124) }}'
+          new_style = '''style={{
                 left:
                   hoverPin.x + 16 + 228 <= (overlayRef.current?.clientWidth || 400) - 8
                     ? hoverPin.x + 16
@@ -42,9 +42,13 @@ jobs:
                   ),
                 ),
               }}'''
-          if old not in text:
-              raise SystemExit('creator tooltip anchor not found')
-          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          if old_class not in text:
+              raise SystemExit('creator tooltip class anchor not found')
+          if old_style not in text:
+              raise SystemExit('creator tooltip style anchor not found')
+          text = text.replace(old_class, new_class, 1)
+          text = text.replace(old_style, new_style, 1)
+          p.write_text(text, encoding='utf-8')
           PY
 
       - name: Install frontend dependencies
