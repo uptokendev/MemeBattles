@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
@@ -279,7 +279,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     softRefreshMs: 12000,
     onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
   });
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+  const { price: nativeUsd } = useNativeUsdPrice(activeChainId);
 
   const DEBUG = typeof window !== "undefined" && (window.localStorage?.getItem("debug_campaign_grid") === "1" || (window as any).__DEBUG_CAMPAIGN_GRID__ === true);
 
@@ -369,7 +369,8 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     sort: query.sort ?? "default",
     status: query.status ?? "all",
     search: query.search ?? "",
-    bnbUsd: bnbUsd ? bnbUsd : null,
+    // Legacy API key; value is USD per selected chain-native coin.
+    bnbUsd: nativeUsd ? nativeUsd : null,
     mcapMinUsd: query.mcapMinUsd ?? null,
     mcapMaxUsd: query.mcapMaxUsd ?? null,
     progressMinPct: query.progressMinPct ?? null,
@@ -377,7 +378,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     includeTestnet: includeTestnet ? "true" : null,
     testnet: includeTestnet ? "true" : null,
     includeDrafts: includeTestnet ? "true" : null,
-  }), [activeChainId, query, bnbUsd, includeTestnet]);
+  }), [activeChainId, query, nativeUsd, includeTestnet]);
 
   useEffect(() => {
     let mounted = true;
@@ -553,13 +554,14 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
       // Prefer live/on-chain hydrate over sparse API marketcap (often null on testnet).
       const mcapBnb = Number(
-        (patch?.marketcapBnb ?? onChain?.marketcapBnb ?? it.marketcapBnb) ?? NaN,
+        // Canonical REST/on-chain values outrank legacy token_stats realtime patches.
+        (onChain?.marketcapBnb ?? it.marketcapBnb ?? patch?.marketcapBnb) ?? NaN,
       );
-      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
+      const mcapUsd = Number.isFinite(mcapBnb) && nativeUsd ? mcapBnb * nativeUsd : NaN;
       const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
 
       const athBnb = Number((it.athMarketcapBnb ?? mcapBnb) ?? NaN);
-      const athUsd = Number.isFinite(athBnb) && bnbUsd ? athBnb * bnbUsd : NaN;
+      const athUsd = Number.isFinite(athBnb) && nativeUsd ? athBnb * nativeUsd : NaN;
       const athLabel = Number.isFinite(athUsd)
         ? formatCompactUsd(athUsd)
         : marketCapUsdLabel;
@@ -664,7 +666,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
     // Strip internal sort keys before render.
     return filtered.map(({ _mcapUsd, _mcapBnb, _createdAt, _activity, _votes, _progress, ...vm }) => vm);
-  }, [items, bnbUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);
+  }, [items, nativeUsd, logoCache, patchByCampaign, onChainByCampaign, baseParams]);
 
   const gridClass = "grid grid-cols-2 gap-3 justify-items-stretch sm:[grid-template-columns:repeat(auto-fill,minmax(180px,220px))] sm:justify-start sm:gap-4";
 

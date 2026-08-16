@@ -7,7 +7,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import { getActiveChainId, isSolanaChainId } from "@/lib/chainConfig";
 import { AthBar } from "@/components/token/AthBar";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { useWallet } from "@/contexts/WalletContext";
 import { isSolanaBase58Address, tokenDetailsPath } from "@/lib/tokenDetailsPath";
@@ -147,7 +147,7 @@ const Example = () => {
   // Blockchain campaigns -> cards
   const { fetchCampaigns, fetchCampaignCardStats, activeChainId } = useLaunchpad();
   const chainIdForStorage = activeChainId ?? 97;
-  const { price: bnbUsdPrice } = useBnbUsdPrice(true);
+  const { price: nativeUsdPrice } = useNativeUsdPrice(chainIdForStorage);
   const [cards, setCards] = useState<CarouselCard[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [campaignError, setCampaignError] = useState<string | null>(null);
@@ -200,13 +200,15 @@ const Example = () => {
 
             const marketCapLabel = stats?.marketCap ?? "—";
 
-            // Convert "X BNB" -> USD label for UI + ATH tracking
+            // Convert the selected chain-native market cap (BNB or SOL) to USD.
             let marketCapUsdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
-              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
+            const nativeSymbol = isSolanaChainId(chainIdForStorage) ? "SOL" : "BNB";
+            const nativePattern = new RegExp(nativeSymbol, "i");
+            const mcNative = marketCapLabel.toUpperCase().includes(nativeSymbol)
+              ? parseCompactNumber(marketCapLabel.replace(nativePattern, "").trim())
               : null;
-            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
-              marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
+            if (mcNative != null && nativeUsdPrice && Number.isFinite(Number(nativeUsdPrice))) {
+              marketCapUsdLabel = formatCompactUsd(mcNative * Number(nativeUsdPrice));
             }
 
             return {
@@ -249,7 +251,7 @@ const Example = () => {
     return () => {
       cancelled = true;
     };
-  }, [fetchCampaigns, fetchCampaignCardStats, bnbUsdPrice]);
+  }, [fetchCampaigns, fetchCampaignCardStats, nativeUsdPrice, chainIdForStorage]);
 
   // Poll lightweight stats (market cap/holders/volume) so the card + ATH bar feel "live".
   // This is best-effort and intentionally modest to avoid hammering the RPC.
@@ -272,11 +274,13 @@ const Example = () => {
             const marketCapLabel = stats?.marketCap ?? card.marketCap;
 
             let marketCapUsdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
-              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
+            const nativeSymbol = isSolanaChainId(chainIdForStorage) ? "SOL" : "BNB";
+            const nativePattern = new RegExp(nativeSymbol, "i");
+            const mcNative = marketCapLabel.toUpperCase().includes(nativeSymbol)
+              ? parseCompactNumber(marketCapLabel.replace(nativePattern, "").trim())
               : null;
-            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
-              marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
+            if (mcNative != null && nativeUsdPrice && Number.isFinite(Number(nativeUsdPrice))) {
+              marketCapUsdLabel = formatCompactUsd(mcNative * Number(nativeUsdPrice));
             }
 
             return {
@@ -307,7 +311,7 @@ const Example = () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [fetchCampaignCardStats, bnbUsdPrice]);
+  }, [fetchCampaignCardStats, nativeUsdPrice, chainIdForStorage]);
 
   // Save scroll position to sessionStorage whenever it changes
   useEffect(() => {
