@@ -1,4 +1,4 @@
-name: Agent professional chart finalize
+name: Agent professional chart cleanup
 
 on:
   push:
@@ -11,95 +11,18 @@ permissions:
   contents: write
 
 jobs:
-  finalize-and-validate:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/professional-chart-launch
           fetch-depth: 0
-
-      - name: Finalize chart layout behavior
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding="utf-8")
-              if old not in text:
-                  raise SystemExit(f"anchor missing in {path}: {old[:180]!r}")
-              p.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          replace_once(
-              "frontend/src/pages/TokenDetails.tsx",
-              '            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"',
-              '            className={`bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col ${chartExpanded ? "h-auto min-h-[640px] md:min-h-[720px] xl:min-h-[760px]" : "min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"}`}',
-          )
-
-          replace_once(
-              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
-              '  showDenomToggle?: boolean;\n};',
-              '  showDenomToggle?: boolean;\n  expanded?: boolean;\n  onExpandedChange?: (expanded: boolean) => void;\n};',
-          )
-          replace_once(
-              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
-              '  className,\n  showDenomToggle = true,\n}: ContinuousMarketChartPanelProps) {\n  const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");\n  const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");\n  const [chartExpanded, setChartExpanded] = useState(false);',
-              '  className,\n  showDenomToggle = true,\n  expanded: controlledExpanded,\n  onExpandedChange,\n}: ContinuousMarketChartPanelProps) {\n  const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");\n  const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");\n  const [internalExpanded, setInternalExpanded] = useState(false);\n  const chartExpanded = controlledExpanded ?? internalExpanded;\n  const handleExpandedChange = (next: boolean) => {\n    if (controlledExpanded == null) setInternalExpanded(next);\n    onExpandedChange?.(next);\n  };',
-          )
-          replace_once(
-              "frontend/src/components/token/ContinuousMarketChartPanel.tsx",
-              '          expanded={chartExpanded}\n          onExpandedChange={setChartExpanded}',
-              '          expanded={chartExpanded}\n          onExpandedChange={handleExpandedChange}',
-          )
-
-          replace_once(
-              "frontend/src/components/postgrad/WarRoomCampaignRow.tsx",
-              '  const [expanded, setExpanded] = useState(false);',
-              '  const [expanded, setExpanded] = useState(false);\n  const [chartExpanded, setChartExpanded] = useState(false);',
-          )
-          replace_once(
-              "frontend/src/components/postgrad/WarRoomCampaignRow.tsx",
-              '            <div className="order-2 flex h-[300px] flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:h-[380px] md:rounded-[18px] md:p-3 xl:order-1">',
-              '            <div className={`order-2 flex flex-col rounded-[16px] border border-white/10 bg-black/30 p-2 md:rounded-[18px] md:p-3 xl:order-1 ${chartExpanded ? "h-auto min-h-[580px] md:min-h-[660px]" : "h-[300px] md:h-[380px]"}`}>',
-          )
-          replace_once(
-              "frontend/src/components/postgrad/WarRoomCampaignRow.tsx",
-              '                chainId={rowChainId}\n                compact\n                className="flex min-h-0 w-full flex-1 flex-col"',
-              '                chainId={rowChainId}\n                compact\n                expanded={chartExpanded}\n                onExpandedChange={setChartExpanded}\n                className="flex min-h-0 w-full flex-1 flex-col"',
-          )
-          PY
-
-      - name: Diff sanity
-        run: |
-          git diff --check
-          git diff --stat
-          git diff -- frontend/src/pages/TokenDetails.tsx frontend/src/components/token/ContinuousMarketChartPanel.tsx frontend/src/components/postgrad/WarRoomCampaignRow.tsx | sed -n '1,1000p'
-
-      - name: Frontend install
-        run: npm ci --prefix frontend
-
-      - name: Frontend build
-        run: npm run build --prefix frontend
-
-      - name: Frontend lint
-        run: npm run lint --prefix frontend
-
-      - name: Indexer install
-        run: npm ci --prefix realtime-indexer
-
-      - name: Indexer build
-        run: npm run build --prefix realtime-indexer
-
-      - name: Commit final chart fixes
+      - name: Remove temporary workflow
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            frontend/src/pages/TokenDetails.tsx \
-            frontend/src/components/token/ContinuousMarketChartPanel.tsx \
-            frontend/src/components/postgrad/WarRoomCampaignRow.tsx
-          git commit -m "Finalize professional chart layout behavior"
+          git rm .github/workflows/agent-professional-chart-finalize.yml
+          git commit -m "Remove temporary chart finalization runner"
           git push origin HEAD:agent/professional-chart-launch
