@@ -86,7 +86,6 @@ type CreatorTradePin = {
   id: string;
   timeSec: number;
   value: number;
-  candleHigh: number;
   side: "buy" | "sell";
   tokensWei: bigint;
   nativeWei: bigint;
@@ -721,8 +720,6 @@ export function UnifiedMarketChart({
       if (!Number.isFinite(value) || value <= 0) continue;
       const candleTime = nearestCandleTime(data, ts);
       const timeSec = candleTime != null ? Number(candleTime) : ts;
-      const candle = data.find((row) => Number(row.time) === timeSec);
-      const candleHigh = candle ? Math.max(Number(candle.high) || 0, value) : value;
       const side = trade.type === "sell" ? "sell" : "buy";
       const txHash = String(trade.txHash || "").trim();
       const mcapUsd = priceNative * Math.max(supplyForMcap, 0) * (nativeUsd || 0);
@@ -730,7 +727,6 @@ export function UnifiedMarketChart({
         id: `${txHash || timeSec}:${side}:${trade.logIndex ?? 0}`,
         timeSec,
         value,
-        candleHigh,
         side,
         tokensWei: trade.tokensWei ?? 0n,
         nativeWei: trade.nativeWei ?? 0n,
@@ -776,7 +772,6 @@ export function UnifiedMarketChart({
     };
   }, [chainId, creatorAddress, creatorAvatarUrl, creatorDisplayName]);
 
-  const lastPinTopFracRef = useRef(0.16);
   const repositionCreatorPins = useCallback(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
@@ -787,7 +782,7 @@ export function UnifiedMarketChart({
     const raw: Array<CreatorTradePin & { x: number; y: number }> = [];
     for (const pin of creatorPinsRef.current) {
       const x = chart.timeScale().timeToCoordinate(pin.timeSec as Time);
-      const y = series.priceToCoordinate(pin.candleHigh || pin.value);
+      const y = series.priceToCoordinate(pin.value);
       if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue;
       raw.push({ ...pin, x, y });
     }
@@ -796,25 +791,11 @@ export function UnifiedMarketChart({
     raw.sort((a, b) => a.x - b.x || a.timestamp - b.timestamp);
     for (const pin of raw) {
       const last = groups[groups.length - 1];
-      if (last && Math.abs(last[0].x - pin.x) <= 14) last.push(pin);
+      if (last && Math.abs(last[0].x - pin.x) <= 12) last.push(pin);
       else groups.push([pin]);
     }
 
-    const pinSize = 22;
-    const pinGap = 8;
-    const wickClearance = 16;
-    const maxStack = groups.reduce((max, group) => Math.max(max, group.length), 1);
-    const overlayH = overlayRef.current?.clientHeight || 260;
-    const topFrac = Math.min(0.46, Math.max(0.16, (wickClearance + maxStack * (pinSize + pinGap) + 12) / overlayH));
-    if (Math.abs(lastPinTopFracRef.current - topFrac) > 0.015) {
-      lastPinTopFracRef.current = topFrac;
-      try {
-        chart.priceScale("right").applyOptions({ scaleMargins: { top: topFrac, bottom: 0.12 } });
-      } catch {
-        // ignore
-      }
-    }
-
+    const liftPx = 26;
     const next: PlacedCreatorPin[] = [];
     for (const group of groups) {
       group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
@@ -822,13 +803,7 @@ export function UnifiedMarketChart({
       const anchorY = Math.min(...group.map((pin) => pin.y));
       const anchorX = group.reduce((sum, pin) => sum + pin.x, 0) / stackCount;
       group.forEach((pin, stackIndex) => {
-        next.push({
-          ...pin,
-          x: anchorX,
-          y: anchorY - wickClearance - stackIndex * (pinSize + pinGap),
-          stackIndex,
-          stackCount,
-        });
+        next.push({ ...pin, x: anchorX, y: anchorY - liftPx - stackIndex * 22, stackIndex, stackCount });
       });
     }
     setPlacedPins(next);
@@ -851,7 +826,7 @@ export function UnifiedMarketChart({
         borderColor: "rgba(255,255,255,0.18)",
         ticksVisible: true,
         minimumWidth: 88,
-        scaleMargins: { top: 0.2, bottom: 0.12 },
+        scaleMargins: { top: 0.14, bottom: 0.12 },
       },
       timeScale: {
         borderVisible: true,
@@ -1083,7 +1058,7 @@ export function UnifiedMarketChart({
                 key={pin.id}
                 type="button"
                 title={`Creator ${pin.side}${pin.stackCount > 1 ? ` (${pin.stackIndex + 1}/${pin.stackCount} in this bar)` : ""}`}
-                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-full rounded-full border-2 ${pin.side === "buy" ? "border-emerald-400" : "border-orange-400"} bg-black/85 p-0 shadow-[0_0_12px_rgba(249,115,22,0.45)] transition-transform hover:z-30 hover:scale-125 ${active ? "z-30 scale-125" : ""} relative`}
+                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-orange-400 bg-black/80 p-0 shadow-[0_0_12px_rgba(249,115,22,0.55)] transition-transform hover:z-30 hover:scale-125 ${active ? "z-30 scale-125" : ""}`}
                 style={{ left: pin.x, top: pin.y, zIndex: 10 + pin.stackIndex }}
                 onMouseEnter={() => openCreatorTooltip(pin.id)}
                 onMouseLeave={scheduleHideCreatorTooltip}
@@ -1097,9 +1072,6 @@ export function UnifiedMarketChart({
                 aria-label={`Creator ${pin.side}`}
               >
                 <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
-                <span
-                  className={`pointer-events-none absolute left-1/2 top-full h-2 w-px -translate-x-1/2 ${pin.side === "buy" ? "bg-emerald-400/80" : "bg-orange-400/80"}`}
-                />
               </button>
             );
           })}
