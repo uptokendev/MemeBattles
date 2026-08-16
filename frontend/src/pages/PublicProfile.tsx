@@ -603,30 +603,27 @@ export default function PublicProfile({
                   Open Command Center
                 </Button>
               ) : (
-                <Button
-                  onClick={() => void handleToggleFollow()}
-                  disabled={followBusy}
-                  variant={isFollowing ? "outline" : "default"}
-                  className="w-full font-retro"
-                >
-                  {followBusy ? "Updating…" : isFollowing ? "Unfollow" : "Follow"}
-                </Button>
-                <Button
-                  asChild
-                  variant="ghost"
-                  className="w-full font-retro text-xs text-muted-foreground"
-                >
+                <>
+                  <Button
+                    onClick={() => void handleToggleFollow()}
+                    disabled={followBusy}
+                    variant={isFollowing ? "outline" : "default"}
+                    className="w-full font-retro"
+                  >
+                    {followBusy ? "Updating…" : isFollowing ? "Unfollow" : "Follow"}
+                  </Button>
                   <Link
                     to={buildAbuseReportPath({
                       entityType: "profile",
                       reportedWallet: profileWallet,
                       reportedUrl: typeof window !== "undefined" ? window.location.href : `/profile/${profileWallet}`,
                     })}
+                    className="inline-flex h-10 w-full items-center justify-center rounded-md px-4 font-retro text-xs text-muted-foreground hover:bg-card/70 hover:text-foreground"
                   >
                     <Flag className="mr-2 h-3.5 w-3.5" />
                     Report abuse
                   </Link>
-                </Button>
+                </>
               )}
             </div>
           </div>
