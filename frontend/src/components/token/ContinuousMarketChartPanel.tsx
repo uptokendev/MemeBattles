@@ -7,7 +7,7 @@ import {
 } from "@/components/token/UnifiedMarketChart";
 import { useContinuousMarketTrades } from "@/hooks/useContinuousMarketTrades";
 import { useSolanaMeteoraMarket } from "@/hooks/useSolanaMeteoraMarket";
-import { useSolUsdPrice } from "@/hooks/useSolUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { isSolanaChainId } from "@/lib/chainConfig";
 import {
   fetchSolanaCampaignCurveState,
@@ -49,7 +49,7 @@ export function ContinuousMarketChartPanel({
   const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
-  const { price: solUsd } = useSolUsdPrice(solana);
+  const { price: nativeUsd } = useNativeUsdPrice(chainId);
   const [solanaCurve, setSolanaCurve] = useState<SolanaCampaignCurveState | null>(null);
 
   useEffect(() => {
@@ -146,7 +146,7 @@ export function ContinuousMarketChartPanel({
           solanaGraduated={Boolean(solana && solanaCurve?.graduated)}
           livePriceNative={solana ? livePriceNative : null}
           liveSupplyWhole={solana ? liveSupplyWhole : null}
-          nativeUsdPrice={solana ? solUsd : undefined}
+          nativeUsdPrice={nativeUsd}
           resolution={resolution}
           onResolutionChange={setResolution}
           denomination={denomination}

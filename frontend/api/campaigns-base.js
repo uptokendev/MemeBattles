@@ -355,9 +355,9 @@ export default async function handler(req, res) {
           ${DEX_MARKET_STAGE_SQL} as market_stage,
           ${DEX_POOL_SQL} as dex_pool,
           ${DEX_POSITION_SQL} as dex_position,
-          ts.last_price_bnb,
+          coalesce(cc.price_c, ts.last_price_bnb) as last_price_bnb,
           ts.sold_tokens,
-          ts.marketcap_bnb,
+          coalesce(cc.mcap_c, ts.marketcap_bnb) as marketcap_bnb,
           ts.vol_24h_bnb,
           va.votes_24h,
           va.votes_all_time
@@ -366,6 +366,18 @@ export default async function handler(req, res) {
           on cms.chain_id = c.chain_id and cms.campaign_address = c.campaign_address
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
+        left join lateral (
+          select tc.price_c, tc.mcap_c
+          from public.token_candles tc
+          where tc.chain_id = c.chain_id
+            and tc.campaign_address = c.campaign_address
+            and tc.timeframe = '5s'
+            and coalesce(tc.canonical_version, 0) >= 2
+            and tc.price_c is not null
+            and tc.mcap_c is not null
+          order by tc.bucket_start desc
+          limit 1
+        ) cc on true
         left join lateral (
           select
             m.logo_uri,
@@ -457,7 +469,8 @@ export default async function handler(req, res) {
         select
           b.chain_id,
           b.campaign_address,
-          max(tc.h) as ath_price_bnb
+          max(tc.h) as ath_price_bnb,
+          max(tc.mcap_h) as ath_marketcap_bnb
         from base b
         left join public.token_candles tc
           on tc.chain_id = b.chain_id
@@ -471,10 +484,11 @@ export default async function handler(req, res) {
           rt.raised_total_bnb,
           rt.raised_10m_bnb,
           rt.holder_count,
-          case
-            when ath.ath_price_bnb is not null and b.sold_tokens is not null then ath.ath_price_bnb * b.sold_tokens
-            else b.marketcap_bnb
-          end as ath_marketcap_bnb,
+          coalesce(
+            ath.ath_marketcap_bnb,
+            case when ath.ath_price_bnb is not null and b.sold_tokens is not null then ath.ath_price_bnb * b.sold_tokens end,
+            b.marketcap_bnb
+          ) as ath_marketcap_bnb,
           case
             when $2::numeric <= 0 then null
             else least(100, greatest(0, (rt.raised_total_bnb / $2::numeric) * 100))

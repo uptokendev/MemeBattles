@@ -106,7 +106,7 @@ ${LOGO_URI_SELECT}
 ${LIFECYCLE_SELECT}
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
-       ts.marketcap_bnb AS "marketcapBnb",
+       COALESCE(cc.mcap_c, ts.marketcap_bnb) AS "marketcapBnb",
        COALESCE(va.votes_1h, 0) AS "votes1h",
        COALESCE(va.votes_24h, 0) AS "votes24h",
        COALESCE(va.votes_7d, 0) AS "votes7d",
@@ -128,6 +128,17 @@ ${LIFECYCLE_JOIN}
      LEFT JOIN token_stats ts
        ON ts.chain_id = c.chain_id
       AND ts.campaign_address = c.campaign_address
+     LEFT JOIN LATERAL (
+       SELECT tc.mcap_c
+       FROM token_candles tc
+       WHERE tc.chain_id = c.chain_id
+         AND tc.campaign_address = c.campaign_address
+         AND tc.timeframe = '5s'
+         AND COALESCE(tc.canonical_version, 0) >= 2
+         AND tc.mcap_c IS NOT NULL
+       ORDER BY tc.bucket_start DESC
+       LIMIT 1
+     ) cc ON true
      LEFT JOIN campaign_activity ca
        ON ca.chain_id = c.chain_id
       AND ca.campaign_address = c.campaign_address
@@ -159,7 +170,7 @@ ${LOGO_URI_SELECT}
 ${LIFECYCLE_SELECT}
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
-       ts.marketcap_bnb AS "marketcapBnb",
+       COALESCE(cc.mcap_c, ts.marketcap_bnb) AS "marketcapBnb",
        0::int AS "votes1h",
        0::int AS "votes24h",
        0::int AS "votes7d",
@@ -173,13 +184,24 @@ ${LIFECYCLE_JOIN}
      LEFT JOIN token_stats ts
        ON ts.chain_id = c.chain_id
       AND ts.campaign_address = c.campaign_address
+     LEFT JOIN LATERAL (
+       SELECT tc.mcap_c
+       FROM token_candles tc
+       WHERE tc.chain_id = c.chain_id
+         AND tc.campaign_address = c.campaign_address
+         AND tc.timeframe = '5s'
+         AND COALESCE(tc.canonical_version, 0) >= 2
+         AND tc.mcap_c IS NOT NULL
+       ORDER BY tc.bucket_start DESC
+       LIMIT 1
+     ) cc ON true
      WHERE c.chain_id = $1
        AND c.campaign_address IS NOT NULL
        AND c.graduated_at_chain IS NULL
        AND COALESCE(c.is_active, true) = true
        AND (dl.scheduled_launch_at IS NULL OR dl.scheduled_launch_at <= now())
      ORDER BY
-       COALESCE(ts.marketcap_bnb, 0) DESC,
+       COALESCE(cc.mcap_c, ts.marketcap_bnb, 0) DESC,
        COALESCE(dl.scheduled_launch_at, c.created_at_chain) DESC NULLS LAST,
        c.campaign_address ASC
      LIMIT $2`,

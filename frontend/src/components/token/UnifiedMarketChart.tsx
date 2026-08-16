@@ -513,8 +513,16 @@ export function UnifiedMarketChart({
       livePrice > 0 &&
       (metric === "price" || (Number.isFinite(liveSupply) && liveSupply > 0)) &&
       (denomination !== "USD" || nativeUsd > 0);
+    const hasLiveBnbBondingSpot =
+      !solana &&
+      !isGraduatedStage(marketState) &&
+      Number.isFinite(livePrice) &&
+      livePrice > 0 &&
+      (metric === "price" || (Number.isFinite(liveSupply) && liveSupply > 0)) &&
+      (denomination !== "USD" || nativeUsd > 0);
+    const hasLiveSpotOverlay = hasGraduatedSolanaSpot || hasLiveBnbBondingSpot;
 
-    if (!hasHistoricalData && !hasGraduatedSolanaSpot) return [] as CandleRow[];
+    if (!hasHistoricalData && !hasLiveSpotOverlay) return [] as CandleRow[];
 
     const fromTrades = buildCandles(seriesPoints, intervalSeconds, {
       extendToNow: false,
@@ -528,7 +536,7 @@ export function UnifiedMarketChart({
     // DEX swap is indexed. Keep the chart's right edge on the exact same live
     // pool-price x fixed-supply basis as the TokenDetails headline. This is only
     // a visual live overlay; durable bonding/DEX history remains server-authoritative.
-    if (!hasGraduatedSolanaSpot) return authoritative;
+    if (!hasLiveSpotOverlay) return authoritative;
 
     const liveNativeValue = metric === "marketcap" ? livePrice * liveSupply : livePrice;
     const liveValue = denomination === "USD" ? liveNativeValue * nativeUsd : liveNativeValue;

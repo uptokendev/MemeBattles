@@ -9,7 +9,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { ChevronLeft, ChevronRight, Star, ThumbsUp } from "lucide-react";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { getFactoryAddress } from "@/lib/chainConfig";
 import { resolveImageUri } from "@/lib/media";
@@ -365,7 +365,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   const navigate = useNavigate();
   const { fetchCampaignLogoURI } = useLaunchpad();
   const [featuredChainId] = useSelectedFeedChainId();
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+  const { price: nativeUsd } = useNativeUsdPrice(featuredChainId);
   const [voteMode, setVoteMode] = useState<"24h" | "all">("24h");
   const [refetchNonce, setRefetchNonce] = useState(0);
   const [items, setItems] = useState<FeaturedItemApi[]>([]);
@@ -458,8 +458,9 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       const votesAll = Number((patch as { votesAllTime?: number; votesAll?: number }).votesAllTime ?? (patch as { votesAll?: number }).votesAll ?? it.votesAllTime ?? 0);
       const rankVotes = voteMode === "24h" ? votes24h : votesAll;
       const activitySec = Number((patch as { lastActivityAt?: number }).lastActivityAt ?? 0);
-      const mcapBnb = Number((patch as { marketcapBnb?: string | number }).marketcapBnb ?? it.marketcapBnb ?? NaN);
-      const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
+      // Canonical REST value wins; legacy realtime marketcap is fallback only.
+      const mcapBnb = Number(it.marketcapBnb ?? (patch as { marketcapBnb?: string | number }).marketcapBnb ?? NaN);
+      const mcapUsdLabel = Number.isFinite(mcapBnb) && nativeUsd ? formatCompactUsd(mcapBnb * nativeUsd) : null;
       const rawLogo = it.logoUri || logoCache[addr] || null;
       const resolved = resolveFeaturedImageUri(rawLogo);
       const chainId = Number(it.chainId ?? 0) || featuredChainId;
@@ -489,7 +490,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       return (b.createdAt ?? 0) - (a.createdAt ?? 0);
     });
     return mapped.map((c, i) => ({ ...c, idx: i + 1 }));
-  }, [items, patchByCampaign, bnbUsd, logoCache, voteMode, featuredChainId]);
+  }, [items, patchByCampaign, nativeUsd, logoCache, voteMode, featuredChainId]);
 
   useEffect(() => {
     let alive = true;
