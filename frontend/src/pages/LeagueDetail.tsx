@@ -573,19 +573,18 @@ useEffect(() => {
                     const w = String(r.wallet ?? "");
                     const decimals = Number(activeChainId) === SOLANA_CHAIN_ID ? 9 : 18;
                     const symbol = Number(activeChainId) === SOLANA_CHAIN_ID ? "SOL" : "BNB";
-                    let pnlPositive = false;
+                    let pnlSign = "";
                     try {
-                      pnlPositive = BigInt(String(r.profit_raw ?? "0")) > 0n;
+                      const pnlRaw = BigInt(String(r.profit_raw ?? "0"));
+                      if (pnlRaw > 0n) pnlSign = "+";
                     } catch {
-                      pnlPositive = false;
+                      pnlSign = "";
                     }
+                    const pnlLabel = `${pnlSign}${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol} PnL`;
                     leftEl = <RowWallet address={w} />;
-                    metricTop =
-                      pnlPositive
-                        ? `${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol}`
-                        : r.sells_raw
-                          ? `${formatBnbFromRaw(r.sells_raw, decimals)} ${symbol} sold`
-                          : `${formatBnbFromRaw(String(r.profit_raw ?? "0"), decimals)} ${symbol}`;
+                    metricTop = r.sells_raw
+                      ? `${pnlLabel} · ${formatBnbFromRaw(r.sells_raw, decimals)} ${symbol} sold`
+                      : pnlLabel;
                     metricSub = `${Number(r.trades_count ?? 0)} trades`;
                     key = `${def.key}:${w}:${idx}`;
                     onClick = () => {

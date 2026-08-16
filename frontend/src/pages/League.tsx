@@ -155,14 +155,14 @@ function rowMetric(def: LeagueDef, row: any, native = { decimals: 18, symbol: "B
     const trades = row?.trades_count != null ? ` · ${Number(row.trades_count)} trades` : "";
     const pnl = rawToNative(row.profit_raw, native.decimals);
     const sold = rawToNative(row.sells_raw, native.decimals);
-    // Cashflow PnL is sells - buys. Early curve sellers are often still red;
-    // still show what they actually took out so "0 SOL" is not a lie.
-    if (pnl > 0) return `${formatNative(pnl, native.symbol)}${trades}`;
-    if (sold > 0) return `${formatNative(sold, native.symbol)} sold${trades}`;
-    if (row?.profit_raw != null && String(row.profit_raw).trim() !== "") {
-      return `${formatNative(pnl, native.symbol)}${trades}`;
+    // Rank is still sells − buys. Always print that PnL first so a bigger
+    // "sold" number cannot look like a better score.
+    if (row?.profit_raw == null || String(row.profit_raw).trim() === "") {
+      return sold > 0 ? `${formatNative(sold, native.symbol)} sold${trades}` : def.metricLabel;
     }
-    return def.metricLabel;
+    const pnlLabel = `${pnl > 0 ? "+" : ""}${formatNative(pnl, native.symbol)} PnL`;
+    if (sold > 0) return `${pnlLabel} · ${formatNative(sold, native.symbol)} sold${trades}`;
+    return `${pnlLabel}${trades}`;
   }
   if (def.key === "crowd_favorite") return row?.votes_count != null ? `${row.votes_count} votes` : def.metricLabel;
   if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
