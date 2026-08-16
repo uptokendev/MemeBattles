@@ -57,3 +57,12 @@ create index if not exists idx_solana_reward_lane_claims_wallet
 
 create index if not exists idx_solana_reward_lane_claims_source
   on public.solana_reward_lane_claims (source_type, source_ref);
+
+alter table public.solana_reward_lane_batches enable row level security;
+alter table public.solana_reward_lane_claims enable row level security;
+
+revoke all on table public.solana_reward_lane_batches from anon, authenticated;
+revoke all on table public.solana_reward_lane_claims from anon, authenticated;
+
+comment on table public.solana_reward_lane_batches is 'Backend-only Solana Recruiter/Squad settlement batches; never queried directly by clients.';
+comment on table public.solana_reward_lane_claims is 'Backend-only Solana Recruiter/Squad Merkle claims and reconciliation records.';
