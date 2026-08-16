@@ -2,7 +2,8 @@ import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import { isSolanaChainId } from "@/lib/chainConfig";
 import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
-const PREFIX = "mwz:trade-history:v1:";
+const PREFIX = "mwz:trade-history:v2:";
+const LEGACY_PREFIX = "mwz:trade-history:v1:";
 const MAX = 120;
 
 type Stored = {
@@ -28,9 +29,11 @@ function key(chainId: number, campaign: string) {
   return `${PREFIX}${Number(chainId)}:${normalizeAddress(chainId, campaign)}`;
 }
 
-function storageFor(chainId: number): Storage | null {
+function storageFor(_chainId: number): Storage | null {
   if (typeof window === "undefined") return null;
-  return isSolanaChainId(chainId) ? window.localStorage : window.sessionStorage;
+  // Shared across tabs and wallet kinds. sessionStorage made Phantom and
+  // MetaMask on the same WIC page keep two different trade books.
+  return window.localStorage;
 }
 
 function toStored(p: CurveTradePoint, chainId: number): Stored | null {
@@ -79,18 +82,32 @@ function fromStored(s: Stored, chainId: number): CurveTradePoint | null {
   }
 }
 
-export function loadCachedTradeHistory(chainId: number, campaign: string): CurveTradePoint[] {
-  const storage = storageFor(chainId);
-  if (!storage) return [];
+function readStoredArray(storage: Storage, storageKey: string, chainId: number): CurveTradePoint[] {
   try {
-    const raw = storage.getItem(key(chainId, campaign));
+    const raw = storage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Stored[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((row) => fromStored(row, chainId)).filter((x): x is CurveTradePoint => Boolean(x)).slice(-MAX);
+    return parsed.map((row) => fromStored(row, chainId)).filter((x): x is CurveTradePoint => Boolean(x));
   } catch {
     return [];
   }
+}
+
+export function loadCachedTradeHistory(chainId: number, campaign: string): CurveTradePoint[] {
+  if (typeof window === "undefined") return [];
+  const currentKey = key(chainId, campaign);
+  const legacyKey = `${LEGACY_PREFIX}${Number(chainId)}:${normalizeAddress(chainId, campaign)}`;
+  const fromLocal = readStoredArray(window.localStorage, currentKey, chainId);
+  const fromLegacyLocal = readStoredArray(window.localStorage, legacyKey, chainId);
+  const fromSession = readStoredArray(window.sessionStorage, legacyKey, chainId);
+  const map = new Map<string, CurveTradePoint>();
+  for (const row of [...fromLegacyLocal, ...fromSession, ...fromLocal]) {
+    map.set(`${row.txHash}:${row.logIndex}`, row);
+  }
+  return Array.from(map.values())
+    .sort((a, b) => a.timestamp - b.timestamp || a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
+    .slice(-MAX);
 }
 
 export function saveCachedTradeHistory(chainId: number, campaign: string, trades: CurveTradePoint[]) {
@@ -98,7 +115,7 @@ export function saveCachedTradeHistory(chainId: number, campaign: string, trades
   if (!storage) return;
   try {
     const map = new Map<string, Stored>();
-    for (const t of trades) {
+    for (const t of [...loadCachedTradeHistory(chainId, campaign), ...trades]) {
       const s = toStored(t, chainId);
       if (!s) continue;
       map.set(`${s.txHash}:${s.logIndex}`, s);

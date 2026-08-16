@@ -35,7 +35,7 @@ function makeProvider(url: string, chainId: number): ethers.JsonRpcProvider {
 export async function scanContractLogs(input: {
   chainId: SupportedChainId;
   address: string;
-  topics: (string | null)[];
+  topics: Array<string | string[] | null>;
   lookbackBlocks?: number;
   fromBlock?: number;
   toBlock?: number;
@@ -83,17 +83,16 @@ export async function scanContractLogs(input: {
             break;
           } catch (error) {
             if (isRateLimitError(error) && attempts < 3) {
-              await sleep(250 * attempts);
+              await sleep(400 * attempts);
               continue;
             }
             if (isRateLimitError(error)) {
-              // Keep whatever we already recovered; try another RPC only if empty.
-              hardFail = logs.length === 0;
-              end = fromBlock - 1;
+              // Skip this chunk and keep walking older history. Aborting the
+              // rest dropped WIC's 2-day fills after the recent tip succeeded.
+              await sleep(800);
               break;
             }
             hardFail = logs.length === 0;
-            end = fromBlock - 1;
             break;
           }
         }
