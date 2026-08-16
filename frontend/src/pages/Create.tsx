@@ -808,9 +808,9 @@ const Create = () => {
           {isSolanaCreator ? "Solana" : getChainLabel(chainId)}
         </div>
         <Button asChild size="sm" variant="outline" className="font-retro text-xs">
-          <Link to="https://docs.memewar.zone" target="_blank" rel="noreferrer">
+          <Link to="/playbook">
             <BookOpen className="mr-1.5 h-3.5 w-3.5" />
-            Docs
+            Playbook
           </Link>
         </Button>
       </div>

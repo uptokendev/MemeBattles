@@ -28,7 +28,7 @@ export function titleForPath(pathname: string): string {
   if (path.startsWith("/airdrops")) return "Airdrops";
   if (path.startsWith("/squads")) return "Squads";
   if (path === "/status") return "Status";
-  if (path.startsWith("/playbook") || path.startsWith("/docs")) return "Docs";
+  if (path.startsWith("/playbook") || path.startsWith("/docs")) return "Playbook";
 
   return "MemeWarzone";
 }
