@@ -251,18 +251,25 @@ async function fetchOnChainTradeSnapshot(
   if (!buys.length || !sells.length) return [];
 
   const address = campaignAddress.toLowerCase();
-  // One OR-topic scan. Four parallel full-history scans used to rate-limit
-  // public RPCs and abort before the 2-day-old WIC fills.
-  const allTopics = [...new Set([...buys, ...sells])];
-  const scanned = await scanContractLogs({
+  // Separate buy/sell scans (some RPCs mishandle topic OR), sequential so we
+  // do not rate-limit ourselves. Each scan retries every chunk on every RPC.
+  const buyLogs = await scanContractLogs({
     chainId,
     address,
-    topics: [allTopics],
+    topics: [buys],
     lookbackBlocks,
     chunkSize: 2_500,
     signal,
   });
-  const allLogs = [...scanned]
+  const sellLogs = await scanContractLogs({
+    chainId,
+    address,
+    topics: [sells],
+    lookbackBlocks,
+    chunkSize: 2_500,
+    signal,
+  });
+  const allLogs = [...buyLogs, ...sellLogs]
     .sort((a, b) => a.blockNumber - b.blockNumber || Number(a.index ?? 0) - Number(b.index ?? 0))
     .slice(-limit);
 

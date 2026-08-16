@@ -345,16 +345,22 @@ type TxRow = {
 
 function parseRawOrDecimalUnits(rawValue: unknown, decimalValue: unknown, decimals: number): bigint {
   if (typeof rawValue === "bigint") return rawValue;
-  const raw = String(rawValue ?? "").trim();
-  if (/^\d+$/.test(raw)) {
-    try {
-      return BigInt(raw);
-    } catch {
-      // fall through
+  if (typeof decimalValue === "bigint") return decimalValue;
+  const minRawDigits = Math.max(16, decimals);
+  for (const value of [rawValue, decimalValue]) {
+    const text = String(value ?? "").trim();
+    if (/^\d+$/.test(text) && text.length >= minRawDigits) {
+      try {
+        return BigInt(text);
+      } catch {
+        // try next
+      }
     }
   }
+  const human = String(decimalValue ?? rawValue ?? "0").trim();
+  if (!human || human === "0") return 0n;
   try {
-    return ethers.parseUnits(String(decimalValue ?? "0"), decimals);
+    return ethers.parseUnits(human, decimals);
   } catch {
     return 0n;
   }

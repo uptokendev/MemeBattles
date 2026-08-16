@@ -1246,8 +1246,8 @@ async function scanCampaignRange(
     }
     const end = Math.min(toBlock, start + step - 1);
 
-    // Prefer separate topic queries on tip — some providers mishandle multi-topic OR.
-    // softFail: never abort the whole campaign on one bad eth_getLogs chunk; advance past it.
+    // Tip may skip a dead chunk (advanceCursor is false there). History must
+    // not: a soft-fail + cursor bump is how WIC lost the 2-day fills.
     let logs: ethers.Log[];
     if (tradesOnly) {
       const buyLogs = await getLogsSafe(
@@ -1273,7 +1273,7 @@ async function scanCampaignRange(
           topics: [[buyTopic, sellTopic, finTopic]],
         },
         0,
-        { softFail: true }
+        { softFail: false }
       );
     }
 
@@ -1324,6 +1324,8 @@ async function scanCampaignRange(
             logIndex,
             side: "buy",
             wallet: buyer.toLowerCase(),
+            tokenAmountRaw: amountOut.toString(),
+            bnbAmountRaw: cost.toString(),
             tokenAmount: String(tokenAmount),
             bnbAmount: String(bnbAmount),
             priceBnb: priceBnb !== null ? String(priceBnb) : null,
@@ -1385,6 +1387,8 @@ async function scanCampaignRange(
             logIndex,
             side: "sell",
             wallet: seller.toLowerCase(),
+            tokenAmountRaw: amountIn.toString(),
+            bnbAmountRaw: payout.toString(),
             tokenAmount: String(tokenAmount),
             bnbAmount: String(bnbAmount),
             priceBnb: priceBnb !== null ? String(priceBnb) : null,
@@ -1584,6 +1588,8 @@ export async function ingestCampaignTransaction(input: {
         logIndex,
         side: trade.side,
         wallet: trade.wallet.toLowerCase(),
+        tokenAmountRaw: trade.tokenRaw.toString(),
+        bnbAmountRaw: trade.bnbRaw.toString(),
         tokenAmount: String(tokenAmount),
         bnbAmount: String(bnbAmount),
         priceBnb: priceBnb !== null ? String(priceBnb) : null,

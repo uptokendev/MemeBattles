@@ -41,12 +41,20 @@ function parseRawAmount(rawValue: unknown): bigint {
   }
 }
 
-/** Accept raw integer strings or decimal human amounts from Ably (`tokenAmount`, `bnbAmount`). */
+/**
+ * Ably used to send human decimals (`250570` tokens) without a raw field.
+ * Integers with fewer digits than `decimals` are human amounts, not wei.
+ */
 function parseAmountToRaw(value: unknown, decimals: number): bigint {
-  const raw = parseRawAmount(value);
-  if (raw > 0n) return raw;
   const text = String(value ?? "").trim();
   if (!text || text === "0") return 0n;
+  if (/^\d+$/.test(text) && text.length >= Math.max(16, decimals)) {
+    try {
+      return BigInt(text);
+    } catch {
+      return 0n;
+    }
+  }
   try {
     return ethers.parseUnits(text, decimals);
   } catch {

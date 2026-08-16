@@ -48,7 +48,7 @@ export function useTokenTransferHolders(args: {
           chainId,
           address: token,
           topics: [TRANSFER_TOPIC],
-          lookbackBlocks: 50_000,
+          lookbackBlocks: 200_000,
           chunkSize: 2_500,
         });
         const balances = new Map<string, bigint>();
