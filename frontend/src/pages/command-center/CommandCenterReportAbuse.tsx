@@ -72,10 +72,12 @@ export default function CommandCenterReportAbuse() {
       for (const file of files.slice(0, 5)) {
         await withSession((token) => uploadAbuseEvidence(token, report.id, file));
       }
-      toast.success(`Report ${report.id} is on the board.`);
-      navigate(`${base}/reports/${report.id}`);
+      toast.success(`Report ${report.id} sent. Wait for the Abuse department.`);
+      navigate(`${base}/reports/${report.id}?filed=1`);
     } catch (error) {
+      const existingId = String((error as Error & { reportId?: string })?.reportId || "").trim();
       toast.error(String((error as Error)?.message || "Could not file the abuse report."));
+      if (existingId) navigate(`${base}/reports/${existingId}`);
     } finally {
       setSubmitting(false);
     }

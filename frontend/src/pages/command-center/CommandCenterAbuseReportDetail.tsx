@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
@@ -8,6 +8,7 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAbuseReporterSession } from "@/hooks/useAbuseReporterSession";
+import { AbuseFiledNotice } from "@/components/command-center/AbuseFiledNotice";
 import {
   getAbuseReport,
   replyToAbuseReport,
@@ -24,6 +25,8 @@ function formatWhen(value?: string | null) {
 
 export default function CommandCenterAbuseReportDetail() {
   const { reportId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const justFiled = searchParams.get("filed") === "1";
   const { walletAddress, chainId } = useCommandCenterData();
   const { withSession } = useAbuseReporterSession(walletAddress, chainId);
   const base = `/profile/${walletAddress}/command/support`;
@@ -99,6 +102,8 @@ export default function CommandCenterAbuseReportDetail() {
         </CommandCenterCard>
       ) : (
         <>
+          <AbuseFiledNotice reportId={report.id} justFiled={justFiled} status={report.status} />
+
           <CommandCenterCard title="Case facts">
             <dl className="grid gap-3 text-sm md:grid-cols-2">
               <div>

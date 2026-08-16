@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { AbuseReportShortcut, currentPageUrl } from "@/components/abuse/AbuseReportShortcut";
 import { useWarRoom } from "@/hooks/useWarRoom";
 import { toast } from "sonner";
 
@@ -116,6 +117,18 @@ export function TokenWarRoom({ chainId, campaignAddress, creatorAddress }: { cha
                     {m.failed ? <span className="text-destructive">failed</span> : null}
                   </div>
                   <p className="mt-1 whitespace-pre-wrap break-words text-[12px] text-foreground/90">{m.message}</p>
+                  {isMine ? null : (
+                    <div className="mt-2">
+                      <AbuseReportShortcut
+                        prefill={{
+                          entityType: "campaign",
+                          reportedWallet: m.walletAddress,
+                          reportedCampaignAddress: campaignAddress,
+                          reportedUrl: currentPageUrl(`/token/${campaignAddress}`),
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             );

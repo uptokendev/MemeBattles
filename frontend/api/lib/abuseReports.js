@@ -39,6 +39,11 @@ export const URL_MAX = 500;
 export const OPEN_REPORTS_PER_DAY = 3;
 export const EVIDENCE_MAX_FILES = 5;
 export const EVIDENCE_MAX_BYTES = 10 * 1024 * 1024;
+export const OPEN_DUPLICATE_STATUSES = Object.freeze([
+  ABUSE_STATUSES.OPEN,
+  ABUSE_STATUSES.UNDER_REVIEW,
+  ABUSE_STATUSES.WAITING_FOR_REPORTER,
+]);
 
 export function normalizeCategory(value) {
   const raw = String(value || "").trim().toLowerCase();
@@ -192,6 +197,39 @@ export function adminSafeReport(row, extras = {}) {
     messages: Array.isArray(extras.messages) ? extras.messages.map(adminSafeMessage) : undefined,
     evidence: Array.isArray(extras.evidence) ? extras.evidence.map(reporterSafeEvidence) : undefined,
   };
+}
+
+export async function findOpenDuplicateReport(db, {
+  reporterWallet,
+  category,
+  reportedWallet = "",
+  reportedCampaignAddress = "",
+  reportedTokenAddress = "",
+  reportedUrl = "",
+}) {
+  const { rows } = await db.query(
+    `select public_reference
+       from public.abuse_reports
+      where reporter_wallet = $1
+        and category = $2
+        and status = any($3::text[])
+        and coalesce(reported_wallet, '') = $4
+        and coalesce(reported_campaign_address, '') = $5
+        and coalesce(reported_token_address, '') = $6
+        and coalesce(reported_url, '') = $7
+      order by created_at desc
+      limit 1`,
+    [
+      reporterWallet,
+      category,
+      [...OPEN_DUPLICATE_STATUSES],
+      String(reportedWallet || ""),
+      String(reportedCampaignAddress || ""),
+      String(reportedTokenAddress || ""),
+      String(reportedUrl || ""),
+    ],
+  );
+  return rows[0] || null;
 }
 
 export async function writeReportEvent(db, {

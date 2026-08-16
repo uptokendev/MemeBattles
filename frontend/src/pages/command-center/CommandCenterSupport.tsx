@@ -69,7 +69,7 @@ export default function CommandCenterSupport() {
         <CommandCenterCard
           eyebrow="Restricted lane"
           title="Report abuse"
-          description="Impersonation, stolen content, fake official profiles, and phishing pretending to be you or MemeWarzone."
+          description="Impersonation, stolen content, fake official profiles, and phishing pretending to be you or MemeWarzone. After you file, you get a case number and wait here for the Abuse department."
         >
           <div className="flex flex-wrap gap-2">
             <Button asChild className="font-retro">

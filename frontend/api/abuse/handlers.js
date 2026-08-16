@@ -14,6 +14,7 @@ import {
   SUBJECT_MAX,
   adminSafeReport,
   clampText,
+  findOpenDuplicateReport,
   normalizeCategory,
   normalizeEmail,
   normalizeEntityType,
@@ -30,6 +31,7 @@ import {
   safeEvidenceFilename,
   storePrivateEvidence,
 } from "../lib/abuseEvidence.js";
+import { ABUSE_NOTIFY_EVENTS, notifyAbuseReporter } from "../lib/abuseNotify.js";
 
 function methodNotAllowed(res) {
   return res.status(405).json({ ok: false, error: "Method not allowed" });
@@ -133,6 +135,22 @@ export function createAbuseReporterHandlers({ pool }) {
       return res.status(400).json({ ok: false, error: parsed.errors[0] });
     }
 
+    const duplicate = await findOpenDuplicateReport(pool, {
+      reporterWallet: actor.walletAddress,
+      category: parsed.values.category,
+      reportedWallet: parsed.values.reportedWallet,
+      reportedCampaignAddress: parsed.values.reportedCampaignAddress,
+      reportedTokenAddress: parsed.values.reportedTokenAddress,
+      reportedUrl: parsed.values.reportedUrl,
+    });
+    if (duplicate?.public_reference) {
+      return res.status(409).json({
+        ok: false,
+        error: "You already have an open report about this.",
+        reportId: String(duplicate.public_reference),
+      });
+    }
+
     const recent = await pool.query(
       `select count(*)::int as count
          from public.abuse_reports
@@ -190,6 +208,11 @@ export function createAbuseReporterHandlers({ pool }) {
       eventType: "MESSAGE_SENT",
       actorType: "reporter",
       actorId: actor.walletAddress,
+    });
+
+    void notifyAbuseReporter({
+      eventType: ABUSE_NOTIFY_EVENTS.REPORT_SUBMITTED,
+      report,
     });
 
     return res.status(200).json({

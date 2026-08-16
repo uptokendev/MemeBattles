@@ -115,7 +115,15 @@ async function abuseFetch(path: string, token: string, init: RequestInit = {}) {
     (error as Error & { code?: string }).code = "ABUSE_SESSION_REQUIRED";
     throw error;
   }
-  if (!res.ok) throw new Error(String(json.error || `Request failed (${res.status})`));
+  if (!res.ok) {
+    const error = new Error(String(json.error || `Request failed (${res.status})`)) as Error & {
+      code?: string;
+      reportId?: string;
+    };
+    if (json.code) error.code = String(json.code);
+    if (json.reportId) error.reportId = String(json.reportId);
+    throw error;
+  }
   return json;
 }
 

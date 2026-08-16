@@ -53,6 +53,14 @@ export default function CommandCenterAbuseReports() {
         </Button>
       </CommandCenterPageHeader>
 
+      <div className="rounded-2xl border border-accent/40 bg-accent/5 p-4">
+        <div className="font-retro text-[10px] uppercase tracking-[0.16em] text-accent">Abuse department</div>
+        <p className="mt-2 text-sm leading-6 text-foreground">
+          After you file a report, the case number lands here. Wait for the Abuse department in that file.
+          Email only tells you that something changed — replies stay in Command Center, not Discord.
+        </p>
+      </div>
+
       <CommandCenterCard>
         {loading || busy ? (
           <p className="text-sm text-muted-foreground">Loading your abuse file...</p>

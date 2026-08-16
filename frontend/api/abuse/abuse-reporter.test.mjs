@@ -50,6 +50,20 @@ function createMemory() {
         return { rows: [{ seq }] };
       }
 
+      if (text.includes("status = any(") && text.includes("abuse_reports")) {
+        const [wallet, category, statuses, reportedWallet, campaign, token, url] = params;
+        const row = reports.find((item) => (
+          item.reporter_wallet === wallet
+          && item.category === category
+          && statuses.includes(item.status)
+          && String(item.reported_wallet || "") === String(reportedWallet || "")
+          && String(item.reported_campaign_address || "") === String(campaign || "")
+          && String(item.reported_token_address || "") === String(token || "")
+          && String(item.reported_url || "") === String(url || "")
+        ));
+        return { rows: row ? [{ public_reference: row.public_reference }] : [] };
+      }
+
       if (text.includes("select count(*)::int as count") && text.includes("abuse_reports")) {
         const count = reports.filter((row) => row.reporter_wallet === params[0]).length;
         return { rows: [{ count }] };
@@ -188,6 +202,37 @@ test("wallet B cannot read wallet A's report and gets no case body", async () =>
   assert.equal(steal.statusCode, 404);
   assert.equal(Object.hasOwn(steal.body, "report"), false);
   assert.equal(JSON.stringify(steal.body).includes("owner@example.com"), false);
+});
+
+test("duplicate open report about the same target is rejected", async () => {
+  const pool = createMemory();
+  const handlers = createAbuseReporterHandlers({ pool });
+  pool.addSession("token-a", WALLET_A);
+  const payload = {
+    category: "fake_project",
+    email: "owner@example.com",
+    description: "A fake project is using my branding and claiming I launched it.",
+    reportedCampaignAddress: "0xabcabcabcabcabcabcabcabcabcabcabcabcabca",
+  };
+
+  const first = mockRes();
+  await handlers.reports(req("/api/abuse/reports", { method: "POST", token: "token-a", body: payload }), first);
+  assert.equal(first.statusCode, 200);
+
+  const second = mockRes();
+  await handlers.reports(req("/api/abuse/reports", { method: "POST", token: "token-a", body: payload }), second);
+  assert.equal(second.statusCode, 409);
+  assert.equal(second.body.reportId, first.body.report.id);
+  assert.equal(pool.reports.length, 1);
+
+  const otherTarget = mockRes();
+  await handlers.reports(req("/api/abuse/reports", {
+    method: "POST",
+    token: "token-a",
+    body: { ...payload, reportedCampaignAddress: "0xdddddddddddddddddddddddddddddddddddddddd" },
+  }), otherTarget);
+  assert.equal(otherTarget.statusCode, 200);
+  assert.equal(pool.reports.length, 2);
 });
 
 test("internal notes never appear on reporter endpoints", async () => {

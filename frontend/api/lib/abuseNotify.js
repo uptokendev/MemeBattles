@@ -1,6 +1,7 @@
 import { sendEmailNotification, siteOrigin } from "./notify.js";
 
 export const ABUSE_NOTIFY_EVENTS = Object.freeze({
+  REPORT_SUBMITTED: "REPORT_SUBMITTED",
   ADMIN_REPLIED: "ADMIN_REPLIED",
   ADDITIONAL_INFORMATION_REQUESTED: "ADDITIONAL_INFORMATION_REQUESTED",
   REPORT_RESOLVED: "REPORT_RESOLVED",
@@ -8,17 +9,30 @@ export const ABUSE_NOTIFY_EVENTS = Object.freeze({
 });
 
 const COPY = {
+  [ABUSE_NOTIFY_EVENTS.REPORT_SUBMITTED]: {
+    subjectVerb: "received",
+    headline: "Your MemeWarzone abuse report has been received.",
+    action: "Wait in your Command Center for the Abuse department. Do not follow up in Discord or by email.",
+  },
   [ABUSE_NOTIFY_EVENTS.ADMIN_REPLIED]: {
+    subjectVerb: "updated",
     headline: "Your MemeWarzone abuse report has received a response.",
+    action: "Open your Command Center to view the response and reply.",
   },
   [ABUSE_NOTIFY_EVENTS.ADDITIONAL_INFORMATION_REQUESTED]: {
+    subjectVerb: "updated",
     headline: "The Abuse desk needs more information on your report.",
+    action: "Open your Command Center to view the response and reply.",
   },
   [ABUSE_NOTIFY_EVENTS.REPORT_RESOLVED]: {
+    subjectVerb: "updated",
     headline: "Your MemeWarzone abuse report has been marked resolved.",
+    action: "Open your Command Center to view the response and reply.",
   },
   [ABUSE_NOTIFY_EVENTS.REPORT_REOPENED]: {
+    subjectVerb: "updated",
     headline: "Your MemeWarzone abuse report has been reopened.",
+    action: "Open your Command Center to view the response and reply.",
   },
 };
 
@@ -28,14 +42,14 @@ export function buildAbuseNotification({ eventType, publicReference }) {
   if (!copy || !reference) return null;
 
   const openUrl = `${siteOrigin()}/command/support/reports/${encodeURIComponent(reference)}`;
-  const subject = `MemeWarzone Abuse Report ${reference} updated`;
+  const subject = `MemeWarzone Abuse Report ${reference} ${copy.subjectVerb}`;
   const text = [
     copy.headline,
     "",
     "Report:",
     reference,
     "",
-    "Open your Command Center to view the response and reply.",
+    copy.action,
     openUrl,
   ].join("\n");
 

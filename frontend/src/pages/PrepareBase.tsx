@@ -38,6 +38,7 @@ import {
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
+import { AbuseReportShortcut, currentPageUrl } from "@/components/abuse/AbuseReportShortcut";
 import { buildAbuseReportPath } from "@/lib/abuseReportLink";
 import { buildPrepareTweetText } from "@/lib/prepareShareText";
 import {
@@ -605,11 +606,15 @@ function TransmissionList({
   draftId,
   isCreator,
   viewerWallet,
+  reportedCampaignAddress,
+  reportUrlPath,
   onEngagement,
 }: {
   draftId: string;
   isCreator: boolean;
   viewerWallet?: string | null;
+  reportedCampaignAddress?: string;
+  reportUrlPath?: string;
   onEngagement?: () => void;
 }) {
   const wallet = useWallet();
@@ -868,6 +873,17 @@ function TransmissionList({
                         <MessageSquareReply className="h-3 w-3" />
                         Reply
                       </button>
+                      {account && item.walletAddress?.toLowerCase() === account.toLowerCase() ? null : (
+                        <AbuseReportShortcut
+                          prefill={{
+                            entityType: reportedCampaignAddress ? "campaign" : "other",
+                            reportedWallet: item.walletAddress,
+                            reportedCampaignAddress: reportedCampaignAddress || "",
+                            reportedUrl: currentPageUrl(reportUrlPath || `/prepare/${draftId}`),
+                          }}
+                          className="normal-case tracking-normal"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1364,6 +1380,8 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           draftId={draft.id}
           isCreator={isCreator}
           viewerWallet={viewerWallet}
+          reportedCampaignAddress={draft.campaignAddress || ""}
+          reportUrlPath={`/prepare/${draft.slug || slug}`}
           onEngagement={() => {
             void refreshPrepareBundle().catch(() => null);
           }}

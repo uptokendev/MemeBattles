@@ -22,6 +22,19 @@ test("notification copy names the report and never includes case details", () =>
   assert.equal(notificationLooksSafe(payload), true);
 });
 
+test("submit confirmation names the case and tells the reporter to wait", () => {
+  const payload = buildAbuseNotification({
+    eventType: ABUSE_NOTIFY_EVENTS.REPORT_SUBMITTED,
+    publicReference: "MWZ-AB-000009",
+  });
+  assert.equal(payload.subject, "MemeWarzone Abuse Report MWZ-AB-000009 received");
+  assert.match(payload.text, /MWZ-AB-000009/);
+  assert.match(payload.text, /Wait in your Command Center/);
+  assert.match(payload.text, /Abuse department/);
+  assert.equal(payload.text.toLowerCase().includes("evidence"), false);
+  assert.equal(notificationLooksSafe(payload), true);
+});
+
 test("internal notes and assignment changes do not create emails", () => {
   assert.equal(notifyEventForAdminAction({ visibility: "internal", eventType: "INTERNAL_NOTE_ADDED" }), null);
   assert.equal(notifyEventForAdminAction({ eventType: "PRIORITY_CHANGED", status: "OPEN" }), null);

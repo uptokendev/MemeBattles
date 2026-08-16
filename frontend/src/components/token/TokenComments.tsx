@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
+import { AbuseReportShortcut, currentPageUrl } from "@/components/abuse/AbuseReportShortcut";
 import { useWallet } from "@/contexts/WalletContext";
 import { apiFetch } from "@/lib/apiBase";
 import { toast } from "sonner";
@@ -357,6 +358,19 @@ export function TokenComments({
                     <p className={`mt-1 whitespace-pre-wrap break-words ${mode === "chat" ? "text-[12px]" : "text-xs"} text-foreground/90`}>
                       {c.body}
                     </p>
+                    {wallet.account && c.authorAddress?.toLowerCase() === wallet.account.toLowerCase() ? null : (
+                      <div className="mt-2">
+                        <AbuseReportShortcut
+                          prefill={{
+                            entityType: "campaign",
+                            reportedWallet: c.authorAddress,
+                            reportedCampaignAddress: normalizedCampaign,
+                            reportedTokenAddress: normalizedToken || "",
+                            reportedUrl: currentPageUrl(`/token/${normalizedCampaign}`),
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
