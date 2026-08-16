@@ -109,7 +109,7 @@ export function SearchPopup({
             {sponsor ? (
               <div className="flex gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="h-[150px] w-[min(100%,392px)] shrink-0">
-                  <SponsoredFeaturedSlotCard placement={sponsor} className="h-full w-full" />
+                  <SponsoredFeaturedSlotCard placement={sponsor} className="h-full w-full" plainBorder />
                 </div>
               </div>
             ) : null}

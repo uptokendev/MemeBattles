@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  PRIMARY KEY (chain_id, address),
-  CONSTRAINT user_profiles_address_lowercase CHECK (address = lower(address))
+  PRIMARY KEY (chain_id, address)
+  -- Do not CHECK address = lower(address). Solana pubkeys are case-sensitive base58.
 );
 
 -- Optional: enforce unique display names per chain (case-insensitive) when provided
