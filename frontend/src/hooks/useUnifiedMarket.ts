@@ -76,6 +76,10 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function stringOrNull(value: unknown): string | null {
+  return value == null || value === "" ? null : String(value);
+}
+
 function realtimeCandle(data: any, resolution: MarketResolution): MarketCandle | null {
   const tf = String(data?.resolution || data?.timeframe || data?.tf || "").trim();
   if (tf && tf !== resolution) return null;
@@ -110,6 +114,16 @@ function realtimeCandle(data: any, resolution: MarketResolution): MarketCandle |
     h: String(h),
     l: String(l),
     c: String(c),
+    price_o: stringOrNull(data?.price_o ?? data?.priceOpen),
+    price_h: stringOrNull(data?.price_h ?? data?.priceHigh),
+    price_l: stringOrNull(data?.price_l ?? data?.priceLow),
+    price_c: stringOrNull(data?.price_c ?? data?.priceClose),
+    mcap_o: stringOrNull(data?.mcap_o ?? data?.marketCapOpen),
+    mcap_h: stringOrNull(data?.mcap_h ?? data?.marketCapHigh),
+    mcap_l: stringOrNull(data?.mcap_l ?? data?.marketCapLow),
+    mcap_c: stringOrNull(data?.mcap_c ?? data?.marketCapClose),
+    canonical_version: numberOrNull(data?.canonical_version ?? data?.canonicalVersion),
+    canonical_updated_at: stringOrNull(data?.canonical_updated_at ?? data?.canonicalUpdatedAt),
     volume_bnb: String(volume),
     trades_count: Math.max(0, Math.trunc(tradesCount)),
     source_mask: Math.max(0, Math.trunc(numberOrNull(data?.source_mask ?? data?.sourceMask) ?? 1)),
