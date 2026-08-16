@@ -13,6 +13,7 @@ const CONFIG_SEED = Buffer.from("rewards_config");
 const AIRDROP_VAULT_SEED = Buffer.from("airdrop_vault");
 const AIRDROP_BATCH_SEED = Buffer.from("airdrop_batch");
 const VAULT_ACCOUNT_SIZE = 8 + 1;
+const AIRDROP_BATCH_ACCOUNT_SIZE = 8 + 8 + 32 + 8 + 8 + 8 + 1 + 1;
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -150,7 +151,9 @@ async function readBatch(connection, batchAddress) {
   const info = await connection.getAccountInfo(batchAddress, "confirmed");
   if (!info) return null;
   const data = Buffer.from(info.data);
-  if (data.length < 66) throw new Error(`Solana AirdropBatch has unexpected size ${data.length}`);
+  if (data.length < AIRDROP_BATCH_ACCOUNT_SIZE) {
+    throw new Error(`Solana AirdropBatch has unexpected size ${data.length}; expected at least ${AIRDROP_BATCH_ACCOUNT_SIZE}`);
+  }
   return {
     epochId: data.readBigInt64LE(8),
     root: `0x${data.subarray(16, 48).toString("hex")}`,
