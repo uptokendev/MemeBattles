@@ -1,6 +1,10 @@
 import { pool } from "../../server/db.js";
 import { readJson } from "../../server/http.js";
 import { requireWalletActionAuth } from "../lib/walletActionAuth.js";
+import {
+  RewardClaimVerificationError,
+  verifyEvmRewardClaim,
+} from "../lib/rewardClaimVerification.js";
 
 const EVM_CHAINS = new Set([56, 97]);
 const SOLANA_CHAINS = new Set([101, 102]);
@@ -55,6 +59,16 @@ function firstString(source, keys) {
 function cleanAddress(value) {
   const address = String(value || "").trim();
   return ADDRESS_RE.test(address) ? address : "";
+}
+
+function rowChainId(row) {
+  const metadata = readMeta(row);
+  const rawChain = String(row?.chain ?? "").trim().toLowerCase();
+  if (rawChain === "solana" || rawChain === "sol") return Number(metadata.chainId) || 101;
+  const numeric = Number(row?.chain);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const metadataChain = Number(metadata.chainId);
+  return Number.isFinite(metadataChain) && metadataChain > 0 ? metadataChain : 56;
 }
 
 function envDistributorAddress(chainId) {
@@ -132,7 +146,7 @@ function distributorFromMetadata(metadata, chainId) {
 
 function claimCallForRow(row) {
   const metadata = readMeta(row);
-  const chainId = Number(row.chain) || Number(metadata.chainId) || 56;
+  const chainId = rowChainId(row);
   const amount = String(row.amount ?? "0");
   const base = chainClaimConfig(chainId);
 
@@ -171,6 +185,49 @@ function claimCallForRow(row) {
     args: contractBatchId ? [contractBatchId, amount, proof] : [],
     explorerTxBase: chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/",
   };
+}
+
+function sameTxHash(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+}
+
+function minConfirmationsForChain(chainId) {
+  const chain = Number(chainId);
+  const value = Number(
+    process.env[`REWARD_CLAIM_MIN_CONFIRMATIONS_${chain}`] ||
+      process.env.REWARD_CLAIM_MIN_CONFIRMATIONS ||
+      1,
+  );
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
+async function requireStrictClaimAuth({ res, auth, wallet, chainId, action, routeLabel }) {
+  const verified = await requireWalletActionAuth({
+    res,
+    pool,
+    auth,
+    expectedWallet: wallet,
+    chainId,
+    action,
+    routeLabel,
+  });
+  if (!verified) return null;
+  if (verified.legacy) {
+    json(res, 401, {
+      error: "Wallet signature required for reward claims.",
+      code: "WALLET_SIGNATURE_REQUIRED",
+    });
+    return null;
+  }
+  return verified;
+}
+
+function validateRequestedChain(rows, requestedChainId) {
+  const expected = Number(requestedChainId);
+  for (const row of rows) {
+    if (rowChainId(row) !== expected) return false;
+  }
+  return true;
 }
 
 async function writeAudit(client, { batchId = null, rewardLedgerId = null, action, oldValue = null, newValue = null, reason = null, req = null, txHash = null, metadata = {} }) {
@@ -227,7 +284,7 @@ function ledgerItem(row) {
     rewardType: row.reward_type,
     walletAddress: row.wallet_address,
     chain: row.chain,
-    chainId: Number(row.chain) || null,
+    chainId: rowChainId(row),
     tokenSymbol: row.token_symbol,
     amount: String(row.amount || "0"),
     status: row.status,
@@ -239,13 +296,33 @@ function ledgerItem(row) {
   };
 }
 
+async function verifyClaimRow(row, txHash, wallet) {
+  const claim = claimCallForRow(row);
+  if (!claim.enabled) {
+    throw new RewardClaimVerificationError(
+      claim.reason || "CLAIM_NOT_READY",
+      "Reward is not ready for on-chain verification.",
+      409,
+    );
+  }
+  return verifyEvmRewardClaim({
+    chainId: claim.chainId,
+    txHash,
+    walletAddress: wallet,
+    distributorAddress: claim.distributorAddress,
+    batchId: claim.contractBatchId,
+    amount: claim.amount,
+    minConfirmations: minConfirmationsForChain(claim.chainId),
+  });
+}
+
 export async function rewardClaimConfig(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const chainId = Number(req.query?.chainId || req.query?.chain || 56);
   return json(res, 200, {
     config: chainClaimConfig(chainId),
     supportedChains: [56, 97],
-    disabledChains: [101],
+    disabledChains: [101, 102],
     contract: {
       name: "RewardDistributor",
       claimFunction: "claim(bytes32,uint256,bytes32[])",
@@ -259,18 +336,20 @@ export async function rewardClaimIntent(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
   const ids = Array.isArray(body.rewardLedgerIds) ? body.rewardLedgerIds : [body.rewardLedgerId || body.id].filter(Boolean);
-  const chainId = body.chainId ? Number(body.chainId) : null;
+  const chainId = Number(body.chainId || 56);
   const address = String(body.address || body.walletAddress || "").trim();
   const wallet = normalizeWallet(address, chainId);
 
   if (!ids.length || !wallet) return json(res, 400, { error: "Missing rewardLedgerIds or walletAddress" });
+  if (!EVM_CHAINS.has(chainId) && !SOLANA_CHAINS.has(chainId)) {
+    return json(res, 400, { error: "Unsupported reward claim chain.", code: "UNSUPPORTED_CLAIM_CHAIN" });
+  }
 
-  const verified = await requireWalletActionAuth({
+  const verified = await requireStrictClaimAuth({
     res,
-    pool,
     auth: body.auth || body,
-    expectedWallet: wallet,
-    chainId: chainId || Number(body.chainId) || 56,
+    wallet,
+    chainId,
     action: "claim_intent",
     routeLabel: "rewards/claim_intent",
   });
@@ -295,7 +374,15 @@ export async function rewardClaimIntent(req, res) {
       return json(res, 404, { error: "One or more rewards are not claimable for this wallet." });
     }
 
-    const solana = existing.find((row) => SOLANA_CHAINS.has(Number(row.chain)) || String(row.chain).toLowerCase() === "solana");
+    if (!validateRequestedChain(existing, chainId)) {
+      await client.query("rollback");
+      return json(res, 409, {
+        error: "Reward entitlement belongs to a different chain.",
+        code: "REWARD_CHAIN_MISMATCH",
+      });
+    }
+
+    const solana = existing.find((row) => SOLANA_CHAINS.has(rowChainId(row)));
     if (solana) {
       await client.query("rollback");
       return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
@@ -322,7 +409,7 @@ export async function rewardClaimIntent(req, res) {
         where id = any($1::uuid[])
           and wallet_address = $2
           and status in ('claimable', 'claim_pending', 'failed')
-        returning id, status, chain, token_symbol, amount, claim_batch_id`,
+        returning *`,
       [ids, wallet, intentId],
     );
 
@@ -337,29 +424,21 @@ export async function rewardClaimIntent(req, res) {
         newValue: "claim_pending",
         reason: body.reason || "User claim intent created",
         req,
-        metadata: { intentId, callCount: calls.length },
+        metadata: { intentId: row.claim_batch_id || intentId, callCount: calls.length, chainId },
       });
     }
 
     await client.query("commit");
     return json(res, 202, {
       claimIntent: {
-        id: intentId,
+        id: rows[0]?.claim_batch_id || intentId,
         walletAddress: wallet,
-        chainId: calls[0]?.chainId || chainId || 56,
+        chainId,
         mode: "reward_distributor_merkle",
         requiresWalletTransaction: true,
         calls,
       },
-      items: rows.map((row) => ({
-        id: String(row.id),
-        status: row.status,
-        chain: row.chain,
-        chainId: Number(row.chain) || null,
-        tokenSymbol: row.token_symbol,
-        amount: String(row.amount || "0"),
-        claimBatchId: row.claim_batch_id || intentId,
-      })),
+      items: rows.map(ledgerItem),
       materializedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -376,26 +455,73 @@ export async function rewardClaimRecord(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
   const ids = Array.isArray(body.rewardLedgerIds) ? body.rewardLedgerIds : [body.rewardLedgerId || body.id].filter(Boolean);
-  const chainId = body.chainId ? Number(body.chainId) : null;
+  const chainId = Number(body.chainId || 56);
   const wallet = normalizeWallet(body.address || body.walletAddress, chainId);
   const txHash = String(body.txHash || body.claimTxHash || "").trim();
   const failed = String(body.status || "claimed").toLowerCase() === "failed";
   const claimError = String(body.claimError || body.error || "").trim();
 
   if (!ids.length || !wallet) return json(res, 400, { error: "Missing rewardLedgerIds or walletAddress" });
+  if (!EVM_CHAINS.has(chainId) && !SOLANA_CHAINS.has(chainId)) {
+    return json(res, 400, { error: "Unsupported reward claim chain.", code: "UNSUPPORTED_CLAIM_CHAIN" });
+  }
+  if (!failed && ids.length !== 1) {
+    return json(res, 400, {
+      error: "Each on-chain claim transaction must map to exactly one reward entitlement.",
+      code: "CLAIM_TX_REWARD_COUNT_INVALID",
+    });
+  }
 
-  const verified = await requireWalletActionAuth({
+  const verifiedAuth = await requireStrictClaimAuth({
     res,
-    pool,
     auth: body.auth || body,
-    expectedWallet: wallet,
-    chainId: chainId || Number(body.chainId) || 56,
+    wallet,
+    chainId,
     action: "claim_record",
     routeLabel: "rewards/claim_record",
   });
-  if (!verified) return;
+  if (!verifiedAuth) return;
   if (!failed && !TX_RE.test(txHash)) return json(res, 400, { error: "Missing or invalid txHash" });
   if (failed && !claimError) return json(res, 400, { error: "Missing claimError for failed claim" });
+
+  let verification = null;
+  if (!failed) {
+    try {
+      const { rows: candidates } = await pool.query(
+        `select *
+           from public.reward_ledger
+          where id = $1::uuid
+            and wallet_address = $2
+          limit 1`,
+        [ids[0], wallet],
+      );
+      const candidate = candidates[0];
+      if (!candidate) return json(res, 404, { error: "Reward entitlement was not found for this wallet." });
+      if (rowChainId(candidate) !== chainId) {
+        return json(res, 409, {
+          error: "Reward entitlement belongs to a different chain.",
+          code: "REWARD_CHAIN_MISMATCH",
+        });
+      }
+      if (SOLANA_CHAINS.has(rowChainId(candidate))) {
+        return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
+      }
+      if (candidate.status === "claimed" && candidate.claim_tx_hash && !sameTxHash(candidate.claim_tx_hash, txHash)) {
+        return json(res, 409, {
+          error: "Reward has already been finalized with a different transaction.",
+          code: "CLAIM_ALREADY_RECORDED",
+        });
+      }
+      verification = await verifyClaimRow(candidate, txHash, wallet);
+    } catch (error) {
+      if (error instanceof RewardClaimVerificationError) {
+        return json(res, error.status || 409, { error: error.message, code: error.code });
+      }
+      if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
+      console.error("[rewards/claim-record verify]", error);
+      return json(res, 503, { error: "Could not verify claim transaction on-chain.", code: "CLAIM_VERIFY_UNAVAILABLE" });
+    }
+  }
 
   const targetStatus = failed ? "failed" : "claimed";
   const client = await pool.connect();
@@ -406,7 +532,6 @@ export async function rewardClaimRecord(req, res) {
          from public.reward_ledger
         where id = any($1::uuid[])
           and wallet_address = $2
-          and status in ('claim_pending', 'claimable', 'failed')
         for update`,
       [ids, wallet],
     );
@@ -416,11 +541,85 @@ export async function rewardClaimRecord(req, res) {
       return json(res, 404, { error: "One or more rewards could not be recorded for this wallet." });
     }
 
-    const solana = beforeRows.find((row) => SOLANA_CHAINS.has(Number(row.chain)) || String(row.chain).toLowerCase() === "solana");
+    if (!validateRequestedChain(beforeRows, chainId)) {
+      await client.query("rollback");
+      return json(res, 409, {
+        error: "Reward entitlement belongs to a different chain.",
+        code: "REWARD_CHAIN_MISMATCH",
+      });
+    }
+
+    const solana = beforeRows.find((row) => SOLANA_CHAINS.has(rowChainId(row)));
     if (solana) {
       await client.query("rollback");
       return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
     }
+
+    if (failed) {
+      const alreadyClaimed = beforeRows.find((row) => row.status === "claimed");
+      if (alreadyClaimed) {
+        await client.query("rollback");
+        return json(res, 409, {
+          error: "A confirmed reward claim cannot be changed to failed.",
+          code: "CLAIM_ALREADY_RECORDED",
+        });
+      }
+    } else {
+      const row = beforeRows[0];
+      if (row.status === "claimed") {
+        if (!sameTxHash(row.claim_tx_hash, txHash)) {
+          await client.query("rollback");
+          return json(res, 409, {
+            error: "Reward has already been finalized with a different transaction.",
+            code: "CLAIM_ALREADY_RECORDED",
+          });
+        }
+        await client.query("commit");
+        return json(res, 200, {
+          items: beforeRows.map(ledgerItem),
+          idempotent: true,
+          verification,
+          materializedAt: new Date().toISOString(),
+        });
+      }
+      if (!["claim_pending", "claimable", "failed"].includes(String(row.status))) {
+        await client.query("rollback");
+        return json(res, 409, {
+          error: "Reward is not in a state that can be finalized.",
+          code: "CLAIM_STATE_INVALID",
+        });
+      }
+
+      const { rows: txConflicts } = await client.query(
+        `select id
+           from public.reward_ledger
+          where lower(coalesce(claim_tx_hash, '')) = lower($1)
+            and id <> $2::uuid
+          limit 1`,
+        [txHash, row.id],
+      );
+      if (txConflicts.length) {
+        await client.query("rollback");
+        return json(res, 409, {
+          error: "This transaction has already been attached to another reward entitlement.",
+          code: "CLAIM_TX_ALREADY_USED",
+        });
+      }
+    }
+
+    const verificationMetadata = verification
+      ? {
+          verifiedAt: new Date().toISOString(),
+          chainId: verification.chainId,
+          blockNumber: verification.blockNumber,
+          confirmations: verification.confirmations,
+          distributorAddress: verification.distributorAddress,
+          walletAddress: verification.walletAddress,
+          batchId: verification.batchId,
+          amount: verification.amount,
+          txHash: verification.txHash,
+        }
+      : null;
 
     const { rows } = await client.query(
       `update public.reward_ledger
@@ -428,11 +627,15 @@ export async function rewardClaimRecord(req, res) {
               claim_tx_hash = case when $3 = 'claimed' then $4 else claim_tx_hash end,
               claim_error = case when $3 = 'failed' then $5 else null end,
               claimed_at = case when $3 = 'claimed' then coalesce(claimed_at, now()) else claimed_at end,
+              metadata = case
+                when $3 = 'claimed' then coalesce(metadata, '{}'::jsonb) || jsonb_build_object('claimVerification', $6::jsonb)
+                else metadata
+              end,
               updated_at = now()
         where id = any($1::uuid[])
           and wallet_address = $2
         returning *`,
-      [ids, wallet, targetStatus, txHash || null, claimError || null],
+      [ids, wallet, targetStatus, txHash || null, claimError || null, JSON.stringify(verificationMetadata)],
     );
 
     await client.query(`update public.reward_batch_items set status = $2 where reward_ledger_id = any($1::uuid[])`, [ids, targetStatus]);
@@ -441,20 +644,31 @@ export async function rewardClaimRecord(req, res) {
     for (const row of rows) {
       await writeAudit(client, {
         rewardLedgerId: row.id,
-        action: targetStatus === "claimed" ? "claim_recorded" : "claim_failed",
-        oldValue: "claim_pending",
+        action: targetStatus === "claimed" ? "claim_recorded_verified" : "claim_failed",
+        oldValue: beforeRows.find((before) => String(before.id) === String(row.id))?.status || "claim_pending",
         newValue: targetStatus,
-        reason: body.reason || (targetStatus === "claimed" ? "Wallet claim transaction confirmed" : "Wallet claim transaction failed"),
+        reason: body.reason || (targetStatus === "claimed" ? "On-chain reward claim verified and finalized" : "Wallet claim transaction failed"),
         txHash: txHash || null,
         req,
-        metadata: { claimError: claimError || null, claimIntentId: body.claimIntentId || null },
+        metadata: {
+          claimError: claimError || null,
+          claimIntentId: body.claimIntentId || null,
+          claimVerification: verificationMetadata,
+        },
       });
     }
 
     await client.query("commit");
-    return json(res, 200, { items: rows.map(ledgerItem), materializedAt: new Date().toISOString() });
+    return json(res, 200, {
+      items: rows.map(ledgerItem),
+      verification,
+      materializedAt: new Date().toISOString(),
+    });
   } catch (error) {
     await client.query("rollback").catch(() => {});
+    if (error instanceof RewardClaimVerificationError) {
+      return json(res, error.status || 409, { error: error.message, code: error.code });
+    }
     if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
     console.error("[rewards/claim-record]", error);
     return json(res, 500, { error: "Server error" });
