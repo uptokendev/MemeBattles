@@ -789,6 +789,7 @@ const TokenDetails = () => {
     excludeAddresses: [campaign?.campaign],
   });
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
+  const [chartExpanded, setChartExpanded] = useState(false);
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
   /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
   const [localTopazTrades, setLocalTopazTrades] = useState<CurveTradePoint[]>([]);
@@ -4333,7 +4334,7 @@ const toSeconds = (ts: number): number => {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 md:gap-4 items-start">
         <div className="min-w-0 flex flex-col gap-3 md:gap-4">
           <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
+            className={`bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col ${chartExpanded ? "h-auto min-h-[640px] md:min-h-[720px] xl:min-h-[760px]" : "min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"}`}
           >
             <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20">
               <AthBar
@@ -4409,12 +4410,13 @@ const toSeconds = (ts: number): number => {
             </div>
 
             <div className="flex-1 min-h-0">
-              <div className="w-full h-full min-h-[260px]">
+              <div className={chartExpanded ? "w-full min-h-[560px] md:min-h-[640px]" : "w-full h-full min-h-[260px]"}>
                 {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}
                 <UnifiedMarketChart
                   curvePoints={marketTradePoints}
                   marketCandles={unifiedMarket.candles}
                   marketState={unifiedMarket.state}
+                  serverTime={unifiedMarket.serverTime}
                   graduationMarker={unifiedMarket.graduationMarker || solanaGraduationMarker}
                   creatorAddress={campaign?.creator}
                   creatorAvatarUrl={creatorProfile?.avatarUrl}
@@ -4427,6 +4429,8 @@ const toSeconds = (ts: number): number => {
                   liveSupplyWhole={pageLiveSupplyWhole}
                   nativeUsdPrice={nativeUsd}
                   marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}
+                  expanded={chartExpanded}
+                  onExpandedChange={setChartExpanded}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}

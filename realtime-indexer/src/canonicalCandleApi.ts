@@ -45,6 +45,196 @@ function sendServerError(res: Response, error: unknown) {
   });
 }
 
+type MarketStateRow = {
+  market_stage?: string | null;
+  graduation_time?: string | Date | null;
+  graduation_tx_hash?: string | null;
+  graduation_block?: number | string | null;
+  final_curve_price_bnb?: string | number | null;
+  initial_dex_price_bnb?: string | number | null;
+  dex_pair_address?: string | null;
+  graduated_liquidity_bnb_raw?: string | null;
+  post_burn_total_supply_raw?: string | null;
+};
+
+function bucketKey(row: any): number {
+  const ms = new Date(row?.bucket_start ?? 0).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function mergeOneSecondRows(storedRows: any[], recoveredRows: any[], limit: number): any[] {
+  // Recovered rows are a compatibility backfill view. If a materialized canonical
+  // candle exists for the same second, it wins unconditionally.
+  const byBucket = new Map<number, any>();
+  for (const row of recoveredRows) byBucket.set(bucketKey(row), row);
+  for (const row of storedRows) byBucket.set(bucketKey(row), row);
+  return Array.from(byBucket.values())
+    .filter((row) => bucketKey(row) > 0)
+    .sort((a, b) => bucketKey(a) - bucketKey(b))
+    .slice(-limit);
+}
+
+async function resolveFixedSupplyWhole(
+  chainId: number,
+  campaign: string,
+  state: MarketStateRow | null,
+): Promise<number> {
+  if (chainId !== 101) {
+    const raw = String(state?.post_burn_total_supply_raw ?? "").trim();
+    if (/^\d+$/.test(raw)) {
+      const whole = Number(raw) / 1e18;
+      if (Number.isFinite(whole) && whole > 0) return whole;
+    }
+  }
+
+  // Chain-neutral fallback: the final canonical bonding candle already encodes
+  // mcap = marginal price * sold/fixed supply. The ratio preserves each chain's
+  // token decimals without introducing an RPC dependency into this read API.
+  const ratio = await pool.query(
+    `select (mcap_c / nullif(price_c,0)) as supply_whole
+       from public.token_candles
+      where chain_id=$1 and campaign_address=$2
+        and price_c is not null and price_c > 0
+        and mcap_c is not null and mcap_c > 0
+        and coalesce(dex_trade_count,0)=0
+        and ($3::timestamptz is null or bucket_start <= $3)
+      order by bucket_start desc
+      limit 1`,
+    [chainId, campaign, state?.graduation_time ?? null],
+  );
+  const whole = Number(ratio.rows[0]?.supply_whole ?? 0);
+  return Number.isFinite(whole) && whole > 0 ? whole : 0;
+}
+
+async function recoverHistoricalDexOneSecondRows(input: {
+  chainId: number;
+  campaign: string;
+  state: MarketStateRow | null;
+  from: Date | null;
+  to: Date | null;
+  limit: number;
+}): Promise<any[]> {
+  const graduationTime = input.state?.graduation_time ?? null;
+  if (!graduationTime) return [];
+
+  const supplyWhole = await resolveFixedSupplyWhole(input.chainId, input.campaign, input.state);
+  const queryLimit = Math.max(1, Math.min(input.limit, 5000));
+
+  if (input.chainId === 101) {
+    const result = await pool.query(
+      `with base as (
+         select
+           date_trunc('second', block_time) as bucket_start,
+           price_bnb::numeric as price,
+           coalesce(bnb_amount,0)::numeric as volume_native,
+           block_number,
+           log_index
+         from public.curve_trades
+         where chain_id=$1 and campaign_address=$2
+           and block_time >= $3::timestamptz
+           and sold_tokens_after_raw is null
+           and price_bnb is not null and price_bnb > 0
+           and ($4::timestamptz is null or block_time >= $4)
+           and ($5::timestamptz is null or block_time <= $5)
+       ), grouped as (
+         select
+           bucket_start,
+           (array_agg(price order by block_number,log_index))[1] as o,
+           max(price) as h,
+           min(price) as l,
+           (array_agg(price order by block_number desc,log_index desc))[1] as c,
+           sum(volume_native) as volume_bnb,
+           count(*)::int as trades_count,
+           (array_agg(block_number order by block_number desc,log_index desc))[1] as last_block_number,
+           (array_agg(log_index order by block_number desc,log_index desc))[1] as last_log_index
+         from base
+         group by bucket_start
+       )
+       select
+         bucket_start,o,h,l,c,
+         o as price_o,h as price_h,l as price_l,c as price_c,
+         case when $7::numeric > 0 then o*$7::numeric else null end as mcap_o,
+         case when $7::numeric > 0 then h*$7::numeric else null end as mcap_h,
+         case when $7::numeric > 0 then l*$7::numeric else null end as mcap_l,
+         case when $7::numeric > 0 then c*$7::numeric else null end as mcap_c,
+         3 as canonical_version,now() as canonical_updated_at,
+         volume_bnb,trades_count,2::smallint as source_mask,
+         0 as bonding_trade_count,trades_count as dex_trade_count,
+         0::numeric as bonding_volume_bnb,volume_bnb as dex_volume_bnb,
+         last_block_number,last_log_index
+       from grouped
+       order by bucket_start desc
+       limit $6`,
+      [
+        input.chainId,
+        input.campaign,
+        graduationTime,
+        input.from,
+        input.to,
+        queryLimit,
+        supplyWhole,
+      ],
+    );
+    return result.rows.reverse();
+  }
+
+  const result = await pool.query(
+    `with base as (
+       select
+         date_trunc('second', block_time) as bucket_start,
+         price_bnb::numeric as price,
+         coalesce(native_amount,(native_amount_raw::numeric / 1e18),0)::numeric as volume_native,
+         block_number,
+         log_index
+       from public.dex_trades
+       where chain_id=$1 and campaign_address=$2
+         and status='confirmed'
+         and block_time >= $3::timestamptz
+         and price_bnb is not null and price_bnb > 0
+         and ($4::timestamptz is null or block_time >= $4)
+         and ($5::timestamptz is null or block_time <= $5)
+     ), grouped as (
+       select
+         bucket_start,
+         (array_agg(price order by block_number,log_index))[1] as o,
+         max(price) as h,
+         min(price) as l,
+         (array_agg(price order by block_number desc,log_index desc))[1] as c,
+         sum(volume_native) as volume_bnb,
+         count(*)::int as trades_count,
+         (array_agg(block_number order by block_number desc,log_index desc))[1] as last_block_number,
+         (array_agg(log_index order by block_number desc,log_index desc))[1] as last_log_index
+       from base
+       group by bucket_start
+     )
+     select
+       bucket_start,o,h,l,c,
+       o as price_o,h as price_h,l as price_l,c as price_c,
+       case when $7::numeric > 0 then o*$7::numeric else null end as mcap_o,
+       case when $7::numeric > 0 then h*$7::numeric else null end as mcap_h,
+       case when $7::numeric > 0 then l*$7::numeric else null end as mcap_l,
+       case when $7::numeric > 0 then c*$7::numeric else null end as mcap_c,
+       3 as canonical_version,now() as canonical_updated_at,
+       volume_bnb,trades_count,2::smallint as source_mask,
+       0 as bonding_trade_count,trades_count as dex_trade_count,
+       0::numeric as bonding_volume_bnb,volume_bnb as dex_volume_bnb,
+       last_block_number,last_log_index
+     from grouped
+     order by bucket_start desc
+     limit $6`,
+    [
+      input.chainId,
+      input.campaign,
+      graduationTime,
+      input.from,
+      input.to,
+      queryLimit,
+      supplyWhole,
+    ],
+  );
+  return result.rows.reverse();
+}
+
 export function registerCanonicalCandleRoutes(app: Express) {
   app.get("/api/token/:campaign/canonical-market-candles", enabledOnly, async (req, res) => {
     try {
@@ -90,10 +280,17 @@ export function registerCanonicalCandleRoutes(app: Express) {
          limit 1`,
         [chainId, campaign],
       );
-      const state = stateResult.rows[0] || null;
+      const state = (stateResult.rows[0] || null) as MarketStateRow | null;
+      const storedRows = result.rows.reverse();
+      const recoveredRows = resolution === "1s"
+        ? await recoverHistoricalDexOneSecondRows({ chainId, campaign, state, from, to, limit })
+        : [];
+      const items = resolution === "1s"
+        ? mergeOneSecondRows(storedRows, recoveredRows, limit)
+        : storedRows;
 
       return res.json({
-        items: result.rows.reverse(),
+        items,
         graduationMarker: state?.graduation_time
           ? {
               time: state.graduation_time,
@@ -107,7 +304,8 @@ export function registerCanonicalCandleRoutes(app: Express) {
             }
           : null,
         marketStage: state?.market_stage ?? "BONDING",
-        canonicalVersion: 1,
+        serverTime: new Date().toISOString(),
+        canonicalVersion: 3,
       });
     } catch (error) {
       return sendServerError(res, error);

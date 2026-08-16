@@ -6,7 +6,7 @@ import { TIMEFRAMES, bucketStart, type TF } from "./timeframes.js";
 
 const LOOP_SYMBOL = Symbol.for("memewarzone.canonicalCandleMaterializerStarted");
 const globalState = globalThis as any;
-const VERSION = 2;
+const VERSION = 3;
 const WAD = 1_000_000_000_000_000_000n;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const DEFAULT_SOLANA_RPC = "https://api.devnet.solana.com";

@@ -1,9 +1,10 @@
-export type TF = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+export type TF = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 /** Keep in lockstep with UnifiedMarketChart TIMEFRAMES + market-candles API. */
-export const TIMEFRAMES: TF[] = ["5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"];
+export const TIMEFRAMES: TF[] = ["1s", "5s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"];
 
 const TF_SECONDS: Record<TF, number> = {
+  "1s": 1,
   "5s": 5,
   "1m": 60,
   "5m": 300,
