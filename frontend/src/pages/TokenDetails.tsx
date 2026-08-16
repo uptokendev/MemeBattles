@@ -789,6 +789,7 @@ const TokenDetails = () => {
     excludeAddresses: [campaign?.campaign],
   });
   const [marketResolution, setMarketResolution] = useState<MarketResolution>("1m");
+  const [chartExpanded, setChartExpanded] = useState(false);
   const [topazSlippageBps, setTopazSlippageBps] = useState(100);
   /** Local Topaz fills so chart/trades update immediately after wallet confirmation. */
   const [localTopazTrades, setLocalTopazTrades] = useState<CurveTradePoint[]>([]);
@@ -4409,12 +4410,13 @@ const toSeconds = (ts: number): number => {
             </div>
 
             <div className="flex-1 min-h-0">
-              <div className="w-full h-full min-h-[260px]">
+              <div className={chartExpanded ? "w-full min-h-[560px] md:min-h-[640px]" : "w-full h-full min-h-[260px]"}>
                 {/* Continuous chart: bonding curve history always; Topaz candles when market API is enabled. */}
                 <UnifiedMarketChart
                   curvePoints={marketTradePoints}
                   marketCandles={unifiedMarket.candles}
                   marketState={unifiedMarket.state}
+                  serverTime={unifiedMarket.serverTime}
                   graduationMarker={unifiedMarket.graduationMarker || solanaGraduationMarker}
                   creatorAddress={campaign?.creator}
                   creatorAvatarUrl={creatorProfile?.avatarUrl}
@@ -4427,6 +4429,8 @@ const toSeconds = (ts: number): number => {
                   liveSupplyWhole={pageLiveSupplyWhole}
                   nativeUsdPrice={nativeUsd}
                   marketKey={`${chainIdForStorage}:${resolvedCampaignAddress || localTradeStorageAddress || ""}`}
+                  expanded={chartExpanded}
+                  onExpandedChange={setChartExpanded}
                   resolution={marketResolution}
                   onResolutionChange={setMarketResolution}
                   denomination={displayDenom}

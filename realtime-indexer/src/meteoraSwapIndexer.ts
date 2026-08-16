@@ -359,7 +359,7 @@ async function upsertCandle(
        2,0,1,0,$6,
        $7,$8,
        $5,$5,$5,$5,$9,$9,$9,$9,
-       2,now()
+       3,now()
      )
      on conflict (chain_id,campaign_address,timeframe,bucket_start) do update set
        h=greatest(public.token_candles.h,excluded.h),

@@ -47,6 +47,7 @@ export function ContinuousMarketChartPanel({
 }: ContinuousMarketChartPanelProps) {
   const [resolution, setResolution] = useState<UnifiedChartResolution>("1m");
   const [denomination, setDenomination] = useState<UnifiedChartDenomination>("USD");
+  const [chartExpanded, setChartExpanded] = useState(false);
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
   const { price: nativeUsd } = useNativeUsdPrice(chainId);
@@ -99,7 +100,7 @@ export function ContinuousMarketChartPanel({
   });
 
   return (
-    <div className={className ?? "flex h-full min-h-[220px] w-full flex-col"}>
+    <div className={`${className ?? "flex h-full min-h-[220px] w-full flex-col"} ${chartExpanded ? "!h-auto !min-h-[560px] md:!min-h-[640px]" : ""}`}>
       {showDenomToggle ? (
         <div className={`flex shrink-0 items-center justify-end gap-1 ${compact ? "mb-1" : "mb-2"}`}>
           <Button
@@ -136,6 +137,7 @@ export function ContinuousMarketChartPanel({
           curvePoints={market.tradePoints}
           marketCandles={market.unifiedMarket.candles}
           marketState={market.unifiedMarket.state}
+          serverTime={market.unifiedMarket.serverTime}
           graduationMarker={market.unifiedMarket.graduationMarker}
           creatorAddress={creatorAddress}
           creatorAvatarUrl={creatorAvatarUrl}
@@ -153,6 +155,8 @@ export function ContinuousMarketChartPanel({
           loading={market.loading}
           error={market.error}
           marketKey={`${chainId}:${campaignAddress || tokenAddress || ""}`}
+          expanded={chartExpanded}
+          onExpandedChange={setChartExpanded}
         />
       </div>
     </div>

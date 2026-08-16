@@ -14,7 +14,7 @@ import { campaignKey, isCampaignAddress, isTradeTxId } from "@/lib/chart/normali
 import { isMarketContinuityApiEnabled } from "@/lib/marketContinuityFlags";
 import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
-export type MarketResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+export type MarketResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 // Durable server market data is additive to the existing curve/browser fallback.
 // When canonical candles exist, UnifiedMarketChart treats them as the source of truth.
@@ -188,6 +188,7 @@ export function useUnifiedMarket(input: {
   const [trades, setTrades] = useState<MarketTrade[]>([]);
   const [candles, setCandles] = useState<MarketCandle[]>([]);
   const [graduationMarker, setGraduationMarker] = useState<any | null>(null);
+  const [serverTime, setServerTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
@@ -224,6 +225,7 @@ export function useUnifiedMarket(input: {
         items: [] as MarketCandle[],
         graduationMarker: null,
         marketStage: "BONDING" as const,
+        serverTime: null as string | null,
       };
 
       const [nextState, nextSummary, nextTrades, nextCandles] = await Promise.all([
@@ -306,6 +308,7 @@ export function useUnifiedMarket(input: {
       // into it; realtime patches will build forward from this exact state.
       setCandles(nextCandles?.items || []);
       setGraduationMarker(nextCandles?.graduationMarker || null);
+      setServerTime(nextCandles?.serverTime || null);
       setError(null);
     } catch (caught: any) {
       if (caught?.name === "AbortError" || signal?.aborted) return;
@@ -333,6 +336,7 @@ export function useUnifiedMarket(input: {
       setTrades([]);
       setCandles([]);
       setGraduationMarker(null);
+      setServerTime(null);
       setLoading(false);
       setError(null);
       previousStageRef.current = null;
@@ -431,6 +435,7 @@ export function useUnifiedMarket(input: {
     trades,
     candles,
     graduationMarker,
+    serverTime,
     stageTransition,
     topazActive,
     degraded,
@@ -445,6 +450,7 @@ export function useUnifiedMarket(input: {
     trades,
     candles,
     graduationMarker,
+    serverTime,
     stageTransition,
     topazActive,
     degraded,

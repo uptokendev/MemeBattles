@@ -23,9 +23,10 @@ type IndexedPool = {
   lastIndexedBlock: number | null;
 };
 
-type CandleResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+type CandleResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 const RESOLUTION_MS: Record<CandleResolution, number> = {
+  "1s": 1_000,
   "5s": 5_000,
   "1m": 60_000,
   "5m": 5 * 60_000,

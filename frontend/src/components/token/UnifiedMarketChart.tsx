@@ -24,11 +24,12 @@ import {
 import { isSyntheticLogIndex, isValidTradeTxHash } from "@/lib/tradeDedupe";
 import { timestampSec } from "@/lib/chart/normalizeTrade";
 
-export type UnifiedChartResolution = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+export type UnifiedChartResolution = "1s" | "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 export type UnifiedChartMetric = "marketcap" | "price";
 export type UnifiedChartDenomination = "USD" | "BNB";
 
 const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [
+  { key: "1s", seconds: 1 },
   { key: "5s", seconds: 5 },
   { key: "1m", seconds: 60 },
   { key: "5m", seconds: 300 },
@@ -40,9 +41,9 @@ const TIMEFRAMES: Array<{ key: UnifiedChartResolution; seconds: number }> = [
 ];
 
 const DESIRED_BAR_PX = 12;
-const MIN_BAR_SPACING = 7;
+const MIN_BAR_SPACING = 3;
 const MIN_VISIBLE_SLOTS = 28;
-const MAX_VISIBLE_SLOTS = 140;
+const MAX_VISIBLE_SLOTS = 320;
 
 export type UnifiedMarketChartProps = {
   curvePoints: CurveTradePoint[];
@@ -71,6 +72,9 @@ export type UnifiedMarketChartProps = {
   loading?: boolean;
   error?: string | null;
   marketKey?: string;
+  serverTime?: string | null;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 };
 
 type CreatorTradePin = {
@@ -281,23 +285,30 @@ function formatTickLabel(time: Time, intervalSec: number): string {
   const sec = timeToSec(time);
   if (!sec) return "";
   const date = new Date(sec * 1000);
-  if (intervalSec >= 86400) return `${date.getDate()} ${date.toLocaleString(undefined, { month: "short" })}`;
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+  const ss = String(date.getUTCSeconds()).padStart(2, "0");
+  if (intervalSec <= 5) return `${hh}:${mm}:${ss}`;
   if (intervalSec <= 60) return `${hh}:${mm}`;
-  return `${date.getDate()} ${hh}:${mm}`;
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  if (intervalSec < 86400) return `${day} ${month} ${hh}:${mm}`;
+  return `${day} ${month}`;
 }
 
 function formatCrosshairTime(time: Time): string {
   const sec = timeToSec(time);
   if (!sec) return "";
-  return new Date(sec * 1000).toLocaleString(undefined, {
-    day: "numeric",
+  return `${new Date(sec * 1000).toLocaleString("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
+    second: "2-digit",
+    hour12: false,
+  })} UTC`;
 }
 
 function marketCandlesForChart(
@@ -440,12 +451,21 @@ export function UnifiedMarketChart({
   denomination = "USD",
   loading,
   error,
+  marketKey = "default",
+  serverTime = null,
+  expanded,
+  onExpandedChange,
 }: UnifiedMarketChartProps) {
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
   const tokenDecimals = solana ? Number(solanaCurvePricing?.tokenDecimals ?? 6) : 18;
   const nativeDecimals = solana ? 9 : 18;
   const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const [autoScaleEnabled, setAutoScaleEnabled] = useState(true);
+  const [serverNowMs, setServerNowMs] = useState(Date.now());
+  const serverOffsetRef = useRef(0);
+  const isExpanded = expanded ?? internalExpanded;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -461,6 +481,7 @@ export function UnifiedMarketChart({
   const hideTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeUsd = nativeUsdPrice != null && Number.isFinite(Number(nativeUsdPrice)) && Number(nativeUsdPrice) > 0 ? Number(nativeUsdPrice) : 0;
   const intervalSeconds = TIMEFRAMES.find((item) => item.key === resolution)?.seconds ?? 60;
+  const desiredBarPx = intervalSeconds <= 1 ? 5 : intervalSeconds <= 5 ? 8 : DESIRED_BAR_PX;
 
   const clearHideTooltipTimer = useCallback(() => {
     if (hideTooltipTimerRef.current) { clearTimeout(hideTooltipTimerRef.current); hideTooltipTimerRef.current = null; }
@@ -471,6 +492,29 @@ export function UnifiedMarketChart({
     hideTooltipTimerRef.current = setTimeout(() => { setHoverPinId(null); hideTooltipTimerRef.current = null; }, 1000);
   }, [clearHideTooltipTimer]);
   useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(`mwz:chart-expanded:${marketKey}`);
+      if (expanded == null && stored != null) setInternalExpanded(stored === "1");
+    } catch { /* storage unavailable */ }
+  }, [expanded, marketKey]);
+
+  useEffect(() => {
+    const parsed = Date.parse(String(serverTime || ""));
+    if (Number.isFinite(parsed) && parsed > 0) serverOffsetRef.current = parsed - Date.now();
+    const tick = () => setServerNowMs(Date.now() + serverOffsetRef.current);
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [serverTime]);
+
+  const toggleExpanded = useCallback(() => {
+    const next = !isExpanded;
+    if (expanded == null) setInternalExpanded(next);
+    onExpandedChange?.(next);
+    try { window.localStorage.setItem(`mwz:chart-expanded:${marketKey}`, next ? "1" : "0"); } catch { /* storage unavailable */ }
+  }, [expanded, isExpanded, marketKey, onExpandedChange]);
 
   useEffect(() => {
     if (!hoverPinId) return;
@@ -658,14 +702,22 @@ export function UnifiedMarketChart({
       const last = groups[groups.length - 1];
       if (last && Math.abs(last[0].x - pin.x) <= 12) last.push(pin); else groups.push([pin]);
     }
-    const liftPx = 26;
+    const liftPx = 44;
     const next: PlacedCreatorPin[] = [];
+    const overlayWidth = overlayRef.current?.clientWidth || 0;
     for (const group of groups) {
       group.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
       const stackCount = group.length;
       const anchorY = Math.min(...group.map((pin) => pin.y));
       const anchorX = group.reduce((sum, pin) => sum + pin.x, 0) / stackCount;
-      group.forEach((pin, stackIndex) => next.push({ ...pin, x: anchorX, y: anchorY - liftPx - stackIndex * 22, stackIndex, stackCount }));
+      const safeX = overlayWidth > 0 ? Math.min(Math.max(anchorX, 18), overlayWidth - 18) : anchorX;
+      group.forEach((pin, stackIndex) => next.push({
+        ...pin,
+        x: safeX,
+        y: Math.max(30, anchorY - liftPx - stackIndex * 30),
+        stackIndex,
+        stackCount,
+      }));
     }
     setPlacedPins(next);
   }, []);
@@ -680,11 +732,11 @@ export function UnifiedMarketChart({
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "rgba(255,255,255,0.75)" },
       grid: { vertLines: { visible: false }, horzLines: { visible: true, color: "rgba(255,255,255,0.06)" } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { visible: true, autoScale: true, borderVisible: true, borderColor: "rgba(255,255,255,0.18)", ticksVisible: true, minimumWidth: 88, scaleMargins: { top: 0.14, bottom: 0.12 } },
-      timeScale: { borderVisible: true, borderColor: "rgba(255,255,255,0.12)", timeVisible: true, secondsVisible: intervalSeconds <= 60, rightOffset: 8, barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING, lockVisibleTimeRangeOnResize: false },
+      rightPriceScale: { visible: true, autoScale: true, borderVisible: true, borderColor: "rgba(255,255,255,0.18)", ticksVisible: true, minimumWidth: 88, scaleMargins: { top: 0.20, bottom: 0.12 } },
+      timeScale: { borderVisible: true, borderColor: "rgba(255,255,255,0.12)", timeVisible: true, secondsVisible: intervalSeconds <= 60, rightOffset: 10, barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING, lockVisibleTimeRangeOnResize: false },
       localization: { locale: typeof navigator !== "undefined" ? navigator.language : undefined, timeFormatter: (time: Time) => formatCrosshairTime(time), tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds) },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: true } },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: false } },
     });
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#26a69a", downColor: "#ef5350", borderVisible: true, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineVisible: true, lastValueVisible: true,
@@ -718,10 +770,21 @@ export function UnifiedMarketChart({
 
   useEffect(() => {
     chartRef.current?.applyOptions({
-      timeScale: { secondsVisible: intervalSeconds <= 60, barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING },
+      timeScale: { secondsVisible: intervalSeconds <= 60, barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING },
       localization: { locale: typeof navigator !== "undefined" ? navigator.language : undefined, timeFormatter: (time: Time) => formatCrosshairTime(time), tickMarkFormatter: (time: Time) => formatTickLabel(time, intervalSeconds) },
     });
-  }, [intervalSeconds]);
+  }, [desiredBarPx, intervalSeconds]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: !autoScaleEnabled } },
+    });
+    try {
+      chart.priceScale("right").applyOptions({ autoScale: autoScaleEnabled, scaleMargins: { top: 0.20, bottom: 0.12 } });
+    } catch { /* chart may be disposing */ }
+  }, [autoScaleEnabled]);
 
   useEffect(() => {
     seriesRef.current?.applyOptions({
@@ -755,18 +818,25 @@ export function UnifiedMarketChart({
     }
     previousDataRef.current = data;
 
+    // Hard launch invariant: while Auto is enabled, every incoming candle body + wick
+    // must remain inside the visible price scale. Reassert autoscale on every canonical
+    // update so a sudden buy/sell cannot shoot outside the chart.
+    if (autoScaleEnabled && data.length > 0) {
+      try { chart.priceScale("right").applyOptions({ autoScale: true, scaleMargins: { top: 0.20, bottom: 0.12 } }); } catch { /* ignore */ }
+    }
+
     if (data.length === 0) { initialRangeSetRef.current = false; setPlacedPins([]); return; }
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;
-      const slotsThatFit = Math.max(MIN_VISIBLE_SLOTS, Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / DESIRED_BAR_PX)));
-      chart.timeScale().applyOptions({ barSpacing: DESIRED_BAR_PX, minBarSpacing: MIN_BAR_SPACING, rightOffset: 8 });
+      const slotsThatFit = Math.max(MIN_VISIBLE_SLOTS, Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / desiredBarPx)));
+      chart.timeScale().applyOptions({ barSpacing: desiredBarPx, minBarSpacing: MIN_BAR_SPACING, rightOffset: 10 });
       chart.timeScale().setVisibleLogicalRange({ from: data.length - slotsThatFit, to: data.length + 6 });
       initialRangeSetRef.current = true;
     } else if (appendedBar && wasFollowingRealtime) {
       try { chart.timeScale().scrollToRealTime(); } catch { /* ignore */ }
     }
     requestAnimationFrame(() => repositionCreatorPins());
-  }, [data, repositionCreatorPins]);
+  }, [autoScaleEnabled, data, desiredBarPx, repositionCreatorPins]);
 
   useEffect(() => { markerPluginRef.current?.setMarkers(graduationMarkers); }, [graduationMarkers]);
   useEffect(() => { repositionCreatorPins(); }, [creatorPins, denomination, metric, repositionCreatorPins]);
@@ -775,9 +845,35 @@ export function UnifiedMarketChart({
   const avatarSrc = resolvedAvatar || "/placeholder.svg";
   const displayName = resolvedName || shortenAddr(String(creatorAddress || ""));
   const hasData = data.length > 0;
+  const serverClock = new Date(serverNowMs).toLocaleTimeString("en-GB", {
+    timeZone: "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const showTrailingRange = (seconds: number) => {
+    const chart = chartRef.current;
+    if (!chart || !data.length) return;
+    const bars = Math.max(20, Math.min(data.length, Math.ceil(seconds / Math.max(1, intervalSeconds))));
+    try { chart.timeScale().setVisibleLogicalRange({ from: data.length - bars - 1, to: data.length + 6 }); } catch { /* ignore */ }
+    requestAnimationFrame(() => repositionCreatorPins());
+  };
+
+  const goLive = () => {
+    try { chartRef.current?.timeScale().scrollToRealTime(); } catch { /* ignore */ }
+    if (autoScaleEnabled) {
+      try { chartRef.current?.priceScale("right").applyOptions({ autoScale: true }); } catch { /* ignore */ }
+    }
+    requestAnimationFrame(() => repositionCreatorPins());
+  };
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col">
+    <div
+      data-chart-expanded={isExpanded ? "true" : "false"}
+      className={`relative flex w-full flex-col transition-[min-height] duration-200 ${isExpanded ? "min-h-[560px] md:min-h-[640px]" : "h-full min-h-0"}`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2 shrink-0">
         <div className="flex items-center gap-1 rounded-md border border-orange-400/25 bg-black/30 p-0.5">
           <button type="button" onClick={() => setMetric("marketcap")} className={`rounded px-2 py-1 text-[10px] font-semibold transition-colors ${metric === "marketcap" ? "bg-orange-500/25 text-orange-300" : "text-muted-foreground hover:text-orange-200"}`}>Market Cap</button>
@@ -788,6 +884,7 @@ export function UnifiedMarketChart({
           <div className="flex flex-wrap justify-end gap-1">
             {TIMEFRAMES.map((item) => <button type="button" key={item.key} onClick={() => onResolutionChange(item.key)} className={`rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${resolution === item.key ? "border-orange-400/50 bg-orange-500/25 text-orange-300" : "border-border/60 text-muted-foreground hover:text-orange-200"}`}>{item.key}</button>)}
           </div>
+          <button type="button" onClick={toggleExpanded} className="rounded border border-border/60 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-orange-400/40 hover:text-orange-200" title={isExpanded ? "Collapse chart" : "Expand chart"}>{isExpanded ? "Collapse" : "Expand"}</button>
         </div>
       </div>
 
@@ -801,7 +898,7 @@ export function UnifiedMarketChart({
                 key={pin.id}
                 type="button"
                 title={`Creator ${pin.side}${pin.stackCount > 1 ? ` (${pin.stackIndex + 1}/${pin.stackCount} in this bar)` : ""}`}
-                className={`pointer-events-auto absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-orange-400 bg-black/80 p-0 shadow-[0_0_12px_rgba(249,115,22,0.55)] transition-transform hover:z-30 hover:scale-125 ${active ? "z-30 scale-125" : ""}`}
+                className={`pointer-events-auto absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-black/90 p-0 transition-transform hover:z-30 hover:scale-125 ${pin.side === "buy" ? "border-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.55)]" : "border-red-400 shadow-[0_0_14px_rgba(248,113,113,0.55)]"} ${active ? "z-30 scale-125" : ""}`}
                 style={{ left: pin.x, top: pin.y, zIndex: 10 + pin.stackIndex }}
                 onMouseEnter={() => openCreatorTooltip(pin.id)}
                 onMouseLeave={scheduleHideCreatorTooltip}
@@ -810,7 +907,10 @@ export function UnifiedMarketChart({
                 onClick={(event) => { event.stopPropagation(); clearHideTooltipTimer(); setHoverPinId((current) => current === pin.id ? null : pin.id); }}
                 aria-label={`Creator ${pin.side}`}
               >
-                <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
+                <span className="relative block h-full w-full">
+                  <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
+                  <span className={`absolute -bottom-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-black px-0.5 text-[7px] font-black text-black ${pin.side === "buy" ? "bg-emerald-400" : "bg-red-400"}`}>{pin.side === "buy" ? "B" : "S"}</span>
+                </span>
               </button>
             );
           })}
@@ -841,6 +941,25 @@ export function UnifiedMarketChart({
         </div>
 
         {!hasData && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-muted-foreground">{loading ? "Loading trade history…" : error ? error : "No trades in the loaded window yet. Buys/sells appear as continuous candles once history is recovered."}</div>}
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-white/10 px-2 py-1.5 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1">
+          {[
+            ["1D", 86400],
+            ["5D", 5 * 86400],
+            ["1M", 30 * 86400],
+            ["3M", 90 * 86400],
+            ["1Y", 365 * 86400],
+          ].map(([label, seconds]) => (
+            <button key={String(label)} type="button" onClick={() => showTrailingRange(Number(seconds))} className="rounded px-1.5 py-1 font-semibold text-muted-foreground hover:bg-white/5 hover:text-foreground">{label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={goLive} className="rounded px-1.5 py-1 font-semibold text-muted-foreground hover:bg-white/5 hover:text-orange-200">LIVE</button>
+          <span className="tabular-nums text-foreground/90" title={serverTime ? "Synchronized to MemeWarzone server UTC" : "UTC clock; server sync pending"}>{serverClock} UTC</span>
+          <button type="button" onClick={() => setAutoScaleEnabled((current) => !current)} className={`rounded px-1.5 py-1 font-semibold ${autoScaleEnabled ? "text-emerald-300" : "text-muted-foreground hover:text-foreground"}`}>auto</button>
+        </div>
       </div>
     </div>
   );

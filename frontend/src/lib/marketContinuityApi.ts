@@ -136,6 +136,7 @@ export type MarketCandleResponse = {
     postBurnTotalSupplyRaw: string | null;
   } | null;
   marketStage: MarketStage;
+  serverTime?: string | null;
   canonicalVersion?: number | null;
 };
 

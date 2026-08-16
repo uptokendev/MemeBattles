@@ -107,7 +107,8 @@ export function registerCanonicalCandleRoutes(app: Express) {
             }
           : null,
         marketStage: state?.market_stage ?? "BONDING",
-        canonicalVersion: 1,
+        serverTime: new Date().toISOString(),
+        canonicalVersion: 3,
       });
     } catch (error) {
       return sendServerError(res, error);
