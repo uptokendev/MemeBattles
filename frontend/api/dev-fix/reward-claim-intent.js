@@ -5,12 +5,17 @@ import {
   RewardClaimVerificationError,
   verifyEvmRewardClaim,
 } from "../lib/rewardClaimVerification.js";
+import {
+  buildSolanaRewardCall,
+  isSolanaSignature,
+  verifySolanaRewardClaim,
+} from "../lib/solanaRewardClaim.js";
 
 const EVM_CHAINS = new Set([56, 97]);
 const SOLANA_CHAINS = new Set([101, 102]);
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-const TX_RE = /^0x[a-fA-F0-9]{64}$/;
+const EVM_TX_RE = /^0x[a-fA-F0-9]{64}$/;
 
 function methodAllowed(req, res, methods) {
   if (methods.includes(req.method)) return true;
@@ -91,10 +96,11 @@ function chainClaimConfig(chainId) {
     return {
       chainId: chain,
       tokenSymbol: "SOL",
-      enabled: false,
-      mode: "disabled",
-      reason: "SOLANA_CLAIMS_DISABLED",
+      enabled: true,
+      mode: "solana_treasury",
+      reason: null,
       distributorAddress: "",
+      supportedRewardTypes: ["airdrop"],
     };
   }
 
@@ -106,6 +112,7 @@ function chainClaimConfig(chainId) {
     mode: distributorAddress ? "reward_distributor_merkle" : "disabled",
     reason: distributorAddress ? null : "MISSING_DISTRIBUTOR_ADDRESS",
     distributorAddress,
+    supportedRewardTypes: ["league", "airdrop", "recruiter", "squad", "manual", "future"],
   };
 }
 
@@ -145,15 +152,12 @@ function distributorFromMetadata(metadata, chainId) {
 }
 
 function claimCallForRow(row) {
-  const metadata = readMeta(row);
   const chainId = rowChainId(row);
+  if (SOLANA_CHAINS.has(chainId)) return buildSolanaRewardCall(row);
+
+  const metadata = readMeta(row);
   const amount = String(row.amount ?? "0");
   const base = chainClaimConfig(chainId);
-
-  if (SOLANA_CHAINS.has(chainId)) {
-    return { ...base, rewardLedgerId: String(row.id), amount, enabled: false };
-  }
-
   const distributorAddress = distributorFromMetadata(metadata, chainId);
   const contractBatchId = batchIdFromMetadata(metadata);
   const { proof, hasProofMetadata, valid } = readProof(metadata);
@@ -188,7 +192,10 @@ function claimCallForRow(row) {
 }
 
 function sameTxHash(left, right) {
-  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+  const a = String(left || "").trim();
+  const b = String(right || "").trim();
+  if (a.startsWith("0x") && b.startsWith("0x")) return a.toLowerCase() === b.toLowerCase();
+  return a === b;
 }
 
 function minConfirmationsForChain(chainId) {
@@ -297,6 +304,9 @@ function ledgerItem(row) {
 }
 
 async function verifyClaimRow(row, txHash, wallet) {
+  const chainId = rowChainId(row);
+  if (SOLANA_CHAINS.has(chainId)) return verifySolanaRewardClaim({ row, txHash, walletAddress: wallet });
+
   const claim = claimCallForRow(row);
   if (!claim.enabled) {
     throw new RewardClaimVerificationError(
@@ -316,18 +326,36 @@ async function verifyClaimRow(row, txHash, wallet) {
   });
 }
 
+function verificationHttp(error) {
+  if (error instanceof RewardClaimVerificationError) {
+    return { status: error.status || 409, body: { error: error.message, code: error.code } };
+  }
+  if (error?.code && Number(error?.status)) {
+    return { status: Number(error.status), body: { error: error.message || "Claim verification failed", code: error.code } };
+  }
+  return null;
+}
+
 export async function rewardClaimConfig(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const chainId = Number(req.query?.chainId || req.query?.chain || 56);
+  const config = chainClaimConfig(chainId);
   return json(res, 200, {
-    config: chainClaimConfig(chainId),
-    supportedChains: [56, 97],
-    disabledChains: [101, 102],
-    contract: {
-      name: "RewardDistributor",
-      claimFunction: "claim(bytes32,uint256,bytes32[])",
-      nativeTokenOnly: true,
-    },
+    config,
+    supportedChains: [56, 97, 101, 102],
+    disabledChains: [],
+    contract: SOLANA_CHAINS.has(chainId)
+      ? {
+          name: "mwz_rewards_treasury",
+          claimFunction: "claim_airdrop(i64,u8,u64,Vec<[u8;32]>)",
+          nativeTokenOnly: true,
+          supportedRewardTypes: config.supportedRewardTypes,
+        }
+      : {
+          name: "RewardDistributor",
+          claimFunction: "claim(bytes32,uint256,bytes32[])",
+          nativeTokenOnly: true,
+        },
     materializedAt: new Date().toISOString(),
   });
 }
@@ -373,19 +401,9 @@ export async function rewardClaimIntent(req, res) {
       await client.query("rollback");
       return json(res, 404, { error: "One or more rewards are not claimable for this wallet." });
     }
-
     if (!validateRequestedChain(existing, chainId)) {
       await client.query("rollback");
-      return json(res, 409, {
-        error: "Reward entitlement belongs to a different chain.",
-        code: "REWARD_CHAIN_MISMATCH",
-      });
-    }
-
-    const solana = existing.find((row) => SOLANA_CHAINS.has(rowChainId(row)));
-    if (solana) {
-      await client.query("rollback");
-      return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
+      return json(res, 409, { error: "Reward entitlement belongs to a different chain.", code: "REWARD_CHAIN_MISMATCH" });
     }
 
     const calls = existing.map(claimCallForRow);
@@ -397,6 +415,10 @@ export async function rewardClaimIntent(req, res) {
         code: invalid.reason || "CLAIM_NOT_READY",
         claim: invalid,
       });
+    }
+    if (SOLANA_CHAINS.has(chainId) && calls.some((call) => call.mode !== "solana_airdrop")) {
+      await client.query("rollback");
+      return json(res, 409, { error: "This Solana reward type does not have a native settlement lane yet.", code: "SOLANA_REWARD_LANE_NOT_READY" });
     }
 
     const intentId = `claim-${Date.now()}`;
@@ -434,7 +456,7 @@ export async function rewardClaimIntent(req, res) {
         id: rows[0]?.claim_batch_id || intentId,
         walletAddress: wallet,
         chainId,
-        mode: "reward_distributor_merkle",
+        mode: SOLANA_CHAINS.has(chainId) ? "solana_treasury" : "reward_distributor_merkle",
         requiresWalletTransaction: true,
         calls,
       },
@@ -481,7 +503,10 @@ export async function rewardClaimRecord(req, res) {
     routeLabel: "rewards/claim_record",
   });
   if (!verifiedAuth) return;
-  if (!failed && !TX_RE.test(txHash)) return json(res, 400, { error: "Missing or invalid txHash" });
+  if (!failed) {
+    const validTx = SOLANA_CHAINS.has(chainId) ? isSolanaSignature(txHash) : EVM_TX_RE.test(txHash);
+    if (!validTx) return json(res, 400, { error: "Missing or invalid txHash" });
+  }
   if (failed && !claimError) return json(res, 400, { error: "Missing claimError for failed claim" });
 
   let verification = null;
@@ -498,25 +523,15 @@ export async function rewardClaimRecord(req, res) {
       const candidate = candidates[0];
       if (!candidate) return json(res, 404, { error: "Reward entitlement was not found for this wallet." });
       if (rowChainId(candidate) !== chainId) {
-        return json(res, 409, {
-          error: "Reward entitlement belongs to a different chain.",
-          code: "REWARD_CHAIN_MISMATCH",
-        });
-      }
-      if (SOLANA_CHAINS.has(rowChainId(candidate))) {
-        return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
+        return json(res, 409, { error: "Reward entitlement belongs to a different chain.", code: "REWARD_CHAIN_MISMATCH" });
       }
       if (candidate.status === "claimed" && candidate.claim_tx_hash && !sameTxHash(candidate.claim_tx_hash, txHash)) {
-        return json(res, 409, {
-          error: "Reward has already been finalized with a different transaction.",
-          code: "CLAIM_ALREADY_RECORDED",
-        });
+        return json(res, 409, { error: "Reward has already been finalized with a different transaction.", code: "CLAIM_ALREADY_RECORDED" });
       }
       verification = await verifyClaimRow(candidate, txHash, wallet);
     } catch (error) {
-      if (error instanceof RewardClaimVerificationError) {
-        return json(res, error.status || 409, { error: error.message, code: error.code });
-      }
+      const known = verificationHttp(error);
+      if (known) return json(res, known.status, known.body);
       if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
       console.error("[rewards/claim-record verify]", error);
       return json(res, 503, { error: "Could not verify claim transaction on-chain.", code: "CLAIM_VERIFY_UNAVAILABLE" });
@@ -540,39 +555,23 @@ export async function rewardClaimRecord(req, res) {
       await client.query("rollback");
       return json(res, 404, { error: "One or more rewards could not be recorded for this wallet." });
     }
-
     if (!validateRequestedChain(beforeRows, chainId)) {
       await client.query("rollback");
-      return json(res, 409, {
-        error: "Reward entitlement belongs to a different chain.",
-        code: "REWARD_CHAIN_MISMATCH",
-      });
-    }
-
-    const solana = beforeRows.find((row) => SOLANA_CHAINS.has(rowChainId(row)));
-    if (solana) {
-      await client.query("rollback");
-      return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
+      return json(res, 409, { error: "Reward entitlement belongs to a different chain.", code: "REWARD_CHAIN_MISMATCH" });
     }
 
     if (failed) {
       const alreadyClaimed = beforeRows.find((row) => row.status === "claimed");
       if (alreadyClaimed) {
         await client.query("rollback");
-        return json(res, 409, {
-          error: "A confirmed reward claim cannot be changed to failed.",
-          code: "CLAIM_ALREADY_RECORDED",
-        });
+        return json(res, 409, { error: "A confirmed reward claim cannot be changed to failed.", code: "CLAIM_ALREADY_RECORDED" });
       }
     } else {
       const row = beforeRows[0];
       if (row.status === "claimed") {
         if (!sameTxHash(row.claim_tx_hash, txHash)) {
           await client.query("rollback");
-          return json(res, 409, {
-            error: "Reward has already been finalized with a different transaction.",
-            code: "CLAIM_ALREADY_RECORDED",
-          });
+          return json(res, 409, { error: "Reward has already been finalized with a different transaction.", code: "CLAIM_ALREADY_RECORDED" });
         }
         await client.query("commit");
         return json(res, 200, {
@@ -584,41 +583,26 @@ export async function rewardClaimRecord(req, res) {
       }
       if (!["claim_pending", "claimable", "failed"].includes(String(row.status))) {
         await client.query("rollback");
-        return json(res, 409, {
-          error: "Reward is not in a state that can be finalized.",
-          code: "CLAIM_STATE_INVALID",
-        });
+        return json(res, 409, { error: "Reward is not in a state that can be finalized.", code: "CLAIM_STATE_INVALID" });
       }
 
-      const { rows: txConflicts } = await client.query(
-        `select id
-           from public.reward_ledger
-          where lower(coalesce(claim_tx_hash, '')) = lower($1)
-            and id <> $2::uuid
-          limit 1`,
-        [txHash, row.id],
-      );
+      const { rows: txConflicts } = SOLANA_CHAINS.has(chainId)
+        ? await client.query(
+            `select id from public.reward_ledger where coalesce(claim_tx_hash, '') = $1 and id <> $2::uuid limit 1`,
+            [txHash, row.id],
+          )
+        : await client.query(
+            `select id from public.reward_ledger where lower(coalesce(claim_tx_hash, '')) = lower($1) and id <> $2::uuid limit 1`,
+            [txHash, row.id],
+          );
       if (txConflicts.length) {
         await client.query("rollback");
-        return json(res, 409, {
-          error: "This transaction has already been attached to another reward entitlement.",
-          code: "CLAIM_TX_ALREADY_USED",
-        });
+        return json(res, 409, { error: "This transaction has already been attached to another reward entitlement.", code: "CLAIM_TX_ALREADY_USED" });
       }
     }
 
     const verificationMetadata = verification
-      ? {
-          verifiedAt: new Date().toISOString(),
-          chainId: verification.chainId,
-          blockNumber: verification.blockNumber,
-          confirmations: verification.confirmations,
-          distributorAddress: verification.distributorAddress,
-          walletAddress: verification.walletAddress,
-          batchId: verification.batchId,
-          amount: verification.amount,
-          txHash: verification.txHash,
-        }
+      ? { ...verification, verifiedAt: new Date().toISOString() }
       : null;
 
     const { rows } = await client.query(
@@ -666,9 +650,8 @@ export async function rewardClaimRecord(req, res) {
     });
   } catch (error) {
     await client.query("rollback").catch(() => {});
-    if (error instanceof RewardClaimVerificationError) {
-      return json(res, error.status || 409, { error: error.message, code: error.code });
-    }
+    const known = verificationHttp(error);
+    if (known) return json(res, known.status, known.body);
     if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
     console.error("[rewards/claim-record]", error);
     return json(res, 500, { error: "Server error" });
