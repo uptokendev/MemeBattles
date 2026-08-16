@@ -919,8 +919,20 @@ export function UnifiedMarketChart({
             <div
               role="dialog"
               aria-label={`Creator ${hoverPin.side} details`}
-              className="pointer-events-auto absolute z-30 w-[228px] -translate-x-1/2 rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
-              style={{ left: Math.min(Math.max(hoverPin.x, 114), (overlayRef.current?.clientWidth || 400) - 114), top: Math.max(8, hoverPin.y - 124) }}
+              className="pointer-events-auto absolute z-30 w-[228px] rounded-xl border border-orange-400/45 bg-[#120a04]/97 p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-sm"
+              style={{
+      left:
+        hoverPin.x + 16 + 228 <= (overlayRef.current?.clientWidth || 400) - 8
+          ? hoverPin.x + 16
+          : Math.max(8, hoverPin.x - 16 - 228),
+      top: Math.max(
+        8,
+        Math.min(
+          hoverPin.y - 24,
+          Math.max(8, (overlayRef.current?.clientHeight || 320) - 210),
+        ),
+      ),
+    }}
               onMouseEnter={() => openCreatorTooltip(hoverPin.id)}
               onMouseLeave={scheduleHideCreatorTooltip}
             >
