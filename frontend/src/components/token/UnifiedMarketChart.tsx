@@ -221,10 +221,7 @@ function tradeSeriesPoints(
   liveSupplyWhole?: number | null,
 ): ChartPoint[] {
   const solana = isSolanaChainId(chainId);
-  const tokenDecimals =
-    solana
-      ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
-      : 18;
+  const tokenDecimals = solana ? Number(solanaCurvePricing?.tokenDecimals ?? 6) : 18;
   const nativeDecimals = solana ? 9 : 18;
   const sorted = [...(trades || [])].sort(chainOrder);
 
@@ -235,29 +232,18 @@ function tradeSeriesPoints(
       ? Number(liveSupplyWhole)
       : formatUnitsNumber(currentBondingSoldRaw, tokenDecimals);
 
-  // Bonding trade history can be partial (reload, RPC pagination, indexer catch-up).
-  // Reconstruct the delta represented by the loaded *curve* trades only — DEX fills
-  // must not grow circulating. Same rule on BNB and Solana so headline mcap matches.
   const bondingTrades = sorted.filter((trade) => !isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec));
-  const liveBondingSupply = !marketAlreadyGraduated
-    ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals)
-    : 0;
+  const liveBondingSupply = !marketAlreadyGraduated ? formatUnitsNumber(currentBondingSoldRaw, tokenDecimals) : 0;
 
   const reconstructedFinalSupply =
     solana && !marketAlreadyGraduated
       ? bondingTrades.reduce((supply, trade) => {
           const amount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
-          return Math.max(
-            0,
-            supply + (trade.type === "sell" ? -amount : amount),
-          );
+          return Math.max(0, supply + (trade.type === "sell" ? -amount : amount));
         }, 0)
       : 0;
 
-  const historySupplyOffset =
-    liveBondingSupply > 0
-      ? Math.max(0, liveBondingSupply - reconstructedFinalSupply)
-      : 0;
+  const historySupplyOffset = liveBondingSupply > 0 ? Math.max(0, liveBondingSupply - reconstructedFinalSupply) : 0;
 
   let circulating = historySupplyOffset;
   let peakCirc = circulating;
@@ -266,18 +252,12 @@ function tradeSeriesPoints(
   for (const trade of sorted) {
     const reportedTimeSec = timestampSec(trade.timestamp);
     const dexPrint = solana && isSolanaDexPrint(trade, Boolean(solanaGraduated), graduationTimeSec);
-    const authoritative =
-      solana && !dexPrint
-        ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
-        : null;
-
-    const priceNative =
-      authoritative?.priceNative ?? finite(trade.pricePerToken);
+    const authoritative = solana && !dexPrint ? authoritativeSolanaTradeState(trade, solanaCurvePricing) : null;
+    const priceNative = authoritative?.priceNative ?? finite(trade.pricePerToken);
 
     if (!priceNative || reportedTimeSec <= 0) continue;
 
     const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
-    // Graduation is venue / original clock — never a rewritten display time.
     const afterGrad =
       dexPrint ||
       (graduationTimeSec > 0 && reportedTimeSec >= graduationTimeSec) ||
@@ -289,12 +269,8 @@ function tradeSeriesPoints(
       peakCirc = Math.max(peakCirc, circulating);
     }
 
-    // Headline is sold × price. Chart must use the same supply — never a
-    // reconstructed walk from a partial trade book (that is what drifted mcap).
     const soldAfter =
-      trade.soldTokensAfterRaw != null
-        ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals)
-        : 0;
+      trade.soldTokensAfterRaw != null ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals) : 0;
     const supplyForMcap = solana
       ? !dexPrint && authoritative && authoritative.supplyWhole > 0
         ? authoritative.supplyWhole
@@ -327,8 +303,6 @@ function tradeSeriesPoints(
 
   return points;
 }
-
-
 
 function timeToSec(time: Time): number {
   if (typeof time === "number") return time;
@@ -402,14 +376,40 @@ function marketCandlesForChart(
     );
 }
 
-/** Server candles only fill history *before* the first client-built bar (cold start). */
-function prependServerCache(client: CandleRow[], server: CandleRow[]): CandleRow[] {
-  if (!server.length) return client;
-  if (!client.length) return server;
-  const firstClient = Number(client[0].time);
-  const older = server.filter((row) => Number(row.time) < firstClient);
-  if (!older.length) return client;
-  return [...older, ...client];
+/** Canonical server candles win completely. Trade-built candles are fallback only. */
+function authoritativeCandleData(client: CandleRow[], server: CandleRow[]): CandleRow[] {
+  return server.length ? server : client;
+}
+
+function sameCandle(a: CandleRow | undefined, b: CandleRow | undefined): boolean {
+  if (!a || !b) return false;
+  return (
+    Number(a.time) === Number(b.time) &&
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close
+  );
+}
+
+function canUpdateIncrementally(previous: CandleRow[], next: CandleRow[]): boolean {
+  if (!previous.length || !next.length) return false;
+
+  if (next.length === previous.length) {
+    for (let i = 0; i < previous.length - 1; i += 1) {
+      if (!sameCandle(previous[i], next[i])) return false;
+    }
+    return Number(previous[previous.length - 1].time) === Number(next[next.length - 1].time);
+  }
+
+  if (next.length === previous.length + 1) {
+    for (let i = 0; i < previous.length; i += 1) {
+      if (!sameCandle(previous[i], next[i])) return false;
+    }
+    return Number(next[next.length - 1].time) > Number(previous[previous.length - 1].time);
+  }
+
+  return false;
 }
 
 function trimFixed(value: number, decimals: number) {
@@ -433,14 +433,9 @@ function formatValue(
   if (metric === "price" && abs > 0 && abs < 0.01) {
     return `${prefix}${trimFixed(value, nativeSymbol === "SOL" ? 12 : 10)}${suffix}`;
   }
-
-  // Native-denominated bonding market caps are often well below 1 SOL/BNB.
-  // Showing only two decimals makes 0.0338 SOL look like 0.03 SOL and creates
-  // a false mismatch with the headline metric.
   if (metric === "marketcap" && denomination !== "USD" && abs > 0 && abs < 1) {
     return `${trimFixed(value, nativeSymbol === "SOL" ? 6 : 5)}${suffix}`;
   }
-
   return `${prefix}${value.toFixed(metric === "price" && abs < 1 ? 8 : 2)}${suffix}`;
 }
 
@@ -513,10 +508,7 @@ export function UnifiedMarketChart({
 }: UnifiedMarketChartProps) {
   const solana = isSolanaChainId(chainId);
   const nativeSymbol = solana ? "SOL" : "BNB";
-  const tokenDecimals =
-    solana
-      ? Number(solanaCurvePricing?.tokenDecimals ?? 6)
-      : 18;
+  const tokenDecimals = solana ? Number(solanaCurvePricing?.tokenDecimals ?? 6) : 18;
   const nativeDecimals = solana ? 9 : 18;
   const [metric, setMetric] = useState<UnifiedChartMetric>("marketcap");
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -532,13 +524,8 @@ export function UnifiedMarketChart({
   const [resolvedAvatar, setResolvedAvatar] = useState<string | null>(null);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const hideTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // TokenDetails owns native/USD conversion for the page. Using that
-  // exact value here guarantees headline metrics and chart candles cannot
-  // diverge because two hook instances hold different cached prices.
   const nativeUsd =
-    nativeUsdPrice != null &&
-    Number.isFinite(Number(nativeUsdPrice)) &&
-    Number(nativeUsdPrice) > 0
+    nativeUsdPrice != null && Number.isFinite(Number(nativeUsdPrice)) && Number(nativeUsdPrice) > 0
       ? Number(nativeUsdPrice)
       : 0;
 
@@ -634,7 +621,6 @@ export function UnifiedMarketChart({
       maxGapFillBuckets: 0,
       genesisFromZero: Boolean(solana && !solanaGraduated),
     }).candles as CandleRow[];
-    // Solana post-grad Meteora candles are not wired yet; marketCandles is empty on that path.
     const fromServer = marketCandlesForChart(
       marketCandles,
       marketState,
@@ -643,9 +629,8 @@ export function UnifiedMarketChart({
       nativeUsd || 1,
       tokenDecimals,
     );
-    // Candles are trade prints only. Headline mcap/price live in the tiles, not OHLC.
-    return prependServerCache(fromTrades, fromServer);
-  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, resolution, seriesPoints, solana, solanaGraduated, tokenDecimals]);
+    return authoritativeCandleData(fromTrades, fromServer);
+  }, [denomination, intervalSeconds, marketCandles, marketState, metric, nativeUsd, seriesPoints, solana, solanaGraduated, tokenDecimals]);
 
   const graduationMarkers = useMemo((): SeriesMarker<Time>[] => {
     if (!data.length || graduationTimeSec <= 0) return [];
@@ -676,14 +661,8 @@ export function UnifiedMarketChart({
 
     for (const trade of sorted) {
       const dexPrint = solana && isSolanaDexPrint(trade, solanaGraduated, graduationTimeSec);
-      const authoritative =
-        solana && !dexPrint
-          ? authoritativeSolanaTradeState(trade, solanaCurvePricing)
-          : null;
-
-      const priceNative =
-        authoritative?.priceNative ?? finite(trade.pricePerToken);
-
+      const authoritative = solana && !dexPrint ? authoritativeSolanaTradeState(trade, solanaCurvePricing) : null;
+      const priceNative = authoritative?.priceNative ?? finite(trade.pricePerToken);
       const ts = timestampSec(trade.timestamp);
       if (!priceNative || ts <= 0) continue;
       const tokenAmount = formatUnitsNumber(trade.tokensWei, tokenDecimals);
@@ -696,10 +675,7 @@ export function UnifiedMarketChart({
         circulating = Math.max(0, circulating);
         peakCirc = Math.max(peakCirc, circulating);
       }
-      const soldAfter =
-        trade.soldTokensAfterRaw != null
-          ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals)
-          : 0;
+      const soldAfter = trade.soldTokensAfterRaw != null ? formatUnitsNumber(trade.soldTokensAfterRaw, tokenDecimals) : 0;
       const supplyForMcap =
         afterGrad && solana && frozenLiveSupply > 0
           ? frozenLiveSupply
@@ -926,15 +902,11 @@ export function UnifiedMarketChart({
               : solana
                 ? 0.000001
                 : 0.00001,
-        formatter: (value: number) =>
-          formatValue(value, metric, denomination, nativeSymbol),
+        formatter: (value: number) => formatValue(value, metric, denomination, nativeSymbol),
       },
     });
   }, [denomination, metric, nativeSymbol, solana]);
 
-  // Only a timeframe change changes candle bucketing/x-axis structure.
-  // USD/SOL and Market Cap/Price are y-axis transformations and must keep
-  // the user's current horizontal viewport.
   useEffect(() => {
     initialRangeSetRef.current = false;
   }, [intervalSeconds]);
@@ -944,19 +916,28 @@ export function UnifiedMarketChart({
     const chart = chartRef.current;
     if (!series || !chart) return;
 
-    // The trade history is intentionally capped at a small number of rows.
-    // Replacing the complete series is cheap and, unlike incremental update(),
-    // is deterministic when:
-    //   - a previously missing trade arrives in an older bucket,
-    //   - 1m -> 5m -> 1m rebuckets the same trades,
-    //   - USD/SOL changes every OHLC value,
-    //   - an indexer reconciliation changes historical state.
-    const prev = previousDataRef.current;
-    const prevLastTime = prev.length ? Number(prev[prev.length - 1].time) : 0;
-    const nextLastTime = data.length ? Number(data[data.length - 1].time) : 0;
-    const addedBar = data.length > prev.length || nextLastTime > prevLastTime;
+    const previous = previousDataRef.current;
+    const visibleBefore = initialRangeSetRef.current ? chart.timeScale().getVisibleLogicalRange() : null;
+    const wasFollowingRealtime =
+      !visibleBefore || !previous.length || visibleBefore.to >= previous.length - 2;
+    const appendedBar =
+      previous.length > 0 &&
+      data.length === previous.length + 1 &&
+      Number(data[data.length - 1]?.time || 0) > Number(previous[previous.length - 1]?.time || 0);
+    const incremental = canUpdateIncrementally(previous, data);
 
-    series.setData(data as any);
+    if (incremental) {
+      series.update(data[data.length - 1] as any);
+    } else {
+      series.setData(data as any);
+      if (initialRangeSetRef.current && visibleBefore && data.length > 0) {
+        try {
+          chart.timeScale().setVisibleLogicalRange(visibleBefore);
+        } catch {
+          // A timeframe/snapshot replacement can invalidate the old logical range.
+        }
+      }
+    }
     previousDataRef.current = data;
 
     if (data.length === 0) {
@@ -967,8 +948,6 @@ export function UnifiedMarketChart({
 
     if (!initialRangeSetRef.current) {
       const width = containerRef.current?.getBoundingClientRect().width || 800;
-      // Keep candles a fixed pixel width (Pump-style). Few trades must not stretch
-      // into one giant bar — pad the logical range so unused slots stay empty.
       const slotsThatFit = Math.max(
         MIN_VISIBLE_SLOTS,
         Math.min(MAX_VISIBLE_SLOTS, Math.floor(width / DESIRED_BAR_PX)),
@@ -983,7 +962,7 @@ export function UnifiedMarketChart({
         to: data.length + 6,
       });
       initialRangeSetRef.current = true;
-    } else if (addedBar) {
+    } else if (appendedBar && wasFollowingRealtime) {
       try {
         chart.timeScale().scrollToRealTime();
       } catch {
