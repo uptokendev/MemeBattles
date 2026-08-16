@@ -1,0 +1,94 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
+
+import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
+import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
+import { Button } from "@/components/ui/button";
+import { useAbuseReporterSession } from "@/hooks/useAbuseReporterSession";
+import { listAbuseReports, type AbuseReportSummary } from "@/lib/abuseApi";
+
+function formatWhen(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+export default function CommandCenterAbuseReports() {
+  const { walletAddress, chainId } = useCommandCenterData();
+  const { busy, withSession } = useAbuseReporterSession(walletAddress, chainId);
+  const base = `/profile/${walletAddress}/command/support`;
+  const [reports, setReports] = useState<AbuseReportSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void withSession((token) => listAbuseReports(token))
+      .then((rows) => {
+        if (!cancelled) setReports(rows);
+      })
+      .catch((error) => {
+        if (!cancelled) toast.error(String((error as Error)?.message || "Could not load abuse reports."));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [withSession]);
+
+  return (
+    <div className="space-y-4">
+      <CommandCenterPageHeader
+        eyebrow="Support & Safety"
+        title="My Abuse Reports"
+        description="Private cases filed from this wallet. Staff replies appear here, not in email or Discord."
+      >
+        <Button asChild className="font-retro">
+          <Link to={`${base}/report`}>New report</Link>
+        </Button>
+      </CommandCenterPageHeader>
+
+      <CommandCenterCard>
+        {loading || busy ? (
+          <p className="text-sm text-muted-foreground">Loading your abuse file...</p>
+        ) : reports.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No abuse reports from this wallet yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                <tr>
+                  <th className="pb-3 pr-4">ID</th>
+                  <th className="pb-3 pr-4">Type</th>
+                  <th className="pb-3 pr-4">Submitted</th>
+                  <th className="pb-3 pr-4">Status</th>
+                  <th className="pb-3">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map((report) => (
+                  <tr key={report.id} className="border-t border-border/40">
+                    <td className="py-3 pr-4">
+                      <Link to={`${base}/reports/${report.id}`} className="font-retro text-accent hover:underline">
+                        {report.id}
+                      </Link>
+                    </td>
+                    <td className="py-3 pr-4 text-foreground">{report.categoryLabel}</td>
+                    <td className="py-3 pr-4 text-muted-foreground">{formatWhen(report.createdAt)}</td>
+                    <td className="py-3 pr-4 text-foreground">{report.statusLabel}</td>
+                    <td className="py-3 text-muted-foreground">{formatWhen(report.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CommandCenterCard>
+    </div>
+  );
+}
