@@ -13,7 +13,10 @@ type CommandCenterSection =
   | "settings"
   | "followers"
   | "following"
-  | "coins";
+  | "coins"
+  | "support"
+  | "support/report"
+  | "support/reports";
 
 type LegacyCommandCenterRedirectProps = {
   section: CommandCenterSection;

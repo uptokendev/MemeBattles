@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Coins, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
+import { Coins, Gift, Home, LifeBuoy, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
 
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
@@ -11,6 +11,7 @@ const menuItems = [
   { label: "Squad", path: "squad", icon: Users, requiresSquad: true },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
   { label: "Rewards / Claims", path: "claims", icon: Trophy },
+  { label: "Support & Safety", path: "support", icon: LifeBuoy },
   { label: "Settings", path: "settings", icon: Settings },
 ];
 
