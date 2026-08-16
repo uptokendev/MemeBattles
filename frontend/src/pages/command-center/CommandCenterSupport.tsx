@@ -84,11 +84,11 @@ export default function CommandCenterSupport() {
           ) : (
             <Accordion type="single" collapsible className="w-full">
               {articles.map((article) => (
-                <AccordionItem key={article.id} value={article.id} className="border-border/40">
-                  <AccordionTrigger className="py-3 text-left text-sm font-medium hover:no-underline">
-                    {article.title}
+                <AccordionItem key={article.id} value={article.id} className="border-border/40 px-3 sm:px-4">
+                  <AccordionTrigger className="gap-4 py-3.5 text-left text-sm font-medium hover:no-underline">
+                    <span className="min-w-0 flex-1 pr-2">{article.title}</span>
                   </AccordionTrigger>
-                  <AccordionContent className="text-sm leading-6 text-muted-foreground">
+                  <AccordionContent className="pr-8 text-sm leading-6 text-muted-foreground">
                     {article.body}
                   </AccordionContent>
                 </AccordionItem>
