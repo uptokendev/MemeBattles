@@ -1,6 +1,6 @@
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import { isSolanaChainId } from "@/lib/chainConfig";
-import { mergeTradePoints, normalizeTradeTxHash } from "@/lib/tradeDedupe";
+import { isPlausibleBondingTrade, mergeTradePoints, normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
 const STORAGE_PREFIX = "mwz:local-topaz-trades:v1:";
 const MAX_TRADES = 40;
@@ -91,7 +91,9 @@ export function loadLocalTopazTrades(chainId: number, campaignAddress: string): 
     const parsed = JSON.parse(raw) as StoredTrade[];
     if (!Array.isArray(parsed)) return [];
     return mergeTradePoints(
-      parsed.map((row) => deserialize(row, chainId)).filter((row): row is CurveTradePoint => Boolean(row)),
+      parsed
+        .map((row) => deserialize(row, chainId))
+        .filter((row): row is CurveTradePoint => Boolean(row) && isPlausibleBondingTrade(row)),
     ).slice(-MAX_TRADES);
   } catch {
     return [];

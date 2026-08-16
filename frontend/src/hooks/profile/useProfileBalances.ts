@@ -101,37 +101,45 @@ export function useProfileBalances({
             const conn = getSolanaReadConnection();
             const owner = new PublicKey(targetRaw);
             const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-            const [lamports, tokenAccounts, campaigns] = await Promise.all([
-              conn.getBalance(owner, "confirmed"),
-              conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM }).catch(() => ({ value: [] as any[] })),
-              fetchCampaigns().catch(() => [] as any[]),
-            ]);
+            const lamports = await conn.getBalance(owner, "confirmed");
             const sol = (Number(lamports) / 1_000_000_000).toFixed(4);
-            const campaignByMint = new Map<string, any>();
-            for (const campaign of campaigns || []) {
-              const mint = String(campaign?.token || campaign?.tokenAddress || "").trim();
-              if (mint) campaignByMint.set(mint, campaign);
+            if (!cancelled) setNativeBalance(`${sol} SOL`);
+            // Token-account scan is independent. A failed SPL query must not
+            // wipe the SOL row that just landed.
+
+            let rows: TokenBalanceRow[] = [];
+            try {
+              const [tokenAccounts, campaigns] = await Promise.all([
+                conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM }).catch(() => ({ value: [] as any[] })),
+                fetchCampaigns().catch(() => [] as any[]),
+              ]);
+              const campaignByMint = new Map<string, any>();
+              for (const campaign of campaigns || []) {
+                const mint = String(campaign?.token || campaign?.tokenAddress || "").trim();
+                if (mint) campaignByMint.set(mint, campaign);
+              }
+              for (const item of tokenAccounts.value || []) {
+                const info = item?.account?.data?.parsed?.info;
+                const mint = String(info?.mint || "").trim();
+                const amount = String(info?.tokenAmount?.amount || "0");
+                const ui = Number(info?.tokenAmount?.uiAmount ?? 0);
+                if (!mint || !Number.isFinite(ui) || ui <= 0) continue;
+                const campaign = campaignByMint.get(mint);
+                rows.push({
+                  campaignAddress: String(campaign?.campaign || campaign?.campaignAddress || mint),
+                  tokenAddress: mint,
+                  image: String(campaign?.logoURI || campaign?.logoUri || "/placeholder.svg"),
+                  name: String(campaign?.name || "Solana token"),
+                  ticker: String(campaign?.symbol || campaign?.ticker || mint.slice(0, 4)),
+                  balanceRaw: BigInt(amount),
+                  balanceFormatted: String(info?.tokenAmount?.uiAmountString || ui),
+                });
+              }
+            } catch {
+              rows = [];
             }
-            const rows: TokenBalanceRow[] = [];
-            for (const item of tokenAccounts.value || []) {
-              const info = item?.account?.data?.parsed?.info;
-              const mint = String(info?.mint || "").trim();
-              const amount = String(info?.tokenAmount?.amount || "0");
-              const ui = Number(info?.tokenAmount?.uiAmount ?? 0);
-              if (!mint || !Number.isFinite(ui) || ui <= 0) continue;
-              const campaign = campaignByMint.get(mint);
-              rows.push({
-                campaignAddress: String(campaign?.campaign || campaign?.campaignAddress || mint),
-                tokenAddress: mint,
-                image: String(campaign?.logoURI || campaign?.logoUri || "/placeholder.svg"),
-                name: String(campaign?.name || "Solana token"),
-                ticker: String(campaign?.symbol || campaign?.ticker || mint.slice(0, 4)),
-                balanceRaw: BigInt(amount),
-                balanceFormatted: String(info?.tokenAmount?.uiAmountString || ui),
-              });
-            }
+
             if (!cancelled) {
-              setNativeBalance(`${sol} SOL`);
               setTokenBalances(rows);
               setPortfolioMetrics({
                 totalValueUsd: null,
@@ -143,6 +151,7 @@ export function useProfileBalances({
               });
             }
           } catch {
+            // getBalance / connection failed — we never wrote a SOL row.
             if (!cancelled) {
               setNativeBalance("");
               setTokenBalances([]);

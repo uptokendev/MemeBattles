@@ -1,9 +1,9 @@
 import type { CurveTradePoint } from "@/hooks/useCurveTrades";
 import { isSolanaChainId } from "@/lib/chainConfig";
-import { normalizeTradeTxHash } from "@/lib/tradeDedupe";
+import { isPlausibleBondingTrade, normalizeTradeTxHash } from "@/lib/tradeDedupe";
 
-const PREFIX = "mwz:trade-history:v2:";
-const LEGACY_PREFIX = "mwz:trade-history:v1:";
+const PREFIX = "mwz:trade-history:v3:";
+const LEGACY_PREFIX = "mwz:trade-history:v2:";
 const MAX = 120;
 
 type Stored = {
@@ -88,7 +88,9 @@ function readStoredArray(storage: Storage, storageKey: string, chainId: number):
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Stored[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((row) => fromStored(row, chainId)).filter((x): x is CurveTradePoint => Boolean(x));
+    return parsed
+      .map((row) => fromStored(row, chainId))
+      .filter((x): x is CurveTradePoint => Boolean(x) && isPlausibleBondingTrade(x));
   } catch {
     return [];
   }
@@ -99,10 +101,17 @@ export function loadCachedTradeHistory(chainId: number, campaign: string): Curve
   const currentKey = key(chainId, campaign);
   const legacyKey = `${LEGACY_PREFIX}${Number(chainId)}:${normalizeAddress(chainId, campaign)}`;
   const fromLocal = readStoredArray(window.localStorage, currentKey, chainId);
-  const fromLegacyLocal = readStoredArray(window.localStorage, legacyKey, chainId);
-  const fromSession = readStoredArray(window.sessionStorage, legacyKey, chainId);
+  // Legacy v2 often stored double-scaled Solana fills (10M SOL). Only use it
+  // when v3 is empty, and never keep implausible rows.
+  const fromLegacyLocal = fromLocal.length
+    ? []
+    : readStoredArray(window.localStorage, legacyKey, chainId);
+  const fromSession = fromLocal.length
+    ? []
+    : readStoredArray(window.sessionStorage, legacyKey, chainId);
   const map = new Map<string, CurveTradePoint>();
   for (const row of [...fromLegacyLocal, ...fromSession, ...fromLocal]) {
+    if (!isPlausibleBondingTrade(row)) continue;
     map.set(`${row.txHash}:${row.logIndex}`, row);
   }
   return Array.from(map.values())

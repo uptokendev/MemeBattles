@@ -58,7 +58,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useTokenTransferHolders } from "@/hooks/useTokenTransferHolders";
-import { marketTradeToCurvePoint } from "@/lib/chart/normalizeTrade";
+import { marketTradeToCurvePoint, parseRawOrHumanAmount } from "@/lib/chart/normalizeTrade";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
@@ -346,21 +346,7 @@ type TxRow = {
 function parseRawOrDecimalUnits(rawValue: unknown, decimalValue: unknown, decimals: number): bigint {
   if (typeof rawValue === "bigint") return rawValue;
   if (typeof decimalValue === "bigint") return decimalValue;
-  const rawText = String(rawValue ?? "").trim();
-  if (/^\d+$/.test(rawText)) {
-    try {
-      return BigInt(rawText);
-    } catch {
-      // fall through to human decimals
-    }
-  }
-  const human = String(decimalValue ?? "0").trim();
-  if (!human || human === "0") return 0n;
-  try {
-    return ethers.parseUnits(human, decimals);
-  } catch {
-    return 0n;
-  }
+  return parseRawOrHumanAmount(rawValue, decimalValue, decimals);
 }
 
 function tradeTimestampSeconds(value: unknown): number {
@@ -1808,6 +1794,15 @@ const { stats: rtStats } = useTokenStatsRealtime(
   hasValidCampaignAddress,
 );
 
+  const latestSoldFromTrades = useMemo(() => {
+    const points = Array.isArray(marketTradePoints) ? marketTradePoints : [];
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      const sold = points[i]?.soldTokensAfterRaw;
+      if (sold != null && sold > 0n) return sold;
+    }
+    return null;
+  }, [marketTradePoints]);
+
   const lastMarketTradePrice = useMemo(() => {
     const points = Array.isArray(marketTradePoints) ? marketTradePoints : [];
     const preferDex = Boolean(solanaCurve?.graduated);
@@ -1836,11 +1831,17 @@ const { stats: rtStats } = useTokenStatsRealtime(
 
   const solanaSoldWhole = useMemo(() => {
     if (!isSolanaPage) return null;
-    const sold = solanaCurve?.soldTokens ?? metrics?.sold ?? 0n;
+    const sold =
+      (solanaCurve?.soldTokens && solanaCurve.soldTokens > 0n
+        ? solanaCurve.soldTokens
+        : null) ??
+      (metrics?.sold && metrics.sold > 0n ? metrics.sold : null) ??
+      latestSoldFromTrades ??
+      0n;
     if (sold <= 0n) return null;
     const whole = Number(ethers.formatUnits(sold, tokenDecimals));
     return Number.isFinite(whole) && whole > 0 ? whole : null;
-  }, [isSolanaPage, metrics?.sold, solanaCurve?.soldTokens, tokenDecimals]);
+  }, [isSolanaPage, latestSoldFromTrades, metrics?.sold, solanaCurve?.soldTokens, tokenDecimals]);
 
   const pageLivePriceNative = useMemo(() => {
     if (isSolanaPage) return solanaLivePrice;
@@ -1979,7 +1980,13 @@ const toSeconds = (ts: number): number => {
     let solanaDexMcapLabel: string | null = null;
     try {
       if (isSolanaPage && solanaLivePrice != null) {
-        const sold = solanaCurve?.soldTokens ?? metrics?.sold ?? 0n;
+        const sold =
+          (solanaCurve?.soldTokens && solanaCurve.soldTokens > 0n
+            ? solanaCurve.soldTokens
+            : null) ??
+          (metrics?.sold && metrics.sold > 0n ? metrics.sold : null) ??
+          latestSoldFromTrades ??
+          0n;
         const supplyWhole = Number(ethers.formatUnits(sold, tokenDecimals));
         const mcapNative = supplyWhole * solanaLivePrice;
         const label = Number.isFinite(mcapNative) && mcapNative > 0
@@ -2069,12 +2076,20 @@ const toSeconds = (ts: number): number => {
           ? `${formatCompact(solanaMeteora.spot.liquiditySol)} ${nativeUnit}`
           : topazLiquidity != null && Number.isFinite(topazLiquidity) && topazLiquidity > 0
           ? `${formatCompact(topazLiquidity)} ${nativeUnit}`
-          : formatBnbFromWei(curveReserveWei),
+          : formatBnbFromWei(
+              curveReserveWei && curveReserveWei > 0n
+                ? curveReserveWei
+                : isSolanaPage
+                  ? marketTradePoints.reduce((net, point) => {
+                      return point.type === "sell" ? net - point.nativeWei : net + point.nativeWei;
+                    }, 0n)
+                  : curveReserveWei,
+            ),
 
       // Timeframe analytics (native volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, marketTradePoints, metrics, nativeUnit, solanaCurve, solanaLivePrice, solanaMeteora.holders, solanaMeteora.spot, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb, transferHolders.complete, transferHolders.holders]);
+  }, [campaign, contractGraduatedEarly, curveReserveWei, isSolanaPage, latestSoldFromTrades, marketTradePoints, metrics, nativeUnit, solanaCurve, solanaLivePrice, solanaMeteora.holders, solanaMeteora.spot, solanaSpotNative, summary, timeframeTiles, tokenDecimals, rtStats, topazMarket.liquidityBnb, topazMarket.marketCapBnb, topazMarket.priceBnb, transferHolders.complete, transferHolders.holders]);
   // Native/USD reference for TokenDetails conversions: BNB on EVM, SOL on Solana.
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(!isSolanaPage);
   const { price: liveSolUsdPrice, loading: solUsdLoading } = useSolUsdPrice(isSolanaPage);
@@ -2089,29 +2104,37 @@ const toSeconds = (ts: number): number => {
     return n;
   }, [isSolanaPage, nativeUsdPrice]);
 
+  const liveMarketCapNative = useMemo(() => {
+    const fromLabel = parseBnbLabel(tokenData.marketCap);
+    if (fromLabel != null && fromLabel > 0) return fromLabel;
+    if (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb) && rtStats.marketcapBnb > 0) {
+      return Number(rtStats.marketcapBnb);
+    }
+    if (pageLivePriceNative != null && pageLiveSupplyWhole != null && pageLiveSupplyWhole > 0) {
+      const product = pageLivePriceNative * pageLiveSupplyWhole;
+      return Number.isFinite(product) && product > 0 ? product : null;
+    }
+    return fromLabel;
+  }, [pageLivePriceNative, pageLiveSupplyWhole, rtStats?.marketcapBnb, tokenData.marketCap]);
+
   const marketCapDisplay = useMemo(() => {
-    const nativeLabel = tokenData.marketCap;
-    if (displayDenom === "BNB") return nativeLabel;
-    const marketCapNative =
-      parseBnbLabel(nativeLabel) ??
-      (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
-        ? Number(rtStats.marketcapBnb)
-        : null);
-    if (marketCapNative == null) return "—";
+    if (displayDenom === "BNB") {
+      if (liveMarketCapNative != null && liveMarketCapNative > 0) {
+        return `${formatCompact(liveMarketCapNative)} ${nativeUnit}`;
+      }
+      return tokenData.marketCap;
+    }
+    if (liveMarketCapNative == null) return "—";
     if (!nativeUsd) return nativeUsdLoading ? "…" : "—";
-    return formatCompactUsd(marketCapNative * nativeUsd);
-  }, [displayDenom, nativeUsd, nativeUsdLoading, rtStats?.marketcapBnb, tokenData.marketCap]);
+    const usd = liveMarketCapNative * nativeUsd;
+    return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : "—";
+  }, [displayDenom, liveMarketCapNative, nativeUnit, nativeUsd, nativeUsdLoading, tokenData.marketCap]);
 
   const marketCapUsdLabel = useMemo(() => {
-    const marketCapNative =
-      parseBnbLabel(tokenData.marketCap) ??
-      (rtStats?.marketcapBnb != null && Number.isFinite(rtStats.marketcapBnb)
-        ? Number(rtStats.marketcapBnb)
-        : null);
-    if (marketCapNative == null || !nativeUsd) return null;
-    const usd = marketCapNative * nativeUsd;
+    if (liveMarketCapNative == null || !nativeUsd) return null;
+    const usd = liveMarketCapNative * nativeUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
-  }, [nativeUsd, rtStats?.marketcapBnb, tokenData.marketCap]);
+  }, [liveMarketCapNative, nativeUsd]);
 
   const priceDisplay = useMemo(() => {
     const fromSolanaSpot = isSolanaPage ? solanaLivePrice : null;
@@ -2717,14 +2740,23 @@ const toSeconds = (ts: number): number => {
 
     // Prefer live Solana curve snapshot when present (TokenDetails zeros EVM metrics on Solana shell).
     const sold = isSolanaPage
-      ? (solanaCurve?.soldTokens ?? metrics?.sold ?? 0n)
+      ? ((solanaCurve?.soldTokens && solanaCurve.soldTokens > 0n
+          ? solanaCurve.soldTokens
+          : null) ??
+        (metrics?.sold && metrics.sold > 0n ? metrics.sold : null) ??
+        latestSoldFromTrades ??
+        0n)
       : (metrics?.sold ?? 0n);
     const curveSupply = isSolanaPage
       ? (solanaCurve?.curveTokenSupply ?? metrics?.curveSupply ?? 0n)
       : (metrics?.curveSupply ?? 0n);
     const targetWei = metrics?.graduationNativeTarget ?? 0n;
     const reserveWei = isSolanaPage
-      ? (solanaCurve?.netRaisedLamports ?? curveReserveWei ?? 0n)
+      ? ((solanaCurve?.netRaisedLamports && solanaCurve.netRaisedLamports > 0n
+          ? solanaCurve.netRaisedLamports
+          : null) ??
+        (curveReserveWei && curveReserveWei > 0n ? curveReserveWei : null) ??
+        0n)
       : (curveReserveWei ?? 0n);
 
     // High-precision % for micro progress (expensive early curves show 0.00% at 2dp).
@@ -2776,6 +2808,7 @@ const toSeconds = (ts: number): number => {
     metrics?.curveSupply,
     metrics?.graduationNativeTarget,
     curveReserveWei,
+    latestSoldFromTrades,
   ]);
 
     const remainingCurveWei = useMemo(() => {
@@ -2789,6 +2822,9 @@ const toSeconds = (ts: number): number => {
   }, [isDexStage, curveProgress.targetWei, curveProgress.reserveWei]);
 
   const remainingCurveLabel = useMemo(() => {
+    if ((curveProgress.targetWei ?? 0n) <= 0n) {
+      return { primary: "—", secondary: "—" };
+    }
     const bnbLabel = formatBnbFromWei(remainingCurveWei);
 
     let remainingBnbNum: number | null = null;
@@ -2809,7 +2845,7 @@ const toSeconds = (ts: number): number => {
     // Primary follows the denomination toggle; secondary shows the other denomination.
     if (displayDenom === "USD") return { primary: usdLabel, secondary: bnbLabel };
     return { primary: bnbLabel, secondary: usdLabel };
-  }, [remainingCurveWei, displayDenom, nativeUsd, nativeUsdLoading, isSolanaPage]);
+  }, [curveProgress.targetWei, remainingCurveWei, displayDenom, nativeUsd, nativeUsdLoading, isSolanaPage]);
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
@@ -3993,7 +4029,24 @@ const toSeconds = (ts: number): number => {
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
+    <div className="w-full flex flex-col px-3 md:px-6 gap-3 md:gap-4">
+      <div className="lg:hidden sticky top-[4.5rem] z-20 -mx-3 px-3 py-2 bg-background/95 backdrop-blur border-b border-border/40 flex items-center gap-2 shrink-0">
+        <img
+          src={tokenData.image}
+          alt={tokenData.ticker}
+          onError={(event) => {
+            event.currentTarget.src = "/placeholder.svg";
+          }}
+          className="h-9 w-9 rounded-lg object-cover bg-muted/30 shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="font-retro text-sm text-foreground truncate">{tokenData.name}</span>
+            <span className="text-[11px] text-muted-foreground font-mono shrink-0">{tokenData.ticker}</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground truncate">{marketCapDisplay}</div>
+        </div>
+      </div>
       <GraduationExplosion
         campaignAddress={campaign?.campaign}
         active={isSolanaPage ? false : isTopazTradingActive}
@@ -4006,9 +4059,9 @@ const toSeconds = (ts: number): number => {
         }
         venueLabel={isSolanaPage ? "Meteora DAMM v2" : "Topaz"}
       />
-      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[220px]">
+      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[220px] shrink-0">
         <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[220px]">
-          <div className="relative min-h-[180px] bg-muted/20 xl:min-h-[220px] overflow-hidden">
+          <div className="relative min-h-[180px] bg-muted/20 xl:min-h-[220px] overflow-hidden shrink-0">
             <img
               src={tokenData.image}
               alt={tokenData.ticker}

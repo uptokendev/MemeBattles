@@ -74,9 +74,14 @@ export function isPlausibleBondingTrade(point: CurveTradePoint): boolean {
     if (point.tokensWei <= 0n) return false;
     if (point.nativeWei < 0n) return false;
 
-    // Raw-unit ceiling is intentionally chain-neutral. 1000 native coins in
-    // either wei (1e18) or lamports (1e9) remains safely below this guard.
-    if (point.nativeWei > 10n ** 21n) return false;
+    const solanaTx = SOLANA_SIGNATURE_RE.test(String(point.txHash || ""));
+    // 10M SOL / 1.45T tokens are the double-scaled Solana bug, not real fills.
+    if (solanaTx) {
+      if (point.nativeWei > 10n ** 12n) return false; // > 1,000 SOL
+      if (point.tokensWei > 10n ** 15n) return false; // > 1B tokens at 6 decimals
+    } else if (point.nativeWei > 10n ** 21n) {
+      return false;
+    }
 
     const price = Number(point.pricePerToken || 0);
     if (!Number.isFinite(price) || price < 0 || price > 1e6) return false;
@@ -110,8 +115,8 @@ export function mergeTradePoints(...streams: Array<CurveTradePoint[] | null | un
         continue;
       }
       const incoming = { ...point, txHash: tx };
-      const prevQ = tradeQuality(prev);
-      const nextQ = tradeQuality(incoming);
+      const prevQ = tradeQuality(prev) + (isPlausibleBondingTrade(prev) ? 0 : -1000);
+      const nextQ = tradeQuality(incoming) + (isPlausibleBondingTrade(incoming) ? 0 : -1000);
       // Authoritative copy wins in full — including blockchain block time.
       // Never keep a later Date.now() over a real block timestamp.
       if (nextQ > prevQ) {

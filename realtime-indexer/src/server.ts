@@ -2181,6 +2181,22 @@ app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
   res.json(r.rows[0] || null);
 }));
 
+function rawIntString(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const match = text.match(/^(\d+)(?:\.0+)?$/);
+  return match ? match[1] : text;
+}
+
+function serializeCurveTradeRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    token_amount_raw: rawIntString(row.token_amount_raw) ?? row.token_amount_raw,
+    bnb_amount_raw: rawIntString(row.bnb_amount_raw) ?? row.bnb_amount_raw,
+    sold_tokens_after_raw: rawIntString(row.sold_tokens_after_raw) ?? row.sold_tokens_after_raw,
+  };
+}
+
 async function handleTokenTrades(req: any, res: any) {
   const chainId = Number(req.query.chainId || 97);
   let identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
@@ -2204,7 +2220,7 @@ async function handleTokenTrades(req: any, res: any) {
   );
 
   if ((r.rowCount ?? 0) > 0) {
-    res.json(r.rows);
+    res.json(r.rows.map((row: Record<string, unknown>) => serializeCurveTradeRow(row)));
     // EVM history can still repair its cursor in the background. Solana uses the
     // dedicated program-signature indexer and must never enter eth_getLogs recovery.
     if (chainId !== 101) {
@@ -2264,7 +2280,7 @@ async function handleTokenTrades(req: any, res: any) {
     [chainId, campaign, limit],
   );
 
-  res.json(r2.rows);
+  res.json(r2.rows.map((row: Record<string, unknown>) => serializeCurveTradeRow(row)));
 }
 
 app.get("/api/token/:campaign/trades", wrap(handleTokenTrades));

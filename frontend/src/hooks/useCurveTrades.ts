@@ -417,7 +417,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     if (curr !== prev) {
       prevCampaignRef.current = curr;
       const cached = curr ? loadCachedTradeHistory(chainId, campaignAddress || "") : [];
-      setPoints(cached);
+      setPoints(cached.filter((point) => point.tokensWei > 0n));
       setLoading(canLoadTrades && cached.length === 0);
       setError(null);
       initialLoadedRef.current = false;

@@ -31,26 +31,43 @@ export function encodeCampaignPath(chainId: number, address: string): string {
   return encodeURIComponent(campaignKey(chainId, address));
 }
 
-function parseRawAmount(rawValue: unknown): bigint {
+/** Integer string, including pg numeric `10000000.000000`. */
+export function parseRawAmount(rawValue: unknown): bigint {
   const raw = String(rawValue ?? "").trim();
-  if (!/^\d+$/.test(raw)) return 0n;
-  try {
-    return BigInt(raw);
-  } catch {
-    return 0n;
+  if (!raw || raw === "0") return 0n;
+  const intish = raw.match(/^(\d+)(?:\.0+)?$/);
+  if (intish) {
+    try {
+      return BigInt(intish[1]);
+    } catch {
+      return 0n;
+    }
   }
+  return 0n;
+}
+
+function maxPlausibleScaled(decimals: number): bigint {
+  if (decimals <= 6) return 10n ** 15n; // 1B tokens at 6dp
+  if (decimals <= 9) return 10n ** 12n; // 1,000 SOL
+  return 10n ** 24n; // 1M BNB
 }
 
 /**
- * Ably used to send human decimals (`250570` tokens) without a raw field.
- * Integers with fewer digits than `decimals` are human amounts, not wei.
+ * Human decimal → raw units.
+ * Never use a digit-count heuristic: Solana lamports are 7–12 digits, so the
+ * old “16+ digits means raw” rule turned 10_000_000 lamports into 10M SOL.
+ * If scaling an integer as a whole-token amount exceeds a plausible fill,
+ * the integer was already raw.
  */
-function parseAmountToRaw(value: unknown, decimals: number): bigint {
+export function parseHumanAmountToRaw(value: unknown, decimals: number): bigint {
   const text = String(value ?? "").trim();
   if (!text || text === "0") return 0n;
-  if (/^\d+$/.test(text) && text.length >= Math.max(16, decimals)) {
+  if (/^\d+$/.test(text)) {
     try {
-      return BigInt(text);
+      const asInt = BigInt(text);
+      const scale = 10n ** BigInt(Math.max(0, decimals));
+      if (asInt * scale > maxPlausibleScaled(decimals)) return asInt;
+      return asInt * scale;
     } catch {
       return 0n;
     }
@@ -60,6 +77,20 @@ function parseAmountToRaw(value: unknown, decimals: number): bigint {
   } catch {
     return 0n;
   }
+}
+
+/** Explicit raw field if present, otherwise human decimal. */
+export function parseRawOrHumanAmount(
+  rawValue: unknown,
+  humanValue: unknown,
+  decimals: number,
+): bigint {
+  const rawText = String(rawValue ?? "").trim();
+  if (rawText !== "") {
+    const parsed = parseRawAmount(rawText);
+    if (parsed > 0n || /^0+(?:\.0+)?$/.test(rawText)) return parsed;
+  }
+  return parseHumanAmountToRaw(humanValue, decimals);
 }
 
 /** Unix seconds. Accepts sec, ms, Date, ISO, or numeric strings. */
@@ -138,17 +169,16 @@ export function indexerRowToCurvePoint(
 
   const tokenDecimals = decimals?.token ?? (isSolanaChainId(chainId) ? 6 : 18);
   const nativeDecimals = decimals?.native ?? (isSolanaChainId(chainId) ? 9 : 18);
-  const explicitTokenRaw = row.token_amount_raw ?? row.tokenAmountRaw ?? row.tokensWei;
-  const explicitNativeRaw =
-    row.bnb_amount_raw ?? row.native_amount_raw ?? row.nativeAmountRaw ?? row.nativeWei;
-  const tokensWei =
-    explicitTokenRaw != null && String(explicitTokenRaw).trim() !== ""
-      ? parseRawAmount(explicitTokenRaw)
-      : parseAmountToRaw(row.token_amount ?? row.tokenAmount, tokenDecimals);
-  const nativeWei =
-    explicitNativeRaw != null && String(explicitNativeRaw).trim() !== ""
-      ? parseRawAmount(explicitNativeRaw)
-      : parseAmountToRaw(row.bnb_amount ?? row.bnbAmount ?? row.nativeAmount, nativeDecimals);
+  const tokensWei = parseRawOrHumanAmount(
+    row.token_amount_raw ?? row.tokenAmountRaw ?? row.tokensWei,
+    row.token_amount ?? row.tokenAmount,
+    tokenDecimals,
+  );
+  const nativeWei = parseRawOrHumanAmount(
+    row.bnb_amount_raw ?? row.native_amount_raw ?? row.nativeAmountRaw ?? row.nativeWei,
+    row.bnb_amount ?? row.bnbAmount ?? row.nativeAmount,
+    nativeDecimals,
+  );
 
   const suppliedPrice = Number(row.price_bnb ?? row.pricePerToken ?? row.priceBnb ?? 0);
   const tokens = formatUnitsNumber(tokensWei, tokenDecimals);
