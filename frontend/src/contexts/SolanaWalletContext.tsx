@@ -6,9 +6,11 @@ import {
   ensureSolanaListeners,
   getSolanaProvider,
   getStoredSolanaWallet,
+  getStoredSolanaWalletId,
   getStoredSolanaWalletName,
   refreshSolanaWalletFromProvider,
   SOLANA_WALLET_EVENT,
+  SOLANA_WALLET_STORAGE_KEY,
   type DetectedSolanaWallet,
 } from "@/lib/solanaWallet";
 
@@ -29,6 +31,16 @@ type SolanaWalletContextType = {
 };
 
 const SolanaWalletContext = createContext<SolanaWalletContextType | null>(null);
+
+function eventPublicKey(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  try {
+    return String((value as { toString?: () => string })?.toString?.() || "").trim();
+  } catch {
+    return "";
+  }
+}
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
   const [solanaAccount, setSolanaAccount] = useState(() => getStoredSolanaWallet());
@@ -113,6 +125,61 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       window.removeEventListener(SOLANA_WALLET_EVENT, onEvent as EventListener);
     };
   }, [refreshAvailableWallets]);
+
+  useEffect(() => {
+    const provider = getSolanaProvider();
+    if (!provider?.on) return;
+
+    let pendingTimer = 0;
+    const publishAccount = (publicKey: string) => {
+      try {
+        if (publicKey) window.localStorage.setItem(SOLANA_WALLET_STORAGE_KEY, publicKey);
+        else window.localStorage.removeItem(SOLANA_WALLET_STORAGE_KEY);
+      } catch {
+        // React state still updates even when storage is unavailable.
+      }
+
+      window.dispatchEvent(new CustomEvent(SOLANA_WALLET_EVENT, {
+        detail: {
+          publicKey,
+          walletId: getStoredSolanaWalletId(),
+          walletName: getStoredSolanaWalletName(),
+        },
+      }));
+    };
+
+    const onAccountChanged = (value: unknown) => {
+      window.clearTimeout(pendingTimer);
+      const emittedKey = eventPublicKey(value);
+
+      if (emittedKey) {
+        // Some providers emit the new key before provider.publicKey mutates. Publish
+        // the event payload after synchronous provider listeners so stale rereads
+        // cannot win and force a page reload to see the selected account.
+        pendingTimer = window.setTimeout(() => publishAccount(emittedKey), 0);
+        return;
+      }
+
+      // Wallets may transiently emit null while switching accounts. Give the
+      // provider a moment to expose the replacement key before treating it as a
+      // real disconnect.
+      pendingTimer = window.setTimeout(() => {
+        const providerKey = eventPublicKey(provider.publicKey);
+        publishAccount(providerKey);
+      }, 50);
+    };
+
+    try {
+      provider.on("accountChanged", onAccountChanged);
+    } catch {
+      return;
+    }
+
+    return () => {
+      window.clearTimeout(pendingTimer);
+      try { provider.removeListener?.("accountChanged", onAccountChanged); } catch {}
+    };
+  }, [solanaWalletName]);
 
   return (
     <SolanaWalletContext.Provider
