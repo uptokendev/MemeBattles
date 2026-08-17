@@ -40,7 +40,16 @@ function normalizeText(value, max = 280) {
 
 function normalizeMemberRole(value) {
   const raw = String(value || "").trim().toLowerCase();
-  return raw === "creator" || raw === "trader" ? raw : "";
+  return raw === "creator" || raw === "trader" || raw === "both" ? raw : "";
+}
+
+function mergeMemberRole(existingValue, incomingValue) {
+  const existing = normalizeMemberRole(existingValue);
+  const incoming = normalizeMemberRole(incomingValue);
+  if (!incoming) return existing;
+  if (!existing) return incoming;
+  if (existing === "both" || incoming === "both" || existing !== incoming) return "both";
+  return existing;
 }
 
 function schemaMissing(error) {
@@ -282,10 +291,9 @@ async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress
 }
 
 async function getRecruiterStats(recruiterId, recruiterWalletAddress = "") {
-  // Count creators/traders from both squad memberships AND recruiter links.
-  // Role defaults: explicit member_role wins; otherwise wallets that created campaigns
-  // count as creators; remaining linked wallets count as traders (so public pages
-  // no longer show 0/0 when everyone is still role=member).
+  // Count creators/traders from both squad memberships AND recruiter links. Explicit
+  // role wins; legacy generic members are inferred from creator activity. A `both`
+  // wallet counts once as an active member and in both role totals.
   const [{ rows: linkRows }, { rows: roleRows }] = await Promise.all([
     pool.query(
       `select count(*)::int as linked_wallet_count,
@@ -322,22 +330,31 @@ async function getRecruiterStats(recruiterId, recruiterWalletAddress = "") {
             and not (lwr.cluster_id is not null and rwr.cluster_id is not null and lwr.cluster_id = rwr.cluster_id)
        ),
        classified as (
-         select distinct m.wallet,
-                case
-                  when m.member_role = 'creator' then 'creator'
-                  when m.member_role = 'trader' then 'trader'
-                  when exists (
-                    select 1 from public.campaigns c
-                     where lower(c.creator_address) = m.wallet
-                  ) then 'creator'
-                  else 'trader'
-                end as role
-           from members m
+         select
+           m.wallet,
+           case
+             when bool_or(m.member_role in ('creator','trader','both'))
+               then bool_or(m.member_role in ('creator','both'))
+             else exists (
+               select 1 from public.campaigns c
+                where lower(c.creator_address) = m.wallet
+             )
+           end as is_creator,
+           case
+             when bool_or(m.member_role in ('creator','trader','both'))
+               then bool_or(m.member_role in ('trader','both'))
+             else not exists (
+               select 1 from public.campaigns c
+                where lower(c.creator_address) = m.wallet
+             )
+           end as is_trader
+         from members m
+         group by m.wallet
        )
        select
          count(*)::int as active_squad_member_count,
-         count(*) filter (where role = 'creator')::int as linked_creators_count,
-         count(*) filter (where role = 'trader')::int as linked_traders_count
+         count(*) filter (where is_creator)::int as linked_creators_count,
+         count(*) filter (where is_trader)::int as linked_traders_count
          from classified`,
       [recruiterId, recruiterWalletAddress || ""],
     ),
@@ -443,24 +460,34 @@ export async function attributionWalletConnect(req, res) {
     const existingState = await findWalletAttributionState(walletAddress);
     if (existingState?.recruiter_link_state === "linked_unlocked" || existingState?.recruiter_link_state === "linked_locked") {
       const existingMembership = await findActiveSquadMembership(walletAddress).catch(() => null);
-      if (memberRole && existingMembership?.recruiter_id && String(existingMembership.member_role || "member") === "member") {
-        const solana = isSolanaWallet(walletAddress);
-        await pool.query(
-          `update public.wallet_squad_memberships
-              set member_role = $1,
-                  link_source = coalesce(nullif(link_source, ''), 'referral_cookie'),
-                  updated_at = now()
-            where case when $3::boolean then wallet_address = $2 else lower(wallet_address) = lower($2) end
-              and is_active = true`,
-          [memberRole, walletAddress, solana],
-        );
+      let mergedRole = "";
+      let roleUpdated = false;
+      if (memberRole && existingMembership?.recruiter_id) {
+        mergedRole = mergeMemberRole(existingMembership.member_role, memberRole);
+        const currentRole = String(existingMembership.member_role || "member").trim().toLowerCase();
+        if (mergedRole && mergedRole !== currentRole) {
+          const solana = isSolanaWallet(walletAddress);
+          await pool.query(
+            `update public.wallet_squad_memberships
+                set member_role = $1,
+                    link_source = coalesce(nullif(link_source, ''), 'referral_cookie'),
+                    updated_at = now()
+              where case when $3::boolean then wallet_address = $2 else lower(wallet_address) = lower($2) end
+                and is_active = true`,
+            [mergedRole, walletAddress, solana],
+          );
+          roleUpdated = true;
+        }
       }
       const updatedState = await findWalletAttributionState(walletAddress);
       return json(res, 200, {
         linked: Boolean(updatedState?.recruiter_id),
         locked: Boolean(updatedState?.has_activity || updatedState?.locked_at),
+        memberRole: mergedRole || existingMembership?.member_role || null,
         state: publicState({ walletAddress, state: updatedState }),
-        reason: memberRole && existingMembership?.member_role === "member" ? "Existing squad membership role was updated." : "Existing canonical wallet attribution is already linked or locked.",
+        reason: roleUpdated
+          ? `Existing squad membership role was upgraded to ${mergedRole}.`
+          : "Existing canonical wallet attribution is already linked or locked.",
       });
     }
 
@@ -484,7 +511,7 @@ export async function attributionWalletConnect(req, res) {
         needsRoleSelection: true,
         state: publicState({ walletAddress }),
         recruiter: { code: recruiter.code, displayName: recruiter.display_name, isOg: Boolean(recruiter.is_og) },
-        reason: "Choose whether this wallet joins as a creator or trader before locking recruiter attribution.",
+        reason: "Choose whether this wallet joins as a creator, trader, or both before locking recruiter attribution.",
       });
     }
 
@@ -501,7 +528,16 @@ export async function attributionWalletConnect(req, res) {
         `insert into public.wallet_squad_memberships (wallet_address, recruiter_id, member_role, link_source)
          values ($1, $2, $3, 'referral_cookie')
          on conflict (wallet_address) where is_active = true
-         do update set member_role = excluded.member_role, link_source = excluded.link_source, updated_at = now()`,
+         do update set
+           member_role = case
+             when lower(coalesce(public.wallet_squad_memberships.member_role, 'member')) = 'both'
+               or excluded.member_role = 'both' then 'both'
+             when lower(coalesce(public.wallet_squad_memberships.member_role, 'member')) in ('creator','trader')
+               and lower(public.wallet_squad_memberships.member_role) <> excluded.member_role then 'both'
+             else excluded.member_role
+           end,
+           link_source = excluded.link_source,
+           updated_at = now()`,
         [walletAddress, recruiter.id, memberRole],
       );
       await pool.query(`update public.wallet_referral_attribution_windows set wallet_address = coalesce(wallet_address, $1), consumed_at = now(), updated_at = now() where id = $2`, [walletAddress, window.id]);
@@ -512,7 +548,8 @@ export async function attributionWalletConnect(req, res) {
     }
 
     const updatedState = await findWalletAttributionState(walletAddress);
-    return json(res, 200, { linked: Boolean(updatedState?.recruiter_id), memberRole, state: publicState({ walletAddress, state: updatedState, recruiter }) });
+    const membership = await findActiveSquadMembership(walletAddress).catch(() => null);
+    return json(res, 200, { linked: Boolean(updatedState?.recruiter_id), memberRole: membership?.member_role || memberRole, state: publicState({ walletAddress, state: updatedState, recruiter }) });
   } catch (error) {
     console.error("[api/attribution wallet-connect]", error);
     if (schemaMissing(error)) {
@@ -587,8 +624,8 @@ export async function recruiters(req, res) {
       `select r.id, r.wallet_address, r.code, r.display_name, r.is_og, r.status, r.closed_at, r.metadata, r.created_at, r.updated_at,
               count(distinct l.wallet_address)::int as linked_wallet_count,
               count(distinct s.wallet_address)::int as active_squad_member_count,
-              count(distinct s.wallet_address) filter (where s.member_role = 'creator')::int as linked_creators_count,
-              count(distinct s.wallet_address) filter (where s.member_role = 'trader')::int as linked_traders_count,
+              count(distinct s.wallet_address) filter (where s.member_role in ('creator','both'))::int as linked_creators_count,
+              count(distinct s.wallet_address) filter (where s.member_role in ('trader','both'))::int as linked_traders_count,
               max(l.linked_at) as latest_linked_activity_at
          from public.recruiters r
          left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true and lower(l.wallet_address) <> lower(r.wallet_address)
