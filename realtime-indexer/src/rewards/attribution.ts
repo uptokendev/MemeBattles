@@ -1,5 +1,6 @@
 import type { PoolClient, QueryResult } from "pg";
 import { pool } from "../db.js";
+import { normalizeWalletAddress } from "../walletAddress.js";
 
 export type RecruiterStatus = "active" | "inactive" | "closed" | "suspended";
 export type LinkSource = "referral_cookie" | "manual" | "admin_override" | "migration";
@@ -82,11 +83,7 @@ type DbLike = {
 };
 
 function normalizeAddress(value: unknown): string {
-  const address = String(value ?? "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    throw new Error(`Invalid wallet address: ${String(value ?? "")}`);
-  }
-  return address;
+  return normalizeWalletAddress(value);
 }
 
 function normalizeCode(value: unknown): string {
