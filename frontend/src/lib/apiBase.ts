@@ -116,7 +116,12 @@ function matchesApiPrefix(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
 }
 
+function isRecruiterCanonicalSummaryPath(path: string): boolean {
+  return /^\/api\/recruiters\/(?:wallet\/[^/?]+\/summary|[^/?]+\/summary)(?:[/?]|$)/.test(path);
+}
+
 function shouldUseFrontendApi(path: string): boolean {
+  if (isRecruiterCanonicalSummaryPath(path)) return true;
   return FRONTEND_API_PREFIXES.some((prefix) => matchesApiPrefix(path, prefix));
 }
 
