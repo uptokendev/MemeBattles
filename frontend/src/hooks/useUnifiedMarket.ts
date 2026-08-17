@@ -352,6 +352,16 @@ export function useUnifiedMarket(input: {
     const channel = realtime.channel;
     if (!apiEnabled || !channel) return;
 
+    const revealLiveTradeFallback = () => {
+      // A live trade already reaches useCurveTrades immediately. Canonical REST candles
+      // can lag the materializer by a couple seconds, and any non-empty server candle
+      // array otherwise masks that live trade-built chart. Drop only the cached candle
+      // snapshot so UnifiedMarketChart uses the live trade stream, then reconcile back
+      // to a complete authoritative REST snapshot after the materializer catches up.
+      setCandles([]);
+      scheduleRefresh(2_500);
+    };
+
     const onStage = (message: any) => {
       const data = message?.data || {};
       const nextStage = String(data.marketStage || data.to || "");
@@ -368,7 +378,13 @@ export function useUnifiedMarket(input: {
     const onTrade = (message: any) => {
       const trade = realtimeTrade(message?.data, input.chainId);
       if (trade) setTrades((current) => mergeTrades(current, [trade], input.chainId));
-      // The candle event, not the trade event, owns chart movement.
+      revealLiveTradeFallback();
+    };
+    const onLegacyTrade = () => {
+      // Bonding indexers publish the production `trade` event consumed by
+      // useCurveTrades. Mirror that signal here so a stale canonical candle snapshot
+      // never freezes the chart while the Trade tab is already moving.
+      revealLiveTradeFallback();
     };
     const onCandle = (message: any) => {
       const candle = realtimeCandle(message?.data, resolution);
@@ -379,7 +395,12 @@ export function useUnifiedMarket(input: {
       }
 
       setCandles((current) => {
-        if (!current.length) return [candle];
+        if (!current.length) {
+          // We intentionally cleared a stale snapshot on a live trade. Do not replace
+          // full history with one isolated realtime bucket; wait for the REST reconcile.
+          scheduleRefresh(300);
+          return current;
+        }
         const incomingKey = candleKey(candle);
         const lastKey = candleKey(current[current.length - 1]);
         if (!Number.isFinite(incomingKey) || incomingKey <= 0) {
@@ -401,6 +422,7 @@ export function useUnifiedMarket(input: {
     };
     const onHealth = () => scheduleRefresh(100);
 
+    channel.subscribe("trade", onLegacyTrade);
     channel.subscribe("market_stage_changed", onStage);
     channel.subscribe("market_trade", onTrade);
     channel.subscribe("market_candle_upsert", onCandle);
@@ -411,6 +433,7 @@ export function useUnifiedMarket(input: {
     realtime.client?.connection?.on?.("connected", onConnected);
 
     return () => {
+      try { channel.unsubscribe("trade", onLegacyTrade); } catch { /* noop */ }
       try { channel.unsubscribe("market_stage_changed", onStage); } catch { /* noop */ }
       try { channel.unsubscribe("market_trade", onTrade); } catch { /* noop */ }
       try { channel.unsubscribe("market_candle_upsert", onCandle); } catch { /* noop */ }
