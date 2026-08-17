@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveWalletKind } from "@/lib/activeWalletChain";
 import {
   captureRecruiterReferral,
   fetchRecruiterReplacements,
@@ -28,8 +30,20 @@ type ReferralState = {
 export default function RecruiterReferral() {
   const { code = "" } = useParams<{ code: string }>();
   const wallet = useWallet();
+  const { solanaAccount, connectingSolana } = useSolanaWallet();
+  const activeWalletKind = getActiveWalletKind();
+  const connectedAccount =
+    activeWalletKind === "bnb"
+      ? wallet.account || solanaAccount
+      : activeWalletKind === "solana"
+        ? solanaAccount || wallet.account
+        : solanaAccount || wallet.account;
+  const connectedIsSolana = Boolean(solanaAccount && connectedAccount === solanaAccount);
+  const walletConnecting = wallet.connecting || connectingSolana;
+
   const [loading, setLoading] = useState(true);
   const [syncingRole, setSyncingRole] = useState(false);
+  const [syncRetry, setSyncRetry] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
   const [memberRole, setMemberRole] = useState<RecruiterMemberRole | null>(() => getRecruiterReferralMemberRole());
@@ -52,8 +66,8 @@ export default function RecruiterReferral() {
     void (async () => {
       try {
         const [result, currentWalletState, replacementData] = await Promise.all([
-          captureRecruiterReferral(recruiterCode, wallet.account || null),
-          wallet.account ? fetchWalletAttributionState(wallet.account).catch(() => null) : Promise.resolve(null),
+          captureRecruiterReferral(recruiterCode, connectedAccount || null),
+          connectedAccount ? fetchWalletAttributionState(connectedAccount).catch(() => null) : Promise.resolve(null),
           fetchRecruiterReplacements(recruiterCode, 3).catch(() => ({ replacements: [] })),
         ]);
 
@@ -75,20 +89,21 @@ export default function RecruiterReferral() {
     return () => {
       cancelled = true;
     };
-  }, [code, wallet.account]);
+  }, [code, connectedAccount]);
 
   useEffect(() => {
-    if (!wallet.account || !memberRole) return;
-    const syncKey = `${wallet.account.toLowerCase()}:${memberRole}:${code.toLowerCase()}`;
-    if (lastSyncedKey.current === syncKey) return;
+    if (!connectedAccount || !memberRole) return;
+    const addressKey = connectedIsSolana ? connectedAccount : connectedAccount.toLowerCase();
+    const syncKey = `${addressKey}:${memberRole}:${code.toLowerCase()}`;
+    if (lastSyncedKey.current === syncKey && syncRetry === 0) return;
     lastSyncedKey.current = syncKey;
 
     let cancelled = false;
     setSyncingRole(true);
     void (async () => {
       try {
-        const result = await syncWalletRecruiterAttribution(wallet.account, memberRole);
-        const nextWalletState = await fetchWalletAttributionState(wallet.account).catch(() => null);
+        const result = await syncWalletRecruiterAttribution(connectedAccount, memberRole);
+        const nextWalletState = await fetchWalletAttributionState(connectedAccount).catch(() => null);
         if (cancelled) return;
         setWalletState(nextWalletState);
         if (result?.linked) setRoleMessage(`Wallet linked as ${memberRole}. Your squad connection is active.`);
@@ -96,6 +111,7 @@ export default function RecruiterReferral() {
         else if (result?.blocked) setRoleMessage(result.reason || "This wallet cannot be linked as a squad member.");
         else setRoleMessage(result?.reason || "Wallet connected. Recruiter attribution is being checked.");
       } catch (err: any) {
+        lastSyncedKey.current = "";
         if (!cancelled) setRoleMessage(String(err?.message || err || "Could not sync recruiter attribution."));
       } finally {
         if (!cancelled) setSyncingRole(false);
@@ -105,7 +121,7 @@ export default function RecruiterReferral() {
     return () => {
       cancelled = true;
     };
-  }, [code, memberRole, wallet.account]);
+  }, [code, connectedAccount, connectedIsSolana, memberRole, syncRetry]);
 
   const lockedToOtherRecruiter = useMemo(() => {
     const capturedCode = String(state?.recruiter?.code || code).trim().toLowerCase();
@@ -127,17 +143,22 @@ export default function RecruiterReferral() {
   const chooseRole = async (role: RecruiterMemberRole) => {
     setMemberRole(role);
     setRecruiterReferralMemberRole(role);
-    setRoleMessage(wallet.account
-      ? `Selected ${role}. Syncing this wallet to the recruiter squad...`
-      : `Selected ${role}. Now connect the wallet you want to add to this recruiter's squad.`);
-
-    if (!wallet.account) return;
     lastSyncedKey.current = "";
+    setRoleMessage(connectedAccount
+      ? `Selected ${role}. Syncing ${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)} to the recruiter squad...`
+      : `Selected ${role}. Now connect the wallet you want to add to this recruiter's squad.`);
   };
 
-  const openWalletModal = async () => {
+  const handleWalletAction = async () => {
     if (!memberRole) {
       setRoleMessage("Choose creator or trader first. Then connect the wallet for that role.");
+      return;
+    }
+
+    if (connectedAccount) {
+      lastSyncedKey.current = "";
+      setRoleMessage(`Using connected ${connectedIsSolana ? "Solana" : "BNB"} wallet ${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)}. Syncing recruiter attribution...`);
+      setSyncRetry((value) => value + 1);
       return;
     }
 
@@ -159,8 +180,8 @@ export default function RecruiterReferral() {
             {loading ? "Saving your recruiter invite..." : "Join this recruiter's squad"}
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
-            Step 1: choose whether this wallet joins as a creator or trader. Step 2: connect the wallet.
-            After connection, MemeWarzone locks the wallet to this recruiter squad when the referral window is valid.
+            Step 1: choose whether this wallet joins as a creator or trader. Step 2: connect a wallet if one is not already connected.
+            MemeWarzone uses the active connected wallet and locks it to this recruiter squad when the referral window is valid.
           </p>
         </div>
       </Card>
@@ -213,19 +234,29 @@ export default function RecruiterReferral() {
               </div>
 
               <div className="rounded-2xl border border-orange-400/25 bg-orange-400/10 p-4">
-                <p className="font-retro text-xs uppercase tracking-[0.2em] text-orange-100">2. Connect wallet</p>
+                <p className="font-retro text-xs uppercase tracking-[0.2em] text-orange-100">
+                  {connectedAccount ? "2. Wallet ready" : "2. Connect wallet"}
+                </p>
                 <p className="mt-2 text-sm text-orange-50/80">
-                  Connect the exact wallet you want linked to this recruiter. Do not use the recruiter's own wallet here.
+                  {connectedAccount
+                    ? `Using your active connected ${connectedIsSolana ? "Solana" : "BNB"} wallet for this recruiter link.`
+                    : "Connect the exact wallet you want linked to this recruiter. Do not use the recruiter's own wallet here."}
                 </p>
                 <Button
                   type="button"
                   className="mt-4"
-                  onClick={() => void openWalletModal()}
-                  disabled={syncingRole || !memberRole}
+                  onClick={() => void handleWalletAction()}
+                  disabled={syncingRole || walletConnecting || !memberRole}
                 >
-                  {wallet.isConnected ? "Wallet connected" : memberRole ? `Connect wallet as ${memberRole}` : "Choose role first"}
+                  {syncingRole || walletConnecting
+                    ? "Linking..."
+                    : connectedAccount
+                      ? `Continue with ${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)}`
+                      : memberRole
+                        ? `Connect wallet as ${memberRole}`
+                        : "Choose role first"}
                 </Button>
-                {wallet.account ? <p className="mt-3 font-mono text-xs text-orange-50/80">{wallet.account}</p> : null}
+                {connectedAccount ? <p className="mt-3 font-mono text-xs text-orange-50/80">{connectedAccount}</p> : null}
               </div>
             </div>
 
@@ -290,9 +321,9 @@ export default function RecruiterReferral() {
               <Button asChild variant="outline">
                 <Link to={`/recruiters/${encodeURIComponent(code)}`}>View recruiter profile</Link>
               </Button>
-              {wallet.account ? (
+              {connectedAccount ? (
                 <Button asChild variant="outline">
-                  <Link to={`/profile/${encodeURIComponent(wallet.account)}/command/squad`}>Open squad status</Link>
+                  <Link to={`/profile/${encodeURIComponent(connectedAccount)}/command/squad`}>Open squad status</Link>
                 </Button>
               ) : null}
               <Button asChild variant="outline">
