@@ -107,8 +107,6 @@ async function financeRewards(req, res, network) {
       generatedAt: new Date().toISOString(),
       source: "dashboard-api",
       aggregates,
-      // Funding coverage is intentionally withheld until the reward-vault balance
-      // source is explicitly mapped for each test network.
       coverage: [],
     });
   } catch (error) {
@@ -126,9 +124,6 @@ async function financeRewards(req, res, network) {
 }
 
 async function financeRevenue(req, res, network) {
-  // TreasuryRouter RouteExecuted is currently canonical only for the EVM trade route.
-  // Solana revenue remains supplied by the LP adapter until an equivalent canonical
-  // router/program revenue event is pinned.
   if (network.chainId !== 97) {
     return res.status(200).json({
       schemaVersion: "finance-revenue-v1",
@@ -192,9 +187,13 @@ async function financeRevenue(req, res, network) {
 
 async function financeInventory(req, res, network) {
   const items = [];
+  const seenAddresses = new Set();
   const add = (id, kind, label, address, role) => {
     const value = String(address || "").trim();
     if (!value) return;
+    const key = `${network.chain}:${value.toLowerCase()}`;
+    if (seenAddresses.has(key)) return;
+    seenAddresses.add(key);
     items.push({
       id,
       chain: network.chain,
