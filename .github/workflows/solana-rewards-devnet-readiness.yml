@@ -1,0 +1,51 @@
+name: Solana Rewards Devnet Readiness
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - "programs/mwz_rewards_treasury/**"
+      - "scripts/solana/init-rewards-treasury.mjs"
+      - "scripts/solana/init-rewards-lanes.mjs"
+      - "frontend/scripts/incentive-cert/check-solana-rewards-devnet.mjs"
+      - "docs/solana-incentive-devnet-certification.md"
+      - ".github/workflows/solana-rewards-devnet-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-rewards-devnet-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  read-only-devnet-state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: airdrop-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax-check read-only verifier
+        run: node --check scripts/incentive-cert/check-solana-rewards-devnet.mjs
+
+      - name: Verify live rewards treasury state on devnet
+        run: node scripts/incentive-cert/check-solana-rewards-devnet.mjs
