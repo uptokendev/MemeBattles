@@ -32,6 +32,10 @@ function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
 }
 
+function isExplicitMemberRole(role) {
+  return role === "creator" || role === "trader" || role === "both";
+}
+
 function summaryFromRows(recruiter, rows) {
   const activeRows = rows.filter((row) => row.is_active !== false);
   return {
@@ -44,10 +48,10 @@ function summaryFromRows(recruiter, rows) {
     recruiterIsOg: Boolean(recruiter.is_og),
     recruiterStatus: recruiter.status || "active",
     activeMemberCount: activeRows.length,
-    eligibleMemberCount: activeRows.filter((row) => row.member_role === "creator" || row.member_role === "trader").length,
-    creators: activeRows.filter((row) => row.member_role === "creator").length,
-    traders: activeRows.filter((row) => row.member_role === "trader").length,
-    pending: activeRows.filter((row) => row.member_role !== "creator" && row.member_role !== "trader").length,
+    eligibleMemberCount: activeRows.filter((row) => isExplicitMemberRole(row.member_role)).length,
+    creators: activeRows.filter((row) => row.member_role === "creator" || row.member_role === "both").length,
+    traders: activeRows.filter((row) => row.member_role === "trader" || row.member_role === "both").length,
+    pending: activeRows.filter((row) => !isExplicitMemberRole(row.member_role)).length,
     inactiveLinks: rows.filter((row) => row.is_active === false).length,
     totalEligibleScore: "0",
     routedEventCount: 0,
@@ -142,7 +146,7 @@ export async function squadMembers(req, res) {
         memberRole: row.member_role,
         linkStatus: row.is_active ? "active" : "inactive",
         source: row.source || null,
-        isEligible: row.is_active && (row.member_role === "creator" || row.member_role === "trader"),
+        isEligible: row.is_active && isExplicitMemberRole(row.member_role),
         reasonCodes: row.is_active ? [] : ["inactive_squad_link"],
         rawScore: "0",
         estimatedPayoutAmount: "0",
@@ -177,9 +181,9 @@ export async function squadsLeaderboard(req, res) {
               r.is_og,
               r.status,
               count(s.wallet_address) filter (where coalesce(s.is_active, true) = true)::int as active_member_count,
-              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and s.member_role = 'creator')::int as creators,
-              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and s.member_role = 'trader')::int as traders,
-              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and coalesce(nullif(s.member_role, ''), 'member') not in ('creator', 'trader'))::int as pending
+              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and s.member_role in ('creator', 'both'))::int as creators,
+              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and s.member_role in ('trader', 'both'))::int as traders,
+              count(s.wallet_address) filter (where coalesce(s.is_active, true) = true and coalesce(nullif(s.member_role, ''), 'member') not in ('creator', 'trader', 'both'))::int as pending
          from public.recruiters r
          left join public.wallet_squad_memberships s on s.recruiter_id = r.id
           and lower(s.wallet_address) <> lower(r.wallet_address)
