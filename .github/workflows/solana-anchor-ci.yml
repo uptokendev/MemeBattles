@@ -84,7 +84,14 @@ jobs:
 
       - name: Build Solana programs
         shell: bash
-        run: anchor build --no-idl 2>&1 | tail -n 180
+        run: |
+          build_log="$(mktemp)"
+          anchor build --no-idl 2>&1 | tee "$build_log" | tail -n 180
+          if grep -Eq 'Stack offset of [0-9]+ exceeded max offset of [0-9]+' "$build_log"; then
+            echo "::error::Solana SBF stack-frame limit exceeded during anchor build"
+            grep -E 'Stack offset of [0-9]+ exceeded max offset of [0-9]+' "$build_log" || true
+            exit 1
+          fi
 
       - name: Generate launchpad Anchor IDL
         shell: bash
