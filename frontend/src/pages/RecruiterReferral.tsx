@@ -9,13 +9,15 @@ import {
   captureRecruiterReferral,
   fetchRecruiterReplacements,
   fetchWalletAttributionState,
-  getRecruiterReferralMemberRole,
-  setRecruiterReferralMemberRole,
-  syncWalletRecruiterAttribution,
-  type RecruiterMemberRole,
   type RecruiterSummary,
   type WalletAttributionPublicState,
 } from "@/lib/recruiterApi";
+import {
+  getRecruiterJoinRole,
+  setRecruiterJoinRole,
+  syncRecruiterJoinRole,
+  type RecruiterJoinRole,
+} from "@/lib/recruiterJoinRole";
 
 type ReferralState = {
   recruiter: null | {
@@ -46,7 +48,7 @@ export default function RecruiterReferral() {
   const [syncRetry, setSyncRetry] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
-  const [memberRole, setMemberRole] = useState<RecruiterMemberRole | null>(() => getRecruiterReferralMemberRole());
+  const [memberRole, setMemberRole] = useState<RecruiterJoinRole | null>(() => getRecruiterJoinRole());
   const [state, setState] = useState<ReferralState | null>(null);
   const [walletState, setWalletState] = useState<WalletAttributionPublicState | null>(null);
   const [replacementSuggestions, setReplacementSuggestions] = useState<RecruiterSummary[]>([]);
@@ -55,8 +57,8 @@ export default function RecruiterReferral() {
   // Capture the recruiter invite independently from wallet attachment. The referral
   // API only needs the browser session/fingerprint at this stage. Sending a Solana
   // address here made older recruiter API deployments reject the entire invite page
-  // before the user could select Creator/Trader. Wallet attribution happens in the
-  // separate effect below after a role is known.
+  // before the user could select a role. Wallet attribution happens in the separate
+  // effect below after a role is known.
   useEffect(() => {
     let cancelled = false;
     const recruiterCode = code.trim();
@@ -127,12 +129,12 @@ export default function RecruiterReferral() {
     setSyncingRole(true);
     void (async () => {
       try {
-        const result = await syncWalletRecruiterAttribution(connectedAccount, memberRole);
+        const result = await syncRecruiterJoinRole(connectedAccount, memberRole);
         const nextWalletState = await fetchWalletAttributionState(connectedAccount).catch(() => null);
         if (cancelled) return;
         setWalletState(nextWalletState);
         if (result?.linked) setRoleMessage(`Wallet linked as ${memberRole}. Your squad connection is active.`);
-        else if (result?.needsRoleSelection) setRoleMessage("Choose creator or trader first, then connect again.");
+        else if (result?.needsRoleSelection) setRoleMessage("Choose creator, trader, or both first, then connect again.");
         else if (result?.blocked) setRoleMessage(result.reason || "This wallet cannot be linked as a squad member.");
         else setRoleMessage(result?.reason || "Wallet connected. Recruiter attribution is being checked.");
       } catch (err: any) {
@@ -165,9 +167,9 @@ export default function RecruiterReferral() {
     return Boolean(capturedCode && linkedCode && capturedCode === linkedCode && walletState?.squadState === "in_squad");
   }, [code, state?.recruiter?.code, walletState]);
 
-  const chooseRole = async (role: RecruiterMemberRole) => {
+  const chooseRole = async (role: RecruiterJoinRole) => {
     setMemberRole(role);
-    setRecruiterReferralMemberRole(role);
+    setRecruiterJoinRole(role);
     lastSyncedKey.current = "";
     setRoleMessage(connectedAccount
       ? `Selected ${role}. Syncing ${connectedAccount.slice(0, 6)}...${connectedAccount.slice(-4)} to the recruiter squad...`
@@ -176,7 +178,7 @@ export default function RecruiterReferral() {
 
   const handleWalletAction = async () => {
     if (!memberRole) {
-      setRoleMessage("Choose creator or trader first. Then connect the wallet for that role.");
+      setRoleMessage("Choose creator, trader, or both first. Then connect the wallet for that role.");
       return;
     }
 
@@ -205,7 +207,7 @@ export default function RecruiterReferral() {
             {loading ? "Saving your recruiter invite..." : "Join this recruiter's squad"}
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
-            Step 1: choose whether this wallet joins as a creator or trader. Step 2: connect a wallet if one is not already connected.
+            Step 1: choose whether this wallet joins as a creator, trader, or both. Step 2: connect a wallet if one is not already connected.
             MemeWarzone uses the active connected wallet and locks it to this recruiter squad when the referral window is valid.
           </p>
         </div>
@@ -254,6 +256,14 @@ export default function RecruiterReferral() {
                     disabled={syncingRole}
                   >
                     Trader
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={memberRole === "both" ? "default" : "outline"}
+                    onClick={() => void chooseRole("both")}
+                    disabled={syncingRole}
+                  >
+                    Both
                   </Button>
                 </div>
               </div>
