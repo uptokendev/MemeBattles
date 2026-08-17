@@ -99,6 +99,15 @@ The Airdrop workflow also consumes its existing payout/eligibility variables (fo
 
 The `mwz_rewards_treasury` program deployed at the configured devnet program id must contain the branch version being certified.
 
+The lane bootstrap is intentionally split into small transactions so Anchor/Solana account validation stays below the SBF 4096-byte stack-frame limit. On a fresh deployment, initialize in this order and skip any PDA that already exists:
+
+1. `initialize_route_state` — creates `route_state` and `protocol_vault` and sets the operator/native-price route state;
+2. `initialize_monthly_league_vault` — creates the monthly League vault;
+3. `initialize_recruiter_vault` — creates the Recruiter vault;
+4. `initialize_squad_vault` — creates the Squad vault.
+
+Do not reintroduce or use the removed one-shot `initialize_lanes` account context. All PDA seed constants and resulting addresses are unchanged; only the initialization transaction boundary changed.
+
 Before the first claim, verify:
 
 1. program upgrade succeeded on devnet;
