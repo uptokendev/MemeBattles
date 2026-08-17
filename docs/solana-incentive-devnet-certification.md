@@ -55,29 +55,45 @@ Create these GitHub environments if they do not yet exist:
 - `recruiter-solana-devnet`
 - `squad-solana-devnet`
 
-Each must contain devnet-only secrets required by its workflow:
+The current workflows read these exact environment secret names:
 
 ```text
-DATABASE_URL
-SOLANA_RPC_URL
+REWARDS_DATABASE_URL
+SOLANA_REWARDS_RPC_URL
 SOLANA_REWARDS_AUTHORITY_SECRET_KEY
 ```
 
-Set the common program variable:
+`airdrop-solana-devnet` additionally needs:
+
+```text
+AIRDROP_DRAW_SEED_SECRET
+```
+
+Set this common environment/repository variable for all three lanes:
 
 ```text
 SOLANA_REWARDS_TREASURY_PROGRAM_ID=2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX
 ```
 
-Enable only the lane being exercised:
+For a non-dry-run manual workflow dispatch, the scripts intentionally still require the matching automation guard variable to be true:
 
 ```text
-AIRDROP_SOLANA_ENABLED=true
-RECRUITER_SOLANA_ENABLED=true
-SQUAD_SOLANA_ENABLED=true
+SOLANA_AIRDROP_AUTOMATION_ENABLED=true
+SOLANA_RECRUITER_AUTOMATION_ENABLED=true
+SOLANA_SQUAD_AUTOMATION_ENABLED=true
 ```
 
-Set the matching `*_PUBLISH_ONCHAIN=true` only when intentionally publishing the devnet root. Keep unrelated lanes disabled while preparing data.
+Only set the variable for the lane being exercised. The workflow's `dry_run=false` is the publication switch; there is no separate `*_PUBLISH_ONCHAIN` flag in these workflows.
+
+If the devnet RewardsConfig still has claims disabled, either enable claims explicitly before the test or, in these **devnet-only** environments, deliberately set:
+
+```text
+SOLANA_REWARDS_AUTO_ENABLE_CLAIMS=true
+```
+
+Do not carry that convenience setting into mainnet without an explicit rollout decision.
+
+The Airdrop workflow also consumes its existing payout/eligibility variables (for example `SOLANA_AIRDROP_WEEKLY_DISTRIBUTION_BPS` and related thresholds). Use the intended devnet certification values; do not rely on a production environment implicitly.
 
 ## 4. Rewards treasury devnet prerequisite
 
