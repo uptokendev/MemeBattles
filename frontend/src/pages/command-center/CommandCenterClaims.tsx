@@ -10,7 +10,6 @@ import { RecruiterNativePayoutsPanel } from "@/components/command-center/Recruit
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { addressesMatch } from "@/lib/address";
-import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
 import {
   REWARD_DISTRIBUTOR_ABI,
@@ -20,6 +19,7 @@ import {
 } from "@/lib/rewardDistributor";
 import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
 import { submitSolanaAirdropClaim } from "@/lib/solanaRewardClaim";
+import { getConfiguredSolanaRewardChainId, isSolanaRewardChainId } from "@/lib/solanaRewardNetwork";
 import { signSolanaMessage } from "@/lib/solanaWallet";
 
 type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
@@ -94,7 +94,7 @@ function hasActiveSquad(value?: string | null, recruiterLinkState?: string | nul
 }
 
 function isSolana(chainId?: number | null) {
-  return chainId === SOLANA_CHAIN_ID;
+  return isSolanaRewardChainId(chainId);
 }
 
 function formatNativeAmount(raw: string, chainId?: number | null, symbol?: string | null) {
@@ -210,11 +210,12 @@ export default function CommandCenterClaims() {
   const [claimingType, setClaimingType] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRecruiterFlag, setIsRecruiterFlag] = useState(false);
+  const rewardChainId = isSolana(chainId) ? getConfiguredSolanaRewardChainId() : chainId;
 
   const loadClaims = () => {
     setLoading(true);
     setMessage(null);
-    void fetchRewardClaims({ walletAddress, chainId, limit: 100 })
+    void fetchRewardClaims({ walletAddress, chainId: rewardChainId, limit: 100 })
       .then((next) => setItems(Array.isArray(next) ? next : []))
       .catch((err: any) => setMessage(String(err?.message || err || "Failed to load rewards")))
       .finally(() => setLoading(false));
@@ -223,7 +224,7 @@ export default function CommandCenterClaims() {
   useEffect(() => {
     loadClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletAddress, chainId]);
+  }, [walletAddress, rewardChainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,8 +245,8 @@ export default function CommandCenterClaims() {
   }, [walletAddress]);
 
   const rewardCards = useMemo(
-    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag, chainId),
-    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag, chainId],
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag, rewardChainId),
+    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag, rewardChainId],
   );
   const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState, isRecruiterFlag);
 
@@ -253,8 +254,8 @@ export default function CommandCenterClaims() {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
     if (!claimable.length) return;
 
-    const hasSolana = claimable.some((item) => item.chainId === SOLANA_CHAIN_ID);
-    const hasEvm = claimable.some((item) => item.chainId !== SOLANA_CHAIN_ID);
+    const hasSolana = claimable.some((item) => isSolanaRewardChainId(item.chainId));
+    const hasEvm = claimable.some((item) => !isSolanaRewardChainId(item.chainId));
     if (hasSolana && hasEvm) {
       setMessage("Mixed-chain rewards must be claimed separately.");
       return;
@@ -291,7 +292,7 @@ export default function CommandCenterClaims() {
     try {
       const intent = await createRewardClaimIntent({
         walletAddress,
-        chainId,
+        chainId: rewardChainId,
         rewardLedgerIds,
         signer: signer || undefined,
         signMessage: solanaSignMessage,
@@ -321,7 +322,7 @@ export default function CommandCenterClaims() {
 
           await recordRewardClaimTx({
             walletAddress,
-            chainId,
+            chainId: rewardChainId,
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             txHash,
@@ -334,7 +335,7 @@ export default function CommandCenterClaims() {
           const reason = String(err?.shortMessage || err?.message || "Wallet claim transaction failed");
           await recordRewardClaimFailure({
             walletAddress,
-            chainId,
+            chainId: rewardChainId,
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             error: reason,
@@ -358,7 +359,7 @@ export default function CommandCenterClaims() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterCard title={isSolana(chainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
+      <CommandCenterCard title={isSolana(rewardChainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
         {message ? <div className="mb-3 rounded-xl border border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">{message}</div> : null}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {
