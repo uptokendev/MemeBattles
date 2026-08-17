@@ -8,7 +8,7 @@ import {
 
 const LANE = "recruiter";
 
-async function loadRecipients(client) {
+async function loadRecipients(client, chainId) {
   const { rows } = await client.query(
     `with claimable as (
        select recruiter_id,
@@ -16,6 +16,7 @@ async function loadRecipients(client) {
               sum(amount_raw)::numeric(78,0) as amount_raw
          from public.recruiter_reward_ledger
         where chain = 'solana'
+          and chain_id = $1
           and token = 'SOL'
           and status in ('claimable','retriable')
           and claim_id is null
@@ -35,6 +36,7 @@ async function loadRecipients(client) {
        join wallet w using (recruiter_id)
       where c.amount_raw > 0
       order by c.recruiter_id`,
+    [chainId],
   );
   return rows.map((row) => ({
     recruiterId: String(row.recruiter_id),
@@ -115,8 +117,8 @@ async function main() {
       return console.log(`[recruiter-solana] resumed ${displayEpochId}: ${publication.batchAddress}`);
     }
 
-    const recipients = await loadRecipients(client);
-    if (!recipients.length) return console.log(`[recruiter-solana] no claimable SOL recruiter rewards for ${displayEpochId}`);
+    const recipients = await loadRecipients(client, chainId);
+    if (!recipients.length) return console.log(`[recruiter-solana] no claimable SOL recruiter rewards for ${displayEpochId} on chain ${chainId}`);
     const plan = buildSolanaLaneMerklePlan(LANE, epochId, recipients);
     const addresses = solanaLaneAddresses(LANE, epochId);
 
@@ -156,18 +158,26 @@ async function main() {
           [recipient.recruiterId, recipient.amountLamports, recipient.walletAddress],
         );
         const recruiterClaimId = claimResult.rows[0].id;
-        await client.query(
+        const lockedLedger = await client.query(
           `update public.recruiter_reward_ledger
               set status='created', claim_id=$2, updated_at=now()
-            where id = any($1) and claim_id is null and status in ('claimable','retriable')`,
-          [recipient.ledgerIds, recruiterClaimId],
+            where id = any($1)
+              and chain = 'solana'
+              and chain_id = $3
+              and claim_id is null
+              and status in ('claimable','retriable')
+            returning id`,
+          [recipient.ledgerIds, recruiterClaimId, chainId],
         );
+        if (lockedLedger.rowCount !== recipient.ledgerIds.length) {
+          throw new Error(`Recruiter ledger chain-scope changed while preparing ${recipient.recruiterId}; refusing publication`);
+        }
         const claimAddresses = solanaLaneAddresses(LANE, epochId, recipient.walletAddress);
         await client.query(
           `insert into public.solana_reward_lane_claims
             (batch_id,lane,source_type,source_ref,wallet_address,amount_lamports,merkle_leaf,merkle_proof,claim_receipt_address,status,metadata)
            values ($1,$2,'recruiter_reward_claim',$3,$4,$5::numeric,$6,$7::jsonb,$8,'prepared',$9::jsonb)`,
-          [batch.id, LANE, String(recruiterClaimId), recipient.walletAddress, recipient.amountLamports, plan.leaves[index], JSON.stringify(plan.proofs[index]), claimAddresses.claimReceiptAddress, JSON.stringify({ recruiterId: recipient.recruiterId, ledgerIds: recipient.ledgerIds, displayEpochId })],
+          [batch.id, LANE, String(recruiterClaimId), recipient.walletAddress, recipient.amountLamports, plan.leaves[index], JSON.stringify(plan.proofs[index]), claimAddresses.claimReceiptAddress, JSON.stringify({ recruiterId: recipient.recruiterId, ledgerIds: recipient.ledgerIds, chainId, displayEpochId })],
         );
       }
       await client.query("commit");
