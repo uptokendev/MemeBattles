@@ -52,6 +52,11 @@ export default function RecruiterReferral() {
   const [replacementSuggestions, setReplacementSuggestions] = useState<RecruiterSummary[]>([]);
   const lastSyncedKey = useRef("");
 
+  // Capture the recruiter invite independently from wallet attachment. The referral
+  // API only needs the browser session/fingerprint at this stage. Sending a Solana
+  // address here made older recruiter API deployments reject the entire invite page
+  // before the user could select Creator/Trader. Wallet attribution happens in the
+  // separate effect below after a role is known.
   useEffect(() => {
     let cancelled = false;
     const recruiterCode = code.trim();
@@ -65,9 +70,8 @@ export default function RecruiterReferral() {
     setError(null);
     void (async () => {
       try {
-        const [result, currentWalletState, replacementData] = await Promise.all([
-          captureRecruiterReferral(recruiterCode, connectedAccount || null),
-          connectedAccount ? fetchWalletAttributionState(connectedAccount).catch(() => null) : Promise.resolve(null),
+        const [result, replacementData] = await Promise.all([
+          captureRecruiterReferral(recruiterCode, null),
           fetchRecruiterReplacements(recruiterCode, 3).catch(() => ({ replacements: [] })),
         ]);
 
@@ -76,7 +80,6 @@ export default function RecruiterReferral() {
           recruiter: result.recruiter ?? null,
           expiresAt: result.referral?.expiresAt ?? null,
         });
-        setWalletState(currentWalletState);
         setReplacementSuggestions(Array.isArray(replacementData?.replacements) ? replacementData.replacements : []);
       } catch (err: any) {
         if (cancelled) return;
@@ -89,7 +92,29 @@ export default function RecruiterReferral() {
     return () => {
       cancelled = true;
     };
-  }, [code, connectedAccount]);
+  }, [code]);
+
+  // Wallet state is supplemental. A bad/stale wallet lookup must never make the
+  // recruiter invite itself unusable.
+  useEffect(() => {
+    let cancelled = false;
+    if (!connectedAccount) {
+      setWalletState(null);
+      return;
+    }
+
+    void fetchWalletAttributionState(connectedAccount)
+      .then((nextWalletState) => {
+        if (!cancelled) setWalletState(nextWalletState);
+      })
+      .catch(() => {
+        if (!cancelled) setWalletState(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedAccount]);
 
   useEffect(() => {
     if (!connectedAccount || !memberRole) return;
