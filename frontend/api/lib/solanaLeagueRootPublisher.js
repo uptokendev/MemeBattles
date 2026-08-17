@@ -101,7 +101,7 @@ async function enableClaimsIfAllowed(connection, signer, programId, configAddres
   const state = await assertAuthority(connection, configAddress, signer);
   if (state.claimsEnabled) return null;
   if (!boolEnv("SOLANA_REWARDS_AUTO_ENABLE_CLAIMS", false)) {
-    throw new Error("Solana rewards claims are disabled on-chain; authorized launch setup must enable them before League publication");
+    throw new Error("Solana rewards root is published but claims remain disabled; set SOLANA_REWARDS_AUTO_ENABLE_CLAIMS=true only when ready to open Devnet claims");
   }
   const ix = new TransactionInstruction({
     programId: new PublicKey(programId),
@@ -144,16 +144,18 @@ export async function publishSolanaLeagueRoot({ chainId, period, epochStart, win
   if (cid !== 101 && cid !== 102) throw new Error("Solana League publisher only supports chain IDs 101/102");
   if (!Array.isArray(winners) || !winners.length) throw new Error("No Solana League winners supplied");
 
+  const periodNorm = String(period || "").toLowerCase();
+  if (periodNorm !== "weekly" && periodNorm !== "monthly") throw new Error("League period must be weekly or monthly");
   const epochDate = new Date(epochStart);
   if (Number.isNaN(epochDate.getTime())) throw new Error("Invalid League epochStart");
   const epochStartSec = Math.floor(epochDate.getTime() / 1000);
   const programId = env("SOLANA_REWARDS_TREASURY_PROGRAM_ID", REWARDS_TREASURY_PROGRAM_ID);
   const vaults = deriveRewardsVaults(programId);
-  const epochAddress = deriveLeagueEpochPda(period, epochStartSec, programId);
+  const epochAddress = deriveLeagueEpochPda(periodNorm, epochStartSec, programId);
 
   const leaves = winners.map((winner) => leagueLeaf({
     epochStartSec,
-    period,
+    period: periodNorm,
     category: winner.category,
     rank: Number(winner.rank),
     recipient: String(winner.recipient),
@@ -165,61 +167,57 @@ export async function publishSolanaLeagueRoot({ chainId, period, epochStart, win
 
   const connection = connectionFor(cid);
   const signer = secretKey();
-  const claimsEnableTxHash = await enableClaimsIfAllowed(connection, signer, programId, vaults.config);
+  await assertAuthority(connection, vaults.config, signer);
 
   const existing = await readEpoch(connection, epochAddress);
+  let txHash = null;
+  let alreadyExisted = false;
   if (existing?.initialized) {
-    if (existing.period !== (String(period).toLowerCase() === "monthly" ? 1 : 0)) throw new Error("Existing League epoch period mismatch");
+    if (existing.period !== (periodNorm === "monthly" ? 1 : 0)) throw new Error("Existing League epoch period mismatch");
     if (existing.epochStart !== BigInt(epochStartSec)) throw new Error("Existing League epoch start mismatch");
     if (existing.root.toLowerCase() !== root.toLowerCase()) throw new Error("Existing League epoch has a different Merkle root");
     if (existing.totalLamports !== totalLamports) throw new Error("Existing League epoch has a different total");
     if (!existing.sealed) throw new Error("Existing League epoch is not sealed");
-    return {
-      alreadyExisted: true,
-      txHash: null,
-      claimsEnableTxHash,
-      root,
-      totalLamports: totalLamports.toString(),
-      epochStartSec,
-      programId,
-      configAddress: vaults.config,
-      vaultAddress: vaults.leagueVault,
-      epochAddress,
-    };
+    alreadyExisted = true;
+  } else {
+    const vaultBalance = await connection.getBalance(new PublicKey(vaults.leagueVault), "confirmed");
+    const rentMinimum = await connection.getMinimumBalanceForRentExemption(9, "confirmed");
+    if (BigInt(Math.max(0, vaultBalance - rentMinimum)) < totalLamports) {
+      throw new Error(`Solana LeagueVault has insufficient distributable SOL for ${totalLamports} lamports`);
+    }
+
+    const periodCode = periodNorm === "monthly" ? 1 : 0;
+    const data = Buffer.concat([
+      discriminator("set_league_epoch_root"),
+      Buffer.from([periodCode]),
+      i64le(epochStartSec),
+      rootBytes(root),
+      u64le(totalLamports),
+    ]);
+    const ix = new TransactionInstruction({
+      programId: new PublicKey(programId),
+      keys: [
+        { pubkey: signer.publicKey, isSigner: true, isWritable: true },
+        { pubkey: new PublicKey(vaults.config), isSigner: false, isWritable: false },
+        { pubkey: new PublicKey(vaults.leagueVault), isSigner: false, isWritable: false },
+        { pubkey: new PublicKey(epochAddress), isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data,
+    });
+    txHash = await send(connection, signer, ix);
+    const confirmed = await readEpoch(connection, epochAddress);
+    if (!confirmed?.sealed || confirmed.root.toLowerCase() !== root.toLowerCase() || confirmed.totalLamports !== totalLamports) {
+      throw new Error("Solana League root transaction confirmed but epoch account did not reconcile");
+    }
   }
 
-  const vaultBalance = await connection.getBalance(new PublicKey(vaults.leagueVault), "confirmed");
-  const rentMinimum = await connection.getMinimumBalanceForRentExemption(9, "confirmed");
-  if (BigInt(Math.max(0, vaultBalance - rentMinimum)) < totalLamports) {
-    throw new Error(`Solana LeagueVault has insufficient distributable SOL for ${totalLamports} lamports`);
-  }
+  // Open claims only after the epoch root is known to exist and reconcile on-chain.
+  // This ordering prevents a publication failure from globally enabling claims first.
+  const claimsEnableTxHash = await enableClaimsIfAllowed(connection, signer, programId, vaults.config);
 
-  const periodCode = String(period).toLowerCase() === "monthly" ? 1 : 0;
-  const data = Buffer.concat([
-    discriminator("set_league_epoch_root"),
-    Buffer.from([periodCode]),
-    i64le(epochStartSec),
-    rootBytes(root),
-    u64le(totalLamports),
-  ]);
-  const ix = new TransactionInstruction({
-    programId: new PublicKey(programId),
-    keys: [
-      { pubkey: signer.publicKey, isSigner: true, isWritable: true },
-      { pubkey: new PublicKey(vaults.config), isSigner: false, isWritable: false },
-      { pubkey: new PublicKey(vaults.leagueVault), isSigner: false, isWritable: false },
-      { pubkey: new PublicKey(epochAddress), isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    data,
-  });
-  const txHash = await send(connection, signer, ix);
-  const confirmed = await readEpoch(connection, epochAddress);
-  if (!confirmed?.sealed || confirmed.root.toLowerCase() !== root.toLowerCase() || confirmed.totalLamports !== totalLamports) {
-    throw new Error("Solana League root transaction confirmed but epoch account did not reconcile");
-  }
   return {
-    alreadyExisted: false,
+    alreadyExisted,
     txHash,
     claimsEnableTxHash,
     root,
