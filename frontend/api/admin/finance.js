@@ -1,9 +1,11 @@
 import { pool } from "../../server/db.js";
 import { requireAdminOrOps } from "../lib/apiAuth.js";
 
-const TEST_NETWORKS = new Map([
-  [97, { chain: "bnb", decimals: 18, asset: "BNB" }],
-  [101, { chain: "solana", decimals: 9, asset: "SOL" }],
+const FINANCE_NETWORKS = new Map([
+  [56, { chain: "bnb", decimals: 18, asset: "BNB", environment: "mainnet" }],
+  [97, { chain: "bnb", decimals: 18, asset: "BNB", environment: "testnet" }],
+  [101, { chain: "solana", decimals: 9, asset: "SOL", environment: "devnet" }],
+  [102, { chain: "solana", decimals: 9, asset: "SOL", environment: "mainnet" }],
 ]);
 
 function methodAllowed(req, res) {
@@ -41,7 +43,7 @@ function safeAsset(value, fallback) {
 
 function selectedNetwork(req) {
   const chainId = Number(req.query?.chainId ?? 97);
-  const network = TEST_NETWORKS.get(chainId);
+  const network = FINANCE_NETWORKS.get(chainId);
   if (!network) return null;
   return { chainId, ...network };
 }
@@ -58,7 +60,9 @@ function rewardState(status) {
 }
 
 function rewardChainCandidates(chainId) {
-  return chainId === 101 ? ["101", "solana"] : [String(chainId)];
+  if (chainId === 101) return ["101", "solana", "solana-devnet"];
+  if (chainId === 102) return ["102", "solana-mainnet"];
+  return [String(chainId)];
 }
 
 async function financeRewards(req, res, network) {
@@ -124,7 +128,7 @@ async function financeRewards(req, res, network) {
 }
 
 async function financeRevenue(req, res, network) {
-  if (network.chainId !== 97) {
+  if (network.chain !== "bnb") {
     return res.status(200).json({
       schemaVersion: "finance-revenue-v1",
       generatedAt: new Date().toISOString(),
@@ -205,24 +209,34 @@ async function financeInventory(req, res, network) {
     });
   };
 
-  if (network.chainId === 97) {
-    add("bnb97-factory", "contract", "Launch Factory", process.env.FACTORY_ADDRESS_97 || process.env.VITE_FACTORY_ADDRESS_97, "campaign creation authority");
-    add("bnb97-treasury-router", "contract", "Treasury Router", process.env.TREASURY_ROUTER_ADDRESS_97 || process.env.VITE_TREASURY_ROUTER_ADDRESS_97, "fee route authority");
-    add("bnb97-treasury-vault", "vault", "Treasury Vault", process.env.TREASURY_VAULT_ADDRESS_97 || process.env.VITE_TREASURY_VAULT_ADDRESS_97, "treasury custody");
-    add("bnb97-protocol-revenue", "vault", "Protocol Revenue Vault", process.env.PROTOCOL_REVENUE_VAULT_ADDRESS_97 || process.env.VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_97, "protocol revenue custody");
-    add("bnb97-community-rewards", "vault", "Community Rewards Vault", process.env.COMMUNITY_REWARDS_VAULT_ADDRESS_97 || process.env.VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_97, "community reward obligations");
-    add("bnb97-recruiter-rewards", "vault", "Recruiter Rewards Vault", process.env.RECRUITER_REWARDS_VAULT_ADDRESS_97 || process.env.VITE_RECRUITER_REWARDS_VAULT_ADDRESS_97, "recruiter reward obligations");
-    add("bnb97-lp-locker", "contract", "Permanent LP Locker", process.env.PERMANENT_LP_LOCKER_ADDRESS_97 || process.env.LP_LOCKER_ADDRESS_97 || process.env.VITE_PERMANENT_LP_LOCKER_ADDRESS_97, "permanently locked graduation liquidity");
-    add("bnb97-vote-treasury", "contract", "UP Vote Treasury", process.env.VOTE_TREASURY_ADDRESS_97 || process.env.VITE_VOTE_TREASURY_ADDRESS_97, "verified paid-vote collection");
+  if (network.chain === "bnb") {
+    const suffix = network.chainId === 97 ? "97" : "56";
+    const env = (name) => process.env[`${name}_${suffix}`] || process.env[`VITE_${name}_${suffix}`] || (network.chainId === 56 ? process.env[name] || process.env[`VITE_${name}`] : undefined);
+    add(`bnb${network.chainId}-factory`, "contract", "Launch Factory", env("FACTORY_ADDRESS"), "campaign creation authority");
+    add(`bnb${network.chainId}-treasury-router`, "contract", "Treasury Router", env("TREASURY_ROUTER_ADDRESS"), "fee route authority");
+    add(`bnb${network.chainId}-treasury-vault`, "vault", "Treasury Vault", env("TREASURY_VAULT_ADDRESS"), "treasury custody");
+    add(`bnb${network.chainId}-protocol-revenue`, "vault", "Protocol Revenue Vault", env("PROTOCOL_REVENUE_VAULT_ADDRESS"), "protocol revenue custody");
+    add(`bnb${network.chainId}-community-rewards`, "vault", "Community Rewards Vault", env("COMMUNITY_REWARDS_VAULT_ADDRESS"), "community reward obligations");
+    add(`bnb${network.chainId}-recruiter-rewards`, "vault", "Recruiter Rewards Vault", env("RECRUITER_REWARDS_VAULT_ADDRESS"), "recruiter reward obligations");
+    add(`bnb${network.chainId}-lp-locker`, "contract", "Permanent LP Locker", env("PERMANENT_LP_LOCKER_ADDRESS") || env("LP_LOCKER_ADDRESS"), "permanently locked graduation liquidity");
+    add(`bnb${network.chainId}-vote-treasury`, "contract", "UP Vote Treasury", env("VOTE_TREASURY_ADDRESS"), "verified paid-vote collection");
+  } else if (network.chainId === 101) {
+    add("sol101-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_DEVNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
+    add("sol101-operator", "wallet", "Solana LP Operator", process.env.SOLANA_DEVNET_OPERATOR_ADDRESS || process.env.SOLANA_OPERATOR_ADDRESS || process.env.SOLANA_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   } else {
-    add("sol101-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
-    add("sol101-operator", "wallet", "Solana LP Operator", process.env.SOLANA_OPERATOR_ADDRESS || process.env.SOLANA_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
+    add("sol102-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_MAINNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_MAINNET_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
+    add("sol102-operator", "wallet", "Solana LP Operator", process.env.SOLANA_MAINNET_OPERATOR_ADDRESS || process.env.SOLANA_MAINNET_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   }
 
   return res.status(200).json({
     schemaVersion: "finance-inventory-v1",
     generatedAt: new Date().toISOString(),
     source: "dashboard-api",
+    network: {
+      chainId: network.chainId,
+      chain: network.chain,
+      environment: network.environment,
+    },
     items,
   });
 }
@@ -234,7 +248,7 @@ export default async function financeAdmin(req, res) {
 
   const network = selectedNetwork(req);
   if (!network) {
-    return res.status(400).json({ ok: false, error: "Finance test network must be chainId 97 or 101." });
+    return res.status(400).json({ ok: false, error: "Finance network must be chainId 56, 97, 101, or 102." });
   }
 
   const pathname = String(req.path || new URL(req.url, "http://localhost").pathname);
