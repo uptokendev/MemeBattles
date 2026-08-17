@@ -80,8 +80,17 @@ async function openClaimsAfterPublication(client, batch, publication) {
               claimable_at=coalesce(claimable_at,now()),
               expires_at=to_timestamp($3::bigint),
               claim_error=null,
+              metadata=coalesce(rl.metadata,'{}'::jsonb) || jsonb_build_object(
+                'solanaRewardLane',
+                jsonb_build_object(
+                  'lane', src.lane,
+                  'epochId', lane_batch.epoch_id::text,
+                  'proof', src.merkle_proof
+                )
+              ),
               updated_at=now()
          from public.solana_reward_lane_claims src
+         join public.solana_reward_lane_batches lane_batch on lane_batch.id=src.batch_id
         where src.batch_id=$1
           and src.source_type='reward_ledger'
           and src.source_ref=rl.id::text
