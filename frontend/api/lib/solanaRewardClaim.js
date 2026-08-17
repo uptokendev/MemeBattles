@@ -5,6 +5,9 @@ const CONFIG_SEED = Buffer.from("rewards_config");
 const AIRDROP_VAULT_SEED = Buffer.from("airdrop_vault");
 const AIRDROP_BATCH_SEED = Buffer.from("airdrop_batch");
 const AIRDROP_CLAIM_SEED = Buffer.from("airdrop_claim");
+const SQUAD_VAULT_SEED = Buffer.from("squad_vault");
+const SQUAD_BATCH_SEED = Buffer.from("squad_batch");
+const SQUAD_CLAIM_SEED = Buffer.from("squad_claim");
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 
@@ -43,15 +46,15 @@ function firstString(source, keys) {
 }
 
 function proofFromMeta(meta) {
-  const raw = Array.isArray(meta.merkleProof)
+  const raw = Array.isArray(meta?.merkleProof)
     ? meta.merkleProof
-    : Array.isArray(meta.proof)
+    : Array.isArray(meta?.proof)
       ? meta.proof
-      : Array.isArray(meta.claimProof)
+      : Array.isArray(meta?.claimProof)
         ? meta.claimProof
         : [];
   const proof = raw.map((item) => String(item || "").trim()).filter(Boolean);
-  return { proof, valid: proof.length >= 0 && proof.every((item) => BYTES32_RE.test(item)) };
+  return { proof, valid: proof.every((item) => BYTES32_RE.test(item)) };
 }
 
 export function solanaRewardsProgramId() {
@@ -70,22 +73,100 @@ export function solanaRewardRpcUrl(chainId = 101) {
   return String(candidates.find(Boolean) || "").split(",").map((item) => item.trim()).find(Boolean) || "";
 }
 
+function unavailableCall(row, chainId, rewardType, amount) {
+  return {
+    rewardLedgerId: String(row.id),
+    chainId,
+    tokenSymbol: row.token_symbol || "SOL",
+    mode: "solana_unavailable",
+    enabled: false,
+    reason: `SOLANA_${rewardType.toUpperCase() || "REWARD"}_CLAIM_NOT_WIRED`,
+    amount,
+  };
+}
+
+function buildSolanaSquadCall(row, meta, chainId, amount) {
+  const laneMeta = meta?.solanaRewardLane && typeof meta.solanaRewardLane === "object"
+    ? meta.solanaRewardLane
+    : {};
+  const lane = firstString(laneMeta, ["lane"]) || "squad";
+  const epochId = firstString(laneMeta, ["epochId", "onchainEpochId"]);
+  const recipient = String(row.wallet_address || "").trim();
+  const { proof, valid: proofValid } = proofFromMeta(laneMeta);
+  const amountValid = /^\d+$/.test(amount) && BigInt(amount) > 0n;
+  const epochValid = /^-?\d+$/.test(epochId);
+  let walletBytes = null;
+  try { walletBytes = publicKeyBytes(recipient); } catch {}
+
+  let reason = null;
+  if (lane !== "squad") reason = "INVALID_SOLANA_REWARD_LANE";
+  else if (!walletBytes || walletBytes.length !== 32) reason = "INVALID_SOLANA_RECIPIENT";
+  else if (!epochValid) reason = "MISSING_SOLANA_EPOCH_ID";
+  else if (!proofValid) reason = "INVALID_MERKLE_PROOF";
+  else if (!amountValid) reason = "AMOUNT_ZERO";
+
+  const programId = solanaRewardsProgramId();
+  if (reason) {
+    return {
+      rewardLedgerId: String(row.id),
+      chainId,
+      tokenSymbol: row.token_symbol || "SOL",
+      mode: "solana_airdrop",
+      kind: "solana_reward_lane",
+      lane: "squad",
+      instruction: "claim_squad",
+      enabled: false,
+      reason,
+      amount,
+      proof,
+      recipient,
+      epochId,
+      programId,
+    };
+  }
+
+  const configAddress = findProgramAddressSync([CONFIG_SEED], programId).publicKey;
+  const vaultAddress = findProgramAddressSync([SQUAD_VAULT_SEED], programId).publicKey;
+  const batchAddress = findProgramAddressSync([SQUAD_BATCH_SEED, i64le(epochId)], programId).publicKey;
+  const claimReceiptAddress = findProgramAddressSync([
+    SQUAD_CLAIM_SEED,
+    i64le(epochId),
+    walletBytes,
+  ], programId).publicKey;
+
+  return {
+    rewardLedgerId: String(row.id),
+    chainId,
+    tokenSymbol: row.token_symbol || "SOL",
+    // Keep the compatibility envelope expected by the existing Claim Center.
+    // `kind` is the authoritative dispatcher for the actual Solana instruction.
+    mode: "solana_airdrop",
+    kind: "solana_reward_lane",
+    lane: "squad",
+    instruction: "claim_squad",
+    enabled: true,
+    reason: null,
+    programId,
+    configAddress,
+    vaultAddress,
+    batchAddress,
+    claimReceiptAddress,
+    epochId,
+    amount,
+    proof,
+    recipient,
+    explorerTxBase: "https://explorer.solana.com/tx/",
+  };
+}
+
 export function buildSolanaRewardCall(row) {
   const meta = metadata(row);
   const rewardType = String(row?.reward_type || "").toLowerCase();
   const chainId = Number(row?.chain) || Number(meta.chainId) || 101;
   const amount = String(row?.amount ?? "0");
-  if (rewardType !== "airdrop") {
-    return {
-      rewardLedgerId: String(row.id),
-      chainId,
-      tokenSymbol: row.token_symbol || "SOL",
-      mode: "solana_unavailable",
-      enabled: false,
-      reason: `SOLANA_${rewardType.toUpperCase() || "REWARD"}_CLAIM_NOT_WIRED`,
-      amount,
-    };
-  }
+
+  if (rewardType === "squad") return buildSolanaSquadCall(row, meta, chainId, amount);
+  if (rewardType !== "airdrop") return unavailableCall(row, chainId, rewardType, amount);
 
   const program = firstString(meta, ["program", "rewardProgram"]);
   const programCode = Number(meta.programCode ?? PROGRAM_CODES[program]);
@@ -108,7 +189,7 @@ export function buildSolanaRewardCall(row) {
   if (reason) {
     return {
       rewardLedgerId: String(row.id), chainId, tokenSymbol: row.token_symbol || "SOL",
-      mode: "solana_airdrop", enabled: false, reason, amount, proof, recipient, epochId, programCode, programId,
+      mode: "solana_airdrop", kind: "solana_airdrop", enabled: false, reason, amount, proof, recipient, epochId, programCode, programId,
     };
   }
 
@@ -127,6 +208,7 @@ export function buildSolanaRewardCall(row) {
     chainId,
     tokenSymbol: row.token_symbol || "SOL",
     mode: "solana_airdrop",
+    kind: "solana_airdrop",
     enabled: true,
     reason: null,
     programId,
@@ -139,7 +221,7 @@ export function buildSolanaRewardCall(row) {
     amount,
     proof,
     recipient,
-    explorerTxBase: chainId === 102 ? "https://explorer.solana.com/tx/" : "https://explorer.solana.com/tx/",
+    explorerTxBase: "https://explorer.solana.com/tx/",
   };
 }
 
@@ -275,7 +357,8 @@ export async function verifySolanaRewardClaim({ row, txHash, walletAddress }) {
     batchAddress: call.batchAddress,
     claimReceiptAddress: call.claimReceiptAddress,
     epochId: call.epochId,
-    programCode: call.programCode,
+    programCode: call.kind === "solana_airdrop" ? call.programCode : null,
+    lane: call.kind === "solana_reward_lane" ? call.lane : null,
     amount: call.amount,
   };
 }
