@@ -41,26 +41,62 @@ function weiToDecimal(value) {
   }
 }
 
+function resolveIndexerBaseUrl() {
+  const raw = String(
+    process.env.RAILWAY_INDEXER_URL ||
+      process.env.RAILWAY_API_BASE_URL ||
+      process.env.VITE_REALTIME_API_BASE ||
+      "",
+  ).trim();
+  if (!raw) return "";
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withProtocol.replace(/\/+$/, "");
+}
+
+async function proxySolanaLpFees(q, chainId, limit) {
+  const base = resolveIndexerBaseUrl();
+  if (!base) {
+    const error = new Error("Realtime Indexer URL is not configured on the Frontend API.");
+    error.status = 503;
+    throw error;
+  }
+
+  const params = new URLSearchParams({ chainId: String(chainId), limit: String(limit) });
+  const campaign = String(q.campaign || "").trim();
+  const creator = String(q.creator || "").trim();
+  if (campaign) params.set("campaign", campaign);
+  if (creator) params.set("creator", creator);
+
+  const upstream = await fetch(`${base}/api/dashboard/lp-fees?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await upstream.json().catch(() => null);
+  if (!upstream.ok) {
+    const error = new Error(payload?.error || `Realtime Indexer LP read failed (${upstream.status}).`);
+    error.status = upstream.status;
+    throw error;
+  }
+  if (!payload || payload.ok !== true || Number(payload.chainId) !== chainId) {
+    const error = new Error("Realtime Indexer returned an invalid Solana LP response.");
+    error.status = 502;
+    throw error;
+  }
+  return payload;
+}
+
 async function authorize(req, res) {
-  // Prefer dashboard admin session; allow shared ops key for testnet tools.
   const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
   const provided = String(req.headers["x-ops-key"] || getQuery(req).opsKey || "").trim();
   if (opsKey && provided && opsKey === provided) return { mode: "ops-key" };
 
   const q = getQuery(req);
   const chainId = Number(q.chainId ?? 97);
+  if (chainId === 97) return { mode: "testnet-open" };
 
-  // Testnet convenience: chain 97 is open-read for fee monitoring (no secrets returned).
-  if (chainId === 97) {
-    return { mode: "testnet-open" };
-  }
-
-  // Creator self-read on mainnet: Profile / Command Center pass ?creator=0x…
-  // Only return that creator's rows (no full inventory). No secrets in response.
   const creator = toAddr(q.creator);
-  if (creator) {
-    return { mode: "creator-self", creator };
-  }
+  if (creator) return { mode: "creator-self", creator };
 
   const admin = await requireDashboardAdmin(req, res);
   if (!admin) return null;
@@ -68,8 +104,6 @@ async function authorize(req, res) {
 }
 
 async function loadGraduatedRows(chainId, limit) {
-  // Prefer market-state pair when present; still list every graduated campaign
-  // so admins can see DDY-style rows before Topaz registration is complete.
   try {
     const { rows } = await pool.query(
       `select c.chain_id,
@@ -100,7 +134,6 @@ async function loadGraduatedRows(chainId, limit) {
     );
     return rows;
   } catch (error) {
-    // Fallback without market state / optional columns.
     if (error?.code === "42P01" || error?.code === "42703") {
       try {
         const { rows } = await pool.query(
@@ -141,7 +174,6 @@ function resolveLockerAddress(chainId) {
   if (isAddress(per)) return ethers.getAddress(per);
   const generic = String(process.env.LP_LOCKER_ADDRESS || process.env.VITE_LP_LOCKER_ADDRESS || "").trim();
   if (isAddress(generic)) return ethers.getAddress(generic);
-  // Clean-slate testnet locker (known deploy).
   if (Number(chainId) === 97) return "0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a";
   return null;
 }
@@ -153,10 +185,7 @@ async function readPoolFees({ provider, lockerAddress, pairAddress, creatorAddre
   const info = await locker.poolInfo(pairAddress);
   const registered = Boolean(info?.registered ?? info?.[9]);
   if (!registered) {
-    return {
-      registered: false,
-      note: "Pool not registered on PermanentLpLocker yet (graduation handoff may be incomplete).",
-    };
+    return { registered: false, note: "Pool not registered on PermanentLpLocker yet (graduation handoff may be incomplete)." };
   }
 
   const token0 = String(info.token0 || info[4] || "").toLowerCase();
@@ -209,7 +238,6 @@ async function readPoolFees({ provider, lockerAddress, pairAddress, creatorAddre
     creatorFeeBps,
     protocolFeeBps,
     lockedLpAmount: String(info.lockedLpAmount ?? info[6] ?? "0"),
-    // Unharvested fees sitting on the Topaz pool for the locker.
     unharvested: {
       token0Raw: claimable0.toString(),
       token1Raw: claimable1.toString(),
@@ -220,7 +248,6 @@ async function readPoolFees({ provider, lockerAddress, pairAddress, creatorAddre
       protocolShareToken0: weiToDecimal((BigInt(claimable0) * BigInt(protocolFeeBps)) / 10000n),
       protocolShareToken1: weiToDecimal((BigInt(claimable1) * BigInt(protocolFeeBps)) / 10000n),
     },
-    // Already harvested and paid/routed.
     harvestedLifetime: {
       creatorToken0: weiToDecimal(creatorPaid0),
       creatorToken1: weiToDecimal(creatorPaid1),
@@ -231,7 +258,6 @@ async function readPoolFees({ provider, lockerAddress, pairAddress, creatorAddre
       protocolToken0Raw: protocolRouted0.toString(),
       protocolToken1Raw: protocolRouted1.toString(),
     },
-    // Failed transfer leftovers (still claimable).
     pending: {
       creatorToken0: weiToDecimal(pendingCreator0),
       creatorToken1: weiToDecimal(pendingCreator1),
@@ -253,13 +279,16 @@ export default async function handler(req, res) {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 97);
     const limit = Math.max(1, Math.min(50, Number(q.limit ?? 20)));
+
+    if (chainId === 101 || chainId === 102) {
+      const payload = await proxySolanaLpFees(q, chainId, limit);
+      return json(res, 200, payload);
+    }
+
     const pairFilter = toAddr(q.pair || q.pool);
     const campaignFilter = toAddr(q.campaign);
-
     const lockerAddress = resolveLockerAddress(chainId);
-    if (!lockerAddress) {
-      return json(res, 400, { error: "LP locker address not configured for this chain." });
-    }
+    if (!lockerAddress) return json(res, 400, { error: "LP locker address not configured for this chain." });
 
     const provider = await getServerReadProvider(chainId);
     const locker = new ethers.Contract(lockerAddress, LOCKER_ABI, provider);
@@ -272,12 +301,8 @@ export default async function handler(req, res) {
     if (auth?.mode === "creator-self" && auth.creator) {
       rows = rows.filter((r) => String(r.creator_address || "").toLowerCase() === auth.creator);
     }
-    if (campaignFilter) {
-      rows = rows.filter((r) => String(r.campaign_address || "").toLowerCase() === campaignFilter);
-    }
-    if (pairFilter) {
-      rows = rows.filter((r) => String(r.dex_pair_address || "").toLowerCase() === pairFilter);
-    }
+    if (campaignFilter) rows = rows.filter((r) => String(r.campaign_address || "").toLowerCase() === campaignFilter);
+    if (pairFilter) rows = rows.filter((r) => String(r.dex_pair_address || "").toLowerCase() === pairFilter);
 
     const items = [];
     for (const row of rows) {
@@ -295,32 +320,15 @@ export default async function handler(req, res) {
       };
 
       if (!pair) {
-        items.push({
-          ...base,
-          fees: {
-            registered: false,
-            note: "No dex_pair_address in campaign_market_state — run graduation reconciler / Topaz pool indexer.",
-          },
-        });
+        items.push({ ...base, fees: { registered: false, note: "No dex_pair_address in campaign_market_state — run graduation reconciler / Topaz pool indexer." } });
         continue;
       }
 
       try {
-        const fees = await readPoolFees({
-          provider,
-          lockerAddress,
-          pairAddress: pair,
-          creatorAddress: base.creatorAddress,
-        });
+        const fees = await readPoolFees({ provider, lockerAddress, pairAddress: pair, creatorAddress: base.creatorAddress });
         items.push({ ...base, fees });
       } catch (error) {
-        items.push({
-          ...base,
-          fees: {
-            registered: false,
-            error: String(error?.message || error),
-          },
-        });
+        items.push({ ...base, fees: { registered: false, error: String(error?.message || error) } });
       }
     }
 
@@ -342,6 +350,6 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error("[api/dashboard/lp-fees]", error);
-    return json(res, 500, { error: String(error?.message || "Server error") });
+    return json(res, Number(error?.status || 500), { error: String(error?.message || "Server error") });
   }
 }
