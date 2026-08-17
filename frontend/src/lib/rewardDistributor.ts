@@ -85,6 +85,8 @@ export type RewardClaimIntent = {
   calls: RewardClaimCall[];
 };
 
+const onchainConfirmedPending = new Set<string>();
+
 async function parseJson(response: Response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error || payload?.code || `Request failed (${response.status})`);
@@ -163,23 +165,34 @@ export async function recordRewardClaimTx(params: {
   auth?: WalletActionAuthPayload | null;
 }) {
   const auth = await maybeSignClaimAuth("claim_record", params, params);
-  const response = await fetch(buildRealtimeApiUrl("/api/rewards/me/claim-record"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      walletAddress: params.walletAddress,
-      address: params.walletAddress,
-      chainId: params.chainId ?? null,
-      rewardLedgerIds: params.rewardLedgerIds,
-      claimIntentId: params.claimIntentId || null,
-      txHash: params.txHash,
-      status: "claimed",
-      reason: "Wallet claim transaction confirmed",
-      ...(auth || {}),
-      auth: auth || undefined,
-    }),
-  });
-  return [await parseJson(response)];
+  try {
+    const response = await fetch(buildRealtimeApiUrl("/api/rewards/me/claim-record"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        walletAddress: params.walletAddress,
+        address: params.walletAddress,
+        chainId: params.chainId ?? null,
+        rewardLedgerIds: params.rewardLedgerIds,
+        claimIntentId: params.claimIntentId || null,
+        txHash: params.txHash,
+        status: "claimed",
+        reason: "Wallet claim transaction confirmed",
+        ...(auth || {}),
+        auth: auth || undefined,
+      }),
+    });
+    const payload = await parseJson(response);
+    params.rewardLedgerIds.forEach((id) => onchainConfirmedPending.delete(String(id)));
+    return [payload];
+  } catch (error) {
+    // The wallet transaction is already confirmed before this function is called.
+    // Never let the UI downgrade that entitlement to `failed`: doing so could invite
+    // a second submission while the chain receipt already prevents/reports a claim.
+    params.rewardLedgerIds.forEach((id) => onchainConfirmedPending.add(String(id)));
+    const detail = String((error as any)?.message || error || "dashboard write failed");
+    throw new Error(`Claim confirmed on-chain, but dashboard reconciliation is pending. Do not submit another claim. ${detail}`);
+  }
 }
 
 export async function recordRewardClaimFailure(params: {
@@ -192,6 +205,15 @@ export async function recordRewardClaimFailure(params: {
   signMessage?: (message: string) => Promise<string>;
   auth?: WalletActionAuthPayload | null;
 }) {
+  const hasConfirmedPending = params.rewardLedgerIds.some((id) => onchainConfirmedPending.has(String(id)));
+  if (hasConfirmedPending) {
+    return [{
+      ok: false,
+      reconciliationPending: true,
+      reason: "On-chain transaction confirmed; preserving claim_pending until the server reconciles it.",
+    }];
+  }
+
   const auth = params.walletAddress
     ? await maybeSignClaimAuth("claim_record", params, params)
     : null;
