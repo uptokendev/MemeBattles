@@ -1,14 +1,16 @@
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { submitSolanaRewardLaneClaim } from "@/lib/solanaRewardLaneClaim";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 
-export type SolanaAirdropClaimCall = {
+type SolanaAirdropOnlyClaimCall = {
   rewardLedgerId: string;
   chainId: number;
   tokenSymbol: "SOL" | string;
   mode: "solana_airdrop";
+  kind?: "solana_airdrop";
   enabled: boolean;
   reason: string | null;
   programId: string;
@@ -23,6 +25,31 @@ export type SolanaAirdropClaimCall = {
   recipient: string;
   explorerTxBase?: string;
 };
+
+type SolanaLaneClaimCall = {
+  rewardLedgerId: string;
+  chainId: number;
+  tokenSymbol: "SOL" | string;
+  // Compatibility envelope used by the existing Claim Center dispatcher.
+  mode: "solana_airdrop";
+  kind: "solana_reward_lane";
+  lane: "squad";
+  instruction: "claim_squad";
+  enabled: boolean;
+  reason: string | null;
+  programId: string;
+  configAddress: string;
+  vaultAddress: string;
+  batchAddress: string;
+  claimReceiptAddress: string;
+  epochId: string;
+  amount: string;
+  proof: string[];
+  recipient: string;
+  explorerTxBase?: string;
+};
+
+export type SolanaAirdropClaimCall = SolanaAirdropOnlyClaimCall | SolanaLaneClaimCall;
 
 function hexToBytes(value: string): Uint8Array {
   const hex = String(value || "").trim().replace(/^0x/i, "");
@@ -81,8 +108,25 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 export async function submitSolanaAirdropClaim(call: SolanaAirdropClaimCall): Promise<string> {
-  if (!call.enabled) throw new Error(call.reason || "Solana airdrop claim is not ready.");
+  if (!call.enabled) throw new Error(call.reason || "Solana reward claim is not ready.");
   if (Number(call.chainId) !== SOLANA_CHAIN_ID) throw new Error("Wrong Solana chain for reward claim.");
+
+  if (call.kind === "solana_reward_lane") {
+    return submitSolanaRewardLaneClaim({
+      lane: call.lane,
+      chainId: call.chainId,
+      epochId: call.epochId,
+      amount: call.amount,
+      proof: call.proof,
+      programId: call.programId,
+      configAddress: call.configAddress,
+      vaultAddress: call.vaultAddress,
+      batchAddress: call.batchAddress,
+      claimReceiptAddress: call.claimReceiptAddress,
+      recipient: call.recipient,
+      instruction: call.instruction,
+    });
+  }
 
   const provider = getSolanaProvider();
   if (!provider?.publicKey || typeof provider.signTransaction !== "function") {
