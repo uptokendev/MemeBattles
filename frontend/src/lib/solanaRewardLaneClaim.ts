@@ -1,4 +1,4 @@
-import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getSolanaRewardRpcUrl, isSolanaRewardChainId } from "@/lib/solanaRewardNetwork";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
@@ -57,7 +57,7 @@ function concat(parts: Uint8Array[]) {
 }
 
 export async function submitSolanaRewardLaneClaim(call: SolanaRewardLaneClaim): Promise<string> {
-  if (Number(call.chainId) !== SOLANA_CHAIN_ID) throw new Error("Wrong Solana chain for reward claim");
+  if (!isSolanaRewardChainId(call.chainId)) throw new Error("Wrong Solana chain for reward claim");
   const provider = getSolanaProvider();
   if (!provider?.publicKey || typeof provider.signTransaction !== "function") throw new Error("Connect a Solana wallet that can sign this reward claim");
   const winner = String(provider.publicKey.toString?.() || provider.publicKey);
@@ -73,8 +73,7 @@ export async function submitSolanaRewardLaneClaim(call: SolanaRewardLaneClaim): 
 
   const web3 = await loadSolanaWeb3();
   const { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram } = web3;
-  const rpc = String(import.meta.env.VITE_SOLANA_RPC || "").trim() || getPublicRpcUrl(SOLANA_CHAIN_ID) || "https://api.mainnet-beta.solana.com";
-  const connection = new Connection(rpc, "confirmed");
+  const connection = new Connection(getSolanaRewardRpcUrl(call.chainId), "confirmed");
   const ix = new TransactionInstruction({
     programId: new PublicKey(call.programId),
     keys: [
