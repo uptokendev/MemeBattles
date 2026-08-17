@@ -18,7 +18,7 @@ import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { getPublicTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
@@ -478,7 +478,7 @@ async function verifyAndHydrateLive(items: FeaturedItem[], chainId: number): Pro
 export function SafeFeaturedCampaigns({ className = "" }: { className?: string }) {
   const navigate = useNavigate();
   const [chainId] = useSelectedFeedChainId();
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+  const { price: nativeUsd } = useNativeUsdPrice(chainId);
   const [items, setItems] = useState<FeaturedItem[]>([]);
   const [sponsor, setSponsor] = useState<FeaturedSponsorPlacement | null>(null);
   const [applyOpen, setApplyOpen] = useState(false);
@@ -673,8 +673,8 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
       .slice(0, 20)
       .map((item) => {
         const mcapBnb = Number(item.marketcapBnb ?? NaN);
-        const mcapUsd = Number.isFinite(mcapBnb) && mcapBnb > 0 && Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0
-          ? mcapBnb * Number(bnbUsd)
+        const mcapUsd = Number.isFinite(mcapBnb) && mcapBnb > 0 && Number.isFinite(Number(nativeUsd)) && Number(nativeUsd) > 0
+          ? mcapBnb * Number(nativeUsd)
           : null;
 
         return {
@@ -683,7 +683,7 @@ export function SafeFeaturedCampaigns({ className = "" }: { className?: string }
           athUsdLabel: getAthLabel(item.chainId, item.campaignAddress, mcapUsd),
         };
       });
-  }, [items, bnbUsd]);
+  }, [items, nativeUsd]);
 
   return (
     <div className={`w-full ${className}`}>
