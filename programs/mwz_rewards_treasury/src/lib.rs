@@ -51,8 +51,8 @@ pub mod mwz_rewards_treasury {
         Ok(())
     }
 
-    pub fn initialize_lanes(
-        ctx: Context<InitializeLanes>,
+    pub fn initialize_route_state(
+        ctx: Context<InitializeRouteState>,
         operator: Pubkey,
         native_usd_micros: u64,
     ) -> Result<()> {
@@ -64,6 +64,24 @@ pub mod mwz_rewards_treasury {
         state.operator_filled_usd_micros = 0;
         state.native_usd_micros = native_usd_micros;
         state.bump = ctx.bumps.route_state;
+        Ok(())
+    }
+
+    pub fn initialize_monthly_league_vault(
+        _ctx: Context<InitializeMonthlyLeagueVault>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn initialize_recruiter_vault(
+        _ctx: Context<InitializeRecruiterVault>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn initialize_squad_vault(
+        _ctx: Context<InitializeSquadVault>,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -301,21 +319,48 @@ pub mod mwz_rewards_treasury {
 }
 
 #[derive(Accounts)]
-pub struct InitializeLanes<'info> {
+pub struct InitializeRouteState<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(seeds = [REWARDS_CONFIG_SEED], bump, has_one = authority)]
+    #[account(seeds = [REWARDS_CONFIG_SEED], bump = config.bump, has_one = authority)]
     pub config: Box<Account<'info, RewardsConfig>>,
     #[account(init, payer = authority, space = 8 + RouteState::SIZE, seeds = [ROUTE_STATE_SEED], bump)]
     pub route_state: Box<Account<'info, RouteState>>,
-    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [MONTHLY_LEAGUE_VAULT_SEED], bump)]
-    pub monthly_league_vault: Box<Account<'info, VaultState>>,
-    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [RECRUITER_VAULT_SEED], bump)]
-    pub recruiter_vault: Box<Account<'info, VaultState>>,
-    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [SQUAD_VAULT_SEED], bump)]
-    pub squad_vault: Box<Account<'info, VaultState>>,
     #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [PROTOCOL_VAULT_SEED], bump)]
     pub protocol_vault: Box<Account<'info, VaultState>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeMonthlyLeagueVault<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(seeds = [REWARDS_CONFIG_SEED], bump = config.bump, has_one = authority)]
+    pub config: Box<Account<'info, RewardsConfig>>,
+    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [MONTHLY_LEAGUE_VAULT_SEED], bump)]
+    pub monthly_league_vault: Box<Account<'info, VaultState>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeRecruiterVault<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(seeds = [REWARDS_CONFIG_SEED], bump = config.bump, has_one = authority)]
+    pub config: Box<Account<'info, RewardsConfig>>,
+    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [RECRUITER_VAULT_SEED], bump)]
+    pub recruiter_vault: Box<Account<'info, VaultState>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeSquadVault<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(seeds = [REWARDS_CONFIG_SEED], bump = config.bump, has_one = authority)]
+    pub config: Box<Account<'info, RewardsConfig>>,
+    #[account(init, payer = authority, space = 8 + VaultState::SIZE, seeds = [SQUAD_VAULT_SEED], bump)]
+    pub squad_vault: Box<Account<'info, VaultState>>,
     pub system_program: Program<'info, System>,
 }
 
