@@ -1,10 +1,14 @@
 import type { QueryResult } from "pg";
 import { pool } from "../db.js";
+import { normalizeWalletAddress } from "../walletAddress.js";
 import { getCurrentWeeklyEpoch, getEpochById, type RewardEpochRecord } from "./epochs.js";
 import { applyCappedRedistribution, bigintToString, computeBpsCap, computeSquadEffectiveScore, parseNumericBigInt } from "./rewardMath.js";
 
 const MEMBER_CAP_BPS = 4000;
 const GLOBAL_SQUAD_CAP_BPS = 1500;
+const MIN_QUALIFYING_MEMBERS = 3;
+const BNB_NATIVE_UNIT_RAW = 10n ** 18n;
+const SOLANA_NATIVE_UNIT_RAW = 10n ** 9n;
 
 export type SquadMemberAllocationRecord = {
   walletAddress: string;
@@ -104,24 +108,23 @@ function mustIso(value: unknown, label: string): string {
   return iso;
 }
 
-function normalizeAddress(value: unknown): string {
-  const address = String(value ?? "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) throw new Error(`Invalid wallet address: ${String(value ?? "")}`);
-  return address;
+function nativeUnitRaw(chainId: number): bigint {
+  return chainId === 101 || chainId === 102 ? SOLANA_NATIVE_UNIT_RAW : BNB_NATIVE_UNIT_RAW;
 }
 
 function asReasonCodes(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)) : [];
 }
 
-async function getEpochForPreview(epochId: number | null | undefined, db: DbLike): Promise<RewardEpochRecord> {
+async function getEpochForPreview(epochId: number | null | undefined, chainId: number, db: DbLike): Promise<RewardEpochRecord> {
   if (epochId != null) {
     const epoch = await getEpochById(epochId, db);
     if (!epoch) throw new Error(`Reward epoch ${epochId} not found`);
+    if (epoch.chainId !== chainId) throw new Error(`Reward epoch ${epochId} belongs to chain ${epoch.chainId}, not ${chainId}`);
     return epoch;
   }
 
-  const current = await getCurrentWeeklyEpoch(97, db).catch(() => null);
+  const current = await getCurrentWeeklyEpoch(chainId, db).catch(() => null);
   if (current) {
     const hasResults = await db.query(
       `select 1
@@ -137,16 +140,18 @@ async function getEpochForPreview(epochId: number | null | undefined, db: DbLike
   const r = await db.query(
     `select e.*
        from public.epochs e
-      where exists (
-        select 1
-          from public.eligibility_results er
-         where er.epoch_id = e.id
-           and er.program = 'squad'
-      )
+      where e.chain_id = $1
+        and exists (
+          select 1
+            from public.eligibility_results er
+           where er.epoch_id = e.id
+             and er.program = 'squad'
+        )
       order by e.end_at desc, e.id desc
       limit 1`,
+    [chainId],
   );
-  if (!r.rows[0]) throw new Error("No squad epoch with eligibility results found");
+  if (!r.rows[0]) throw new Error(`No squad epoch with eligibility results found for chain ${chainId}`);
   const row = r.rows[0];
   return {
     id: asNumber(row.id),
@@ -180,7 +185,7 @@ async function loadSquadMemberSnapshots(epochId: number, db: DbLike): Promise<Ra
   const r = await db.query(
     `with member_activity as (
        select
-         lower(m.wallet_address) as wallet_address,
+         m.wallet_address,
          m.recruiter_id,
          rec.code as recruiter_code,
          rec.display_name as recruiter_display_name,
@@ -218,7 +223,7 @@ async function loadSquadMemberSnapshots(epochId: number, db: DbLike): Promise<Ra
   );
 
   return r.rows.map((row: any) => ({
-    walletAddress: normalizeAddress(row.wallet_address),
+    walletAddress: normalizeWalletAddress(row.wallet_address),
     recruiterId: asNumber(row.recruiter_id),
     recruiterCode: row.recruiter_code ? String(row.recruiter_code) : null,
     recruiterDisplayName: row.recruiter_display_name ? String(row.recruiter_display_name) : null,
@@ -235,6 +240,7 @@ async function loadSquadMemberSnapshots(epochId: number, db: DbLike): Promise<Ra
 export function computeSquadAllocationModel(
   globalPoolAmount: bigint,
   members: RawMemberSnapshot[],
+  chainId = 97,
 ): { squads: ComputedSquad[]; carryoverAmount: bigint } {
   const byRecruiter = new Map<number, ComputedSquad>();
 
@@ -268,10 +274,14 @@ export function computeSquadAllocationModel(
     byRecruiter.set(member.recruiterId, current);
   }
 
+  const unit = nativeUnitRaw(chainId);
   const squads = Array.from(byRecruiter.values())
     .map((squad) => ({
       ...squad,
-      effectiveScore: computeSquadEffectiveScore(squad.rawScore),
+      effectiveScore:
+        squad.eligibleMemberCount >= MIN_QUALIFYING_MEMBERS
+          ? computeSquadEffectiveScore(squad.rawScore, unit)
+          : 0n,
     }))
     .sort((a, b) => {
       if (a.recruiterId === b.recruiterId) return 0;
@@ -299,7 +309,7 @@ export function computeSquadAllocationModel(
     squad.globalCapApplied = squadAmount >= squadCap && squadCap > 0n;
 
     const eligibleMembers = squad.members.filter((member) => member.isEligible && member.score > 0n);
-    if (squadAmount <= 0n || eligibleMembers.length === 0) {
+    if (squadAmount <= 0n || eligibleMembers.length < MIN_QUALIFYING_MEMBERS) {
       carryoverAmount += squadAmount;
       continue;
     }
@@ -325,14 +335,18 @@ export function computeSquadAllocationModel(
   return { squads, carryoverAmount };
 }
 
-export async function getSquadAllocationPreview(epochId?: number | null, db: DbLike = pool): Promise<SquadAllocationPreview> {
-  const epoch = await getEpochForPreview(epochId, db);
+export async function getSquadAllocationPreview(
+  epochId?: number | null,
+  db: DbLike = pool,
+  chainId = 97,
+): Promise<SquadAllocationPreview> {
+  const epoch = await getEpochForPreview(epochId, chainId, db);
   const [globalPoolAmount, snapshots] = await Promise.all([
     loadSquadPoolAmount(epoch.id, db),
     loadSquadMemberSnapshots(epoch.id, db),
   ]);
 
-  const model = computeSquadAllocationModel(globalPoolAmount, snapshots);
+  const model = computeSquadAllocationModel(globalPoolAmount, snapshots, epoch.chainId);
 
   return {
     epoch,
