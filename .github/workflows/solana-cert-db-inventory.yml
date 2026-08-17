@@ -1,0 +1,42 @@
+name: Solana Certification DB Inventory
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - "frontend/scripts/incentive-cert/inspect-solana-cert-db.mjs"
+      - ".github/workflows/solana-cert-db-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: airdrop-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax-check inventory
+        run: node --check scripts/incentive-cert/inspect-solana-cert-db.mjs
+
+      - name: Inspect certification DB schema and aggregate chain state
+        run: node scripts/incentive-cert/inspect-solana-cert-db.mjs
