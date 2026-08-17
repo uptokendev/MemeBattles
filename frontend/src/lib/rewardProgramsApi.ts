@@ -152,6 +152,27 @@ export type SquadMemberItem = {
   updatedAt: string | null;
 };
 
+export type SolanaRewardReconciliationResult = {
+  walletAddress: string;
+  chainId: number;
+  requestedCount: number;
+  checkedCount: number;
+  reconciledCount: number;
+  items: Array<{
+    rewardLedgerId: string;
+    status: string;
+    txHash?: string | null;
+    claimReceiptAddress?: string | null;
+    slot?: number | null;
+  }>;
+  unresolved: Array<{
+    rewardLedgerId: string;
+    reason: string;
+    code: string;
+  }>;
+  reconciledAt: string;
+};
+
 export async function fetchRewardsMe(params: {
   walletAddress: string;
   chainId?: number | null;
@@ -175,7 +196,7 @@ export async function fetchRewardsMe(params: {
   };
 }
 
-export async function fetchRewardClaims(params: {
+async function fetchRewardClaimsRaw(params: {
   walletAddress: string;
   chainId?: number | null;
   rewardType?: string | null;
@@ -189,6 +210,75 @@ export async function fetchRewardClaims(params: {
   })}`));
   const json = await parseJson(res);
   return Array.isArray(json?.items) ? json.items as RewardLedgerItem[] : [];
+}
+
+export async function reconcileSolanaRewardClaims(params: {
+  walletAddress: string;
+  chainId: number;
+  rewardLedgerIds: string[];
+}): Promise<SolanaRewardReconciliationResult> {
+  const res = await fetch(buildRealtimeApiUrl("/api/rewards"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "reconcile-solana-claims",
+      walletAddress: params.walletAddress,
+      chainId: params.chainId,
+      rewardLedgerIds: params.rewardLedgerIds,
+    }),
+  });
+  return parseJson(res) as Promise<SolanaRewardReconciliationResult>;
+}
+
+export async function fetchRewardClaims(params: {
+  walletAddress: string;
+  chainId?: number | null;
+  rewardType?: string | null;
+  limit?: number;
+}): Promise<RewardLedgerItem[]> {
+  const initial = await fetchRewardClaimsRaw(params);
+  const chainId = Number(params.chainId || 0);
+  if (![101, 102].includes(chainId)) return initial;
+
+  const stale = initial.filter((item) =>
+    (item.status === "claim_pending" || item.status === "failed") &&
+    (item.rewardType === "airdrop" || item.rewardType === "squad")
+  );
+  if (!stale.length) return initial;
+
+  try {
+    const reconciliation = await reconcileSolanaRewardClaims({
+      walletAddress: params.walletAddress,
+      chainId,
+      rewardLedgerIds: stale.slice(0, 10).map((item) => item.id),
+    });
+
+    if (reconciliation.reconciledCount > 0) {
+      // A confirmed chain claim was recovered and the canonical ledger was repaired.
+      // Re-read so the Command Center cannot render the stale reward as claimable/pending.
+      return fetchRewardClaimsRaw(params);
+    }
+
+    // If a deterministic receipt exists but its settlement transaction cannot currently
+    // be strictly verified, fail safe in the browser: keep the reward pending rather than
+    // inviting a retry. The DB remains unchanged until the server can prove the payment.
+    const blocked = new Set(
+      reconciliation.unresolved
+        .filter((item) => item.code !== "SOLANA_CLAIM_RECEIPT_MISSING")
+        .map((item) => item.rewardLedgerId),
+    );
+    if (blocked.size) {
+      return initial.map((item) => blocked.has(item.id)
+        ? { ...item, status: "claim_pending", claimError: "On-chain reconciliation is pending." }
+        : item);
+    }
+  } catch (error) {
+    // Loading the Claim Center must remain available during an RPC/API outage. Existing
+    // claim_pending rows are already non-clickable and on-chain receipt PDAs prevent replay.
+    console.warn("[rewardProgramsApi] Solana claim reconciliation deferred:", error);
+  }
+
+  return initial;
 }
 
 export async function requestRewardClaim(input: {
