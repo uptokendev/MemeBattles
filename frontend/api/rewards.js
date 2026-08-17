@@ -130,8 +130,7 @@ async function finalizeRecoveredClaim(row, verification) {
 
     await client.query(
       `update public.reward_batch_items
-          set status = 'claimed',
-              updated_at = now()
+          set status = 'claimed'
         where reward_ledger_id = $1::uuid`,
       [current.id],
     );
