@@ -28,9 +28,11 @@ async function find(files, regex) {
 }
 
 const evidence = (root, files) => files.slice(0, 6).map((file) => path.relative(root, file)).join(', ');
+const isCertificationSource = (file) => file.split(path.sep).includes('incentive-cert');
 
 export async function runSourceAudit({ root = process.cwd(), report }) {
   const files = await walk(root);
+  const runtimeFiles = files.filter((file) => !isCertificationSource(file));
   const tests = [
     ['Weekly airdrop production machinery found', 'bnb', /weekly[-_ ]airdrop|airdrop:weekly|run-weekly-airdrop/i],
     ['Solana league-specific claim machinery found', 'solana', /solana[^\n]{0,100}league|league[^\n]{0,100}solana|claim_league/i],
@@ -45,20 +47,23 @@ export async function runSourceAudit({ root = process.cwd(), report }) {
   ];
 
   for (const [name, chain, regex] of tests) {
-    const hits = await find(files, regex);
+    const hits = await find(runtimeFiles, regex);
     report.add(name, hits.length ? 'PASS' : 'BLOCK', { evidence: evidence(root, hits) }, chain);
   }
 
-  const idempotency = await find(files, /CLAIMING|claimed_at|idempot|claimReceipt|claim_receipt/i);
+  const idempotency = await find(runtimeFiles, /CLAIMING|claimed_at|idempot|claimReceipt|claim_receipt/i);
   report.add('Claim idempotency/recovery markers found', idempotency.length ? 'PASS' : 'BLOCK', { evidence: evidence(root, idempotency) }, 'shared');
 
-  const solDisabled = await find(files, /SOLANA_CLAIMS_DISABLED|GENERIC_SOLANA_CLAIMS_DISABLED/i);
+  // Only inspect runtime sources. The certification script deliberately contains these
+  // literal marker names so it can detect regressions; matching itself is not evidence
+  // that the product claim rail is disabled.
+  const solDisabled = await find(runtimeFiles, /SOLANA_CLAIMS_DISABLED|GENERIC_SOLANA_CLAIMS_DISABLED/i);
   report.add(
-    solDisabled.length ? 'Generic Solana claim rail contains explicit disabled marker' : 'No explicit generic Solana-disabled source marker detected',
+    solDisabled.length ? 'Generic Solana claim rail contains explicit disabled marker' : 'No explicit generic Solana-disabled runtime marker detected',
     solDisabled.length ? 'BLOCK' : 'PASS',
     { evidence: evidence(root, solDisabled) },
     'solana',
   );
 
-  return { filesScanned: files.length };
+  return { filesScanned: runtimeFiles.length };
 }
