@@ -184,7 +184,7 @@ async function assertConfig(connection, configAddress, signer) {
 async function ensureClaimsEnabled(connection, signer, addresses) {
   const state = await assertConfig(connection, addresses.configAddress, signer);
   if (state.claimsEnabled) return null;
-  if (!boolEnv("SOLANA_REWARDS_AUTO_ENABLE_CLAIMS", false)) throw new Error("Solana reward claims are disabled on-chain");
+  if (!boolEnv("SOLANA_REWARDS_AUTO_ENABLE_CLAIMS", false)) throw new Error("Solana reward batch is published but claims remain disabled; set SOLANA_REWARDS_AUTO_ENABLE_CLAIMS=true only when ready to open claims");
   const ix = new TransactionInstruction({
     programId: publicKey(addresses.programId),
     keys: [
@@ -220,36 +220,43 @@ export async function publishSolanaRewardLaneBatch({ lane, chainId, epochId, roo
   const addresses = solanaLaneAddresses(lane, epochId);
   const connection = connectionFor(cid);
   const signer = authorityKeypair();
-  const claimsEnableTxHash = await ensureClaimsEnabled(connection, signer, addresses);
+  await assertConfig(connection, addresses.configAddress, signer);
+
   const existing = await readBatch(connection, addresses.batchAddress);
+  let alreadyExisted = false;
+  let txHash = null;
   if (existing) {
     if (!existing.initialized || existing.epochId !== BigInt(epochId) || existing.root.toLowerCase() !== String(root).toLowerCase() || existing.totalLamports !== BigInt(totalLamports) || existing.deadline !== BigInt(deadline)) {
       throw new Error(`Existing ${lane} batch does not match prepared settlement`);
     }
-    return { ...addresses, alreadyExisted: true, txHash: null, claimsEnableTxHash };
+    alreadyExisted = true;
+  } else {
+    const [balance, rent] = await Promise.all([
+      connection.getBalance(publicKey(addresses.vaultAddress), "confirmed"),
+      connection.getMinimumBalanceForRentExemption(VAULT_SIZE, "confirmed"),
+    ]);
+    if (BigInt(Math.max(0, balance - rent)) < BigInt(totalLamports)) throw new Error(`${lane} vault has insufficient distributable SOL`);
+    const ix = new TransactionInstruction({
+      programId: publicKey(addresses.programId),
+      keys: [
+        { pubkey: signer.publicKey, isSigner: true, isWritable: true },
+        { pubkey: publicKey(addresses.configAddress), isSigner: false, isWritable: false },
+        { pubkey: publicKey(addresses.vaultAddress), isSigner: false, isWritable: false },
+        { pubkey: publicKey(addresses.batchAddress), isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: Buffer.concat([discriminator(config.setInstruction), i64le(epochId), rootBytes(root), u64le(totalLamports), i64le(deadline)]),
+    });
+    txHash = await send(connection, signer, ix);
+    const confirmed = await readBatch(connection, addresses.batchAddress);
+    if (!confirmed?.initialized || confirmed.root.toLowerCase() !== String(root).toLowerCase() || confirmed.totalLamports !== BigInt(totalLamports)) {
+      throw new Error(`${lane} batch publication confirmed but did not reconcile`);
+    }
   }
-  const [balance, rent] = await Promise.all([
-    connection.getBalance(publicKey(addresses.vaultAddress), "confirmed"),
-    connection.getMinimumBalanceForRentExemption(VAULT_SIZE, "confirmed"),
-  ]);
-  if (BigInt(Math.max(0, balance - rent)) < BigInt(totalLamports)) throw new Error(`${lane} vault has insufficient distributable SOL`);
-  const ix = new TransactionInstruction({
-    programId: publicKey(addresses.programId),
-    keys: [
-      { pubkey: signer.publicKey, isSigner: true, isWritable: true },
-      { pubkey: publicKey(addresses.configAddress), isSigner: false, isWritable: false },
-      { pubkey: publicKey(addresses.vaultAddress), isSigner: false, isWritable: false },
-      { pubkey: publicKey(addresses.batchAddress), isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    data: Buffer.concat([discriminator(config.setInstruction), i64le(epochId), rootBytes(root), u64le(totalLamports), i64le(deadline)]),
-  });
-  const txHash = await send(connection, signer, ix);
-  const confirmed = await readBatch(connection, addresses.batchAddress);
-  if (!confirmed?.initialized || confirmed.root.toLowerCase() !== String(root).toLowerCase() || confirmed.totalLamports !== BigInt(totalLamports)) {
-    throw new Error(`${lane} batch publication confirmed but did not reconcile`);
-  }
-  return { ...addresses, alreadyExisted: false, txHash, claimsEnableTxHash };
+
+  // Open claims only after this lane's root exists and exactly matches the prepared batch.
+  const claimsEnableTxHash = await ensureClaimsEnabled(connection, signer, addresses);
+  return { ...addresses, alreadyExisted, txHash, claimsEnableTxHash };
 }
 
 function accountText(item) { return typeof item === "string" ? item : String(item?.pubkey || ""); }
