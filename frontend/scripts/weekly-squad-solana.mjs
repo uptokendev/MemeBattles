@@ -118,6 +118,7 @@ async function main() {
 
   const client = await pool.connect();
   let locked = false;
+  let lockKey = "";
   try {
     const epoch = await resolveEpoch(client, chainId);
     const dbEpochId = Number(epoch.id);
@@ -126,7 +127,7 @@ async function main() {
     if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) throw new Error("Invalid Squad epoch dates");
     const onchainEpochId = Math.floor(start.getTime() / 1000);
     const deadline = Math.floor((end.getTime() + envInt("SQUAD_CLAIM_WINDOW_DAYS", 7, { min: 1, max: 90 }) * DAY_MS) / 1000);
-    const lockKey = `mwz-squad-solana:${chainId}:${onchainEpochId}`;
+    lockKey = `mwz-squad-solana:${chainId}:${onchainEpochId}`;
 
     const lock = await client.query("select pg_try_advisory_lock(hashtext($1)) locked", [lockKey]);
     locked = Boolean(lock.rows[0]?.locked);
@@ -220,7 +221,7 @@ async function main() {
     const publication = await publishPrepared(client, batch);
     console.log(`[squad-solana] DB epoch ${dbEpochId} published ${plan.recipients.length} claims at ${publication.batchAddress}`);
   } finally {
-    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [`mwz-squad-solana:${chainId}:${Math.floor(new Date((await resolveEpoch(client, chainId)).start_at).getTime() / 1000)}`]).catch(() => {});
+    if (locked && lockKey) await client.query("select pg_advisory_unlock(hashtext($1))", [lockKey]).catch(() => {});
     client.release();
     await pool.end().catch(() => {});
   }
