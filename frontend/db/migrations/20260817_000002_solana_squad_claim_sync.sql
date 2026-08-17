@@ -22,7 +22,7 @@ update public.reward_ledger rl
 create or replace function public.sync_solana_squad_lane_claim_from_reward_ledger()
 returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = public, pg_temp
 as $$
 begin
@@ -81,8 +81,6 @@ begin
   return new;
 end;
 $$;
-
-revoke all on function public.sync_solana_squad_lane_claim_from_reward_ledger() from public;
 
 drop trigger if exists trg_sync_solana_squad_lane_claim_from_reward_ledger on public.reward_ledger;
 create trigger trg_sync_solana_squad_lane_claim_from_reward_ledger
