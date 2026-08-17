@@ -11,6 +11,7 @@ on:
       - programs/memewarzone_solana/**
       - programs/mwz_rewards_treasury/**
       - scripts/check-solana-v4-idl.mjs
+      - scripts/solana/verify-rewards-program-bytes.mjs
       - frontend/src/lib/solanaCreateAuthorizationV4.ts
       - frontend/src/lib/solanaRewardsTreasury.ts
       - frontend/src/lib/solanaRewardClaim.ts
@@ -122,6 +123,14 @@ jobs:
           test -s target/deploy/mwz_rewards_treasury.so
           test -s target/idl/memewarzone_solana.json
           test -s target/idl/mwz_rewards_treasury.json
+
+      - name: Prove deployed rewards treasury matches this branch build
+        env:
+          SOLANA_REWARDS_RPC_URL: https://api.devnet.solana.com
+          SOLANA_REWARDS_TREASURY_PROGRAM_ID: 2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX
+        run: |
+          node --check scripts/solana/verify-rewards-program-bytes.mjs
+          node scripts/solana/verify-rewards-program-bytes.mjs
 
       - name: Verify V4 generated IDL client boundary
         run: |
