@@ -1,0 +1,31 @@
+{
+  "chainId": 102,
+  "league": {
+    "period": "weekly",
+    "epochStart": "2026-08-17T00:00:00.000Z",
+    "category": "top_earner",
+    "rank": 1,
+    "txHash": "REPLACE_WITH_CONFIRMED_DEVNET_SIGNATURE"
+  },
+  "airdropTrader": {
+    "rewardLedgerId": "00000000-0000-4000-8000-000000000001",
+    "txHash": "REPLACE_WITH_CONFIRMED_DEVNET_SIGNATURE"
+  },
+  "airdropCreator": {
+    "rewardLedgerId": "00000000-0000-4000-8000-000000000002",
+    "txHash": "REPLACE_WITH_CONFIRMED_DEVNET_SIGNATURE"
+  },
+  "recruiter": {
+    "recruiterClaimId": "00000000-0000-4000-8000-000000000003",
+    "txHash": "REPLACE_WITH_CONFIRMED_DEVNET_SIGNATURE"
+  },
+  "squad": {
+    "rewardLedgerId": "00000000-0000-4000-8000-000000000004",
+    "txHash": "REPLACE_WITH_ORIGINAL_CONFIRMED_DEVNET_SIGNATURE"
+  },
+  "operatorChecks": {
+    "wrongWalletRejected": false,
+    "duplicateRejected": false,
+    "squadBrowserClosedAfterConfirmation": false
+  }
+}
