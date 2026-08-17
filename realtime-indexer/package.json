@@ -16,6 +16,7 @@
     "cron:process-reward-expiries": "node --enable-source-maps dist/jobs/processRewardExpiries.js",
     "cron:process-reward-eligibility": "node --enable-source-maps dist/jobs/processRewardEligibility.js",
     "cron:process-reward-reminders": "node --enable-source-maps dist/jobs/processRewardReminders.js",
+    "cron:process-solana-squad-epoch": "node --enable-source-maps dist/jobs/processSolanaSquadEpoch.js",
     "simulate:phase7": "node --enable-source-maps dist/jobs/runPhase7Simulation.js",
     "test:phase4-7": "tsx --test src/tests/phase4-phase7.test.ts",
     "test:wtr": "tsx --test src/tests/marketContinuity.test.ts src/tests/topazPoolCore.test.ts src/tests/graduationSearch.test.ts",
