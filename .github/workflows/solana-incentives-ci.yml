@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - "frontend/api/leagueRouter.js"
+      - "frontend/api/rewards.js"
       - "frontend/api/lib/solanaLeagueClaimVerification.js"
       - "frontend/api/lib/solanaLeagueClaimVerification.test.mjs"
       - "frontend/api/lib/solanaRewardClaim.js"
       - "frontend/api/lib/solanaRewardClaim.test.mjs"
       - "frontend/api/lib/solanaRewardLane.js"
+      - "frontend/api/lib/solanaRewardReconciliation.js"
+      - "frontend/api/lib/solanaRewardReconciliation.test.mjs"
       - "frontend/scripts/weekly-airdrop/**"
       - "frontend/scripts/weekly-recruiter-solana.mjs"
       - "frontend/scripts/weekly-squad-solana.mjs"
@@ -16,6 +19,7 @@ on:
       - "frontend/src/lib/solanaRewardClaim.ts"
       - "frontend/src/lib/solanaRewardLaneClaim.ts"
       - "frontend/src/lib/rewardDistributor.ts"
+      - "frontend/src/lib/rewardProgramsApi.ts"
       - "realtime-indexer/src/rewards/**"
       - "realtime-indexer/src/jobs/processSolanaSquadEpoch.ts"
       - "realtime-indexer/src/solanaRewardEventIndexer.ts"
@@ -43,19 +47,22 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Test Solana reward claim builders and League verification
+      - name: Test Solana reward claim builders, reconciliation, and League verification
         working-directory: frontend
         run: |
           node --test api/lib/solanaRewardClaim.test.mjs
+          node --test api/lib/solanaRewardReconciliation.test.mjs
           node --test api/lib/solanaLeagueClaimVerification.test.mjs
 
       - name: Syntax-check Solana reward settlement modules
         working-directory: frontend
         run: |
           node --check api/leagueRouter.js
+          node --check api/rewards.js
           node --check api/lib/solanaLeagueClaimVerification.js
           node --check api/lib/solanaRewardClaim.js
           node --check api/lib/solanaRewardLane.js
+          node --check api/lib/solanaRewardReconciliation.js
           node --check scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
           node --check scripts/weekly-airdrop/solana-chain.mjs
           node --check scripts/weekly-airdrop/solana-materialize.mjs
