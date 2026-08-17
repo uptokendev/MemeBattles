@@ -3,12 +3,16 @@ name: Solana Incentive Settlement CI
 on:
   pull_request:
     paths:
+      - "frontend/api/leagueRouter.js"
+      - "frontend/api/lib/solanaLeagueClaimVerification.js"
+      - "frontend/api/lib/solanaLeagueClaimVerification.test.mjs"
       - "frontend/api/lib/solanaRewardClaim.js"
       - "frontend/api/lib/solanaRewardClaim.test.mjs"
       - "frontend/api/lib/solanaRewardLane.js"
       - "frontend/scripts/weekly-airdrop/**"
       - "frontend/scripts/weekly-recruiter-solana.mjs"
       - "frontend/scripts/weekly-squad-solana.mjs"
+      - "frontend/src/lib/solanaLeagueClaim.ts"
       - "frontend/src/lib/solanaRewardClaim.ts"
       - "frontend/src/lib/solanaRewardLaneClaim.ts"
       - "frontend/src/lib/rewardDistributor.ts"
@@ -39,13 +43,17 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
 
-      - name: Test Solana reward claim builders
+      - name: Test Solana reward claim builders and League verification
         working-directory: frontend
-        run: node --test api/lib/solanaRewardClaim.test.mjs
+        run: |
+          node --test api/lib/solanaRewardClaim.test.mjs
+          node --test api/lib/solanaLeagueClaimVerification.test.mjs
 
       - name: Syntax-check Solana reward settlement modules
         working-directory: frontend
         run: |
+          node --check api/leagueRouter.js
+          node --check api/lib/solanaLeagueClaimVerification.js
           node --check api/lib/solanaRewardClaim.js
           node --check api/lib/solanaRewardLane.js
           node --check scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
