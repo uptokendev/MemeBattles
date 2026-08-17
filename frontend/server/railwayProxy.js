@@ -205,6 +205,10 @@ function shouldProxyToRailway(path) {
   if (pathname === "/api/league" || pathname.startsWith("/api/league/")) return false;
   if (pathname === "/api/leaguePayouts" || pathname.startsWith("/api/leaguePayouts")) return false;
   if (pathname === "/api/leagueRoot" || pathname.startsWith("/api/leagueRoot")) return false;
+  // Canonical recruiter summaries are computed by frontend-api from the
+  // attribution/squad read model. Do not proxy these to the realtime indexer,
+  // whose recruiter summary can lag canonical member-role classification.
+  if (/^\/api\/recruiters\/(?:wallet\/[^/]+\/summary|[^/]+\/summary)$/.test(pathname)) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);
