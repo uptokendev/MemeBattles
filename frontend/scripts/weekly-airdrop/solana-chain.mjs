@@ -111,7 +111,7 @@ async function ensureClaimsEnabled(connection, authority) {
   const { programId, config } = solanaRewardAddresses();
   if (await configClaimsEnabled(connection, config)) return { enabled: true, txHash: null };
   if (!boolEnv("SOLANA_REWARDS_AUTO_ENABLE_CLAIMS", false)) {
-    throw new Error("Solana reward claims are disabled on-chain. Set SOLANA_REWARDS_AUTO_ENABLE_CLAIMS=true for the authorized launch setup run.");
+    throw new Error("Solana Airdrop root is published but claims remain disabled. Set SOLANA_REWARDS_AUTO_ENABLE_CLAIMS=true only when ready to open claims.");
   }
   const data = Buffer.concat([anchorDiscriminator("set_claims_enabled"), Buffer.from([1])]);
   const ix = new TransactionInstruction({
@@ -176,55 +176,51 @@ export async function publishSolanaAirdropEpoch({ epochId, root, totalLamports, 
     throw new Error(`SOLANA_REWARDS_AUTHORITY_SECRET_KEY does not match RewardsConfig authority ${storedAuthority.toBase58()}`);
   }
 
-  const enabled = await ensureClaimsEnabled(connection, authority);
   const existing = await readBatch(connection, batchAddress);
+  let alreadyExisted = false;
+  let txHash = null;
   if (existing) {
     if (existing.epochId !== BigInt(epochId)) throw new Error("Existing Solana airdrop batch epoch mismatch");
     if (existing.root.toLowerCase() !== String(root).toLowerCase()) throw new Error("Existing Solana airdrop batch has a different Merkle root");
     if (existing.totalLamports !== BigInt(totalLamports)) throw new Error("Existing Solana airdrop batch has a different total");
     if (existing.deadline !== BigInt(deadline)) throw new Error("Existing Solana airdrop batch has a different deadline");
-    return {
-      alreadyExisted: true,
-      txHash: null,
-      claimsEnableTxHash: enabled.txHash,
-      batchAddress: batchAddress.toBase58(),
-      programId: programId.toBase58(),
-      configAddress: config.toBase58(),
-      vaultAddress: airdropVault.toBase58(),
-    };
+    alreadyExisted = true;
+  } else {
+    const vaultBalance = await connection.getBalance(airdropVault, "confirmed");
+    const rentMinimum = await connection.getMinimumBalanceForRentExemption(VAULT_ACCOUNT_SIZE, "confirmed");
+    if (BigInt(Math.max(0, vaultBalance - rentMinimum)) < BigInt(totalLamports)) {
+      throw new Error(`Solana AirdropVault has insufficient distributable SOL for ${totalLamports} lamports`);
+    }
+
+    const data = Buffer.concat([
+      anchorDiscriminator("set_airdrop_batch_root"),
+      i64le(epochId),
+      rootBytes(root),
+      u64le(totalLamports),
+      i64le(deadline),
+    ]);
+    const ix = new TransactionInstruction({
+      programId,
+      keys: [
+        { pubkey: authority.publicKey, isSigner: true, isWritable: true },
+        { pubkey: config, isSigner: false, isWritable: false },
+        { pubkey: airdropVault, isSigner: false, isWritable: false },
+        { pubkey: batchAddress, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data,
+    });
+    txHash = await sendInstruction(connection, authority, ix);
+    const confirmed = await readBatch(connection, batchAddress);
+    if (!confirmed || confirmed.root.toLowerCase() !== String(root).toLowerCase() || confirmed.totalLamports !== BigInt(totalLamports)) {
+      throw new Error("Solana airdrop root transaction confirmed but batch account did not reconcile");
+    }
   }
 
-  const vaultBalance = await connection.getBalance(airdropVault, "confirmed");
-  const rentMinimum = await connection.getMinimumBalanceForRentExemption(VAULT_ACCOUNT_SIZE, "confirmed");
-  if (BigInt(Math.max(0, vaultBalance - rentMinimum)) < BigInt(totalLamports)) {
-    throw new Error(`Solana AirdropVault has insufficient distributable SOL for ${totalLamports} lamports`);
-  }
-
-  const data = Buffer.concat([
-    anchorDiscriminator("set_airdrop_batch_root"),
-    i64le(epochId),
-    rootBytes(root),
-    u64le(totalLamports),
-    i64le(deadline),
-  ]);
-  const ix = new TransactionInstruction({
-    programId,
-    keys: [
-      { pubkey: authority.publicKey, isSigner: true, isWritable: true },
-      { pubkey: config, isSigner: false, isWritable: false },
-      { pubkey: airdropVault, isSigner: false, isWritable: false },
-      { pubkey: batchAddress, isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    data,
-  });
-  const txHash = await sendInstruction(connection, authority, ix);
-  const confirmed = await readBatch(connection, batchAddress);
-  if (!confirmed || confirmed.root.toLowerCase() !== String(root).toLowerCase() || confirmed.totalLamports !== BigInt(totalLamports)) {
-    throw new Error("Solana airdrop root transaction confirmed but batch account did not reconcile");
-  }
+  // Global claims are opened only after this Airdrop batch is present and reconciled.
+  const enabled = await ensureClaimsEnabled(connection, authority);
   return {
-    alreadyExisted: false,
+    alreadyExisted,
     txHash,
     claimsEnableTxHash: enabled.txHash,
     batchAddress: batchAddress.toBase58(),
