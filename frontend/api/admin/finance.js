@@ -8,12 +8,11 @@ const FINANCE_NETWORKS = new Map([
   [102, { chain: "solana", decimals: 9, asset: "SOL", environment: "mainnet" }],
 ]);
 
-function methodAllowed(req, res) {
-  if (String(req.method || "GET").toUpperCase() === "GET") return true;
-  res.setHeader("Allow", "GET");
-  res.status(405).json({ ok: false, error: "Method not allowed" });
-  return false;
-}
+const INDEXER_BASE = String(
+  process.env.INDEXER_API_BASE_URL ||
+  process.env.INDEXER_BASE_URL ||
+  "https://memebattles-production-dca0.up.railway.app",
+).trim().replace(/\/+$/, "");
 
 function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
@@ -241,8 +240,66 @@ async function financeInventory(req, res, network) {
   });
 }
 
+async function financeLpHarvest(req, res, network) {
+  if (String(req.method || "").toUpperCase() !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ ok: false, error: "LP harvest requires POST." });
+  }
+
+  const pair = String(req.body?.pair || req.body?.pairAddress || "").trim();
+  const campaign = String(req.body?.campaign || req.body?.campaignAddress || "").trim();
+  if (!pair) return res.status(400).json({ ok: false, error: "LP pair / position is required." });
+
+  const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
+  if (!opsKey) {
+    return res.status(503).json({ ok: false, error: "LP harvest is not configured on the Frontend API." });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const upstream = await fetch(`${INDEXER_BASE}/api/dashboard/lp-fees/collect`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "x-ops-key": opsKey,
+      },
+      body: JSON.stringify({
+        chainId: network.chainId,
+        pair,
+        pairAddress: pair,
+        campaign: campaign || undefined,
+        campaignAddress: campaign || undefined,
+      }),
+      signal: controller.signal,
+    });
+    const payload = await upstream.json().catch(() => null);
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({
+        ok: false,
+        error: String(payload?.error || payload?.message || `Indexer harvest failed (${upstream.status}).`),
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      chainId: network.chainId,
+      chain: network.chain,
+      environment: network.environment,
+      txHash: payload?.txHash || null,
+      note: payload?.note || null,
+      harvestedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    const message = error?.name === "AbortError" ? "Indexer harvest timed out." : "Indexer harvest request failed.";
+    return res.status(502).json({ ok: false, error: message });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default async function financeAdmin(req, res) {
-  if (!methodAllowed(req, res)) return;
   const auth = await requireAdminOrOps(req, res, { routeLabel: "admin/finance", allowOps: true });
   if (!auth) return;
 
@@ -252,7 +309,13 @@ export default async function financeAdmin(req, res) {
   }
 
   const pathname = String(req.path || new URL(req.url, "http://localhost").pathname);
+  const method = String(req.method || "GET").toUpperCase();
   try {
+    if (pathname === "/api/admin/finance/lp-harvest") return await financeLpHarvest(req, res, network);
+    if (method !== "GET") {
+      res.setHeader("Allow", "GET");
+      return res.status(405).json({ ok: false, error: "Method not allowed" });
+    }
     if (pathname === "/api/admin/finance/rewards") return await financeRewards(req, res, network);
     if (pathname === "/api/admin/finance/revenue") return await financeRevenue(req, res, network);
     if (pathname === "/api/admin/finance/inventory") return await financeInventory(req, res, network);
@@ -260,7 +323,7 @@ export default async function financeAdmin(req, res) {
   } catch (error) {
     console.error("[api/admin/finance]", pathname, error);
     if (!res.headersSent) {
-      return res.status(500).json({ ok: false, error: "Finance read model failed." });
+      return res.status(500).json({ ok: false, error: "Finance operation failed." });
     }
   }
 }
