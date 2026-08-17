@@ -1,0 +1,88 @@
+name: Weekly Squad Rewards - Solana
+
+on:
+  schedule:
+    - cron: "35 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Calculate Squad settlement only; do not materialize/publish"
+        required: true
+        default: true
+        type: boolean
+      chain_id:
+        description: "Solana chain ID"
+        required: true
+        default: "102"
+        type: choice
+        options:
+          - "102"
+          - "101"
+      db_epoch_id:
+        description: "Optional DB weekly epoch id; 0 uses latest completed"
+        required: false
+        default: "0"
+        type: string
+
+concurrency:
+  group: weekly-squad-solana-${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_SQUAD_CHAIN_ID || '101' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  settle:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SOLANA_SQUAD_AUTOMATION_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && 'squad-solana-devnet' || 'squad-solana-production' }}
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      SOLANA_SQUAD_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_SQUAD_CHAIN_ID || '101' }}
+      SOLANA_SQUAD_EPOCH_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.db_epoch_id || '0' }}
+      SOLANA_SQUAD_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      SQUAD_SOLANA_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_SQUAD_CHAIN_ID || '101' }}
+      SQUAD_SOLANA_DB_EPOCH_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.db_epoch_id || '0' }}
+      SQUAD_SOLANA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      SQUAD_SOLANA_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_SQUAD_AUTOMATION_ENABLED || 'false' }}
+      SQUAD_CLAIM_WINDOW_DAYS: ${{ vars.SQUAD_CLAIM_WINDOW_DAYS || '7' }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            realtime-indexer/package-lock.json
+            frontend/package-lock.json
+
+      - name: Build reward indexer
+        working-directory: realtime-indexer
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Calculate and materialize Squad epoch
+        working-directory: realtime-indexer
+        run: npm run cron:process-solana-squad-epoch
+
+      - name: Install frontend settlement dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Syntax checks
+        working-directory: frontend
+        run: |
+          node --check api/lib/solanaRewardLane.js
+          node --check scripts/weekly-squad-solana.mjs
+
+      - name: Publish guarded Squad settlement
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/weekly-squad-solana.mjs
