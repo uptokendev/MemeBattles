@@ -2,6 +2,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 
 const PROGRAM_ID_FALLBACK = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX";
+const UPGRADEABLE_LOADER = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 const RPC = String(
   process.env.SOLANA_REWARDS_RPC_URL ||
   process.env.SOLANA_REWARDS_RPC_URL_102 ||
@@ -37,6 +38,42 @@ async function fetchRequired(connection, label, address, minimumDataLength = 0) 
   return info;
 }
 
+async function decodeProgramDeployment(connection, program) {
+  if (!program.owner.equals(UPGRADEABLE_LOADER)) {
+    fail(`program owner ${program.owner.toBase58()} is not the upgradeable loader`);
+  }
+  if (program.data.length < 36 || program.data.readUInt32LE(0) !== 2) {
+    fail(`program account ${PROGRAM_ID.toBase58()} is not a valid upgradeable-loader Program state`);
+  }
+
+  const programDataAddress = new PublicKey(program.data.subarray(4, 36));
+  const programData = await connection.getAccountInfo(programDataAddress, "confirmed");
+  if (!programData) fail(`ProgramData account is missing at ${programDataAddress.toBase58()}`);
+  if (!programData.owner.equals(UPGRADEABLE_LOADER)) {
+    fail(`ProgramData owner ${programData.owner.toBase58()} is not the upgradeable loader`);
+  }
+  if (programData.data.length < 13 || programData.data.readUInt32LE(0) !== 3) {
+    fail(`ProgramData account ${programDataAddress.toBase58()} is malformed`);
+  }
+
+  const deploymentSlot = programData.data.readBigUInt64LE(4);
+  const authorityOption = programData.data[12];
+  let upgradeAuthority = null;
+  if (authorityOption === 1) {
+    if (programData.data.length < 45) fail("ProgramData authority option is set but authority bytes are missing");
+    upgradeAuthority = new PublicKey(programData.data.subarray(13, 45)).toBase58();
+  } else if (authorityOption !== 0) {
+    fail(`Unexpected ProgramData authority option ${authorityOption}`);
+  }
+
+  return {
+    programDataAddress: programDataAddress.toBase58(),
+    deploymentSlot: deploymentSlot.toString(),
+    upgradeAuthority,
+    programDataLength: programData.data.length,
+  };
+}
+
 async function main() {
   if (!RPC) fail("SOLANA_REWARDS_RPC_URL is required");
 
@@ -45,6 +82,7 @@ async function main() {
   const program = await connection.getAccountInfo(PROGRAM_ID, "confirmed");
   if (!program) fail(`program is not deployed at ${PROGRAM_ID.toBase58()}`);
   if (!program.executable) fail(`program account ${PROGRAM_ID.toBase58()} is not executable`);
+  const deployment = await decodeProgramDeployment(connection, program);
 
   const addresses = {
     rewardsConfig: pda("rewards_config"),
@@ -100,8 +138,11 @@ async function main() {
     programId: PROGRAM_ID.toBase58(),
     programExecutable: program.executable,
     programOwner: program.owner.toBase58(),
+    ...deployment,
     rewardsConfig: addresses.rewardsConfig.toBase58(),
     authority: authority.toBase58(),
+    upgradeAuthorityMatchesRewardsAuthority:
+      deployment.upgradeAuthority === null ? null : deployment.upgradeAuthority === authority.toBase58(),
     claimsEnabled,
     routeState: addresses.routeState.toBase58(),
     operator: operator.toBase58(),
