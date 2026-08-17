@@ -30,9 +30,6 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/epochPools",
   "/api/featured",
   "/api/follows",
-  // League hub/summary/standings live on frontend-api (league.js / leagueSummary.js).
-  // Do NOT proxy /api/league* to the indexer — indexer has a different /api/league shape
-  // and no /api/league/summary (breaks League page boards).
   "/api/prepare",
   "/api/prepare-notifications",
   "/api/profile",
@@ -190,6 +187,13 @@ async function dispatchDashboardLpFees(pathname, req, res) {
   return true;
 }
 
+async function dispatchAdminFinance(pathname, req, res) {
+  if (!/^\/api\/admin\/finance(?:\/|$)/.test(pathname)) return false;
+  const financeAdmin = (await import("../api/admin/finance.js")).default;
+  await financeAdmin(req, res);
+  return true;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -198,16 +202,11 @@ function shouldProxyToRailway(path) {
   if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
   if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
   if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
-  // Vote receipt ingest must hit frontend-api (DB write + RPC), not the indexer proxy.
   if (pathname === "/api/votes/ingest" || pathname.startsWith("/api/votes/ingest/")) return false;
   if (pathname === "/api/vote-ingest" || pathname.startsWith("/api/vote-ingest/")) return false;
-  // Full UP Only League stack stays on frontend-api.
   if (pathname === "/api/league" || pathname.startsWith("/api/league/")) return false;
   if (pathname === "/api/leaguePayouts" || pathname.startsWith("/api/leaguePayouts")) return false;
   if (pathname === "/api/leagueRoot" || pathname.startsWith("/api/leagueRoot")) return false;
-  // Canonical recruiter summaries are computed by frontend-api from the
-  // attribution/squad read model. Do not proxy these to the realtime indexer,
-  // whose recruiter summary can lag canonical member-role classification.
   if (/^\/api\/recruiters\/(?:wallet\/[^/]+\/summary|[^/]+\/summary)$/.test(pathname)) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
@@ -246,11 +245,9 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (await dispatchDashboardRecruiters(pathname, req, res)) return;
     if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
     if (await dispatchDashboardLpFees(pathname, req, res)) return;
+    if (await dispatchAdminFinance(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
-    // Always honor local-only paths (featured, campaigns, vote-ingest, drafts, …).
-    // Do not force-proxy everything for DEV_ALLOWED_IPS — that sent /api/vote-ingest
-    // to the indexer (404) and broke Featured vote writes.
     if (!shouldProxyToRailway(path)) return next();
 
     const base = railwayBaseUrl();
