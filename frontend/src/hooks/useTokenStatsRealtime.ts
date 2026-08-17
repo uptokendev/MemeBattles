@@ -44,6 +44,14 @@ function normalizeCampaign(chainId: number, value: string) {
   return isSolanaChainId(chainId) ? raw : raw.toLowerCase();
 }
 
+function impliedSoldTokens(price: number | null, marketCap: number | null): number | null {
+  if (price == null || marketCap == null || !Number.isFinite(price) || !Number.isFinite(marketCap) || price <= 0 || marketCap < 0) {
+    return null;
+  }
+  const sold = marketCap / price;
+  return Number.isFinite(sold) && sold >= 0 ? sold : null;
+}
+
 export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number, enabled = true) {
   const [stats, setStats] = useState<TokenStatsRealtime | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,11 +92,13 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
         setError(null);
         return;
       }
+      const lastPriceBnb = num(row.last_price_bnb);
+      const marketcapBnb = num(row.marketcap_bnb);
       setStats({
-        lastPriceBnb: num(row.last_price_bnb),
-        marketcapBnb: num(row.marketcap_bnb),
+        lastPriceBnb,
+        marketcapBnb,
         vol24hBnb: Number(num(row.vol_24h_bnb) ?? 0),
-        soldTokens: num(row.sold_tokens),
+        soldTokens: num(row.sold_tokens) ?? impliedSoldTokens(lastPriceBnb, marketcapBnb),
         graduated: row.graduated === true ? true : false,
         dex: str(row.dex),
         dexPool: str(row.dexPool ?? row.dex_pool),
@@ -130,21 +140,26 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
       if (!data) return;
       if ((msg?.name || "") !== "stats_patch" && String(data.type || "") !== "stats_patch") return;
 
-      setStats((prev) => ({
-        lastPriceBnb: num(data.lastPriceBnb) ?? prev?.lastPriceBnb ?? null,
-        marketcapBnb: num(data.marketcapBnb) ?? prev?.marketcapBnb ?? null,
-        vol24hBnb: Number(num(data.vol24hBnb) ?? prev?.vol24hBnb ?? 0),
-        soldTokens: prev?.soldTokens ?? null,
-        graduated: data.graduated === true ? true : prev?.graduated,
-        dex: data.dex != null ? String(data.dex) : prev?.dex ?? null,
-        dexPool: data.dexPool != null ? String(data.dexPool) : prev?.dexPool ?? null,
-        dexPosition: data.dexPosition != null ? String(data.dexPosition) : prev?.dexPosition ?? null,
-        graduationLiquidityNative:
-          num(data.graduationLiquiditySol) ?? prev?.graduationLiquidityNative ?? null,
-        graduatedAt:
-          data.graduatedAt != null ? String(data.graduatedAt) : prev?.graduatedAt ?? null,
-        updatedAt: prev?.updatedAt,
-      }));
+      setStats((prev) => {
+        const lastPriceBnb = num(data.lastPriceBnb ?? data.last_price_bnb) ?? prev?.lastPriceBnb ?? null;
+        const marketcapBnb = num(data.marketcapBnb ?? data.marketcap_bnb) ?? prev?.marketcapBnb ?? null;
+        const explicitSold = num(data.soldTokens ?? data.sold_tokens);
+        return {
+          lastPriceBnb,
+          marketcapBnb,
+          vol24hBnb: Number(num(data.vol24hBnb ?? data.vol_24h_bnb) ?? prev?.vol24hBnb ?? 0),
+          soldTokens: explicitSold ?? impliedSoldTokens(lastPriceBnb, marketcapBnb) ?? prev?.soldTokens ?? null,
+          graduated: data.graduated === true ? true : prev?.graduated,
+          dex: data.dex != null ? String(data.dex) : prev?.dex ?? null,
+          dexPool: data.dexPool != null ? String(data.dexPool) : prev?.dexPool ?? null,
+          dexPosition: data.dexPosition != null ? String(data.dexPosition) : prev?.dexPosition ?? null,
+          graduationLiquidityNative:
+            num(data.graduationLiquiditySol) ?? prev?.graduationLiquidityNative ?? null,
+          graduatedAt:
+            data.graduatedAt != null ? String(data.graduatedAt) : prev?.graduatedAt ?? null,
+          updatedAt: String(data.updatedAt ?? data.updated_at ?? prev?.updatedAt ?? ""),
+        };
+      });
     };
 
     const onConn = (c: any) => {
