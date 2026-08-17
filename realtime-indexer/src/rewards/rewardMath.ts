@@ -129,16 +129,23 @@ export function computeAirdropWeightTier(score: bigint, tierStep = AIRDROP_WEIGH
   return Math.max(1, Math.min(maxTier, rawTier));
 }
 
-export function computeSquadEffectiveScore(rawScore: bigint): bigint {
+/**
+ * Apply the Squad diminishing-return curve in the chain's native raw unit.
+ * BNB callers retain the historic 1e18 default; Solana callers pass 1e9.
+ */
+export function computeSquadEffectiveScore(rawScore: bigint, nativeUnitRaw = BNB): bigint {
   if (rawScore <= 0n) return 0n;
-  if (rawScore <= SQUAD_DIMINISHING_FIRST_THRESHOLD) return rawScore;
-  if (rawScore <= SQUAD_DIMINISHING_SECOND_THRESHOLD) {
-    const remainder = rawScore - SQUAD_DIMINISHING_FIRST_THRESHOLD;
-    return SQUAD_DIMINISHING_FIRST_THRESHOLD + (remainder / 2n);
+  const unit = nativeUnitRaw > 0n ? nativeUnitRaw : BNB;
+  const firstThreshold = 100n * unit;
+  const secondThreshold = 200n * unit;
+  if (rawScore <= firstThreshold) return rawScore;
+  if (rawScore <= secondThreshold) {
+    const remainder = rawScore - firstThreshold;
+    return firstThreshold + (remainder / 2n);
   }
-  const middle = SQUAD_DIMINISHING_SECOND_THRESHOLD - SQUAD_DIMINISHING_FIRST_THRESHOLD;
-  const tail = rawScore - SQUAD_DIMINISHING_SECOND_THRESHOLD;
-  return SQUAD_DIMINISHING_FIRST_THRESHOLD + (middle / 2n) + (tail / 4n);
+  const middle = secondThreshold - firstThreshold;
+  const tail = rawScore - secondThreshold;
+  return firstThreshold + (middle / 2n) + (tail / 4n);
 }
 
 export function computeBpsCap(totalAmount: bigint, bps: number): bigint {
