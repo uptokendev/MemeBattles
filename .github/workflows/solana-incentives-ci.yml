@@ -1,0 +1,75 @@
+name: Solana Incentive Settlement CI
+
+on:
+  pull_request:
+    paths:
+      - "frontend/api/lib/solanaRewardClaim.js"
+      - "frontend/api/lib/solanaRewardClaim.test.mjs"
+      - "frontend/api/lib/solanaRewardLane.js"
+      - "frontend/scripts/weekly-airdrop/**"
+      - "frontend/scripts/weekly-recruiter-solana.mjs"
+      - "frontend/scripts/weekly-squad-solana.mjs"
+      - "frontend/src/lib/solanaRewardClaim.ts"
+      - "frontend/src/lib/solanaRewardLaneClaim.ts"
+      - "frontend/src/lib/rewardDistributor.ts"
+      - "realtime-indexer/src/rewards/**"
+      - "realtime-indexer/src/jobs/processSolanaSquadEpoch.ts"
+      - "realtime-indexer/src/solanaRewardEventIndexer.ts"
+      - "realtime-indexer/package.json"
+      - ".github/workflows/solana-incentives-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  claim-builders-and-settlement-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Test Solana reward claim builders
+        working-directory: frontend
+        run: node --test api/lib/solanaRewardClaim.test.mjs
+
+      - name: Syntax-check Solana reward settlement modules
+        working-directory: frontend
+        run: |
+          node --check api/lib/solanaRewardClaim.js
+          node --check api/lib/solanaRewardLane.js
+          node --check scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
+          node --check scripts/weekly-airdrop/solana-chain.mjs
+          node --check scripts/weekly-airdrop/solana-materialize.mjs
+          node --check scripts/weekly-recruiter-solana.mjs
+          node --check scripts/weekly-squad-solana.mjs
+
+  squad-indexer-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+
+      - name: Install indexer dependencies
+        working-directory: realtime-indexer
+        run: npm ci --ignore-scripts
+
+      - name: Build reward indexer
+        working-directory: realtime-indexer
+        run: npm run build
