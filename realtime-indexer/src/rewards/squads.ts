@@ -340,13 +340,38 @@ export async function getSquadAllocationPreview(
   db: DbLike = pool,
   chainId = 97,
 ): Promise<SquadAllocationPreview> {
+  const startedAt = Date.now();
+  console.log("[solana-squad-preview] epoch lookup start", { epochId, chainId });
   const epoch = await getEpochForPreview(epochId, chainId, db);
-  const [globalPoolAmount, snapshots] = await Promise.all([
-    loadSquadPoolAmount(epoch.id, db),
-    loadSquadMemberSnapshots(epoch.id, db),
-  ]);
+  console.log("[solana-squad-preview] epoch lookup complete", {
+    epochId: epoch.id,
+    elapsedMs: Date.now() - startedAt,
+  });
+
+  const poolStartedAt = Date.now();
+  console.log("[solana-squad-preview] pool amount start", { epochId: epoch.id });
+  const globalPoolAmount = await loadSquadPoolAmount(epoch.id, db);
+  console.log("[solana-squad-preview] pool amount complete", {
+    epochId: epoch.id,
+    globalPoolAmount: globalPoolAmount.toString(),
+    elapsedMs: Date.now() - poolStartedAt,
+  });
+
+  const snapshotsStartedAt = Date.now();
+  console.log("[solana-squad-preview] member snapshots start", { epochId: epoch.id });
+  const snapshots = await loadSquadMemberSnapshots(epoch.id, db);
+  console.log("[solana-squad-preview] member snapshots complete", {
+    epochId: epoch.id,
+    memberCount: snapshots.length,
+    elapsedMs: Date.now() - snapshotsStartedAt,
+  });
 
   const model = computeSquadAllocationModel(globalPoolAmount, snapshots, epoch.chainId);
+  console.log("[solana-squad-preview] model complete", {
+    epochId: epoch.id,
+    squadCount: model.squads.length,
+    elapsedMs: Date.now() - startedAt,
+  });
 
   return {
     epoch,
