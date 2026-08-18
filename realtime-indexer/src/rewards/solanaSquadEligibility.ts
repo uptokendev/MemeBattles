@@ -5,14 +5,14 @@ import type { EligibilityReasonCode } from "./reasonCodes.js";
 
 const SOLANA_CHAIN_IDS = new Set([101, 102]);
 const LAMPORTS_PER_SOL = 1_000_000_000n;
-const TRADER_MIN_VOLUME = 25n * 10_000_000n; // 0.25 SOL
+const DEFAULT_TRADER_MIN_VOLUME = 25n * 10_000_000n; // 0.25 SOL
 const TRADER_MAX_COUNTED_VOLUME = 15n * LAMPORTS_PER_SOL;
-const CREATOR_MIN_BONDING_VOLUME = 3n * LAMPORTS_PER_SOL;
+const DEFAULT_CREATOR_MIN_BONDING_VOLUME = 3n * LAMPORTS_PER_SOL;
 const CREATOR_MAX_COUNTED_VOLUME = 25n * LAMPORTS_PER_SOL;
-const CREATOR_MAX_ELIGIBLE_CAMPAIGNS = 2;
-const CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS = 10;
-const TRADER_MIN_TRADE_COUNT = 3;
-const TRADER_MIN_ACTIVE_DAYS = 2;
+const DEFAULT_CREATOR_MAX_ELIGIBLE_CAMPAIGNS = 2;
+const DEFAULT_CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS = 10;
+const DEFAULT_TRADER_MIN_TRADE_COUNT = 3;
+const DEFAULT_TRADER_MIN_ACTIVE_DAYS = 2;
 
 export type SolanaSquadEligibilityResult = {
   epoch: RewardEpochRecord;
@@ -53,6 +53,17 @@ type OpenFlag = {
   severity: "hard" | "review";
 };
 
+type EligibilityConfig = {
+  certificationMode: boolean;
+  activityChainId: number;
+  traderMinVolume: bigint;
+  traderMinTradeCount: number;
+  traderMinActiveDays: number;
+  creatorMinBondingVolume: bigint;
+  creatorMinUniqueNonLinkedBuyers: number;
+  creatorMaxEligibleCampaigns: number;
+};
+
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -65,6 +76,64 @@ function asBigInt(value: unknown): bigint {
 
 function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+function envBool(name: string, fallback = false): boolean {
+  const raw = String(process.env[name] ?? (fallback ? "true" : "false")).trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = String(process.env[name] ?? fallback).trim();
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+  return value;
+}
+
+function envPositiveBigInt(name: string, fallback: bigint): bigint {
+  const raw = String(process.env[name] ?? fallback.toString()).trim();
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be a positive integer`);
+  const value = BigInt(raw);
+  if (value <= 0n) throw new Error(`${name} must be greater than zero`);
+  return value;
+}
+
+function resolveEligibilityConfig(epoch: RewardEpochRecord): EligibilityConfig {
+  const requestedCertificationMode = envBool("SOLANA_INCENTIVE_CERTIFICATION_MODE", false);
+  if (requestedCertificationMode && epoch.chainId !== 102) {
+    throw new Error("SOLANA_INCENTIVE_CERTIFICATION_MODE is allowed only for reward chain 102");
+  }
+
+  const certificationMode = requestedCertificationMode && epoch.chainId === 102;
+  const activityChainId = certificationMode
+    ? envPositiveInt("SOLANA_SQUAD_ACTIVITY_CHAIN_ID", 101)
+    : epoch.chainId;
+  if (!SOLANA_CHAIN_IDS.has(activityChainId)) {
+    throw new Error("SOLANA_SQUAD_ACTIVITY_CHAIN_ID must be 101 or 102");
+  }
+
+  return {
+    certificationMode,
+    activityChainId,
+    traderMinVolume: certificationMode
+      ? envPositiveBigInt("SOLANA_SQUAD_TRADER_MIN_VOLUME_LAMPORTS", DEFAULT_TRADER_MIN_VOLUME)
+      : DEFAULT_TRADER_MIN_VOLUME,
+    traderMinTradeCount: certificationMode
+      ? envPositiveInt("SOLANA_SQUAD_TRADER_MIN_TRADES", DEFAULT_TRADER_MIN_TRADE_COUNT)
+      : DEFAULT_TRADER_MIN_TRADE_COUNT,
+    traderMinActiveDays: certificationMode
+      ? envPositiveInt("SOLANA_SQUAD_TRADER_MIN_ACTIVE_DAYS", DEFAULT_TRADER_MIN_ACTIVE_DAYS)
+      : DEFAULT_TRADER_MIN_ACTIVE_DAYS,
+    creatorMinBondingVolume: certificationMode
+      ? envPositiveBigInt("SOLANA_SQUAD_CREATOR_MIN_VOLUME_LAMPORTS", DEFAULT_CREATOR_MIN_BONDING_VOLUME)
+      : DEFAULT_CREATOR_MIN_BONDING_VOLUME,
+    creatorMinUniqueNonLinkedBuyers: certificationMode
+      ? envPositiveInt("SOLANA_SQUAD_CREATOR_MIN_UNIQUE_BUYERS", DEFAULT_CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS)
+      : DEFAULT_CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS,
+    creatorMaxEligibleCampaigns: certificationMode
+      ? envPositiveInt("SOLANA_SQUAD_CREATOR_MAX_CAMPAIGNS", DEFAULT_CREATOR_MAX_ELIGIBLE_CAMPAIGNS)
+      : DEFAULT_CREATOR_MAX_ELIGIBLE_CAMPAIGNS,
+  };
 }
 
 async function withTransaction<T>(fn: (db: PoolClient & DbLike) => Promise<T>): Promise<T> {
@@ -121,7 +190,7 @@ async function loadMembers(db: DbLike, epoch: RewardEpochRecord): Promise<Member
   }));
 }
 
-async function loadTradeMetrics(db: DbLike, epoch: RewardEpochRecord): Promise<Map<string, TradeMetrics>> {
+async function loadTradeMetrics(db: DbLike, epoch: RewardEpochRecord, config: EligibilityConfig): Promise<Map<string, TradeMetrics>> {
   const r = await db.query(
     `select t.wallet as wallet_address,
             coalesce(sum(t.bnb_amount_raw::numeric), 0)::numeric(78,0) as volume_raw,
@@ -135,7 +204,7 @@ async function loadTradeMetrics(db: DbLike, epoch: RewardEpochRecord): Promise<M
         and t.block_time >= $2
         and t.block_time < $3
       group by t.wallet`,
-    [epoch.chainId, epoch.startAt, epoch.endAt],
+    [config.activityChainId, epoch.startAt, epoch.endAt],
   );
   const map = new Map<string, TradeMetrics>();
   for (const row of r.rows) {
@@ -149,7 +218,7 @@ async function loadTradeMetrics(db: DbLike, epoch: RewardEpochRecord): Promise<M
   return map;
 }
 
-async function loadCreatorMetrics(db: DbLike, epoch: RewardEpochRecord): Promise<Map<string, CreatorMetrics>> {
+async function loadCreatorMetrics(db: DbLike, epoch: RewardEpochRecord, config: EligibilityConfig): Promise<Map<string, CreatorMetrics>> {
   const r = await db.query(
     `with per_campaign as (
        select c.creator_address as wallet_address,
@@ -197,12 +266,12 @@ async function loadCreatorMetrics(db: DbLike, epoch: RewardEpochRecord): Promise
          on rq.wallet_address=pc.wallet_address and rq.campaign_address=pc.campaign_address
       group by pc.wallet_address`,
     [
-      epoch.chainId,
+      config.activityChainId,
       epoch.startAt,
       epoch.endAt,
-      CREATOR_MIN_BONDING_VOLUME.toString(),
-      CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS,
-      CREATOR_MAX_ELIGIBLE_CAMPAIGNS,
+      config.creatorMinBondingVolume.toString(),
+      config.creatorMinUniqueNonLinkedBuyers,
+      config.creatorMaxEligibleCampaigns,
     ],
   );
   const map = new Map<string, CreatorMetrics>();
@@ -243,7 +312,7 @@ async function upsertAutomaticFlag(
   );
 }
 
-async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord) {
+async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord, config: EligibilityConfig) {
   const self = await db.query(
     `select t.wallet as wallet_address, count(*)::int as matched_trade_count
        from public.curve_trades t
@@ -251,7 +320,7 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord) {
       where t.chain_id=$1 and t.block_time >= $2 and t.block_time < $3
         and t.wallet=c.creator_address
       group by t.wallet`,
-    [epoch.chainId, epoch.startAt, epoch.endAt],
+    [config.activityChainId, epoch.startAt, epoch.endAt],
   );
   for (const row of self.rows) {
     await upsertAutomaticFlag(db, {
@@ -273,7 +342,7 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord) {
       group by t.wallet, t.campaign_address
      having count(*) filter (where t.side='buy') > 0
         and count(*) filter (where t.side='sell') > 0`,
-    [epoch.chainId, epoch.startAt, epoch.endAt],
+    [config.activityChainId, epoch.startAt, epoch.endAt],
   );
   const circularByWallet = new Map<string, string[]>();
   for (const row of circular.rows) {
@@ -308,7 +377,7 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord) {
      )
      select p.* from per_wallet p join flagged f using (recruiter_id)
       where p.volume_raw > 0 and p.volume_raw < $4::numeric`,
-    [epoch.chainId, epoch.startAt, epoch.endAt, TRADER_MIN_VOLUME.toString()],
+    [config.activityChainId, epoch.startAt, epoch.endAt, config.traderMinVolume.toString()],
   );
   for (const row of split.rows) {
     await upsertAutomaticFlag(db, {
@@ -344,6 +413,7 @@ function evaluateMember(
   trade: TradeMetrics,
   creator: CreatorMetrics,
   flags: OpenFlag[],
+  config: EligibilityConfig,
 ) {
   const generalReasons: EligibilityReasonCode[] = [];
   const traderReasons: EligibilityReasonCode[] = [];
@@ -355,20 +425,20 @@ function evaluateMember(
     if (flag.severity === "review") generalReasons.push("REVIEW_REQUIRED");
   }
 
-  if (trade.volume < TRADER_MIN_VOLUME) traderReasons.push("TRADER_VOLUME_BELOW_MIN");
-  if (trade.tradeCount < TRADER_MIN_TRADE_COUNT) traderReasons.push("TRADER_TRADE_COUNT_BELOW_MIN");
-  if (trade.activeDays < TRADER_MIN_ACTIVE_DAYS) traderReasons.push("TRADER_ACTIVE_DAYS_BELOW_MIN");
+  if (trade.volume < config.traderMinVolume) traderReasons.push("TRADER_VOLUME_BELOW_MIN");
+  if (trade.tradeCount < config.traderMinTradeCount) traderReasons.push("TRADER_TRADE_COUNT_BELOW_MIN");
+  if (trade.activeDays < config.traderMinActiveDays) traderReasons.push("TRADER_ACTIVE_DAYS_BELOW_MIN");
   if (trade.ownCampaignTradeCount > 0) traderReasons.push("OWN_CAMPAIGN_TRADE_EXCLUDED");
   const traderEligible = traderReasons.length === 0;
   const traderScore = traderEligible ? (trade.volume > TRADER_MAX_COUNTED_VOLUME ? TRADER_MAX_COUNTED_VOLUME : trade.volume) : 0n;
 
-  if (creator.qualifyingCampaignCount < 1 || creator.totalBuyVolume < CREATOR_MIN_BONDING_VOLUME) {
+  if (creator.qualifyingCampaignCount < 1 || creator.totalBuyVolume < config.creatorMinBondingVolume) {
     creatorReasons.push("CREATOR_BONDING_VOLUME_BELOW_MIN");
   }
-  if (creator.maxUniqueNonLinkedBuyers < CREATOR_MIN_UNIQUE_NON_LINKED_BUYERS) {
+  if (creator.maxUniqueNonLinkedBuyers < config.creatorMinUniqueNonLinkedBuyers) {
     creatorReasons.push("CREATOR_UNIQUE_BUYERS_BELOW_MIN");
   }
-  if (creator.qualifyingCampaignCount > CREATOR_MAX_ELIGIBLE_CAMPAIGNS) {
+  if (creator.qualifyingCampaignCount > config.creatorMaxEligibleCampaigns) {
     creatorReasons.push("CREATOR_CAMPAIGN_CAP_EXCEEDED");
   }
   const creatorEligible = creator.qualifyingCampaignCount > 0 && creator.countedQualifiedVolume > 0n;
@@ -387,6 +457,9 @@ function evaluateMember(
     reasonCodes: topLevelReasons,
     metadata: {
       chainNativeUnit: "lamports",
+      rewardChainId: epoch?.chainId,
+      activityChainId: config.activityChainId,
+      certificationMode: config.certificationMode,
       recruiterId: member.recruiterId,
       joinedAt: member.joinedAt,
       leftAt: member.leftAt,
@@ -394,6 +467,12 @@ function evaluateMember(
       creatorEligible,
       traderReasonCodes: uniq(traderReasons),
       creatorReasonCodes: uniq(creatorReasons),
+      traderMinVolumeRaw: config.traderMinVolume.toString(),
+      traderMinTradeCount: config.traderMinTradeCount,
+      traderMinActiveDays: config.traderMinActiveDays,
+      creatorMinBondingVolumeRaw: config.creatorMinBondingVolume.toString(),
+      creatorMinUniqueNonLinkedBuyers: config.creatorMinUniqueNonLinkedBuyers,
+      creatorMaxEligibleCampaigns: config.creatorMaxEligibleCampaigns,
       tradeVolumeRaw: trade.volume.toString(),
       traderScoreRaw: traderScore.toString(),
       tradeCount: trade.tradeCount,
@@ -413,9 +492,13 @@ export async function processSolanaSquadEligibilityForEpoch(epochId: number): Pr
   return withTransaction(async (db) => {
     await db.query(`select pg_advisory_xact_lock(hashtext($1))`, [`mwz:solana:squad:eligibility:${epochId}`]);
     const epoch = await requireSolanaWeeklyEpoch(db, epochId);
+    const config = resolveEligibilityConfig(epoch);
     const members = await loadMembers(db, epoch);
-    const [trades, creators] = await Promise.all([loadTradeMetrics(db, epoch), loadCreatorMetrics(db, epoch)]);
-    await syncAutomaticFlags(db, epoch);
+    const [trades, creators] = await Promise.all([
+      loadTradeMetrics(db, epoch, config),
+      loadCreatorMetrics(db, epoch, config),
+    ]);
+    await syncAutomaticFlags(db, epoch, config);
     const flags = await loadOpenFlags(db, epoch.id);
 
     let eligibleCount = 0;
@@ -431,6 +514,7 @@ export async function processSolanaSquadEligibilityForEpoch(epochId: number): Pr
         trades.get(member.walletAddress) ?? { volume: 0n, tradeCount: 0, activeDays: 0, ownCampaignTradeCount: 0 },
         creators.get(member.walletAddress) ?? { totalBuyVolume: 0n, countedQualifiedVolume: 0n, qualifyingCampaignCount: 0, maxUniqueNonLinkedBuyers: 0 },
         memberFlags,
+        config,
       );
 
       await db.query(
@@ -444,7 +528,7 @@ export async function processSolanaSquadEligibilityForEpoch(epochId: number): Pr
            metadata=excluded.metadata,
            computed_at=now(),
            updated_at=now()`,
-        [epoch.id, member.walletAddress, result.isEligible, result.score.toString(), result.reasonCodes, JSON.stringify(result.metadata)],
+        [epoch.id, member.walletAddress, result.isEligible, result.score.toString(), result.reasonCodes, JSON.stringify({ ...result.metadata, rewardChainId: epoch.chainId })],
       );
       if (result.isEligible) eligibleCount += 1;
     }
