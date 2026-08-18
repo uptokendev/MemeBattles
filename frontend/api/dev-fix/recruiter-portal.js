@@ -307,9 +307,17 @@ async function getSquadRows(recruiterId) {
 function summarizeSquad(rows) {
   return rows.reduce((acc, row) => {
     acc.total += 1;
-    if (row.role === "creator") acc.creators += 1;
-    else if (row.role === "trader") acc.traders += 1;
-    else acc.unknown += 1;
+    const role = String(row.role || "").trim().toLowerCase();
+    if (role === "creator") {
+      acc.creators += 1;
+    } else if (role === "trader") {
+      acc.traders += 1;
+    } else if (role === "both") {
+      acc.creators += 1;
+      acc.traders += 1;
+    } else {
+      acc.unknown += 1;
+    }
     return acc;
   }, { total: 0, creators: 0, traders: 0, unknown: 0 });
 }
