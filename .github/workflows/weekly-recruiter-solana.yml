@@ -11,7 +11,7 @@ on:
         default: true
         type: boolean
       chain_id:
-        description: "Solana chain ID"
+        description: "Solana reward chain ID (102 isolated devnet certification, 101 normal app namespace)"
         required: true
         default: "102"
         type: choice
@@ -39,12 +39,12 @@ jobs:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
       RECRUITER_SOLANA_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_RECRUITER_CHAIN_ID || '101' }}
       RECRUITER_SOLANA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-      RECRUITER_SOLANA_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_RECRUITER_AUTOMATION_ENABLED || 'false' }}
+      RECRUITER_SOLANA_AUTOMATION_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_RECRUITER_AUTOMATION_ENABLED || 'false') }}
       RECRUITER_CLAIM_WINDOW_DAYS: ${{ vars.RECRUITER_CLAIM_WINDOW_DAYS || '7' }}
       SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
       SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
       SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
-      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
