@@ -207,7 +207,6 @@ function buildRewardCards(
   items: RewardLedgerItem[],
   squadState?: string | null,
   recruiterLinkState?: string | null,
-  isRecruiterFlag?: boolean,
   chainId?: number | null,
 ): RewardCardConfig[] {
   const squadOk = hasActiveSquad(squadState, recruiterLinkState);
@@ -459,8 +458,8 @@ export default function CommandCenterClaims() {
   }, [walletAddress]);
 
   const rewardCards = useMemo(
-    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag, rewardChainId),
-    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag, rewardChainId],
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, rewardChainId),
+    [items, attribution?.recruiterLinkState, attribution?.squadState, rewardChainId],
   );
   const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState, isRecruiterFlag);
 
