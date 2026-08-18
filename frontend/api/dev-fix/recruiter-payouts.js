@@ -139,11 +139,12 @@ function verifyWalletSignature({ chain, walletAddress, message, signature }) {
   return recovered === walletAddress.toLowerCase();
 }
 
-function balanceStatus({ claimableRaw, pendingRaw, payoutWallet }) {
+function balanceStatus({ chain, claimableRaw, pendingRaw, payoutWallet }) {
   const claimable = BigInt(claimableRaw || "0");
   const pending = BigInt(pendingRaw || "0");
   if (!payoutWallet && (claimable > 0n || pending > 0n)) return "missing_payout_wallet";
   if (claimable > 0n) return "claimable";
+  if (chain === "solana" && pending > 0n) return "pending_batch_publication";
   if (pending > 0n) return "pending_finality";
   return payoutWallet ? "pending_finality" : "missing_payout_wallet";
 }
@@ -183,19 +184,42 @@ async function getBalances(recruiterId) {
   const { rows } = await pool.query(
     `with ledger as (
        select chain, token,
-              coalesce(sum(amount_raw) filter (where status in ('claimable','retriable') and claim_id is null), 0)::numeric(78,0) as claimable_raw,
-              coalesce(sum(amount_raw) filter (where status in ('pending', 'pending_finality')), 0)::numeric(78,0) as pending_raw
+              coalesce(sum(amount_raw) filter (
+                where chain <> 'solana'
+                  and status in ('claimable','retriable')
+                  and claim_id is null
+              ), 0)::numeric(78,0) as claimable_raw,
+              coalesce(sum(amount_raw) filter (
+                where status in ('pending', 'pending_finality')
+                   or (
+                     chain = 'solana'
+                     and status in ('claimable','retriable')
+                     and claim_id is null
+                   )
+              ), 0)::numeric(78,0) as pending_raw
          from public.recruiter_reward_ledger
         where recruiter_id = $1
         group by chain, token
      ), batched as (
        select c.chain, c.token,
-              coalesce(sum(c.amount_raw) filter (where c.status in ('created','retriable') and s.status in ('claimable','failed')), 0)::numeric(78,0) as claimable_raw
+              coalesce(sum(c.amount_raw) filter (
+                where c.status in ('created','retriable')
+                  and s.status in ('claimable','failed')
+                  and b.status = 'claim_open'
+              ), 0)::numeric(78,0) as claimable_raw,
+              coalesce(sum(c.amount_raw) filter (
+                where c.status in ('created','retriable')
+                  and (
+                    s.status not in ('claimable','failed')
+                    or b.status <> 'claim_open'
+                  )
+              ), 0)::numeric(78,0) as pending_raw
          from public.recruiter_reward_claims c
          join public.solana_reward_lane_claims s
            on s.lane='recruiter' and s.source_type='recruiter_reward_claim' and s.source_ref=c.id::text
-        where c.recruiter_id=$1 and c.chain='solana'
-        group by c.chain,c.token
+         join public.solana_reward_lane_batches b on b.id = s.batch_id
+        where c.recruiter_id = $1 and c.chain = 'solana'
+        group by c.chain, c.token
      ), wallets as (
        select chain, max(wallet_address) filter (where verified_at is not null) as payout_wallet
          from public.recruiter_payout_wallets
@@ -205,11 +229,11 @@ async function getBalances(recruiterId) {
      select coalesce(l.chain,b.chain,w.chain) as chain,
             coalesce(l.token,b.token,case when coalesce(l.chain,b.chain,w.chain)='solana' then 'SOL' else 'BNB' end) as token,
             (coalesce(l.claimable_raw,0)+coalesce(b.claimable_raw,0))::text as claimable_raw,
-            coalesce(l.pending_raw,0)::text as pending_raw,
+            (coalesce(l.pending_raw,0)+coalesce(b.pending_raw,0))::text as pending_raw,
             w.payout_wallet
        from ledger l
-       full join batched b on b.chain=l.chain
-       full join wallets w on w.chain=coalesce(l.chain,b.chain)`,
+       full join batched b on b.chain = l.chain
+       full join wallets w on w.chain = coalesce(l.chain,b.chain)`,
     [recruiterId],
   );
   const byChain = new Map();
@@ -219,7 +243,14 @@ async function getBalances(recruiterId) {
     const claimableRaw = rawAmount(row.claimable_raw);
     const pendingRaw = rawAmount(row.pending_raw);
     const payoutWallet = row.payout_wallet || null;
-    byChain.set(chain, { chain, token: row.token || CHAINS[chain].token, claimableRaw, pendingRaw, payoutWallet, status: balanceStatus({ claimableRaw, pendingRaw, payoutWallet }) });
+    byChain.set(chain, {
+      chain,
+      token: row.token || CHAINS[chain].token,
+      claimableRaw,
+      pendingRaw,
+      payoutWallet,
+      status: balanceStatus({ chain, claimableRaw, pendingRaw, payoutWallet }),
+    });
   }
   for (const chain of Object.keys(CHAINS)) if (!byChain.has(chain)) byChain.set(chain, emptyBalance(chain));
   return Array.from(byChain.values());
