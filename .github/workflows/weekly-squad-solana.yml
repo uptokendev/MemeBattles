@@ -11,7 +11,7 @@ on:
         default: true
         type: boolean
       chain_id:
-        description: "Solana chain ID"
+        description: "Solana reward chain ID (102 isolated devnet certification, 101 normal app namespace)"
         required: true
         default: "102"
         type: choice
@@ -19,7 +19,7 @@ on:
           - "102"
           - "101"
       db_epoch_id:
-        description: "Optional DB weekly epoch id; 0 uses latest completed"
+        description: "Optional DB weekly epoch id; 0 uses latest finalized"
         required: false
         default: "0"
         type: string
@@ -47,6 +47,22 @@ jobs:
       SQUAD_SOLANA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       SQUAD_SOLANA_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_SQUAD_AUTOMATION_ENABLED || 'false' }}
       SQUAD_CLAIM_WINDOW_DAYS: ${{ vars.SQUAD_CLAIM_WINDOW_DAYS || '7' }}
+
+      # Manual chain-102 runs are isolated reward certification on Solana devnet.
+      # Read real devnet app activity from namespace 101, while eligibility,
+      # reward-ledger, batch and claim state stays attached to the chain-102 epoch.
+      SOLANA_INCENTIVE_CERTIFICATION_MODE: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && 'true' || 'false' }}
+      SOLANA_SQUAD_ACTIVITY_CHAIN_ID: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '101' || (github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_SQUAD_CHAIN_ID || '101') }}
+
+      # Tiny certification thresholds apply only when the guarded code sees
+      # reward chain 102 + SOLANA_INCENTIVE_CERTIFICATION_MODE=true.
+      SOLANA_SQUAD_TRADER_MIN_VOLUME_LAMPORTS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1000000' || '250000000' }}
+      SOLANA_SQUAD_TRADER_MIN_TRADES: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || '3' }}
+      SOLANA_SQUAD_TRADER_MIN_ACTIVE_DAYS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || '2' }}
+      SOLANA_SQUAD_CREATOR_MIN_VOLUME_LAMPORTS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '20000000' || '3000000000' }}
+      SOLANA_SQUAD_CREATOR_MIN_UNIQUE_BUYERS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || '10' }}
+      SOLANA_SQUAD_CREATOR_MAX_CAMPAIGNS: "2"
+
       SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
       SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
       SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
