@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/apiBase";
-import { getEvmReadChainIdForTokenPage, pinTokenDetailsChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, getEvmReadChainIdForTokenPage, pinTokenDetailsChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { normalizeEvmAddress } from "@/lib/tokenDetailsPath";
 
 export type MarketIdentity = {
@@ -24,7 +24,7 @@ export async function resolveMarketIdentity(input: {
   acceptProvisional?: boolean;
 }): Promise<MarketIdentity | null> {
   const address = normalizeEvmAddress(input.address);
-  const chainId = Number(input.chainId || 97);
+  const chainId = Number(input.chainId || getDefaultChainId());
   if (!address || !Number.isFinite(chainId)) return null;
 
   try {

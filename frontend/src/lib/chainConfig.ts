@@ -196,9 +196,9 @@ export function getEvmReadChainIdForTokenPage(): SupportedChainId {
   }
   const lastEvm = readLastEvmChainId();
   if (lastEvm) return lastEvm;
-  // Live inventory is BSC testnet. Do not fall through to mainnet 56 just because
-  // Phantom overwrote last_featured to 101.
-  return BNB_TESTNET_CHAIN_ID;
+  // Production inventory defaults to BNB mainnet. Explicit chain context can
+  // still select testnet for rehearsals.
+  return BNB_CHAIN_ID;
 }
 
 /**
@@ -417,8 +417,7 @@ export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
     const solana =
       (import.meta.env.VITE_SOLANA_VOTE_TREASURY_ADDRESS as string | undefined) ||
       (import.meta.env.VITE_VOTE_TREASURY_ADDRESS_101 as string | undefined) ||
-      // Devnet default: protocol operator until a dedicated treasury is set in env.
-      "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
+      "";
     return String(solana || "").trim();
   }
 

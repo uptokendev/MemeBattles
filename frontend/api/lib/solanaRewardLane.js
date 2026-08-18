@@ -9,7 +9,6 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 
-const PROGRAM_ID_FALLBACK = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX";
 const CONFIG_SEED = Buffer.from("rewards_config");
 const VAULT_SIZE = 9;
 const BATCH_SIZE = 8 + 8 + 32 + 8 + 8 + 8 + 1 + 1;
@@ -73,7 +72,9 @@ function rootBytes(root) {
 function publicKey(value) { return new PublicKey(String(value || "").trim()); }
 
 export function solanaLaneProgramId() {
-  return env("SOLANA_REWARDS_TREASURY_PROGRAM_ID", PROGRAM_ID_FALLBACK);
+  const programId = env("SOLANA_REWARDS_TREASURY_PROGRAM_ID");
+  if (!programId) throw new Error("SOLANA_REWARDS_TREASURY_PROGRAM_ID is required");
+  return programId;
 }
 
 export function solanaLaneAddresses(lane, epochId, walletAddress = null, programId = solanaLaneProgramId()) {

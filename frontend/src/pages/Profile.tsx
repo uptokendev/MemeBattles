@@ -206,7 +206,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
     if (!viewedAddress) return "#";
     const base = getExplorerBase(chainId);
     if (chainId === SOLANA_CHAIN_ID || isSolanaAddress(viewedAddress)) {
-      return `${base}/address/${viewedAddress}?cluster=devnet`;
+      return `${base}/address/${viewedAddress}`;
     }
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);

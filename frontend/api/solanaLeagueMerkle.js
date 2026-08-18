@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import { findProgramAddressSync } from "./dev-fix/solana-v4-primitives.js";
 
 export const REWARDS_TREASURY_PROGRAM_ID = String(
-  process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX",
+  process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "",
 ).trim();
 export const LEAGUE_LEAF_PREFIX = Buffer.from("MWZ_LEAGUE_LEAF", "utf8");
 export const PERIOD_WEEKLY = 0;

@@ -39,6 +39,10 @@ function isLocalNetwork(): boolean {
   return network.name === "hardhat" || network.name === "localhost";
 }
 
+function isBscMainnet(): boolean {
+  return network.name === "bscMainnet";
+}
+
 function routeProfileEnv(name: string, fallback: number): number {
   const raw = (process.env[name] ?? "").trim();
   if (!raw) return fallback;
@@ -269,11 +273,17 @@ export async function deployProtocol() {
   const net = await ethers.provider.getNetwork();
   const deploymentStartBlock = await ethers.provider.getBlockNumber();
 
+  if (isBscMainnet() && net.chainId !== 56n) {
+    throw new Error(`bscMainnet must resolve chain ID 56, got ${net.chainId.toString()}`);
+  }
+
   const productionTopazRouterAddress = await resolveRouterAddress(deployerAddress);
   const launchRouter = await resolveLaunchRouter(productionTopazRouterAddress);
   const routerAddress = launchRouter.launchRouterAddress;
   const graduationOracleConfig = await resolveGraduationOracle();
-  const treasurySafe = mustEnv("TREASURY_SAFE", process.env.FEE_RECIPIENT ?? deployerAddress);
+  const treasurySafe = isBscMainnet()
+    ? mustEnv("TREASURY_SAFE")
+    : mustEnv("TREASURY_SAFE", process.env.FEE_RECIPIENT ?? deployerAddress);
   const upgradeDelaySeconds = numEnv("UPGRADE_DELAY_SECONDS", 2 * 24 * 60 * 60);
   const protocolFeeBps = BigInt(numEnv("PROTOCOL_FEE_BPS", 200));
   const graduationTargetUsd = decimalUnitsEnv("GRADUATION_TARGET_USD");
@@ -297,6 +307,16 @@ export async function deployProtocol() {
   const weeklyLeagueBps = 3000;
   const monthlyLeagueBps = 7000;
   const treasuryRouterLabel = useTreasuryRouterV2 ? "TreasuryRouterV2" : "TreasuryRouter";
+
+  if (isBscMainnet()) {
+    if (!useTreasuryRouterV2) throw new Error("bscMainnet requires TreasuryRouterV2");
+    if (!routeAuthority || routeAuthority === ethers.ZeroAddress) throw new Error("bscMainnet requires ROUTE_AUTHORITY_ADDRESS");
+    if (graduationTargetUsd === undefined) throw new Error("bscMainnet requires an explicit GRADUATION_TARGET_USD");
+    if ((bigintEnv("MONTHLY_LEAGUE_CAP_USD") ?? 0n) <= 0n) throw new Error("bscMainnet requires MONTHLY_LEAGUE_CAP_USD");
+    if (enableLeaguePayouts || enableLeagueClaims || enableRecruiterPayouts) {
+      throw new Error("Reward and payout lanes must remain paused during the initial bscMainnet deployment");
+    }
+  }
 
   console.log(`Network: ${network.name}`);
   console.log(`Chain ID: ${net.chainId.toString()}`);

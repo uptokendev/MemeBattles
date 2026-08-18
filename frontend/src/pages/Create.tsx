@@ -29,7 +29,7 @@ import { submitSolanaV4CreateFromAuthorization } from "@/lib/solanaV4CreateSubmi
 import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { apiFetch } from "@/lib/apiBase";
 import {
-  BNB_TESTNET_CHAIN_ID,
+  BNB_CHAIN_ID,
   getActiveChainId,
   getChainLabel,
   getDefaultChainId,
@@ -139,8 +139,7 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
-  // Prefer env default (usually 97 testnet). Never seed from mainnet-only BNB_CHAIN_ID (56) —
-  // that hides $6 test graduation and leaves the selector stuck on $30K.
+  // Seed from the explicitly configured production default.
   const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(() =>
     getDefaultGraduationTargetWei(getDefaultChainId()),
   );
@@ -158,7 +157,7 @@ const Create = () => {
   const graduationOptions: GraduationTier[] = useMemo(() => getGraduationTiers(chainId), [chainId]);
   const configuredBnbChainId = useMemo(() => {
     const configured = getDefaultChainId();
-    return isEvmChainId(configured) ? configured : BNB_TESTNET_CHAIN_ID;
+    return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
   }, []);
   const bnbContractReadiness = useMemo(
     () => getBnbContractReadiness(configuredBnbChainId),
@@ -464,7 +463,7 @@ const Create = () => {
         visibility: "private",
         // Keep Solana reservations on the same cluster as create-auth (Railway SOLANA_CLUSTER).
         ...(isSolanaCreator
-          ? { cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-devnet") }
+          ? { cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta") }
           : {}),
       });
       cacheDraftLogo(draft.id, logoUrl);

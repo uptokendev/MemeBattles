@@ -1,0 +1,22 @@
+{
+  "network": "bscMainnet",
+  "chainId": 56,
+  "upstreamRepository": "REPLACE_WITH_VERIFIED_TOPAZ_SOURCE",
+  "upstreamCommit": "REPLACE_WITH_VERIFIED_COMMIT",
+  "deploymentCommit": "",
+  "deployer": "0x0000000000000000000000000000000000000000",
+  "contracts": {
+    "WBNB": "0x0000000000000000000000000000000000000000",
+    "PoolImplementation": "0x0000000000000000000000000000000000000000",
+    "PoolFactory": "0x0000000000000000000000000000000000000000",
+    "FactoryRegistry": "0x0000000000000000000000000000000000000000",
+    "Router": "0x0000000000000000000000000000000000000000"
+  },
+  "configuration": {
+    "volatileFeeBps": 100,
+    "graduationPoolStable": false
+  },
+  "transactions": {
+    "note": "Replace every zero address and this note with the signed chain-56 Topaz deployment sheet before mainnet deploy."
+  }
+}

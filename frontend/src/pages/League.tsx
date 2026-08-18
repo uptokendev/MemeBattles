@@ -411,11 +411,11 @@ function StandingsTable({
   );
 }
 
-export default function League({ chainId = 97 }: { chainId?: number }) {
+export default function League({ chainId = 56 }: { chainId?: number }) {
   const wallet = useWallet();
   const defaultChain = getDefaultChainId();
   const walletChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
-  const activeBnbChainId = walletChainId === 56 ? 56 : 97;
+  const activeBnbChainId = walletChainId === 97 ? 97 : 56;
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const [feedChainId] = useSelectedFeedChainId();

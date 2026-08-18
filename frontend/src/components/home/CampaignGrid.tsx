@@ -6,7 +6,7 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
-import { type SupportedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
@@ -131,7 +131,7 @@ function mergeCampaignItems(primary: CampaignFeedItemApi[], fallback: CampaignFe
 }
 
 async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
-  const chainId = Number(params.chainId || 97);
+  const chainId = Number(params.chainId || getDefaultChainId());
   const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
   const cursor = Math.max(0, Number(params.cursor || 0));
   const page = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
@@ -201,7 +201,7 @@ async function fetchCampaignFeedForChain(params: Record<string, any>): Promise<C
 
 /** For BNB UI, merge testnet (97) + mainnet (56) so feed is not empty when default chain drifts. */
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
-  const selected = Number(params.chainId || 97);
+  const selected = Number(params.chainId || getDefaultChainId());
   const chainIds = getBnbCampaignFeedChainIds(selected);
   const limit = Number(params.limit || 24);
 

@@ -4,8 +4,6 @@
  * Operator fill cap is $10,000 USD. Test operator may be a normal wallet.
  */
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import {
   Connection,
   Keypair,
@@ -16,18 +14,20 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 
-const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX",
-);
-const RPC = process.env.SOLANA_RPC || "https://api.devnet.solana.com";
-const DEFAULT_OPERATOR = process.env.SOLANA_PROTOCOL_OPERATOR || "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
-const SOL_USD_MICROS = BigInt(process.env.SOL_USD_MICROS || "150000000"); // $150
+function requiredEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+const PROGRAM_ID = new PublicKey(requiredEnv("SOLANA_REWARDS_TREASURY_PROGRAM_ID"));
+const RPC = requiredEnv("SOLANA_RPC");
+const DEFAULT_OPERATOR = requiredEnv("SOLANA_PROTOCOL_OPERATOR");
+const SOL_USD_MICROS = BigInt(requiredEnv("SOL_USD_MICROS"));
 const INIT_LANES_DISC = Buffer.from([0x4d, 0x1c, 0x8b, 0x2e, 0x9a, 0x70, 0x11, 0x5c]); // placeholder, replaced below
 
 function loadKeypair() {
-  const file =
-    String(process.env.SOLANA_PROTOCOL_AUTHORITY_KEYPAIR || "").trim() ||
-    path.join(os.homedir(), ".config/memewarzone/solana-devnet/deployer.json");
+  const file = requiredEnv("SOLANA_PROTOCOL_AUTHORITY_KEYPAIR");
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(file, "utf8"))));
 }
 

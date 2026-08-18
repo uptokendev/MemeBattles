@@ -146,7 +146,7 @@ async function loadLifecycleRows(chainId, campaignAddresses) {
 export default async function handler(req, res) {
   await reconcileScheduledDraftLifecycle(pool);
   const query = getQuery(req);
-  const chainId = Number(query.chainId || 97);
+  const chainId = Number(query.chainId || 56);
   const tab = String(query.tab || "trending").toLowerCase();
   const status = String(query.status || "all").toLowerCase();
   const sort = String(query.sort || "default").toLowerCase();

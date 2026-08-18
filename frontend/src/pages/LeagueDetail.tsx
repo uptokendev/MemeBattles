@@ -219,7 +219,7 @@ function RowWallet({ address }: { address: string }) {
   );
 }
 
-export default function LeagueDetail({ chainId = 97 }: { chainId?: number }) {
+export default function LeagueDetail({ chainId = 56 }: { chainId?: number }) {
   const navigate = useNavigate();
   const { leagueKey } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -325,7 +325,7 @@ useEffect(() => {
         // Soft summary fallback only when this league maps to the indexer and returned nothing.
         // Avoid always calling loadLeagueSummary (it used to trigger a multi-second on-chain scan).
         if (categoryMap[String(def.key)] && !apiItems.length) {
-          const bnbChainId = activeChainId === 56 ? 56 : 97;
+          const bnbChainId = activeChainId === 97 ? 97 : 56;
           const fallback = await loadLeagueSummary({ chain: "bnb", chainId: bnbChainId, period: effectivePeriod, epochOffset }).catch(() => null);
           const fallbackCard = fallback?.leagues.find((card) => card.key === def.key);
           if (!nextItems.length && fallbackCard?.rows?.length) nextItems = fallbackCard.rows;

@@ -1,6 +1,5 @@
 import { findProgramAddressSync, publicKeyBytes } from "../dev-fix/solana-v4-primitives.js";
 
-const PROGRAM_ID_FALLBACK = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX";
 const CONFIG_SEED = Buffer.from("rewards_config");
 const AIRDROP_VAULT_SEED = Buffer.from("airdrop_vault");
 const AIRDROP_BATCH_SEED = Buffer.from("airdrop_batch");
@@ -58,7 +57,9 @@ function proofFromMeta(meta) {
 }
 
 export function solanaRewardsProgramId() {
-  return String(process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || PROGRAM_ID_FALLBACK).trim();
+  const programId = String(process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "").trim();
+  if (!programId) throw new Error("SOLANA_REWARDS_TREASURY_PROGRAM_ID is required");
+  return programId;
 }
 
 export function solanaRewardRpcUrl(chainId = 101) {

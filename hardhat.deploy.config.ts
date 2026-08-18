@@ -7,6 +7,7 @@ const pk = process.env.DEPLOYER_PK
   ? [process.env.DEPLOYER_PK.startsWith("0x") ? process.env.DEPLOYER_PK : `0x${process.env.DEPLOYER_PK}`]
   : [];
 const explorerApiKey = process.env.ETHERSCAN_API_KEY || "";
+const bscMainnetRpcUrl = process.env.BSC_MAINNET_RPC || process.env.BSC_MAINNET_RPC_URL || "";
 
 const config: HardhatUserConfig = {
   networks: {
@@ -14,6 +15,11 @@ const config: HardhatUserConfig = {
       url: process.env.BSC_TESTNET_RPC || "",
       accounts: pk,
       chainId: 97,
+    },
+    bscMainnet: {
+      url: bscMainnetRpcUrl,
+      accounts: pk,
+      chainId: 56,
     },
   },
   solidity: {

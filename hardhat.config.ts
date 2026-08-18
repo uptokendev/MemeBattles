@@ -7,6 +7,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC || process.env.BSC_TESTNET_RPC_URL || "";
+const bscMainnetRpcUrl = process.env.BSC_MAINNET_RPC || process.env.BSC_MAINNET_RPC_URL || "";
 const deployerPrivateKey = process.env.DEPLOYER_PK || process.env.PRIVATE_KEY_DEPLOY || "";
 const explorerApiKey = process.env.ETHERSCAN_API_KEY || "";
 
@@ -19,6 +20,11 @@ const config: HardhatUserConfig = {
       url: bscTestnetRpcUrl,
       accounts: deployerPrivateKey ? [deployerPrivateKey.startsWith("0x") ? deployerPrivateKey : `0x${deployerPrivateKey}`] : [],
       chainId: 97,
+    },
+    bscMainnet: {
+      url: bscMainnetRpcUrl,
+      accounts: deployerPrivateKey ? [deployerPrivateKey.startsWith("0x") ? deployerPrivateKey : `0x${deployerPrivateKey}`] : [],
+      chainId: 56,
     },
   },
 

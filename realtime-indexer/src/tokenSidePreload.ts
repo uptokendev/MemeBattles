@@ -158,7 +158,7 @@ async function findRecruiterByWallet(walletAddress: string) {
 }
 
 const patchedAblyToken = wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const scope = String(req.query.scope || "token").toLowerCase();
 
   if (scope === "live") {
@@ -211,7 +211,7 @@ const patchedAblyToken = wrap(async (req, res) => {
 });
 
 const patchedCampaigns = wrap(async (req, res) => {
-  const chainId = toInt(req.query.chainId, 97);
+  const chainId = toInt(req.query.chainId, ENV.DEFAULT_EVM_CHAIN_ID);
   const limit = clamp(toInt(req.query.limit, 24), 1, 500);
   const cursor = clamp(toInt(req.query.cursor, 0), 0, 1_000_000);
   const searchRaw = String(req.query.search || "").trim();
@@ -313,7 +313,7 @@ const patchedCampaigns = wrap(async (req, res) => {
 });
 
 const patchedTokenSummary = wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
   const campaign = identity.campaignAddress;
 

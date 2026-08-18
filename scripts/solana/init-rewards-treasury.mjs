@@ -5,8 +5,6 @@
  * Authority is the protocol deployer. SOL never sits in that key.
  */
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import {
   Connection,
   Keypair,
@@ -17,17 +15,18 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 
-const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_REWARDS_TREASURY_PROGRAM_ID || "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX",
-);
-const RPC = process.env.SOLANA_RPC || "https://api.devnet.solana.com";
-const HARVEST = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
+function requiredEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+const PROGRAM_ID = new PublicKey(requiredEnv("SOLANA_REWARDS_TREASURY_PROGRAM_ID"));
+const RPC = requiredEnv("SOLANA_RPC");
 const INIT_DISC = Buffer.from([0xaf, 0xaf, 0x6d, 0x1f, 0x0d, 0x98, 0x9b, 0xed]);
 
 function loadKeypair() {
-  const explicit = String(process.env.SOLANA_PROTOCOL_AUTHORITY_KEYPAIR || "").trim();
-  const fallback = path.join(os.homedir(), ".config/memewarzone/solana-devnet/deployer.json");
-  const file = explicit || fallback;
+  const file = requiredEnv("SOLANA_PROTOCOL_AUTHORITY_KEYPAIR");
   const raw = JSON.parse(fs.readFileSync(file, "utf8"));
   return Keypair.fromSecretKey(Uint8Array.from(raw));
 }
@@ -44,9 +43,7 @@ async function main() {
   console.log("config   ", config.toBase58());
   console.log("league   ", leagueVault.toBase58());
   console.log("airdrop  ", airdropVault.toBase58());
-  if (payer.publicKey.toBase58() === HARVEST) {
-    console.log("note: deployer is the V4 upgrade authority. Pots are the PDAs, not this wallet.");
-  }
+  console.log("note: pots are program PDAs. Do not leave treasury SOL on the deployer key.");
 
   const existing = await connection.getAccountInfo(config);
   if (existing) {

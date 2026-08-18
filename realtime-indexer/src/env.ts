@@ -26,8 +26,10 @@ export const ENV = {
   DATABASE_URL: req("DATABASE_URL"),
   ABLY_API_KEY: req("ABLY_API_KEY"),
 
-  BSC_RPC_HTTP_97: req("BSC_RPC_HTTP_97"),
+  BSC_RPC_HTTP_97: process.env.BSC_RPC_HTTP_97 || "",
   BSC_RPC_HTTP_56: process.env.BSC_RPC_HTTP_56 || "",
+  DEPLOYMENT_NETWORK: String(process.env.DEPLOYMENT_NETWORK || "mainnet").toLowerCase(),
+  DEFAULT_EVM_CHAIN_ID: Number(process.env.DEFAULT_EVM_CHAIN_ID || (String(process.env.DEPLOYMENT_NETWORK || "mainnet").toLowerCase() === "testnet" ? 97 : 56)),
 
   // Creation resolves only against the accepted active factory. The former
   // scheduled-slot factory is never a fallback creation target.
