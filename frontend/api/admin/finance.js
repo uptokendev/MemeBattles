@@ -105,9 +105,7 @@ function buildNativeRewardModel(rows, network) {
     const periodEnd = toIso(row.period_end);
     if (nativeAmount == null || !periodStart || !periodEnd) continue;
 
-    if (state === "allocated" || state === "claimable" || state === "pending") {
-      obligationRaw += rawAmount;
-    }
+    if (state === "allocated" || state === "claimable" || state === "pending") obligationRaw += rawAmount;
 
     aggregates.push({
       id: `reward:${network.chainId}:${String(row.reward_type || "unknown")}:${String(row.status || "unknown")}:${index}`,
@@ -153,7 +151,6 @@ async function financeRewards(req, res, network) {
     const rows = await loadRewardRows(network);
     const { aggregates, obligationRaw } = buildNativeRewardModel(rows, network);
     const { coverage } = await rewardCoverage(network, obligationRaw);
-
     return res.status(200).json({
       schemaVersion: "finance-rewards-v1",
       generatedAt: new Date().toISOString(),
@@ -262,17 +259,18 @@ function financeInventoryItems(network) {
     add(`bnb${network.chainId}-treasury-router`, "contract", "Treasury Router", env("TREASURY_ROUTER_ADDRESS"), "fee route authority");
     add(`bnb${network.chainId}-treasury-vault`, "vault", "Treasury Vault", env("TREASURY_VAULT_ADDRESS"), "treasury custody");
     add(`bnb${network.chainId}-protocol-revenue`, "vault", "Protocol Revenue Vault", env("PROTOCOL_REVENUE_VAULT_ADDRESS"), "protocol revenue custody");
-    add(`bnb${network.chainId}-community-rewards`, "vault", "Community Rewards Vault", env("COMMUNITY_REWARDS_VAULT_ADDRESS"), "community reward obligations");
-    add(`bnb${network.chainId}-recruiter-rewards`, "vault", "Recruiter Rewards Vault", env("RECRUITER_REWARDS_VAULT_ADDRESS"), "recruiter reward obligations");
+    add(`bnb${network.chainId}-community-rewards`, "vault", "Community Rewards Vault", env("COMMUNITY_REWARDS_VAULT_ADDRESS"), "community reward routing");
+    add(`bnb${network.chainId}-recruiter-rewards`, "vault", "Recruiter Rewards Vault", env("RECRUITER_REWARDS_VAULT_ADDRESS"), "recruiter reward routing");
+    configuredRewardVaultAddresses(network).forEach((address, index) => add(`bnb${network.chainId}-claim-custody-${index + 1}`, "vault", "Reward Claim Custody", address, "active reward claim funding"));
     add(`bnb${network.chainId}-lp-locker`, "contract", "Permanent LP Locker", env("PERMANENT_LP_LOCKER_ADDRESS") || env("LP_LOCKER_ADDRESS"), "permanently locked graduation liquidity");
     add(`bnb${network.chainId}-vote-treasury`, "contract", "UP Vote Treasury", env("VOTE_TREASURY_ADDRESS"), "verified paid-vote collection");
   } else if (network.chainId === 101) {
     add("sol101-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_DEVNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
-    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol101-rewards-${index + 1}`, "vault", "Solana Reward Vault", address, "reward obligation funding"));
+    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol101-claim-custody-${index + 1}`, "vault", "Solana Reward Claim Custody", address, "reward claim funding"));
     add("sol101-operator", "wallet", "Solana LP Operator", process.env.SOLANA_DEVNET_OPERATOR_ADDRESS || process.env.SOLANA_OPERATOR_ADDRESS || process.env.SOLANA_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   } else {
     add("sol102-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_MAINNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_MAINNET_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
-    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol102-rewards-${index + 1}`, "vault", "Solana Reward Vault", address, "reward obligation funding"));
+    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol102-claim-custody-${index + 1}`, "vault", "Solana Reward Claim Custody", address, "reward claim funding"));
     add("sol102-operator", "wallet", "Solana LP Operator", process.env.SOLANA_MAINNET_OPERATOR_ADDRESS || process.env.SOLANA_MAINNET_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   }
   return items;
@@ -311,20 +309,19 @@ async function readIndexerLpFees(network) {
   }
 }
 
-async function financeReconciliation(req, res, network) {
+async function buildReconciliationSummary(network) {
   const inventory = financeInventoryItems(network);
   let sourceErrorCount = 0;
   let staleSourceCount = 0;
+
   try {
     const lp = await readIndexerLpFees(network);
-    for (const item of lp.items) {
-      if (item?.fees?.error) sourceErrorCount += 1;
-    }
+    for (const item of lp.items) if (item?.fees?.error) sourceErrorCount += 1;
     const updatedAt = Date.parse(String(lp.updatedAt || ""));
-    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 15 * 60 * 1000) staleSourceCount = 1;
+    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 15 * 60 * 1000) staleSourceCount += 1;
   } catch {
     sourceErrorCount += 1;
-    staleSourceCount = 1;
+    staleSourceCount += 1;
   }
 
   let obligationRaw = 0n;
@@ -350,20 +347,135 @@ async function financeReconciliation(req, res, network) {
       ? "attention"
       : "ready";
 
+  return {
+    chain: network.chain,
+    status,
+    trackedInventoryCount,
+    balancedInventoryCount,
+    balanceBreakCount,
+    missingPriceCount: 0,
+    duplicateCandidateCount: 0,
+    quarantinedTransferCount: 0,
+    staleSourceCount: staleSourceCount + sourceErrorCount,
+  };
+}
+
+async function financeReconciliation(req, res, network) {
   return res.status(200).json({
     schemaVersion: "finance-reconciliation-v1",
     generatedAt: new Date().toISOString(),
     source: "dashboard-api",
+    chains: [await buildReconciliationSummary(network)],
+  });
+}
+
+async function revenueModuleStatus(network) {
+  const now = new Date().toISOString();
+  let blockerCount = 0;
+  let warningCount = 0;
+  let status = "ready";
+
+  try {
+    const lp = await readIndexerLpFees(network);
+    const errors = lp.items.filter((item) => item?.fees?.error).length;
+    const registered = lp.items.filter((item) => item?.fees?.registered === true).length;
+    if (errors > 0) {
+      warningCount += errors;
+      status = "attention";
+    } else if (lp.items.length === 0 || registered === 0) {
+      status = "pending";
+      warningCount += 1;
+    }
+  } catch {
+    blockerCount += 1;
+    status = "blocked";
+  }
+
+  if (network.chain === "bnb") {
+    try {
+      await pool.query(`select 1 from public.reward_events where chain_id = $1 limit 1`, [network.chainId]);
+    } catch (error) {
+      if (schemaMissing(error)) {
+        blockerCount += 1;
+        status = "blocked";
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  return { key: "revenue", status, blockerCount, warningCount, lastUpdatedAt: now };
+}
+
+async function financeOverview(req, res, network) {
+  const generatedAt = new Date().toISOString();
+  const inventory = financeInventoryItems(network);
+  const inventoryStatus = inventory.length > 0 ? "ready" : network.environment === "mainnet" ? "pending" : "blocked";
+
+  let rewardStatus = "blocked";
+  let rewardBlockers = 1;
+  let rewardWarnings = 0;
+  try {
+    const rows = await loadRewardRows(network);
+    const { obligationRaw } = buildNativeRewardModel(rows, network);
+    const { coverage } = await rewardCoverage(network, obligationRaw);
+    const state = coverage[0]?.coverageStatus || "blocked";
+    rewardStatus = state === "covered" ? "ready" : state;
+    rewardBlockers = state === "blocked" ? 1 : 0;
+    rewardWarnings = state === "attention" ? 1 : 0;
+  } catch (error) {
+    if (!schemaMissing(error)) throw error;
+  }
+
+  const reconciliation = await buildReconciliationSummary(network);
+  const revenue = await revenueModuleStatus(network);
+  const reconciliationBlockers = reconciliation.status === "blocked" ? 1 : 0;
+  const reconciliationWarnings = reconciliation.status === "attention" ? 1 : 0;
+
+  const modules = [
+    {
+      key: "inventory",
+      status: inventoryStatus,
+      blockerCount: inventoryStatus === "blocked" ? 1 : 0,
+      warningCount: inventoryStatus === "pending" ? 1 : 0,
+      lastUpdatedAt: generatedAt,
+    },
+    revenue,
+    {
+      key: "rewards",
+      status: rewardStatus,
+      blockerCount: rewardBlockers,
+      warningCount: rewardWarnings,
+      lastUpdatedAt: generatedAt,
+    },
+    { key: "costs", status: "disabled", blockerCount: 0, warningCount: 0 },
+    { key: "taxReserves", status: "disabled", blockerCount: 0, warningCount: 0 },
+    {
+      key: "reconciliation",
+      status: reconciliation.status,
+      blockerCount: reconciliationBlockers,
+      warningCount: reconciliationWarnings,
+      lastUpdatedAt: generatedAt,
+    },
+    { key: "close", status: "disabled", blockerCount: 0, warningCount: 0 },
+    { key: "distributions", status: "disabled", blockerCount: 0, warningCount: 0 },
+  ];
+
+  const blockingStatuses = new Set(["blocked", "disabled"]);
+  const warningStatuses = new Set(["attention", "pending"]);
+  const blockerCount = modules.filter((module) => blockingStatuses.has(module.status)).length;
+  const warningCount = modules.filter((module) => warningStatuses.has(module.status)).length;
+
+  return res.status(200).json({
+    schemaVersion: "finance-overview-v1",
+    generatedAt,
+    source: "dashboard-api",
+    modules,
     chains: [{
       chain: network.chain,
-      status,
-      trackedInventoryCount,
-      balancedInventoryCount,
-      balanceBreakCount,
-      missingPriceCount: 0,
-      duplicateCandidateCount: 0,
-      quarantinedTransferCount: 0,
-      staleSourceCount: staleSourceCount + sourceErrorCount,
+      closeStatus: "not_ready",
+      blockerCount,
+      warningCount,
     }],
   });
 }
@@ -432,6 +544,7 @@ export default async function financeAdmin(req, res) {
       res.setHeader("Allow", "GET");
       return res.status(405).json({ ok: false, error: "Method not allowed" });
     }
+    if (pathname === "/api/admin/finance/overview") return await financeOverview(req, res, network);
     if (pathname === "/api/admin/finance/rewards") return await financeRewards(req, res, network);
     if (pathname === "/api/admin/finance/revenue") return await financeRevenue(req, res, network);
     if (pathname === "/api/admin/finance/inventory") return await financeInventory(req, res, network);
