@@ -1,0 +1,73 @@
+name: Publish League - Solana Devnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "League period"
+        required: true
+        default: "weekly"
+        type: choice
+        options:
+          - "weekly"
+          - "monthly"
+      epoch_start:
+        description: "Finalized League epoch start (ISO timestamp or Unix seconds)"
+        required: true
+        type: string
+      dry_run:
+        description: "Build/validate the exact root without publishing"
+        required: true
+        default: true
+        type: boolean
+      confirmation:
+        description: "For live publication type PUBLISH_DEVNET_LEAGUE"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-league:
+    if: ${{ inputs.dry_run || inputs.confirmation == 'PUBLISH_DEVNET_LEAGUE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: airdrop-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      LEAGUE_SOLANA_CHAIN_ID: "102"
+      LEAGUE_SOLANA_PERIOD: ${{ inputs.period }}
+      LEAGUE_SOLANA_EPOCH_START: ${{ inputs.epoch_start }}
+      LEAGUE_SOLANA_DRY_RUN: ${{ inputs.dry_run }}
+      LEAGUE_SOLANA_AUTOMATION_ENABLED: ${{ !inputs.dry_run && inputs.confirmation == 'PUBLISH_DEVNET_LEAGUE' && 'true' || 'false' }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      # This workflow is Devnet-only. Open claims automatically only after the
+      # prepared League root reconciles on-chain; production workflows are unchanged.
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && inputs.confirmation == 'PUBLISH_DEVNET_LEAGUE' && 'true' || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax checks
+        run: |
+          node --check scripts/publish-league-solana.mjs
+          node --check api/lib/solanaLeagueRootPublisher.js
+
+      - name: Validate/publish finalized League root
+        run: node --import ./api/load-local-env.mjs scripts/publish-league-solana.mjs

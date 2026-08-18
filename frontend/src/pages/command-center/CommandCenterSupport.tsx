@@ -7,7 +7,6 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  DISCORD_SUPPORT_URL,
   HELP_CATEGORIES,
   searchHelpArticles,
   type HelpCategoryId,
@@ -108,7 +107,7 @@ export default function CommandCenterSupport() {
           description="Wallets, trading, launches, rewards and product questions stay in Discord."
         >
           <Button asChild className="font-retro">
-            <a href={DISCORD_SUPPORT_URL} target="_blank" rel="noreferrer">
+            <a href="https://discord.gg/hhfgQNzt5Z" target="_blank" rel="noreferrer">
               <LifeBuoy className="mr-2 h-4 w-4" />
               Open Discord Support
             </a>

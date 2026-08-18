@@ -9,7 +9,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Component, Suspense, lazy, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { SolanaWalletProvider } from "@/contexts/SolanaWalletContext";
@@ -65,7 +65,6 @@ import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview"
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
 import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
-import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
@@ -76,7 +75,45 @@ import CommandCenterAbuseReportDetail from "@/pages/command-center/CommandCenter
 import { isPostGradRouteEnabled, postGradFlags, warRoomEnabled } from "@/features/postgrad/config";
 import { DocumentTitleSync } from "@/hooks/useDocumentTitle";
 
+const CommandCenterClaims = lazy(() => import("@/pages/command-center/CommandCenterClaims"));
 const queryClient = new QueryClient();
+
+class RouteErrorBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: String((error as { message?: string })?.message || error || "Unknown error"),
+    };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("[AppRouteErrorBoundary]", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background px-6 text-center text-sm text-muted-foreground">
+          <div>
+            <p>Something on this page failed to render.</p>
+            <p className="mt-2 break-words text-xs opacity-80">{this.state.message}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function OwnWalletRouteSync() {
   const navigate = useNavigate();
@@ -208,7 +245,18 @@ function AppShellLayout({
           <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
-          <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
+          <Route
+            path="/profile/:wallet/command/claims"
+            element={
+              <CommandCenterShell>
+                <RouteErrorBoundary fallback={<div className="p-6 text-sm text-muted-foreground">Claims page failed to render. Refresh once and retry.</div>}>
+                  <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading claims...</div>}>
+                    <CommandCenterClaims />
+                  </Suspense>
+                </RouteErrorBoundary>
+              </CommandCenterShell>
+            }
+          />
           <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
@@ -245,12 +293,10 @@ function AppShellLayout({
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
-  const [showContent, setShowContent] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLoadComplete = () => {
     setIsLoading(false);
-    setTimeout(() => setShowContent(true), 100);
   };
 
   return (
@@ -261,12 +307,12 @@ const App = () => {
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
-            {showContent && (
+            {isLoading ? <LoadingScreen onLoadComplete={handleLoadComplete} /> : null}
+            <RouteErrorBoundary>
               <BrowserRouter future={{ v7_relativeSplatPath: true }}>
                 <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               </BrowserRouter>
-            )}
+            </RouteErrorBoundary>
           </TooltipProvider>
         </SolanaWalletProvider>
       </WalletProvider>

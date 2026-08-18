@@ -68,10 +68,44 @@ export default defineConfig(({ mode }) => {
           find: "buffer",
           replacement: path.resolve(__dirname, "./node_modules/buffer/"),
         },
+        {
+          find: /^rpc-websockets$/,
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets.ts"),
+        },
+        {
+          find: /^rpc-websockets\/dist\/lib\/client$/,
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-client.ts"),
+        },
+        {
+          find: /^rpc-websockets\/dist\/lib\/client\/websocket(?:\.browser)?$/,
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-websocket-browser.ts"),
+        },
+        {
+          find: /^jayson\/lib\/client\/browser(?:\/index(?:\.js)?)?$/,
+          replacement: path.resolve(__dirname, "./src/shims/jayson-browser-client.ts"),
+        },
       ],
     },
     optimizeDeps: {
-      include: ["buffer", "@solana/web3.js", "@solana/spl-token"],
+      include: [
+        "buffer",
+        "bn.js",
+        "bs58",
+        "borsh",
+        "bigint-buffer",
+        "eventemitter3",
+        "@solana/buffer-layout",
+      ],
+      exclude: [
+        "@solana/web3.js",
+        "@solana/spl-token",
+        "rpc-websockets",
+        "rpc-websockets/dist/lib/client",
+        "rpc-websockets/dist/lib/client/websocket",
+        "rpc-websockets/dist/lib/client/websocket.browser",
+        "jayson",
+        "jayson/lib/client/browser",
+      ],
       esbuildOptions: {
         define: {
           global: "globalThis",

@@ -1,0 +1,61 @@
+name: Solana Rewards Devnet Funding
+
+on:
+  workflow_dispatch:
+    inputs:
+      recruiter_lamports:
+        description: "Recruiter vault top-up in lamports (max 1,000,000)"
+        required: true
+        default: "100000"
+        type: string
+      squad_lamports:
+        description: "Squad vault top-up in lamports (max 1,000,000)"
+        required: true
+        default: "100000"
+        type: string
+      confirmation:
+        description: "Type FUND_DEVNET_REWARDS"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fund-devnet-vaults:
+    if: ${{ inputs.confirmation == 'FUND_DEVNET_REWARDS' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: squad-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      SOLANA_REWARD_CHAIN_ID: "102"
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      CERT_FUNDING_CONFIRM: ${{ inputs.confirmation }}
+      CERT_RECRUITER_FUND_LAMPORTS: ${{ inputs.recruiter_lamports }}
+      CERT_SQUAD_FUND_LAMPORTS: ${{ inputs.squad_lamports }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax-check certification funding helper
+        run: node --check scripts/incentive-cert/fund-solana-rewards-devnet.mjs
+
+      - name: Fund Recruiter and Squad devnet reward vaults
+        run: node scripts/incentive-cert/fund-solana-rewards-devnet.mjs
+
+      - name: Verify post-funding rewards treasury state
+        run: node scripts/incentive-cert/check-solana-rewards-devnet.mjs

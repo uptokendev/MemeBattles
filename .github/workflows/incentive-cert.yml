@@ -1,0 +1,71 @@
+name: Incentive certification harness
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - 'frontend/scripts/incentive-cert/**'
+      - 'frontend/api/lib/solanaRewardReconciliation.js'
+      - 'frontend/api/lib/solanaRewardReconciliation.test.mjs'
+      - 'frontend/api/lib/solanaRewardClaim.js'
+      - 'frontend/api/lib/solanaRewardLane.js'
+      - 'frontend/api/rewards.js'
+      - 'frontend/src/lib/solanaRewardNetwork.ts'
+      - 'frontend/src/lib/solanaRewardClaim.ts'
+      - 'frontend/src/lib/solanaRewardLaneClaim.ts'
+      - 'frontend/src/lib/rewardProgramsApi.ts'
+      - 'frontend/src/pages/command-center/CommandCenterClaims.tsx'
+      - '.github/workflows/incentive-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness-proof:
+    name: Harness syntax and invariants
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check scripts/incentive-cert/config.mjs
+          node --check scripts/incentive-cert/report.mjs
+          node --check scripts/incentive-cert/source-audit.mjs
+          node --check scripts/incentive-cert/run.mjs
+          node --check scripts/incentive-cert/self-test.mjs
+          node --check scripts/incentive-cert/solana-live-driver.mjs
+      - name: Validate evidence template JSON
+        run: node -e "JSON.parse(require('node:fs').readFileSync('scripts/incentive-cert/solana-devnet-evidence.example.json','utf8')); console.log('PASS evidence template JSON')"
+      - name: Run deterministic harness invariants
+        run: node scripts/incentive-cert/self-test.mjs
+      - name: Run production reconciliation unit proof
+        run: node --test api/lib/solanaRewardReconciliation.test.mjs
+
+  source-preflight:
+    name: Production reward source preflight
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit BNB and Solana reward rails
+        run: node scripts/incentive-cert/run.mjs --chain=all
+      - name: Upload certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: incentive-cert-preflight
+          path: frontend/artifacts/incentive-cert/*.json
+          if-no-files-found: error

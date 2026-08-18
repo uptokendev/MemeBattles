@@ -7,11 +7,13 @@ on:
     paths:
       - Anchor.toml
       - programs/memewarzone_solana/**
+      - programs/mwz_rewards_treasury/**
       - config/solana/**
       - scripts/solana/**
       - tests/solana/devnet-protocol-state.cjs
       - tests/solana/package.json
       - docs/solana-devnet-deployment-runbook.md
+      - docs/solana-incentive-devnet-certification.md
       - .github/workflows/solana-devnet-readiness.yml
   workflow_dispatch:
     inputs:
@@ -56,8 +58,22 @@ jobs:
         run: |
           node --check scripts/solana/check-devnet-readiness.mjs
           node --check scripts/solana/prepare-devnet-deployment.mjs
+          node --check scripts/solana/init-rewards-treasury.mjs
+          node --check scripts/solana/init-rewards-lanes.mjs
           node --check tests/solana/devnet-protocol-state.cjs
           node -e 'const m=require("./config/solana/devnet-generation-v1.json"); if(m.settings.buyFeeBps!==200 || m.settings.sellFeeBps!==200) process.exit(1)'
+
+      - name: Enforce split rewards-lane bootstrap
+        shell: bash
+        run: |
+          grep -q 'initialize_route_state' scripts/solana/init-rewards-lanes.mjs
+          grep -q 'initialize_monthly_league_vault' scripts/solana/init-rewards-lanes.mjs
+          grep -q 'initialize_recruiter_vault' scripts/solana/init-rewards-lanes.mjs
+          grep -q 'initialize_squad_vault' scripts/solana/init-rewards-lanes.mjs
+          if grep -q 'global:initialize_lanes' scripts/solana/init-rewards-lanes.mjs; then
+            echo "Removed initialize_lanes instruction was reintroduced into the rewards bootstrap." >&2
+            exit 1
+          fi
 
       - name: Reject committed Solana keypairs
         shell: bash
@@ -75,3 +91,6 @@ jobs:
           grep -q 'security defaults are locked' docs/solana-devnet-deployment-runbook.md
           grep -q 'Direct Create remains blocked' docs/solana-devnet-deployment-runbook.md
           grep -q 'npm --prefix tests/solana run devnet:bootstrap' docs/solana-devnet-deployment-runbook.md
+          grep -q 'initialize_route_state' docs/solana-incentive-devnet-certification.md
+          grep -q 'initialize_recruiter_vault' docs/solana-incentive-devnet-certification.md
+          grep -q 'initialize_squad_vault' docs/solana-incentive-devnet-certification.md

@@ -1,7 +1,21 @@
-import { asBigInt, envInt, envText } from "./config.mjs";
+import { asBigInt, envBool, envInt, envText } from "./config.mjs";
 
 function isSolanaAirdropChain(chainId) {
   return Number(chainId) === 101 || Number(chainId) === 102;
+}
+
+function resolveAirdropActivityChain(chainId) {
+  const rewardChainId = Number(chainId);
+  const certificationMode = envBool("AIRDROP_CERTIFICATION_MODE", false);
+  if (!certificationMode) return rewardChainId;
+  if (rewardChainId !== 102) {
+    throw new Error("AIRDROP_CERTIFICATION_MODE is allowed only for reward chain 102");
+  }
+  const activityChainId = envInt("AIRDROP_ACTIVITY_CHAIN_ID", 101, { min: 101, max: 102 });
+  if (!isSolanaAirdropChain(activityChainId)) {
+    throw new Error("AIRDROP_ACTIVITY_CHAIN_ID must be 101 or 102");
+  }
+  return activityChainId;
 }
 
 function walletExpr(column, chainId) {
@@ -123,6 +137,7 @@ export async function exclusionSets(client, { chainId, start, end }) {
 }
 
 export async function traderCandidates(client, { chainId, start, end, exclusions }) {
+  const activityChainId = resolveAirdropActivityChain(chainId);
   const solana = isSolanaAirdropChain(chainId);
   const minVolume = asBigInt(envText(
     "AIRDROP_TRADER_MIN_VOLUME_WEI",
@@ -135,34 +150,35 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
   const minTrades = envInt("AIRDROP_TRADER_MIN_TRADES", 3, { min: 1, max: 1000 });
   const minDays = envInt("AIRDROP_TRADER_MIN_ACTIVE_DAYS", 2, { min: 1, max: 7 });
   const { rows } = await client.query(
-    `select ${walletExpr("t.wallet", chainId)} wallet_address,sum(t.bnb_amount_raw)::text total_volume_raw,
+    `select ${walletExpr("t.wallet", activityChainId)} wallet_address,sum((t.bnb_amount_raw)::numeric)::text total_volume_raw,
             count(*)::int trade_count,count(distinct (t.block_time at time zone 'utc')::date)::int active_days,
             count(distinct t.campaign_address)::int campaign_count
        from public.curve_trades t join public.campaigns c
          on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
        left join public.campaign_security_states s on s.campaign_address=t.campaign_address
-       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", chainId)}=${walletExpr("t.wallet", chainId)}
-       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", chainId)}=${walletExpr("c.creator_address", chainId)}
+       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", activityChainId)}=${walletExpr("t.wallet", activityChainId)}
+       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", activityChainId)}=${walletExpr("c.creator_address", activityChainId)}
       where t.chain_id=$1 and t.block_time >= $2 and t.block_time < $3 and t.side in ('buy','sell')
-        and ${walletsDiffer("t.wallet", "c.creator_address", chainId)} and not coalesce(s.paused,false)
+        and ${walletsDiffer("t.wallet", "c.creator_address", activityChainId)} and not coalesce(s.paused,false)
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
-      group by ${walletExpr("t.wallet", chainId)}
-     having sum(t.bnb_amount_raw) >= $4::numeric and count(*) >= $5
+      group by ${walletExpr("t.wallet", activityChainId)}
+     having sum((t.bnb_amount_raw)::numeric) >= $4::numeric and count(*) >= $5
         and count(distinct (t.block_time at time zone 'utc')::date) >= $6`,
-    [chainId, start, end, minVolume.toString(), minTrades, minDays],
+    [activityChainId, start, end, minVolume.toString(), minTrades, minDays],
   );
   return rows.filter((row) => !isWalletExcluded(exclusions, row.wallet_address)).map((row) => {
     const total = asBigInt(row.total_volume_raw);
     const counted = total > cap ? cap : total;
-    const countedBnb = nativeUnits(counted, chainId);
-    const rawBnb = nativeUnits(total, chainId);
+    const countedBnb = nativeUnits(counted, activityChainId);
+    const rawBnb = nativeUnits(total, activityChainId);
     const activityScore = countedBnb + Math.min(Number(row.trade_count), 20) * 0.1 + Math.min(Number(row.active_days), 7) * 0.5;
     const smallWalletBonus = Math.max(0, 1 - countedBnb / 15) * 0.5;
     const whalePenalty = Math.max(0, rawBnb - 15) / 15;
     return {
       walletAddress: row.wallet_address, totalVolumeRaw: total.toString(), countedVolumeRaw: counted.toString(),
       tradeCount: Number(row.trade_count), activeDays: Number(row.active_days), campaignCount: Number(row.campaign_count),
+      activityChainId,
       activityScore, traderScore: activityScore, creatorScore: 0, smallWalletBonus, whalePenalty,
       securityScore: 1, finalWeight: Math.max(0.1, activityScore + smallWalletBonus - whalePenalty),
       reasonCodes: ["TRADER_MIN_VOLUME", "TRADER_MIN_TRADES", "TRADER_MULTI_DAY", "SECURITY_CLEAR", "COOLDOWN_CLEAR"],
@@ -171,6 +187,7 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
 }
 
 export async function creatorCandidates(client, { chainId, start, end, exclusions }) {
+  const activityChainId = resolveAirdropActivityChain(chainId);
   const solana = isSolanaAirdropChain(chainId);
   const minVolume = asBigInt(envText(
     "AIRDROP_CREATOR_MIN_VOLUME_WEI",
@@ -183,20 +200,20 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
   const minBuyers = envInt("AIRDROP_CREATOR_MIN_UNIQUE_BUYERS", solana ? 3 : 10, { min: 1, max: 100000 });
   const maxCampaigns = envInt("AIRDROP_CREATOR_MAX_CAMPAIGNS", 2, { min: 1, max: 20 });
   const { rows } = await client.query(
-    `select ${walletExpr("c.creator_address", chainId)} wallet_address,t.campaign_address,
-            sum(t.bnb_amount_raw)::text qualified_buy_volume_raw,count(distinct ${walletExpr("t.wallet", chainId)})::int unique_buyers
+    `select ${walletExpr("c.creator_address", activityChainId)} wallet_address,t.campaign_address,
+            sum((t.bnb_amount_raw)::numeric)::text qualified_buy_volume_raw,count(distinct ${walletExpr("t.wallet", activityChainId)})::int unique_buyers
        from public.curve_trades t join public.campaigns c
          on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
        left join public.campaign_security_states s on s.campaign_address=t.campaign_address
-       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", chainId)}=${walletExpr("t.wallet", chainId)}
-       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", chainId)}=${walletExpr("c.creator_address", chainId)}
+       left join public.wallet_risk_profiles bw on ${walletExpr("bw.wallet_address", activityChainId)}=${walletExpr("t.wallet", activityChainId)}
+       left join public.wallet_risk_profiles cw on ${walletExpr("cw.wallet_address", activityChainId)}=${walletExpr("c.creator_address", activityChainId)}
       where t.chain_id=$1 and t.block_time >= $2 and t.block_time < $3 and t.side='buy'
-        and ${walletsDiffer("t.wallet", "c.creator_address", chainId)} and not coalesce(s.paused,false) and not coalesce(s.buy_paused,false)
+        and ${walletsDiffer("t.wallet", "c.creator_address", activityChainId)} and not coalesce(s.paused,false) and not coalesce(s.buy_paused,false)
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
-      group by ${walletExpr("c.creator_address", chainId)},t.campaign_address
-     having sum(t.bnb_amount_raw) >= $4::numeric and count(distinct ${walletExpr("t.wallet", chainId)}) >= $5`,
-    [chainId, start, end, minVolume.toString(), minBuyers],
+      group by ${walletExpr("c.creator_address", activityChainId)},t.campaign_address
+     having sum((t.bnb_amount_raw)::numeric) >= $4::numeric and count(distinct ${walletExpr("t.wallet", activityChainId)}) >= $5`,
+    [activityChainId, start, end, minVolume.toString(), minBuyers],
   );
   const grouped = new Map();
   for (const row of rows) {
@@ -209,8 +226,8 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
     const total = top.reduce((sum, row) => sum + asBigInt(row.qualified_buy_volume_raw), 0n);
     const counted = total > cap ? cap : total;
     const uniqueBuyers = top.reduce((sum, row) => sum + Number(row.unique_buyers), 0);
-    const countedBnb = nativeUnits(counted, chainId);
-    const rawBnb = nativeUnits(total, chainId);
+    const countedBnb = nativeUnits(counted, activityChainId);
+    const rawBnb = nativeUnits(total, activityChainId);
     const activityScore = countedBnb + Math.min(uniqueBuyers, 50) * 0.1 + top.length;
     const smallWalletBonus = Math.max(0, 1 - countedBnb / 25) * 0.5;
     const whalePenalty = Math.max(0, rawBnb - 25) / 25;
@@ -218,6 +235,7 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
       walletAddress, totalVolumeRaw: total.toString(), countedVolumeRaw: counted.toString(), uniqueBuyers,
       eligibleCampaignCount: top.length,
       eligibleCampaigns: top.map((row) => ({ campaignAddress: row.campaign_address, qualifiedBuyVolumeRaw: row.qualified_buy_volume_raw, uniqueBuyers: Number(row.unique_buyers) })),
+      activityChainId,
       activityScore, creatorScore: activityScore, traderScore: 0, smallWalletBonus, whalePenalty,
       securityScore: 1, finalWeight: Math.max(0.1, activityScore + smallWalletBonus - whalePenalty),
       reasonCodes: ["CREATOR_ACTIVE_CAMPAIGN", "CREATOR_MIN_BUY_VOLUME", "CREATOR_MIN_UNIQUE_BUYERS", "SECURITY_CLEAR", "COOLDOWN_CLEAR"],
@@ -232,6 +250,7 @@ export async function stageWinners(client, { chainId, epochId, program, winners,
     const metadata = {
       role: program === "airdrop_creator" ? "Creator" : "Trader", program, epochId,
       epochStart: start.toISOString(), epochEnd: end.toISOString(), winnerRank: winner.winnerRank,
+      activityChainId: winner.activityChainId ?? chainId,
       activityScore: winner.activityScore, creatorScore: winner.creatorScore, traderScore: winner.traderScore,
       smallWalletBonus: winner.smallWalletBonus, whalePenalty: winner.whalePenalty, securityScore: winner.securityScore,
       finalWeight: winner.finalWeight, reasonCodes: winner.reasonCodes, totalVolumeRaw: winner.totalVolumeRaw,

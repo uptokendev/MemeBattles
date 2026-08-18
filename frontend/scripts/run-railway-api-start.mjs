@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
+const rpcWebsocketsCompat = path.join(here, "rpc-websockets-compat.cjs");
 
 async function runCloseoutBestEffort() {
   return new Promise((resolve) => {
@@ -46,7 +47,7 @@ await runCloseoutBestEffort();
 
 const server = spawn(
   process.execPath,
-  ["--import", "./api/load-local-env.mjs", "api/server.mjs"],
+  ["--require", rpcWebsocketsCompat, "--import", "./api/load-local-env.mjs", "api/server.mjs"],
   {
     cwd: root,
     env: process.env,

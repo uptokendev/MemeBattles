@@ -1,0 +1,95 @@
+name: Weekly Airdrop - Solana
+
+on:
+  schedule:
+    - cron: "20 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Calculate Solana winners only; do not publish a root"
+        required: true
+        default: true
+        type: boolean
+      chain_id:
+        description: "Solana reward chain ID (102 isolated devnet certification, 101 normal app namespace)"
+        required: true
+        default: "102"
+        type: choice
+        options:
+          - "102"
+          - "101"
+
+concurrency:
+  group: weekly-airdrop-solana-${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_AIRDROP_CHAIN_ID || '101' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  weekly-airdrop-solana:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SOLANA_AIRDROP_AUTOMATION_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && 'airdrop-solana-devnet' || 'airdrop-solana-production' }}
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      AIRDROP_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_AIRDROP_CHAIN_ID || '101' }}
+      AIRDROP_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      AIRDROP_AUTOMATION_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_AIRDROP_AUTOMATION_ENABLED || 'false') }}
+
+      # Manual chain-102 runs are isolated reward certification on Solana devnet.
+      # They may read the real devnet app activity recorded under namespace 101,
+      # while all reward calculation/batch/claim rows remain tagged 102.
+      AIRDROP_CERTIFICATION_MODE: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && 'true' || 'false' }}
+      AIRDROP_ACTIVITY_CHAIN_ID: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '101' || (github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_AIRDROP_CHAIN_ID || '101') }}
+
+      # Certification uses tiny thresholds/payouts only for manual chain-102 runs.
+      # Normal chain-101 defaults/variables remain unchanged.
+      AIRDROP_WEEKLY_DISTRIBUTION_BPS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1000' || vars.SOLANA_AIRDROP_WEEKLY_DISTRIBUTION_BPS }}
+      AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION: ${{ vars.SOLANA_AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION || 'false' }}
+      AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS: ${{ vars.AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS || 'false' }}
+      AIRDROP_CLAIM_WINDOW_DAYS: ${{ vars.AIRDROP_CLAIM_WINDOW_DAYS || '7' }}
+      AIRDROP_TARGET_PAYOUT_WEI: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '10000' || vars.SOLANA_AIRDROP_TARGET_PAYOUT_LAMPORTS || '50000000' }}
+      AIRDROP_MAX_WINNERS_PER_PROGRAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || vars.AIRDROP_MAX_WINNERS_PER_PROGRAM || '50' }}
+      AIRDROP_TRADER_MIN_VOLUME_WEI: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1000000' || vars.SOLANA_AIRDROP_TRADER_MIN_VOLUME_LAMPORTS || '250000000' }}
+      AIRDROP_TRADER_VOLUME_CAP_WEI: ${{ vars.SOLANA_AIRDROP_TRADER_VOLUME_CAP_LAMPORTS || '15000000000' }}
+      AIRDROP_TRADER_MIN_TRADES: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || vars.AIRDROP_TRADER_MIN_TRADES || '3' }}
+      AIRDROP_TRADER_MIN_ACTIVE_DAYS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || vars.AIRDROP_TRADER_MIN_ACTIVE_DAYS || '2' }}
+      AIRDROP_CREATOR_MIN_VOLUME_WEI: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '20000000' || vars.SOLANA_AIRDROP_CREATOR_MIN_VOLUME_LAMPORTS || '3000000000' }}
+      AIRDROP_CREATOR_VOLUME_CAP_WEI: ${{ vars.SOLANA_AIRDROP_CREATOR_VOLUME_CAP_LAMPORTS || '25000000000' }}
+      AIRDROP_CREATOR_MIN_UNIQUE_BUYERS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102') && '1' || vars.SOLANA_AIRDROP_CREATOR_MIN_UNIQUE_BUYERS || '10' }}
+      AIRDROP_CREATOR_MAX_CAMPAIGNS: ${{ vars.AIRDROP_CREATOR_MAX_CAMPAIGNS || '2' }}
+      AIRDROP_DRAW_SEED_SECRET: ${{ secrets.AIRDROP_DRAW_SEED_SECRET }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax-check Solana weekly airdrop
+        run: |
+          node --check scripts/weekly-airdrop/config.mjs
+          node --check scripts/weekly-airdrop/candidates.mjs
+          node --check scripts/weekly-airdrop/solana-materialize.mjs
+          node --check scripts/weekly-airdrop/solana-chain.mjs
+          node --check scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
+
+      - name: Run guarded Solana weekly airdrop
+        run: node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
