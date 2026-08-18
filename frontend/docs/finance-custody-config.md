@@ -1,19 +1,28 @@
 # Finance reward custody configuration
 
-The Finance API compares canonical native-asset reward obligations with approved reward custody balances. These reads happen only on the Railway Frontend API. Custody addresses and RPC URLs are not returned to the dashboard Finance read model.
+The Finance API compares canonical native-asset reward obligations with approved reward claim custody balances. These reads happen only on the Railway Frontend API. Custody addresses and RPC URLs are not returned to the dashboard Finance read model.
 
 ## BNB Chain
 
 BNB Testnet uses chain ID `97`; BNB Mainnet uses chain ID `56`.
 
-Reward custody addresses are read from the existing deployment variables:
+The active BNB claim-intent flow uses the Merkle `RewardDistributor` contract. Finance therefore treats that claim distributor as the default reward funding custody source, not the Community/Recruiter routing vaults.
 
-- `COMMUNITY_REWARDS_VAULT_ADDRESS_97`
-- `RECRUITER_REWARDS_VAULT_ADDRESS_97`
-- `COMMUNITY_REWARDS_VAULT_ADDRESS_56`
-- `RECRUITER_REWARDS_VAULT_ADDRESS_56`
+Default claim-custody variables:
 
-`VITE_...` variants are accepted only as compatibility fallbacks because these addresses are public contract identities. Duplicate vault addresses are counted once.
+- `REWARD_DISTRIBUTOR_ADDRESS_97`
+- `REWARD_DISTRIBUTOR_ADDRESS_56`
+
+The existing claim-flow aliases are also accepted, including `BNB_TESTNET_REWARD_DISTRIBUTOR_ADDRESS`, `BNB_REWARD_DISTRIBUTOR_ADDRESS`, and `REWARD_DISTRIBUTOR_ADDRESS_BNB` where applicable.
+
+If Finance later needs multiple approved claim-custody addresses, configure them explicitly as CSV:
+
+- `FINANCE_REWARD_CUSTODY_ADDRESSES_97`
+- `FINANCE_REWARD_CUSTODY_ADDRESSES_56`
+
+When that explicit list is present it is authoritative and addresses are deduplicated before balances are summed.
+
+`COMMUNITY_REWARDS_VAULT_ADDRESS_*` and `RECRUITER_REWARDS_VAULT_ADDRESS_*` remain important protocol-routing inventory, but Finance does not automatically count their balances as claim funding. Doing so could double-count routed funds that are not actually available to the active RewardDistributor claim lane.
 
 Balance reads use CSV RPC failover from:
 
@@ -26,19 +35,26 @@ Balance reads use CSV RPC failover from:
 
 Solana Devnet uses Finance chain ID `101`; Solana Mainnet uses Finance chain ID `102`.
 
-Reward custody must be configured explicitly and must not reuse the LP operator wallet merely because that wallet already exists:
+The current reward claim API explicitly keeps Solana claiming disabled. Finance therefore requires an explicit approved Solana reward-custody identity before reporting funded coverage and must not reuse the LP operator wallet merely because that wallet already exists.
+
+Preferred explicit CSV variables:
+
+- `FINANCE_REWARD_CUSTODY_ADDRESSES_101`
+- `FINANCE_REWARD_CUSTODY_ADDRESSES_102`
+
+Compatibility single-address variables:
 
 - Devnet: `SOLANA_DEVNET_REWARD_VAULT_ADDRESS`
-- Devnet compatibility fallback: `SOLANA_REWARD_VAULT_ADDRESS`
+- Devnet fallback: `SOLANA_REWARD_VAULT_ADDRESS`
 - Mainnet: `SOLANA_MAINNET_REWARD_VAULT_ADDRESS`
 
 RPC configuration:
 
 - Devnet: `SOLANA_DEVNET_RPC_HTTP`
-- Devnet compatibility fallback: `SOLANA_RPC_HTTP`
+- Devnet fallback: `SOLANA_RPC_HTTP`
 - Mainnet: `SOLANA_MAINNET_RPC_HTTP`
 
-A missing reward-vault identity or missing/unreadable RPC produces `coverageStatus: blocked`. It never becomes a funded amount of zero by assumption.
+A missing approved custody identity or missing/unreadable RPC produces `coverageStatus: blocked`. It never becomes a funded amount of zero by assumption.
 
 ## Obligation definition
 
@@ -57,7 +73,7 @@ Only native BNB/SOL rows are admitted to this coverage calculation. Non-native r
 `finance-reconciliation-v1` currently combines:
 
 - approved Finance inventory coverage,
-- reward custody readability,
+- reward claim-custody readability,
 - native reward funding vs outstanding obligation,
 - LP source errors and freshness from the realtime Indexer.
 
