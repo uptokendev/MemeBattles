@@ -1,5 +1,6 @@
 import { pool } from "../../server/db.js";
 import { requireAdminOrOps } from "../lib/apiAuth.js";
+import { configuredRewardVaultAddresses, readRewardFunding } from "../lib/financeFunding.js";
 
 const FINANCE_NETWORKS = new Map([
   [56, { chain: "bnb", decimals: 18, asset: "BNB", environment: "mainnet" }],
@@ -35,6 +36,11 @@ function atomicToDecimal(value, decimals) {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+function rawBigInt(value) {
+  const raw = String(value ?? "").trim();
+  return /^\d+$/.test(raw) ? BigInt(raw) : 0n;
+}
+
 function safeAsset(value, fallback) {
   const text = String(value || "").trim().toUpperCase();
   return /^[A-Z0-9._-]{1,20}$/.test(text) ? text : fallback;
@@ -64,53 +70,96 @@ function rewardChainCandidates(chainId) {
   return [String(chainId)];
 }
 
+async function loadRewardRows(network) {
+  const { rows } = await pool.query(
+    `select chain::text as chain,
+            coalesce(nullif(token_symbol, ''), '') as token_symbol,
+            reward_type,
+            status,
+            count(*)::int as evidence_count,
+            count(distinct wallet_address)::int as recipient_count,
+            coalesce(sum(amount), 0)::text as amount_raw,
+            min(created_at) as period_start,
+            max(coalesce(claimed_at, updated_at, created_at)) as period_end
+       from public.reward_ledger
+      where chain::text = any($1::text[])
+      group by chain::text, token_symbol, reward_type, status
+      order by period_end desc nulls last`,
+    [rewardChainCandidates(network.chainId)],
+  );
+  return rows;
+}
+
+function buildNativeRewardModel(rows, network) {
+  const aggregates = [];
+  let obligationRaw = 0n;
+
+  for (const [index, row] of rows.entries()) {
+    const state = rewardState(row.status);
+    const assetSymbol = safeAsset(row.token_symbol, network.asset);
+    if (!state || assetSymbol !== network.asset) continue;
+
+    const rawAmount = rawBigInt(row.amount_raw);
+    const nativeAmount = atomicToDecimal(rawAmount.toString(), network.decimals);
+    const periodStart = toIso(row.period_start);
+    const periodEnd = toIso(row.period_end);
+    if (nativeAmount == null || !periodStart || !periodEnd) continue;
+
+    if (state === "allocated" || state === "claimable" || state === "pending") {
+      obligationRaw += rawAmount;
+    }
+
+    aggregates.push({
+      id: `reward:${network.chainId}:${String(row.reward_type || "unknown")}:${String(row.status || "unknown")}:${index}`,
+      periodStart,
+      periodEnd,
+      chain: network.chain,
+      program: String(row.reward_type || "reward"),
+      assetSymbol,
+      state,
+      nativeAmount,
+      recipientCount: Number(row.recipient_count || 0),
+      evidenceCount: Number(row.evidence_count || 0),
+    });
+  }
+
+  return { aggregates, obligationRaw };
+}
+
+async function rewardCoverage(network, obligationRaw) {
+  const funding = await readRewardFunding(network);
+  const obligationAmount = atomicToDecimal(obligationRaw.toString(), network.decimals) || "0";
+  const fundedAmount = atomicToDecimal(funding.fundedRaw.toString(), network.decimals) || "0";
+  const coverageStatus = !funding.configured || !funding.readable
+    ? "blocked"
+    : funding.fundedRaw >= obligationRaw
+      ? "covered"
+      : "attention";
+
+  return {
+    funding,
+    coverage: [{
+      chain: network.chain,
+      assetSymbol: network.asset,
+      obligationAmount,
+      fundedAmount,
+      coverageStatus,
+    }],
+  };
+}
+
 async function financeRewards(req, res, network) {
   try {
-    const { rows } = await pool.query(
-      `select chain::text as chain,
-              coalesce(nullif(token_symbol, ''), '') as token_symbol,
-              reward_type,
-              status,
-              count(*)::int as evidence_count,
-              count(distinct wallet_address)::int as recipient_count,
-              coalesce(sum(amount), 0)::text as amount_raw,
-              min(created_at) as period_start,
-              max(coalesce(claimed_at, updated_at, created_at)) as period_end
-         from public.reward_ledger
-        where chain::text = any($1::text[])
-        group by chain::text, token_symbol, reward_type, status
-        order by period_end desc nulls last`,
-      [rewardChainCandidates(network.chainId)],
-    );
-
-    const aggregates = [];
-    for (const [index, row] of rows.entries()) {
-      const state = rewardState(row.status);
-      const nativeAmount = atomicToDecimal(row.amount_raw, network.decimals);
-      const periodStart = toIso(row.period_start);
-      const periodEnd = toIso(row.period_end);
-      if (!state || nativeAmount == null || !periodStart || !periodEnd) continue;
-
-      aggregates.push({
-        id: `reward:${network.chainId}:${String(row.reward_type || "unknown")}:${String(row.status || "unknown")}:${index}`,
-        periodStart,
-        periodEnd,
-        chain: network.chain,
-        program: String(row.reward_type || "reward"),
-        assetSymbol: safeAsset(row.token_symbol, network.asset),
-        state,
-        nativeAmount,
-        recipientCount: Number(row.recipient_count || 0),
-        evidenceCount: Number(row.evidence_count || 0),
-      });
-    }
+    const rows = await loadRewardRows(network);
+    const { aggregates, obligationRaw } = buildNativeRewardModel(rows, network);
+    const { coverage } = await rewardCoverage(network, obligationRaw);
 
     return res.status(200).json({
       schemaVersion: "finance-rewards-v1",
       generatedAt: new Date().toISOString(),
       source: "dashboard-api",
       aggregates,
-      coverage: [],
+      coverage,
     });
   } catch (error) {
     if (schemaMissing(error)) {
@@ -119,7 +168,13 @@ async function financeRewards(req, res, network) {
         generatedAt: new Date().toISOString(),
         source: "dashboard-api",
         aggregates: [],
-        coverage: [],
+        coverage: [{
+          chain: network.chain,
+          assetSymbol: network.asset,
+          obligationAmount: "0",
+          fundedAmount: "0",
+          coverageStatus: "blocked",
+        }],
       });
     }
     throw error;
@@ -213,9 +268,11 @@ function financeInventoryItems(network) {
     add(`bnb${network.chainId}-vote-treasury`, "contract", "UP Vote Treasury", env("VOTE_TREASURY_ADDRESS"), "verified paid-vote collection");
   } else if (network.chainId === 101) {
     add("sol101-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_DEVNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
+    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol101-rewards-${index + 1}`, "vault", "Solana Reward Vault", address, "reward obligation funding"));
     add("sol101-operator", "wallet", "Solana LP Operator", process.env.SOLANA_DEVNET_OPERATOR_ADDRESS || process.env.SOLANA_OPERATOR_ADDRESS || process.env.SOLANA_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   } else {
     add("sol102-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_MAINNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_MAINNET_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
+    configuredRewardVaultAddresses(network).forEach((address, index) => add(`sol102-rewards-${index + 1}`, "vault", "Solana Reward Vault", address, "reward obligation funding"));
     add("sol102-operator", "wallet", "Solana LP Operator", process.env.SOLANA_MAINNET_OPERATOR_ADDRESS || process.env.SOLANA_MAINNET_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   }
   return items;
@@ -270,10 +327,28 @@ async function financeReconciliation(req, res, network) {
     staleSourceCount = 1;
   }
 
+  let obligationRaw = 0n;
+  try {
+    const rows = await loadRewardRows(network);
+    obligationRaw = buildNativeRewardModel(rows, network).obligationRaw;
+  } catch (error) {
+    if (!schemaMissing(error)) throw error;
+    sourceErrorCount += 1;
+  }
+
+  const { funding } = await rewardCoverage(network, obligationRaw);
+  const fundingBlocked = !funding.configured || !funding.readable;
+  const underfunded = funding.readable && funding.fundedRaw < obligationRaw;
+  if (funding.configured && !funding.readable) staleSourceCount += 1;
+
   const trackedInventoryCount = inventory.length;
-  const balanceCoverageMapped = false;
-  const balancedInventoryCount = 0;
-  const status = trackedInventoryCount === 0 || sourceErrorCount > 0 ? "blocked" : "attention";
+  const balancedInventoryCount = funding.readable && !underfunded ? funding.vaultCount : 0;
+  const balanceBreakCount = underfunded ? 1 : 0;
+  const status = trackedInventoryCount === 0 || fundingBlocked || sourceErrorCount > 0
+    ? "blocked"
+    : balanceBreakCount > 0 || staleSourceCount > 0 || balancedInventoryCount < trackedInventoryCount
+      ? "attention"
+      : "ready";
 
   return res.status(200).json({
     schemaVersion: "finance-reconciliation-v1",
@@ -281,10 +356,10 @@ async function financeReconciliation(req, res, network) {
     source: "dashboard-api",
     chains: [{
       chain: network.chain,
-      status: balanceCoverageMapped ? status : "blocked",
+      status,
       trackedInventoryCount,
       balancedInventoryCount,
-      balanceBreakCount: 0,
+      balanceBreakCount,
       missingPriceCount: 0,
       duplicateCandidateCount: 0,
       quarantinedTransferCount: 0,
