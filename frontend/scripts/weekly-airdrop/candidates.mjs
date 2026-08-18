@@ -150,7 +150,7 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
   const minTrades = envInt("AIRDROP_TRADER_MIN_TRADES", 3, { min: 1, max: 1000 });
   const minDays = envInt("AIRDROP_TRADER_MIN_ACTIVE_DAYS", 2, { min: 1, max: 7 });
   const { rows } = await client.query(
-    `select ${walletExpr("t.wallet", activityChainId)} wallet_address,sum(t.bnb_amount_raw)::text total_volume_raw,
+    `select ${walletExpr("t.wallet", activityChainId)} wallet_address,sum((t.bnb_amount_raw)::numeric)::text total_volume_raw,
             count(*)::int trade_count,count(distinct (t.block_time at time zone 'utc')::date)::int active_days,
             count(distinct t.campaign_address)::int campaign_count
        from public.curve_trades t join public.campaigns c
@@ -163,7 +163,7 @@ export async function traderCandidates(client, { chainId, start, end, exclusions
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
       group by ${walletExpr("t.wallet", activityChainId)}
-     having sum(t.bnb_amount_raw) >= $4::numeric and count(*) >= $5
+     having sum((t.bnb_amount_raw)::numeric) >= $4::numeric and count(*) >= $5
         and count(distinct (t.block_time at time zone 'utc')::date) >= $6`,
     [activityChainId, start, end, minVolume.toString(), minTrades, minDays],
   );
@@ -201,7 +201,7 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
   const maxCampaigns = envInt("AIRDROP_CREATOR_MAX_CAMPAIGNS", 2, { min: 1, max: 20 });
   const { rows } = await client.query(
     `select ${walletExpr("c.creator_address", activityChainId)} wallet_address,t.campaign_address,
-            sum(t.bnb_amount_raw)::text qualified_buy_volume_raw,count(distinct ${walletExpr("t.wallet", activityChainId)})::int unique_buyers
+            sum((t.bnb_amount_raw)::numeric)::text qualified_buy_volume_raw,count(distinct ${walletExpr("t.wallet", activityChainId)})::int unique_buyers
        from public.curve_trades t join public.campaigns c
          on c.chain_id=t.chain_id and c.campaign_address=t.campaign_address
        left join public.campaign_security_states s on s.campaign_address=t.campaign_address
@@ -212,7 +212,7 @@ export async function creatorCandidates(client, { chainId, start, end, exclusion
         and not coalesce(bw.restricted,false)
         and not (bw.cluster_id is not null and cw.cluster_id is not null and bw.cluster_id=cw.cluster_id)
       group by ${walletExpr("c.creator_address", activityChainId)},t.campaign_address
-     having sum(t.bnb_amount_raw) >= $4::numeric and count(distinct ${walletExpr("t.wallet", activityChainId)}) >= $5`,
+     having sum((t.bnb_amount_raw)::numeric) >= $4::numeric and count(distinct ${walletExpr("t.wallet", activityChainId)}) >= $5`,
     [activityChainId, start, end, minVolume.toString(), minBuyers],
   );
   const grouped = new Map();
