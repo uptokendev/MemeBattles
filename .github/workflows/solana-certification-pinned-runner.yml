@@ -62,6 +62,7 @@ jobs:
     environment: squad-solana-devnet
     env:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      PG_SSL_ALLOW_SELF_SIGNED: "1"
       # The Solana squad epoch job imports the shared indexer env module, which
       # hard-requires these unrelated services even though this certification run
       # does not touch Ably or BSC indexing.
@@ -123,6 +124,7 @@ jobs:
         working-directory: frontend
     env:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      PG_SSL_ALLOW_SELF_SIGNED: "1"
       AIRDROP_CHAIN_ID: "102"
       AIRDROP_DRY_RUN: ${{ inputs.dry_run }}
       AIRDROP_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
@@ -170,6 +172,7 @@ jobs:
         working-directory: frontend
     env:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      PG_SSL_ALLOW_SELF_SIGNED: "1"
       RECRUITER_SOLANA_CHAIN_ID: "102"
       RECRUITER_SOLANA_DRY_RUN: ${{ inputs.dry_run }}
       RECRUITER_SOLANA_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
@@ -201,6 +204,7 @@ jobs:
         working-directory: frontend
     env:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      PG_SSL_ALLOW_SELF_SIGNED: "1"
       LEAGUE_SOLANA_CHAIN_ID: "102"
       LEAGUE_SOLANA_PERIOD: ${{ inputs.league_period }}
       LEAGUE_SOLANA_EPOCH_START: ${{ inputs.league_epoch_start }}
