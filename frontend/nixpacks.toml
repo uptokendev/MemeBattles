@@ -37,7 +37,7 @@ nixPkgs = ["nodejs_20"]
 # --include=dev is required: vite, tailwindcss, TypeScript et al. are
 # devDependencies. Without this flag a production npm ci would omit them
 # and the build phase would fail with "vite: not found".
-cmds = ["npm ci --include=dev"]
+cmds = ["npm install --include=dev"]
 
 [phases.build]
 # Compile the Vite SPA into dist/.
