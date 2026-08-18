@@ -83,7 +83,6 @@ const WarRoom = () => {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  // Search is local-only — never re-fetch inventory on keystroke.
   const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(selectedChainId || 97),
@@ -111,7 +110,6 @@ const WarRoom = () => {
 
     (async () => {
       try {
-        // Sequential logo fetch — avoid browser connection exhaustion.
         const next: Record<string, string> = {};
         for (const addr of missing) {
           if (cancelled) return;
@@ -128,7 +126,6 @@ const WarRoom = () => {
     return () => {
       cancelled = true;
     };
-    // Intentionally omit logoCache from deps to prevent re-entry storms.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawCampaigns, fetchCampaignLogoURI]);
 
@@ -145,7 +142,6 @@ const WarRoom = () => {
   }, [rawCampaigns, logoCache, selectedChainId]);
 
   const filteredCampaigns = useMemo(() => {
-    // Instant in-list filter: ticker, name, username, token address, creator address.
     const filtered = campaigns.filter((campaign) => warRoomCampaignMatchesSearch(campaign, search));
 
     return filtered.slice().sort((left, right) => {
@@ -164,13 +160,11 @@ const WarRoom = () => {
         return draftMetricValue(right, "follows") - draftMetricValue(left, "follows");
       }
 
-      // Trending (default): most trending first, least trending last — bonding + graduated together.
       const leftMetrics = getWarRoomCampaignMetrics(left, nativeUsd ?? 0);
       const rightMetrics = getWarRoomCampaignMetrics(right, nativeUsd ?? 0);
       if (rightMetrics.trendScore !== leftMetrics.trendScore) {
         return rightMetrics.trendScore - leftMetrics.trendScore;
       }
-      // Stable tie-breakers: volume then mcap then recency.
       if (rightMetrics.volumeUsd !== leftMetrics.volumeUsd) return rightMetrics.volumeUsd - leftMetrics.volumeUsd;
       if (rightMetrics.marketCapUsd !== leftMetrics.marketCapUsd) return rightMetrics.marketCapUsd - leftMetrics.marketCapUsd;
       return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
@@ -255,7 +249,7 @@ const WarRoom = () => {
 
       {error ? (
         <div className="mwz-card border-orange-300/25 bg-orange-500/10 px-4 py-3 text-sm text-orange-100">
-          Trade data is unavailable right now. {error}
+          Trade data is temporarily unavailable. Please try again shortly.
         </div>
       ) : null}
 
