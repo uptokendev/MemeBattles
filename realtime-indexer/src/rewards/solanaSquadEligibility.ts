@@ -457,7 +457,6 @@ function evaluateMember(
     reasonCodes: topLevelReasons,
     metadata: {
       chainNativeUnit: "lamports",
-      rewardChainId: epoch?.chainId,
       activityChainId: config.activityChainId,
       certificationMode: config.certificationMode,
       recruiterId: member.recruiterId,
