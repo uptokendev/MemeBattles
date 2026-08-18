@@ -55,22 +55,22 @@ const slotOptions = [
   {
     value: "featured-top-left",
     label: "Featured top-left (Homepage)",
-    detail: "Fixed Featured board slot — large image + Sponsored pill. Rotates when multiple actives share the slot.",
+    detail: "Fixed Featured board slot — large image + Sponsored pill. Rotates when multiple active sponsors share the slot.",
   },
   {
     value: "homepage-sponsored-rail",
     label: "Homepage Sponsored Rail",
-    detail: "Primary Arena / postgrad sponsored rail placement",
+    detail: "Prominent sponsored placement across MemeWarzone discovery surfaces.",
   },
   {
     value: "homepage-sponsored-rail-priority",
     label: "Homepage Priority Slot",
-    detail: "Top-priority rail placement (battle/rail inventory)",
+    detail: "Priority sponsored placement with higher visibility.",
   },
   {
     value: "homepage-sponsored-rail-category-boost",
     label: "Category Boost Add-on",
-    detail: "Rail placement with extra category emphasis",
+    detail: "Sponsored placement with extra category emphasis.",
   },
 ];
 
@@ -135,8 +135,8 @@ const SponsorshipApplication = () => {
       const url = await uploadSponsorCreative(file);
       update("imageUrl", url);
       toast.success("Creative uploaded.");
-    } catch (error: any) {
-      toast.error(error?.message || "Image upload failed.");
+    } catch {
+      toast.error("We couldn’t upload the image. Please try again.");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -186,8 +186,8 @@ const SponsorshipApplication = () => {
       if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
       setForm({ ...defaultForm, packageCode: packages[0]?.code || "" });
       toast.success("Application submitted — no payment yet. We review first, then send payment details.");
-    } catch (error: any) {
-      toast.error(error?.message || "The sponsorship intake API is unavailable right now.");
+    } catch {
+      toast.error("We couldn’t submit your sponsorship application right now. Please try again.");
       toast.message("Your application draft is still saved locally in this browser.");
     } finally {
       setSubmitting(false);
@@ -201,7 +201,7 @@ const SponsorshipApplication = () => {
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Sponsored placements</div>
             <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Apply for a MemeWarzone sponsorship slot.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Submit the project details we need for review, payment verification, scheduling, and rail publishing. This public intake route feeds the sponsorship workflow described in the revision build.</p>
+            <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Tell us about your project, preferred placement and campaign dates. We’ll review your application and contact you with availability and payment details.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild size="sm" variant="outline" className="font-retro">
@@ -216,7 +216,7 @@ const SponsorshipApplication = () => {
           <div className="mb-5 flex items-center gap-3">
             <Megaphone className="h-5 w-5 text-accent" />
             <div>
-              <div className="font-retro text-xl text-foreground">Application intake</div>
+              <div className="font-retro text-xl text-foreground">Sponsorship application</div>
               <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Public sponsorship request</div>
             </div>
           </div>
@@ -265,7 +265,7 @@ const SponsorshipApplication = () => {
             </div>
             <label className="space-y-2 md:col-span-2">
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Short bio</span>
-              <Textarea value={form.bio} onChange={(event) => update("bio", event.target.value)} className="min-h-28 border-border bg-background/60 font-retro text-foreground placeholder:text-muted-foreground" placeholder="Short public-facing sponsor copy for the placement rail." />
+              <Textarea value={form.bio} onChange={(event) => update("bio", event.target.value)} className="min-h-28 border-border bg-background/60 font-retro text-foreground placeholder:text-muted-foreground" placeholder="Short public-facing sponsor copy for the placement." />
             </label>
             <label className="space-y-2">
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Preferred slot</span>
@@ -297,8 +297,8 @@ const SponsorshipApplication = () => {
               </div>
             </div>
             <label className="space-y-2">
-              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payment reference</span>
-              <Input value={form.paymentReference} onChange={(event) => update("paymentReference", event.target.value)} className={inputClass()} placeholder="Treasury transfer note or invoice ref" />
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Payment reference (if provided)</span>
+              <Input value={form.paymentReference} onChange={(event) => update("paymentReference", event.target.value)} className={inputClass()} placeholder="Leave blank unless the MemeWarzone team has given you a payment reference." />
             </label>
             <label className="space-y-2">
               <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Preferred start</span>
@@ -309,12 +309,12 @@ const SponsorshipApplication = () => {
               <Input type="date" value={form.preferredEnd} onChange={(event) => update("preferredEnd", event.target.value)} className={inputClass()} />
             </label>
             <label className="space-y-2 md:col-span-2">
-              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Applicant wallet or payment wallet</span>
-              <Input value={form.applicantWallet} onChange={(event) => update("applicantWallet", event.target.value)} className={inputClass()} placeholder="0x... or treasury sender reference" />
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Applicant wallet (optional)</span>
+              <Input value={form.applicantWallet} onChange={(event) => update("applicantWallet", event.target.value)} className={inputClass()} placeholder="0x... or Solana wallet address" />
             </label>
             <label className="space-y-2 md:col-span-2">
-              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Internal notes</span>
-              <Textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} className="min-h-24 border-border bg-background/60 font-retro text-foreground placeholder:text-muted-foreground" placeholder="Preferred timing, category boost request, or anything the review team should know." />
+              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Additional notes</span>
+              <Textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} className="min-h-24 border-border bg-background/60 font-retro text-foreground placeholder:text-muted-foreground" placeholder="Share any timing preferences, placement requests or additional information for our review team." />
             </label>
           </div>
 
@@ -351,11 +351,11 @@ const SponsorshipApplication = () => {
           <section className="mwz-hud-frame p-5">
             <div className="mb-4 font-retro text-xl text-foreground">Review checklist</div>
             <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-start gap-3"><Globe className="mt-0.5 h-4 w-4 text-accent" />Website, image, and short bio are required for publish-ready placement cards.</div>
-              <div className="flex items-start gap-3"><CalendarClock className="mt-0.5 h-4 w-4 text-accent" />Preferred dates help scheduling, but final dates will be set during admin review.</div>
-              <div className="flex items-start gap-3"><Wallet className="mt-0.5 h-4 w-4 text-accent" />Treasury wallet verification is the assumed payment flow for v1 in the revision build.</div>
-              <div className="flex items-start gap-3"><CreditCard className="mt-0.5 h-4 w-4 text-accent" />Payment reference should match the transfer note, invoice ID, or review note used by admin.</div>
-              <div className="flex items-start gap-3"><Mail className="mt-0.5 h-4 w-4 text-accent" />Contact channel should be the fastest place to request edits before activation.</div>
+              <div className="flex items-start gap-3"><Globe className="mt-0.5 h-4 w-4 text-accent" />Website, image, and short bio are required for your sponsored placement.</div>
+              <div className="flex items-start gap-3"><CalendarClock className="mt-0.5 h-4 w-4 text-accent" />Preferred dates help scheduling, but final dates will be confirmed during review.</div>
+              <div className="flex items-start gap-3"><Wallet className="mt-0.5 h-4 w-4 text-accent" />Add an applicant wallet if it helps us verify the project or payment later.</div>
+              <div className="flex items-start gap-3"><CreditCard className="mt-0.5 h-4 w-4 text-accent" />No payment is due until your sponsorship application is approved.</div>
+              <div className="flex items-start gap-3"><Mail className="mt-0.5 h-4 w-4 text-accent" />Use a contact channel where we can quickly reach you about approval, edits or scheduling.</div>
             </div>
             <div className="mt-4 border-t border-border pt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground">Selected slot: {slotDetail}</div>
           </section>

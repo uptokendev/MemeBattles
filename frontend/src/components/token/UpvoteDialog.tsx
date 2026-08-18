@@ -392,12 +392,12 @@ export function UpvoteDialog({
       throw new Error(ABORT);
     };
 
-    if (!treasuryAddress) fail("UP Vote is not configured", "Missing Solana vote treasury address.");
+    if (!treasuryAddress) fail("UP Votes are temporarily unavailable", "UP Votes can’t be processed on Solana right now. Please try again later.");
     if (!solanaWallet.solanaAccount) {
       window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       return;
     }
-    if (voteWei <= 0n) fail("Price unavailable", "Could not resolve the $3 UP Vote amount in SOL.");
+    if (voteWei <= 0n) fail("Price unavailable", "We couldn’t calculate the current SOL amount for the $3 UP Vote. Please try again.");
     if (balanceWei != null && balanceWei < (estTotalWei ?? voteWei)) {
       fail("Insufficient SOL", "You don't have enough SOL to cover the vote fee (and fees).");
     }
@@ -410,7 +410,6 @@ export function UpvoteDialog({
       fail("Wallet unavailable", "Connect Phantom / Solflare to vote on Solana.");
     }
 
-    // Ensure Buffer exists before web3 Transaction.serialize (Vite browser gap).
     try {
       await import("@/polyfills");
     } catch {
@@ -427,7 +426,6 @@ export function UpvoteDialog({
     const to = new web3.PublicKey(treasuryAddress);
     const latest = await connection.getLatestBlockhash("confirmed");
 
-    // Same construction pattern as V4 create submit (legacy Transaction + feePayer).
     const lamports = voteWei > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(voteWei);
     if (!Number.isFinite(lamports) || lamports <= 0) {
       fail("Price unavailable", "Resolved vote amount was invalid.");
@@ -453,8 +451,6 @@ export function UpvoteDialog({
 
     toast({ title: "Confirm UP Vote", description: `Pay ~$${UPVOTE_USD_TARGET} in SOL…` });
 
-    // Prefer signTransaction + sendRaw (matches createCampaign). signAndSendTransaction
-    // can throw opaque "buffer is not defined" on some Phantom/Vite combos.
     let signature = "";
     try {
       const signed = await provider.signTransaction!(tx);
@@ -470,8 +466,8 @@ export function UpvoteDialog({
       const msg = String((signErr as { message?: string })?.message || signErr || "");
       if (/buffer is not defined|Buffer is not defined/i.test(msg)) {
         fail(
-          "Wallet/browser crypto missing Buffer",
-          "Hard-refresh the app (Buffer polyfill). If it persists after deploy, report this error.",
+          "Wallet unavailable",
+          "Your wallet couldn’t prepare this transaction. Refresh the app and try again. If it continues, contact support.",
         );
       }
       throw signErr;
@@ -500,13 +496,16 @@ export function UpvoteDialog({
         console.warn("[UpvoteDialog] solana vote ingest failed", res.status, body);
         fail(
           "Vote paid but not recorded",
-          String(body?.error || `Ingest failed (${res.status}). Contact support with tx ${signature.slice(0, 12)}…`),
+          `Your payment was confirmed, but the vote could not be recorded. Contact support with transaction ${signature.slice(0, 12)}…`,
         );
       }
     } catch (e: any) {
       if (String(e?.message || "").includes(ABORT)) throw e;
       console.warn("[UpvoteDialog] solana vote ingest error", e);
-      fail("Vote paid but not recorded", String(e?.message || e));
+      fail(
+        "Vote paid but not recorded",
+        `Your payment was confirmed, but the vote could not be recorded. Contact support with transaction ${signature.slice(0, 12)}…`,
+      );
     }
 
     toast({ title: "Upvoted", description: "Your vote has been recorded." });
@@ -535,18 +534,18 @@ export function UpvoteDialog({
       throw new Error(ABORT);
     };
 
-    if (!treasuryAddress) fail("UP Vote is not configured", "Missing vote treasury address for this chain.");
+    if (!treasuryAddress) fail("UP Votes are temporarily unavailable", "UP Votes can’t be processed on this network right now. Please try again later.");
     if (hasContractCode === false) {
       fail(
-        "UP Vote contract not deployed",
-        "The configured vote treasury address has no contract code on this network.",
+        "UP Votes are temporarily unavailable",
+        "UP Votes can’t be processed on this network right now. Please try again later.",
       );
     }
     if (!wallet.signer) {
       window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
       return;
     }
-    if (voteWei <= 0n) fail("Price unavailable", "Could not resolve the $3 UP Vote amount.");
+    if (voteWei <= 0n) fail("Price unavailable", "We couldn’t calculate the current BNB amount for the $3 UP Vote. Please try again.");
     if (balanceWei != null && balanceWei < (estTotalWei ?? voteWei)) {
       fail("Insufficient BNB", "You don't have enough BNB to cover the vote fee (and gas).");
     }
@@ -641,7 +640,7 @@ export function UpvoteDialog({
           variant={buttonVariant}
           size={buttonSize}
           className={className}
-          title={!treasuryAddress ? "UP Vote treasury not configured" : "Upvote"}
+          title={!treasuryAddress ? "UP Votes are temporarily unavailable" : "Upvote"}
         >
           UP Vote
         </Button>
@@ -670,11 +669,11 @@ export function UpvoteDialog({
             <div className="text-sm text-muted-foreground">Loading fee…</div>
           ) : !treasuryAddress ? (
             <div className="text-sm text-muted-foreground">
-              UP Vote treasury is not configured for this chain.
+              UP Votes are temporarily unavailable on this network. Please try again later.
             </div>
           ) : !isSolanaCampaign && (hasContractCode === false || !enabled) ? (
             <div className="text-sm text-muted-foreground">
-              UP Vote is currently disabled on this chain.
+              UP Votes are temporarily unavailable on this network. Please try again later.
             </div>
           ) : (
             <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
@@ -695,7 +694,7 @@ export function UpvoteDialog({
                   : oracleTargetWei != null
                     ? "Converted via on-chain oracle"
                     : priceUsd
-                      ? "Converted via live BNB/USD (oracle unavailable)"
+                      ? "Converted via live BNB/USD"
                       : "Waiting for price…"}
               </div>
             </div>
@@ -714,7 +713,7 @@ export function UpvoteDialog({
           </div>
 
           <div className="text-xs text-muted-foreground">
-            Off-chain cooldown & daily caps apply to keep the list fair.
+            Cooldown and daily limits apply to keep UP Votes fair.
           </div>
         </div>
 

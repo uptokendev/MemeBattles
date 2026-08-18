@@ -17,9 +17,8 @@ import NotFound from "./NotFound";
 const PLAYBACK_ID = String(import.meta.env.VITE_MUX_PLAYBACK_ID || "").trim();
 const CHAT_CHANNEL = String(import.meta.env.VITE_LIVE_CHAT_CHANNEL || "live:launch-party").trim();
 const PAGE_ENABLED = String(import.meta.env.VITE_LIVE_PAGE_ENABLED || "true").trim() === "true";
-// Dev-only: render a hard-coded set of chat messages to visually verify shield /
-// callsign / plain rendering without needing Ably or a second wallet. Off by default.
-const PREVIEW_MODE = String(import.meta.env.VITE_LIVE_CHAT_PREVIEW || "").trim() === "1";
+// Visual chat preview is strictly development-only, even if a production env flag is set by mistake.
+const PREVIEW_MODE = import.meta.env.DEV && String(import.meta.env.VITE_LIVE_CHAT_PREVIEW || "").trim() === "1";
 
 const PREVIEW_MESSAGES: LiveChatMessage[] = [
   {
@@ -48,11 +47,8 @@ const PREVIEW_MESSAGES: LiveChatMessage[] = [
   },
   {
     id: "preview-4",
-    // The shield is rendered when wallet is in VITE_LIVE_CHAT_MODERATORS.
-    // Use your own moderator wallet here so the shield branch renders for you.
     wallet: "0x587F58AC69bE91b575DE459A6f69958b8a4d1c77",
     handle: "sven",
-    // Even if a callsign is set, the shield wins per spec.
     squadCallsign: "MWZ-001",
     text: "keep it civil, soldiers",
     ts: Date.now() - 15_000,
@@ -60,8 +56,6 @@ const PREVIEW_MESSAGES: LiveChatMessage[] = [
 ];
 
 const Live = () => {
-  // Hooks must be called unconditionally on every render (Rules of Hooks).
-  // Side-effects are gated via `enabled` so they no-op until the wallet is connected.
   const wallet = useWallet();
   const account = wallet.account || "";
   const { activeChainId } = useLaunchpad();
@@ -73,8 +67,6 @@ const Live = () => {
     staleTime: Infinity,
     enabled: ready,
   });
-  // The user's own profile (display name set in /profile). Falls back to the
-  // recruiter/squad display name, then to a shortened wallet at render time.
   const { data: profile } = useQuery({
     queryKey: ["user-profile-live", activeChainId, account.toLowerCase()],
     queryFn: () => fetchUserProfile(activeChainId, account),
@@ -82,10 +74,7 @@ const Live = () => {
     enabled: ready,
   });
   const squadCallsign = attribution?.recruiterCode ?? null;
-  const handle =
-    profile?.displayName ??
-    attribution?.recruiterDisplayName ??
-    null;
+  const handle = profile?.displayName ?? attribution?.recruiterDisplayName ?? null;
 
   const { messages, publish, presenceCount, connected, mutedWallets, getMuteExpiry } = useLiveChannel({
     channelName: CHAT_CHANNEL,
@@ -93,10 +82,8 @@ const Live = () => {
     enabled: ready,
   });
 
-  // undefined = not muted; null = perma; number = ms-epoch expiry
   const ownMutedUntil = getMuteExpiry(account);
 
-  // Render branches AFTER all hooks have been called.
   if (!PAGE_ENABLED) return <NotFound />;
 
   if (!wallet.isConnected || !account) {

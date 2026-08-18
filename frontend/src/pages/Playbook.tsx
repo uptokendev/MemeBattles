@@ -7,7 +7,6 @@ import {
   ArrowRight,
   BookOpen,
   FileText,
-  ImageIcon,
   Rocket,
   ShieldCheck,
   Sparkles,
@@ -143,8 +142,8 @@ const Playbook = () => {
               </div>
             </div>
             <p>
-              BNB Direct deploy needs the correct EVM network and live factory wiring. Solana Direct deploy needs
-              a connected Solana wallet. If Direct deploy is locked, pick Draft.
+              For BNB launches, connect a supported BNB wallet on the correct network. For Solana launches, connect
+              a supported Solana wallet. If Direct deploy is unavailable, you can still save a Draft.
             </p>
           </Section>
 
@@ -212,10 +211,7 @@ const Playbook = () => {
                 <p className="mt-1 text-xs">Longer bond. Seeds stronger DEX liquidity.</p>
               </div>
             </div>
-            <p>
-              Testnet / Solana builds may also show a <span className="text-foreground">$6 Test grad</span> for
-              rehearsing graduation without a full bond.
-            </p>
+            <p>Available graduation targets are $15K, $30K and $50K.</p>
             <p>
               <span className="font-medium text-foreground">Launch Safety</span> is a collapsible status of the
               launchpad on the connected chain. If it is not ready, Direct deploy will refuse.

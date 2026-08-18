@@ -1,5 +1,5 @@
 import type { BnbContractReadiness } from "@/lib/bnbContracts";
-import { getBnbContractReadiness, summarizeMissingBnbContracts } from "@/lib/bnbContracts";
+import { getBnbContractReadiness } from "@/lib/bnbContracts";
 import type { SupportedChainId } from "@/lib/chainConfig";
 import type { LaunchpadSafetyCheck, LaunchpadSafetyStatus } from "./types";
 
@@ -28,7 +28,7 @@ function contractChecks(readiness: BnbContractReadiness): LaunchpadSafetyCheck[]
     },
     {
       id: "topazContracts",
-      label: "Topaz graduation route",
+      label: "Graduation route",
       keys: ["topazRouter", "topazFactory", "topazWbnb"],
     },
   ];
@@ -42,8 +42,8 @@ function contractChecks(readiness: BnbContractReadiness): LaunchpadSafetyCheck[]
       label: group.label,
       state: missing.length ? "blocked" : "ready",
       detail: missing.length
-        ? `Missing ${missing.map((item) => item.label).join(", ")}.`
-        : `${configured}/${items.length} configured for chain ${readiness.chainId}.`,
+        ? "One or more launch requirements are temporarily unavailable."
+        : `${configured}/${items.length} launch requirements ready for chain ${readiness.chainId}.`,
     };
   });
 }
@@ -72,10 +72,10 @@ export function getBnbLaunchpadSafetyStatus(params: {
     title: protocolReady ? "BNB launch route ready" : wrongWalletNetwork ? "Switch wallet network" : "BNB launches are temporarily unavailable",
     primaryActionLabel: protocolReady ? "BNB Live Route" : wrongWalletNetwork ? "Switch Network" : "Temporarily unavailable",
     description: wrongWalletNetwork
-      ? `${getBnbChainLabel(params.chainId)} contracts are configured. Switch your wallet from chain ${params.walletChainId} to chain ${params.chainId} before an on-chain launch.`
+      ? `Your wallet is connected to chain ${params.walletChainId}. Switch to ${getBnbChainLabel(params.chainId)} (chain ${params.chainId}) to continue.`
       : protocolReady
-      ? "BNB launches use route authorization, API preflight checks, the configured LaunchFactory, and the Topaz graduation route."
-      : summarizeMissingBnbContracts(readiness),
+      ? "BNB launch services are ready. Your campaign can launch and graduate through the supported MemeWarzone route."
+      : "Launching is temporarily unavailable on this network. Your draft is safe. Please try again later.",
     checks: [
       {
         id: "network",
@@ -84,20 +84,20 @@ export function getBnbLaunchpadSafetyStatus(params: {
         detail: wrongWalletNetwork
           ? `Your wallet is connected to chain ${params.walletChainId}. Switch to ${getBnbChainLabel(params.chainId)} (chain ${params.chainId}) to continue.`
           : params.hasAccount
-            ? `Wallet is connected to chain ${params.chainId}.`
-            : `Connect a wallet on chain ${params.chainId}.`,
+            ? `Wallet connected to ${getBnbChainLabel(params.chainId)} (chain ${params.chainId}).`
+            : `Connect a BNB-compatible wallet on ${getBnbChainLabel(params.chainId)} (chain ${params.chainId}).`,
       },
       {
         id: "routeAuth",
         label: "Transaction protection",
         state: "ready",
-        detail: "Create, buy, and sell request server authorization before contract writes.",
+        detail: "Launch and trading transactions are protected before they are submitted.",
       },
       {
         id: "signer",
-        label: "Wallet signer",
+        label: "Wallet connection",
         state: params.hasSigner && params.hasAccount ? "ready" : "pending",
-        detail: params.hasSigner && params.hasAccount ? "Signer connected." : "Connect a BNB-compatible wallet before launch actions.",
+        detail: params.hasSigner && params.hasAccount ? "Wallet ready." : "Connect a BNB-compatible wallet to continue.",
       },
       ...contractChecks(readiness),
     ],
@@ -112,21 +112,21 @@ export function getBnbLaunchpadSafetyStatus(params: {
         id: "contracts",
         label: "Launch availability",
         state: contractsReady ? "ready" : "blocked",
-        detail: contractsReady ? "Launchpad, vault, registry, locker, and Topaz addresses are configured." : "Launching is temporarily unavailable on this network. Your draft is safe. Please try again later.",
+        detail: contractsReady ? "Launch services are configured and ready." : "Launching is temporarily unavailable on this network. Your draft is safe. Please try again later.",
       },
       {
         id: "trading",
-        label: "Curve trading",
+        label: "Trading",
         state: protocolReady ? "ready" : "blocked",
-        detail: protocolReady ? "Authorized buy/sell routes stay protected by security API checks." : "Trading unlocks after the contract env surface is complete.",
+        detail: protocolReady ? "Buy and sell transactions are protected by MemeWarzone safety checks." : "Trading is temporarily unavailable on this network. Please try again later.",
       },
       {
         id: "graduation",
         label: "Topaz graduation",
         state: missingTopaz ? "blocked" : "ready",
         detail: missingTopaz
-          ? "Topaz router, pool factory, and WBNB addresses are required before final acceptance."
-          : "Graduated tokens route into the configured Topaz volatile pool path.",
+          ? "The graduation route is temporarily unavailable. Please try again later."
+          : "Graduated tokens move into the supported Topaz liquidity pool.",
       },
     ],
   };

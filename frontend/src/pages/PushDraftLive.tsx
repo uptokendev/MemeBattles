@@ -46,7 +46,6 @@ function canPushLive(status?: string) {
 
 function sameWallet(a?: string | null, b?: string | null) {
   if (!a || !b) return false;
-  // Solana: exact match preferred; allow case-fold only for recovery of mangled URLs
   if (a.length >= 32 && !a.startsWith("0x")) return a === b || a.toLowerCase() === b.toLowerCase();
   return a.toLowerCase() === b.toLowerCase();
 }
@@ -90,7 +89,6 @@ async function markDraftDeployment(input: {
   tokenAddress?: string;
   deployTxHash?: string;
   scheduledLaunchAt?: number;
-  /** Solana V4 vaults + campaignId for campaigns.meta.solana persistence. */
   tokenVault?: string | null;
   solVault?: string | null;
   campaignId?: number[] | string | null;
@@ -133,7 +131,6 @@ export default function PushDraftLive() {
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
 
   const showArmBlock = (detail: Parameters<typeof emitCreatorArmBlocked>[0]) => {
-    // Same event pattern as CreatorProtectionDialog on TokenDetails.
     emitCreatorArmBlocked(detail);
   };
 
@@ -155,7 +152,7 @@ export default function PushDraftLive() {
           setGraduationTargetWei(DEFAULT_GRADUATION_TARGET_WEI);
         }
       })
-      .catch((err) => toast.error(err?.message || "Draft not found"))
+      .catch(() => toast.error("We couldn’t load this draft. Please refresh and try again."))
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -205,10 +202,10 @@ export default function PushDraftLive() {
             setCreatorEligibilityError(null);
           }
         })
-        .catch((error) => {
+        .catch(() => {
           if (!cancelled) {
             setCreatorEligibility(null);
-            setCreatorEligibilityError(String(error?.message || error || "Could not check creator deployment eligibility."));
+            setCreatorEligibilityError("We couldn’t check creator eligibility right now. Please try again shortly.");
           }
         });
     }, 250);
@@ -222,20 +219,15 @@ export default function PushDraftLive() {
   const deploySolanaV4 = async () => {
     if (!draft) return;
     if (!DRAFT_PUSH_LIVE_ENABLED) {
-      return toast.error(
-        "Push Live is locked (VITE_DRAFT_PUSH_LIVE_ENABLED). Also set Railway DRAFT_PUSH_LIVE_ENABLED=true.",
-      );
+      return toast.error("Launching is temporarily unavailable. Your draft remains saved. Please try again later.");
     }
     if (!solanaWallet.solanaAccount) return toast.error("Connect the draft owner Solana wallet first.");
     if (!ownerConnected) return toast.error("Only the draft owner Solana wallet can deploy this draft.");
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
     if (!logoURI) {
-      return toast.error(
-        "Draft needs a saved logo URL. Re-upload a png/jpg/webp under 5MB on the promotion page.",
-      );
+      return toast.error("Draft needs a saved logo. Re-upload a PNG, JPG or WebP under 5 MB on the promotion page.");
     }
-    // Preflight before any SOL spend — surface the real blockers early.
-    toast.message("Preflight: authorizing create (no gas yet)…");
+    toast.message("Preparing your Solana launch…");
 
     setSubmitting(true);
     try {
@@ -254,8 +246,6 @@ export default function PushDraftLive() {
         launchAt = at;
       }
 
-      // One draft_owner_session signature covers authorize + mark-deploy.
-      // A one-shot deploy_draft nonce is consumed on authorize and then 401s on mark.
       const { clearSolanaDraftOwnerSession } = await import("@/lib/solanaWallet");
       let deployAuth = await signSolanaDraftAction({
         walletAddress: solanaWallet.solanaAccount,
@@ -291,12 +281,10 @@ export default function PushDraftLive() {
       } catch (authErr: any) {
         const msg = String(authErr?.message || authErr || "");
         if (/CreatorProfile|RiskProfile|sync-creator|sync-risk|profile is not initialized/i.test(msg)) {
-          throw new Error(
-            `${msg} — run: npm --prefix tests/solana run devnet:trade-ops -- sync-creator ${solanaWallet.solanaAccount}`,
-          );
+          throw new Error(`Your creator profile for wallet ${solanaWallet.solanaAccount} isn’t ready for launch yet. Please try again shortly. If this continues, contact support.`);
         }
         if (/DRAFT_PUSH_LIVE|Push Live is locked/i.test(msg)) {
-          throw new Error(`${msg} — set Railway DRAFT_PUSH_LIVE_ENABLED=true and redeploy API.`);
+          throw new Error("Launching is temporarily unavailable. Your draft remains saved. Please try again later.");
         }
         if (/nonce invalid|already used|sign again|Unauthorized|401/i.test(msg)) {
           await refreshDeployAuth();
@@ -311,34 +299,21 @@ export default function PushDraftLive() {
         }
       }
 
-      // Server-side recovery: campaign already on-chain — finalize draft + open token page.
       if (authorization.alreadyOnChain || authorization.draftFinalized || authorization.existingDeployment) {
-        const campaignAddress =
-          authorization.existingDeployment?.campaignAddress || authorization.accounts?.campaign || "";
-        const mintAddress =
-          authorization.existingDeployment?.mintAddress || authorization.accounts?.mint || "";
+        const campaignAddress = authorization.existingDeployment?.campaignAddress || authorization.accounts?.campaign || "";
+        const mintAddress = authorization.existingDeployment?.mintAddress || authorization.accounts?.mint || "";
         const chainId = Number(draft.chainId) || 101;
         const tokenPath =
           (authorization as any).tokenPath ||
           authorization.existingDeployment?.tokenPath ||
           `/token/${encodeURIComponent(mintAddress || campaignAddress)}?chainId=${chainId}`;
         const recoveryVaults = {
-          tokenVault:
-            authorization.accounts?.tokenVault ||
-            (authorization.existingDeployment as any)?.tokenVault ||
-            null,
-          solVault:
-            authorization.accounts?.solVault ||
-            (authorization.existingDeployment as any)?.solVault ||
-            null,
-          campaignId:
-            authorization.createArgs?.campaignId ||
-            (authorization.existingDeployment as any)?.campaignIdHex ||
-            null,
+          tokenVault: authorization.accounts?.tokenVault || (authorization.existingDeployment as any)?.tokenVault || null,
+          solVault: authorization.accounts?.solVault || (authorization.existingDeployment as any)?.solVault || null,
+          campaignId: authorization.createArgs?.campaignId || (authorization.existingDeployment as any)?.campaignIdHex || null,
           factoryAddress: authorization.programId || null,
         };
 
-        // Always re-run mark-deploy so campaigns registry upsert is retried (idempotent).
         try {
           await markDraftDeployment({
             draftId: draft.id,
@@ -353,20 +328,11 @@ export default function PushDraftLive() {
           console.warn("[PushDraftLive] recovery mark-deploy", markErr);
         }
 
-        const registryOk =
-          (authorization as any).registryUpserted !== false &&
-          !(authorization as any).registryError;
-
+        const registryOk = (authorization as any).registryUpserted !== false && !(authorization as any).registryError;
         if (!registryOk && (authorization as any).registryError) {
-          toast.message(
-            `On-chain campaign linked, but feed registry upsert reported: ${String((authorization as any).registryError).slice(0, 120)}. Opening token page anyway.`,
-            { duration: 16_000 },
-          );
+          toast.message("Your campaign is live, but it may take a moment to appear in public listings. Opening the token page now.", { duration: 16_000 });
         } else {
-          toast.success(
-            `Solana campaign is live. Opening token page (${(mintAddress || campaignAddress).slice(0, 8)}…). Bonding buy/sell lands in P1.`,
-            { duration: 12_000 },
-          );
+          toast.success(`Solana campaign is live. Opening token page (${(mintAddress || campaignAddress).slice(0, 8)}…).`, { duration: 12_000 });
         }
         if (mode === "scheduled") {
           toast.success("Solana campaign is linked. Trading stays closed until the scheduled open time.");
@@ -384,8 +350,6 @@ export default function PushDraftLive() {
         toast.message("Existing Solana campaign found for this draft — finalizing without a new create.");
       }
 
-      // Reuse the same owner-session credential (nonce already consumed on first use;
-      // subsequent calls hit draft_owner_sessions, not auth_nonces).
       const createVaults = {
         tokenVault: authorization.accounts?.tokenVault || null,
         solVault: authorization.accounts?.solVault || null,
@@ -406,12 +370,7 @@ export default function PushDraftLive() {
         marked = true;
       } catch (markErr: any) {
         const msg = String(markErr?.message || markErr || "");
-        if (
-          /nonce invalid|already used|sign again|Unauthorized|401|already has an on-chain|ALREADY_DEPLOYED/i.test(
-            msg,
-          )
-        ) {
-          // On-chain create already succeeded — only re-auth finalize, do not re-create.
+        if (/nonce invalid|already used|sign again|Unauthorized|401|already has an on-chain|ALREADY_DEPLOYED/i.test(msg)) {
           try {
             if (/401|nonce|Unauthorized|sign again/i.test(msg)) {
               await refreshDeployAuth();
@@ -427,18 +386,15 @@ export default function PushDraftLive() {
             });
             marked = true;
           } catch {
-            // If draft is already linked, treat as success.
             if (/already has an on-chain|ALREADY_DEPLOYED|alreadyDeployed/i.test(msg)) {
               marked = true;
             }
           }
         }
         if (!marked) {
-          // Never leave the user thinking create failed when the chain campaign exists —
-          // that used to arm cooldown/live-count and block re-deploy forever.
           console.error("[PushDraftLive] mark-deploy failed after Solana create", markErr);
           toast.success(
-            `Solana campaign created on-chain, but draft finalize failed. Campaign: ${created.campaignAddress.slice(0, 8)}… Tx: ${created.signature.slice(0, 12)}… Retry Push Live — recovery will link the draft without re-creating.`,
+            `Your Solana campaign was created, but we couldn’t finish linking it to your draft. Campaign: ${created.campaignAddress.slice(0, 8)}… Transaction: ${created.signature.slice(0, 12)}… Retry Push Live to finish linking it without creating another campaign.`,
             { duration: 20_000 },
           );
           navigate(`/prepare/${draft.slug}`);
@@ -456,7 +412,12 @@ export default function PushDraftLive() {
       navigate(livePath);
     } catch (error: any) {
       const message = String(error?.message || error || "Solana deploy failed.");
-      toast.error(message);
+      const isKnownUserMessage =
+        message.startsWith("Choose a trading-open time") ||
+        message.startsWith("Scheduled launches cannot") ||
+        message.startsWith("Your creator profile") ||
+        message.startsWith("Launching is temporarily unavailable");
+      toast.error(isKnownUserMessage ? message : "We couldn’t launch your Solana campaign. Your draft remains saved. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -464,19 +425,15 @@ export default function PushDraftLive() {
 
   const deploy = async () => {
     if (!draft) return;
-    if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Push Live is locked until the platform launch switch is enabled.");
+    if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Launching is temporarily unavailable. Your draft remains saved. Please try again later.");
     if (draftIsSolana) return deploySolanaV4();
     if (!wallet.account || !wallet.signer) return toast.error("Connect the draft owner wallet first.");
     if (!ownerConnected) return toast.error("Only the draft owner wallet can deploy this draft.");
     if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
-    if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
-    if (!eligibilityFactoryAddress) return toast.error("The corrected LaunchFactory is not configured for this network.");
-    if (mode === "scheduled" && !scheduledFactoryAddress) {
-      return toast.error("Scheduled LaunchFactory is not configured for this network.");
-    }
-    if (mode === "now" && !launchpad.factoryAddress) {
-      return toast.error("LaunchFactory is not configured for this network.");
+    if (!logoURI) return toast.error("Draft needs a saved logo before deployment.");
+    if (!eligibilityFactoryAddress || (mode === "scheduled" && !scheduledFactoryAddress) || (mode === "now" && !launchpad.factoryAddress)) {
+      return toast.error(`Launching is temporarily unavailable on ${chainLabel}. Your draft remains saved. Please try again later.`);
     }
 
     setSubmitting(true);
@@ -491,8 +448,7 @@ export default function PushDraftLive() {
       setCreatorEligibility(eligibility);
       if (!eligibility.allowed) {
         const now = Math.floor(Date.now() / 1000);
-        let message =
-          "This creator wallet cannot deploy or arm another campaign right now.";
+        let message = "This creator wallet cannot deploy or arm another campaign right now.";
         if (eligibility.currentLiveCount >= eligibility.maxLiveBonding) {
           message =
             `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). ` +
@@ -502,14 +458,7 @@ export default function PushDraftLive() {
             `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. ` +
             "Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.";
         }
-        showArmBlock(
-          resolveCreatorArmBlock({
-            mode,
-            eligibility,
-            errorMessage: message,
-          }),
-        );
-        // Never toast for arm eligibility blocks — the dialog is the UX.
+        showArmBlock(resolveCreatorArmBlock({ mode, eligibility, errorMessage: message }));
         return;
       }
 
@@ -605,20 +554,14 @@ export default function PushDraftLive() {
         code.includes("ELIGIB") ||
         code.includes("COOLDOWN") ||
         code === "CALL_EXCEPTION" ||
-        (latestEligibility != null &&
-          latestEligibility.allowed === false);
+        (latestEligibility != null && latestEligibility.allowed === false);
 
       if (looksLikeArmBlock || (latestEligibility && Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000))) {
-        showArmBlock(
-          resolveCreatorArmBlock({
-            mode,
-            eligibility: latestEligibility,
-            errorMessage: message,
-            errorCode: code,
-          }),
-        );
-      } else {
+        showArmBlock(resolveCreatorArmBlock({ mode, eligibility: latestEligibility, errorMessage: message, errorCode: code }));
+      } else if (message.startsWith("Choose a trading-open time") || message.startsWith("Scheduled launches cannot")) {
         toast.error(message);
+      } else {
+        toast.error(`We couldn’t deploy your campaign on ${chainLabel}. Your draft remains saved. Please try again.`);
       }
     } finally {
       setSubmitting(false);
@@ -635,13 +578,7 @@ export default function PushDraftLive() {
     );
   }
 
-  // Keep deploy clickable when eligibility fails so we can show the explain dialog.
-  // Solana uses V4 authorized create (not BNB factory eligibility).
-  const blocked =
-    submitting ||
-    !DRAFT_PUSH_LIVE_ENABLED ||
-    !canPushLive(draft.status) ||
-    (draftIsSolana ? !ownerConnected : false);
+  const blocked = submitting || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status) || (draftIsSolana ? !ownerConnected : false);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -672,21 +609,14 @@ export default function PushDraftLive() {
           </div>
         </div>
 
-        <GraduationTierSelector
-          chainId={Number(draft.chainId)}
-          value={graduationTargetWei}
-          onChange={setGraduationTargetWei}
-          disabled={submitting}
-        />
+        <GraduationTierSelector chainId={Number(draft.chainId)} value={graduationTargetWei} onChange={setGraduationTargetWei} disabled={submitting} />
 
         <div className="mwz-card mt-5 p-4">
           <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Creator deployment eligibility</div>
           {creatorEligibility?.allowed ? (
             <div className="mt-2 space-y-1">
               <p className="text-sm text-green-300">Eligible to deploy or arm now.</p>
-              <p className="text-xs text-muted-foreground">
-                On-chain live campaigns: {creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}
-              </p>
+              <p className="text-xs text-muted-foreground">Live campaigns: {creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}</p>
             </div>
           ) : creatorEligibility ? (
             <div className="mt-2 space-y-2 text-sm text-orange-300">
@@ -697,20 +627,12 @@ export default function PushDraftLive() {
               ) : (
                 <p>This creator wallet cannot deploy or arm another campaign right now.</p>
               )}
-              <p className="text-xs text-muted-foreground">Trading-open time does not affect arm cooldown. Arming (even with a timer) starts the 24h creator cooldown immediately.</p>
+              <p className="text-xs text-muted-foreground">Trading-open time does not affect arm cooldown. Arming, even with a timer, starts the 24h creator cooldown immediately.</p>
               <Button
                 type="button"
                 variant="outline"
                 className="h-8 border-orange-400/40 bg-orange-500/10 px-3 text-xs text-orange-200 hover:bg-orange-500/20"
-                onClick={() =>
-                  showArmBlock(
-                    resolveCreatorArmBlock({
-                      mode,
-                      eligibility: creatorEligibility,
-                      errorMessage: "Deployment not available for this wallet right now.",
-                    }),
-                  )
-                }
+                onClick={() => showArmBlock(resolveCreatorArmBlock({ mode, eligibility: creatorEligibility, errorMessage: "Deployment not available for this wallet right now." }))}
               >
                 Why can&apos;t I deploy?
               </Button>
@@ -720,29 +642,19 @@ export default function PushDraftLive() {
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setMode("now")}
-            className={`mwz-card p-4 text-left ${mode === "now" ? "border-success/60 bg-success/10" : "border-border"}`}
-          >
+          <button type="button" onClick={() => setMode("now")} className={`mwz-card p-4 text-left ${mode === "now" ? "border-success/60 bg-success/10" : "border-border"}`}>
             <div className="flex items-center gap-2 font-retro text-lg text-foreground"><Rocket className="h-4 w-4" /> Deploy now</div>
             <p className="mt-2 text-sm text-muted-foreground">Pay gas, deploy the campaign, and open trading immediately.</p>
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("scheduled")}
-            className={`mwz-card p-4 text-left ${mode === "scheduled" ? "border-orange-400/60 bg-orange-500/10" : "border-border"}`}
-          >
+          <button type="button" onClick={() => setMode("scheduled")} className={`mwz-card p-4 text-left ${mode === "scheduled" ? "border-orange-400/60 bg-orange-500/10" : "border-border"}`}>
             <div className="flex items-center gap-2 font-retro text-lg text-foreground"><Clock3 className="h-4 w-4" /> Deploy with countdown</div>
-            <p className="mt-2 text-sm text-muted-foreground">Pay gas now. The contract exists immediately, but trading remains blocked until the selected time.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Pay gas now. The campaign is created immediately, but trading remains blocked until the selected time.</p>
           </button>
         </div>
 
         {mode === "scheduled" ? (
           <div className="mwz-card mt-4 p-4">
-            <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              Trading opens at ({creatorTimeZone})
-            </label>
+            <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Trading opens at ({creatorTimeZone})</label>
             <Input
               type="datetime-local"
               value={launchAtInput}
@@ -754,15 +666,9 @@ export default function PushDraftLive() {
             />
             {selectedLaunchValid ? (
               <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <p>
-                  Creator timezone: <span className="text-foreground">{creatorTimeZone} ({timeZoneOffset(selectedLaunchDate)})</span>
-                </p>
-                <p>
-                  On-chain UTC time: <span className="text-foreground">{selectedLaunchDate.toISOString().replace("T", " ").slice(0, 16)} UTC</span>
-                </p>
-                <p className="pt-1 text-orange-200">
-                  This timestamp controls only when trading opens. It is not reserved, queued, or made exclusive to this campaign.
-                </p>
+                <p>Creator timezone: <span className="text-foreground">{creatorTimeZone} ({timeZoneOffset(selectedLaunchDate)})</span></p>
+                <p>UTC time: <span className="text-foreground">{selectedLaunchDate.toISOString().replace("T", " ").slice(0, 16)} UTC</span></p>
+                <p className="pt-1 text-orange-200">This timestamp controls only when trading opens. It is not reserved, queued, or made exclusive to this campaign.</p>
               </div>
             ) : null}
           </div>
@@ -770,17 +676,13 @@ export default function PushDraftLive() {
 
         {!ownerConnected ? (
           <p className="mt-4 text-sm text-orange-300">
-            {draftIsSolana
-              ? "Connect the draft owner Solana wallet (Phantom/Solflare) before V4 deployment."
-              : "Connect the draft owner wallet before deployment."}
+            {draftIsSolana ? "Connect the draft owner Solana wallet (Phantom/Solflare) before deployment." : "Connect the draft owner wallet before deployment."}
           </p>
         ) : null}
         {draftIsSolana && ownerConnected ? (
-          <p className="mt-4 text-sm text-muted-foreground">
-            Solana V4 authorized create: Railway signs the digest; your wallet pays gas and sends createCampaign. Buy/sell lands in parity P1.
-          </p>
+          <p className="mt-4 text-sm text-muted-foreground">Your wallet will confirm the Solana launch transaction. Trading becomes available according to the launch time you selected.</p>
         ) : null}
-        {!DRAFT_PUSH_LIVE_ENABLED ? <p className="mt-4 text-sm text-orange-300">Draft deployment is currently disabled by the launch switch.</p> : null}
+        {!DRAFT_PUSH_LIVE_ENABLED ? <p className="mt-4 text-sm text-orange-300">Draft deployment is temporarily unavailable. Your draft remains saved.</p> : null}
 
         <Button onClick={deploy} disabled={blocked} className="mwz-button mwz-button-orange mt-5 h-12 w-full justify-center font-retro">
           {submitting ? "Confirming Deployment..." : mode === "scheduled" ? `Deploy ${selectedTier} Countdown Campaign` : `Deploy ${selectedTier} Campaign Now`}

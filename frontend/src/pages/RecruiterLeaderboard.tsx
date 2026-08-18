@@ -48,8 +48,8 @@ export default function RecruiterLeaderboard() {
       try {
         const items = await fetchRecruiterLeaderboard(100, "active");
         if (!cancelled) setRecruiters(items);
-      } catch (err: any) {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load recruiter leaderboard"));
+      } catch {
+        if (!cancelled) setError("Recruiter rankings are temporarily unavailable. Please try again later.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -79,7 +79,9 @@ export default function RecruiterLeaderboard() {
       <Card className="overflow-hidden border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(240,106,26,0.22),transparent_42%),linear-gradient(180deg,rgba(22,26,31,0.94),rgba(8,11,15,0.98))] p-6 md:p-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-3xl space-y-3">
-
+            <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Recruiter Network</p>
+            <h1 className="font-retro text-3xl text-foreground md:text-5xl">See who is leading the MemeWarzone recruiter network.</h1>
+            <p className="text-sm text-muted-foreground md:text-base">Compare recruiters by network growth, activity, earnings and performance score.</p>
           </div>
 
           <div className="flex flex-wrap gap-3">

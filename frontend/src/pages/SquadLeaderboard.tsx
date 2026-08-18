@@ -51,8 +51,8 @@ export default function SquadLeaderboard() {
         } else {
           setMembers([]);
         }
-      } catch (err: any) {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load squad leaderboard"));
+      } catch {
+        if (!cancelled) setError("Squad rankings are temporarily unavailable. Please try again later.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -91,10 +91,10 @@ export default function SquadLeaderboard() {
           <div className="max-w-3xl space-y-3">
             <p className="font-retro text-xs uppercase tracking-[0.24em] text-sky-100/70">Squad Pool</p>
             <h1 className="font-retro text-3xl text-foreground md:text-5xl">
-              Global squad leaderboard and exact member rankings.
+              See how squads and members rank this week.
             </h1>
             <p className="text-sm text-muted-foreground md:text-base">
-              This page is driven by the squad allocation engine, including squad-level diminishing returns, member caps, and deterministic redistribution. It surfaces the same score and payout preview the ledger materializer uses.
+              See how squads rank this week, how much of the Squad Pool each squad is estimated to receive, and how members rank by contribution.
             </p>
           </div>
 
@@ -110,7 +110,7 @@ export default function SquadLeaderboard() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Epoch</p>
-          <p className="mt-4 font-retro text-sm text-foreground">{epochLabel || "Current preview"}</p>
+          <p className="mt-4 font-retro text-sm text-foreground">{epochLabel || "Current week"}</p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Global squad pool</p>
@@ -181,7 +181,7 @@ export default function SquadLeaderboard() {
               <Users className="h-4 w-4 text-amber-200" />
               <div>
                 <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Member ranking</p>
-                <h2 className="mt-1 font-retro text-xl text-foreground">Exact score and estimated payout</h2>
+                <h2 className="mt-1 font-retro text-xl text-foreground">Member score and estimated reward</h2>
               </div>
             </div>
 

@@ -38,8 +38,8 @@ export default function AirdropWinners() {
       try {
         const items = await fetchAirdropWinners({ chainId: Number(selectedChainId || 97), limit: 100 });
         if (!cancelled) setWinners(items);
-      } catch (err: any) {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop winners"));
+      } catch {
+        if (!cancelled) setError("Winner history is temporarily unavailable. Please try again later.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -57,10 +57,10 @@ export default function AirdropWinners() {
           <div className="max-w-3xl space-y-3">
             <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Published winners</p>
             <h1 className="font-retro text-3xl text-foreground md:text-5xl">
-              Airdrop winners page driven by backend draw state.
+              See the latest MemeWarzone Airdrop winners.
             </h1>
             <p className="text-sm text-muted-foreground md:text-base">
-              Every row here is loaded from the published draw records, not a frontend-side reconstruction. That keeps the public page in sync with the draw audit trail and wallet reward ledger.
+              Browse recent trader and creator winners, their rewards and the epoch they won.
             </p>
           </div>
 
