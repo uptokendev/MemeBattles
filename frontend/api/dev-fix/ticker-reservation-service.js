@@ -88,11 +88,10 @@ export function canonicalClusterForChain(chainId, explicitCluster = "") {
 
   if (numericChainId === 56) return "bsc-mainnet";
   if (numericChainId === 97) return "bsc-testnet";
-  // Product Solana id is 101 for both mainnet and our current app routing.
-  // Prefer env; default to solana-devnet so devnet create/tests do not reserve under mainnet-beta by accident.
+  // Product Solana id 101 is mainnet-beta. Chain 102 is the explicit cert/devnet rail.
   if (numericChainId === 101) {
     return canonicalSolanaCluster(
-      process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-devnet",
+      process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta",
     );
   }
   if (numericChainId === 102) return "solana-devnet";

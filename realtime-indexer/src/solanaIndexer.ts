@@ -5,7 +5,7 @@ import { publishCandle, publishStats, publishTrade } from "./ably.js";
 import { TIMEFRAMES, bucketStart, type TF } from "./timeframes.js";
 
 const SOLANA_CHAIN_ID = 101;
-const DEFAULT_SOLANA_RPC = "https://api.devnet.solana.com";
+const DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 const DEFAULT_PROGRAM_ID = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const TOKEN_DECIMALS = 6;

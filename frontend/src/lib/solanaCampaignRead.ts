@@ -278,7 +278,7 @@ function rpcUrl(): string {
   return (
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com"
+    "https://api.mainnet-beta.solana.com"
   );
 }
 

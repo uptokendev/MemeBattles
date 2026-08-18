@@ -9,7 +9,7 @@ const globalState = globalThis as any;
 const VERSION = 3;
 const WAD = 1_000_000_000_000_000_000n;
 const LAMPORTS_PER_SOL = 1_000_000_000;
-const DEFAULT_SOLANA_RPC = "https://api.devnet.solana.com";
+const DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 const DEFAULT_SOLANA_PROGRAM = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt";
 
 const BNB_CURVE_ABI = [

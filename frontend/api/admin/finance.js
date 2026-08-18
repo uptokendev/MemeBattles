@@ -66,8 +66,8 @@ function rewardState(status) {
 }
 
 function rewardChainCandidates(chainId) {
-  if (chainId === 101) return ["101", "solana", "solana-devnet"];
-  if (chainId === 102) return ["102", "solana-mainnet"];
+  if (chainId === 101) return ["101", "solana", "solana-mainnet", "solana-mainnet-beta"];
+  if (chainId === 102) return ["102", "solana-devnet"];
   return [String(chainId)];
 }
 

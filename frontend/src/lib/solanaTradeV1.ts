@@ -352,7 +352,7 @@ export async function getSolanaTokenBalanceRaw(input: {
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com";
+    "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, { commitment: "confirmed", disableRetryOnRateLimit: true });
   const mint = new PublicKey(input.mint);
   const owner = new PublicKey(input.owner);
@@ -429,7 +429,7 @@ export async function submitSolanaTradeV1(
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com";
+    "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
 
   const digest = base64ToBytes(auth.authorization.digestBase64);
@@ -510,7 +510,7 @@ export async function ensureTraderAta(input: {
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com";
+    "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
   const mint = new PublicKey(input.mint);
   const owner = new PublicKey(input.owner);
