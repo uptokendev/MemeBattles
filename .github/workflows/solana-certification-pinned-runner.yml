@@ -62,6 +62,8 @@ jobs:
     environment: squad-solana-devnet
     env:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+      BSC_RPC_HTTP_97: ${{ secrets.BSC_RPC_HTTP_97 }}
       SOLANA_SQUAD_CHAIN_ID: "102"
       SOLANA_SQUAD_EPOCH_ID: ${{ inputs.db_epoch_id }}
       SOLANA_SQUAD_DRY_RUN: ${{ inputs.dry_run }}
