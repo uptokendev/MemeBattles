@@ -26,6 +26,19 @@ import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
 /** Fixed UP Vote price in USD. Same product on BNB and Solana. */
 const UPVOTE_USD_TARGET = 3;
+const UPVOTE_DISPLAY_DECIMALS = 6;
+const UPVOTE_DISPLAY_SCALE_WEI = 10n ** BigInt(18 - UPVOTE_DISPLAY_DECIMALS);
+
+function floorToDisplayPrecision(wei: bigint) {
+  return (wei / UPVOTE_DISPLAY_SCALE_WEI) * UPVOTE_DISPLAY_SCALE_WEI;
+}
+
+function formatDisplayBnb(wei: bigint) {
+  const formatted = ethers.formatEther(floorToDisplayPrecision(wei));
+  const [whole, fraction = ""] = formatted.split(".");
+  const trimmed = fraction.slice(0, UPVOTE_DISPLAY_DECIMALS).replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole;
+}
 
 const UPVOTE_ABI = [
   "function voteWithBNB(address campaign, bytes32 meta) payable",
@@ -168,10 +181,10 @@ export function UpvoteDialog({
   }, [minAmountWei, oracleTargetWei, fallbackUsdTargetWei, isSolanaCampaign]);
 
   const priceReady = voteWei > 0n && !loadingCfg;
-  const humanNative = useMemo(
-    () => (voteWei > 0n ? formatNativeAmount(voteWei, nativeDecimals) : "—"),
-    [voteWei, nativeDecimals],
-  );
+  const humanNative = useMemo(() => {
+    if (voteWei <= 0n) return "—";
+    return isSolanaCampaign ? formatNativeAmount(voteWei, nativeDecimals) : formatDisplayBnb(voteWei);
+  }, [voteWei, nativeDecimals, isSolanaCampaign]);
 
   const usdLabel = useMemo(() => {
     const p = Number(priceUsd ?? 0);
@@ -704,7 +717,9 @@ export function UpvoteDialog({
           <div className="text-xs text-muted-foreground">
             Balance:{" "}
             <span className="text-foreground">
-              {balanceWei != null ? `${formatNativeAmount(balanceWei, nativeDecimals)} ${nativeUnit}` : "—"}
+              {balanceWei != null
+                ? `${isSolanaCampaign ? formatNativeAmount(balanceWei, nativeDecimals) : formatDisplayBnb(balanceWei)} ${nativeUnit}`
+                : "—"}
             </span>
             {insufficient ? (
               <span className="ml-2 text-destructive">
