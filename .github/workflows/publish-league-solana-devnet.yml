@@ -48,7 +48,9 @@ jobs:
       SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
       SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
       SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
-      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+      # This workflow is Devnet-only. Open claims automatically only after the
+      # prepared League root reconciles on-chain; production workflows are unchanged.
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && inputs.confirmation == 'PUBLISH_DEVNET_LEAGUE' && 'true' || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
