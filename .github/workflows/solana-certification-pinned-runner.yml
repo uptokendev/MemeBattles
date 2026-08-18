@@ -1,0 +1,219 @@
+name: Solana Certification Pinned Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Certification lane to run"
+        required: true
+        default: "squad"
+        type: choice
+        options:
+          - squad
+          - airdrop
+          - recruiter
+          - league
+      dry_run:
+        description: "Run in dry-run mode"
+        required: true
+        default: true
+        type: boolean
+      live_confirmation:
+        description: "For live publication type RUN_DEVNET_CERTIFICATION_LIVE"
+        required: false
+        default: ""
+        type: string
+      db_epoch_id:
+        description: "Squad DB epoch id"
+        required: false
+        default: "41"
+        type: string
+      league_period:
+        description: "League period"
+        required: false
+        default: "weekly"
+        type: choice
+        options:
+          - weekly
+          - monthly
+      league_epoch_start:
+        description: "League epoch start"
+        required: false
+        default: "2026-08-13T00:00:00Z"
+        type: string
+      league_confirmation:
+        description: "For live League publication type PUBLISH_DEVNET_LEAGUE"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-certification-pinned-${{ inputs.lane }}-${{ inputs.dry_run && 'dry' || 'live' }}
+  cancel-in-progress: false
+
+jobs:
+  squad:
+    if: ${{ inputs.lane == 'squad' && (inputs.dry_run || inputs.live_confirmation == 'RUN_DEVNET_CERTIFICATION_LIVE') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: squad-solana-devnet
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      SOLANA_SQUAD_CHAIN_ID: "102"
+      SOLANA_SQUAD_EPOCH_ID: ${{ inputs.db_epoch_id }}
+      SOLANA_SQUAD_DRY_RUN: ${{ inputs.dry_run }}
+      SQUAD_SOLANA_CHAIN_ID: "102"
+      SQUAD_SOLANA_DB_EPOCH_ID: ${{ inputs.db_epoch_id }}
+      SQUAD_SOLANA_DRY_RUN: ${{ inputs.dry_run }}
+      SQUAD_SOLANA_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
+      SQUAD_CLAIM_WINDOW_DAYS: ${{ vars.SQUAD_CLAIM_WINDOW_DAYS || '7' }}
+      SOLANA_INCENTIVE_CERTIFICATION_MODE: "true"
+      SOLANA_SQUAD_ACTIVITY_CHAIN_ID: "101"
+      SOLANA_SQUAD_TRADER_MIN_VOLUME_LAMPORTS: "1000000"
+      SOLANA_SQUAD_TRADER_MIN_TRADES: "1"
+      SOLANA_SQUAD_TRADER_MIN_ACTIVE_DAYS: "1"
+      SOLANA_SQUAD_CREATOR_MIN_VOLUME_LAMPORTS: "20000000"
+      SOLANA_SQUAD_CREATOR_MIN_UNIQUE_BUYERS: "1"
+      SOLANA_SQUAD_CREATOR_MAX_CAMPAIGNS: "2"
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            realtime-indexer/package-lock.json
+            frontend/package-lock.json
+      - name: Build reward indexer
+        working-directory: realtime-indexer
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - name: Calculate and materialize Squad epoch
+        working-directory: realtime-indexer
+        run: npm run cron:process-solana-squad-epoch
+      - name: Install frontend settlement dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Publish guarded Squad settlement
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/weekly-squad-solana.mjs
+
+  airdrop:
+    if: ${{ inputs.lane == 'airdrop' && (inputs.dry_run || inputs.live_confirmation == 'RUN_DEVNET_CERTIFICATION_LIVE') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: airdrop-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      AIRDROP_CHAIN_ID: "102"
+      AIRDROP_DRY_RUN: ${{ inputs.dry_run }}
+      AIRDROP_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
+      AIRDROP_CERTIFICATION_MODE: "true"
+      AIRDROP_ACTIVITY_CHAIN_ID: "101"
+      AIRDROP_WEEKLY_DISTRIBUTION_BPS: "1000"
+      AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION: ${{ vars.SOLANA_AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION || 'false' }}
+      AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS: ${{ vars.AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS || 'false' }}
+      AIRDROP_CLAIM_WINDOW_DAYS: ${{ vars.AIRDROP_CLAIM_WINDOW_DAYS || '7' }}
+      AIRDROP_TARGET_PAYOUT_WEI: "10000"
+      AIRDROP_MAX_WINNERS_PER_PROGRAM: "1"
+      AIRDROP_TRADER_MIN_VOLUME_WEI: "1000000"
+      AIRDROP_TRADER_VOLUME_CAP_WEI: ${{ vars.SOLANA_AIRDROP_TRADER_VOLUME_CAP_LAMPORTS || '15000000000' }}
+      AIRDROP_TRADER_MIN_TRADES: "1"
+      AIRDROP_TRADER_MIN_ACTIVE_DAYS: "1"
+      AIRDROP_CREATOR_MIN_VOLUME_WEI: "20000000"
+      AIRDROP_CREATOR_VOLUME_CAP_WEI: ${{ vars.SOLANA_AIRDROP_CREATOR_VOLUME_CAP_LAMPORTS || '25000000000' }}
+      AIRDROP_CREATOR_MIN_UNIQUE_BUYERS: "1"
+      AIRDROP_CREATOR_MAX_CAMPAIGNS: ${{ vars.AIRDROP_CREATOR_MAX_CAMPAIGNS || '2' }}
+      AIRDROP_DRAW_SEED_SECRET: ${{ secrets.AIRDROP_DRAW_SEED_SECRET }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Run guarded Solana weekly airdrop
+        run: node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
+
+  recruiter:
+    if: ${{ inputs.lane == 'recruiter' && (inputs.dry_run || inputs.live_confirmation == 'RUN_DEVNET_CERTIFICATION_LIVE') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: recruiter-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      RECRUITER_SOLANA_CHAIN_ID: "102"
+      RECRUITER_SOLANA_DRY_RUN: ${{ inputs.dry_run }}
+      RECRUITER_SOLANA_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
+      RECRUITER_CLAIM_WINDOW_DAYS: ${{ vars.RECRUITER_CLAIM_WINDOW_DAYS || '7' }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Run guarded recruiter settlement
+        run: node --import ./api/load-local-env.mjs scripts/weekly-recruiter-solana.mjs
+
+  league:
+    if: ${{ inputs.lane == 'league' && (inputs.dry_run || (inputs.live_confirmation == 'RUN_DEVNET_CERTIFICATION_LIVE' && inputs.league_confirmation == 'PUBLISH_DEVNET_LEAGUE')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: airdrop-solana-devnet
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      LEAGUE_SOLANA_CHAIN_ID: "102"
+      LEAGUE_SOLANA_PERIOD: ${{ inputs.league_period }}
+      LEAGUE_SOLANA_EPOCH_START: ${{ inputs.league_epoch_start }}
+      LEAGUE_SOLANA_DRY_RUN: ${{ inputs.dry_run }}
+      LEAGUE_SOLANA_AUTOMATION_ENABLED: ${{ !inputs.dry_run && 'true' || 'false' }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ !inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Validate or publish League root
+        run: node --import ./api/load-local-env.mjs scripts/publish-league-solana.mjs
