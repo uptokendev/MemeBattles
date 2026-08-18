@@ -63,6 +63,18 @@ If a creator's campaign receives 100 BNB of bonding curve buy and sell notional 
 
 This is separate from the creator payout. It is earned from trading activity on the creator's own campaign.
 
+## Creator trade earnings example
+
+If a creator's campaign receives 100 BNB of bonding-curve buy/sell notional before graduation, the creator earns:
+
+| Item | Amount |
+| --- | ---: |
+| Bonding-curve trade notional | 100 BNB |
+| Creator direct trade share | 0.10% |
+| Direct creator trade earnings | 0.100 BNB |
+
+This is separate from the graduation payout. It is earned from trading activity on the creator's own campaign.
+
 ## UpVote example
 
 If a campaign receives 100 UpVotes:
