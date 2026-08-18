@@ -69,11 +69,15 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, "./node_modules/buffer/"),
         },
         {
-          find: "rpc-websockets/dist/lib/client",
+          find: /^rpc-websockets$/,
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets.ts"),
+        },
+        {
+          find: /^rpc-websockets\/dist\/lib\/client$/,
           replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-client.ts"),
         },
         {
-          find: "rpc-websockets/dist/lib/client/websocket.browser",
+          find: /^rpc-websockets\/dist\/lib\/client\/websocket(?:\.browser)?$/,
           replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-websocket-browser.ts"),
         },
       ],
@@ -83,7 +87,9 @@ export default defineConfig(({ mode }) => {
       exclude: [
         "@solana/web3.js",
         "@solana/spl-token",
+        "rpc-websockets",
         "rpc-websockets/dist/lib/client",
+        "rpc-websockets/dist/lib/client/websocket",
         "rpc-websockets/dist/lib/client/websocket.browser",
       ],
       esbuildOptions: {
