@@ -34,12 +34,11 @@
     "dotenv": "^16.4.5",
     "ethers": "^6.13.4",
     "express": "^4.19.2",
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "rpc-websockets": "7.8.0"
   },
   "overrides": {
-    "rpc-websockets": {
-      "uuid": "^8.3.2"
-    }
+    "rpc-websockets": "7.8.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
