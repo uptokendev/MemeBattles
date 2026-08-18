@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Install deps first (cache-friendly)
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy the rest of the service code (context is realtime-indexer/)
 COPY . .
