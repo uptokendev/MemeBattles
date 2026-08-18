@@ -66,9 +66,6 @@ const EXPLICIT_REALTIME_API_BASE = firstAnyBase([
 // TokenDetails is protected below by a preemptive /token/0x... contract fallback
 // when legacy code asks for /api/campaigns.
 const REALTIME_INDEXER_API_PREFIXES = [
-  // League standings/prize/claim live on frontend-api (frontend/api/league.js), not indexer.
-  "/api/recruiters",
-  "/api/rewards",
   "/api/token/",
   "/api/market/",
   "/api/votes",
@@ -79,11 +76,13 @@ const REALTIME_INDEXER_API_PREFIXES = [
 const FRONTEND_API_PREFIXES = [
   "/api/token-metadata",
   "/api/topaz-trades",
+  "/api/recruiters",
   "/api/recruiters/signup",
   "/api/recruiter-auth-nonce",
   "/api/recruiter-auth-verify",
   "/api/recruiter-portal",
   "/api/recruiter-logout",
+  "/api/rewards",
   // Full UP Only League stack (epoch windows, prize meta, all categories).
   "/api/league",
   "/api/leaguePayouts",
@@ -111,17 +110,27 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+function shouldUseLocalApiGateway(path: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (!isLoopbackHost(window.location.hostname)) return false;
+  } catch {
+    return false;
+  }
+  return path === "/api" || path.startsWith("/api/") || path === "/internal" || path.startsWith("/internal/");
+}
+
 function matchesApiPrefix(path: string, prefix: string): boolean {
   if (prefix.endsWith("/")) return path.startsWith(prefix);
   return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
 }
 
-function isRecruiterCanonicalSummaryPath(path: string): boolean {
-  return /^\/api\/recruiters\/(?:wallet\/[^/?]+\/summary|[^/?]+\/summary)(?:[/?]|$)/.test(path);
-}
-
 function shouldUseFrontendApi(path: string): boolean {
-  if (isRecruiterCanonicalSummaryPath(path)) return true;
   return FRONTEND_API_PREFIXES.some((prefix) => matchesApiPrefix(path, prefix));
 }
 
@@ -392,6 +401,10 @@ async function notifyCreatorProtectionResponse(res: Response): Promise<void> {
 export function apiUrl(path: string): string {
   if (isHttpUrl(path)) return path;
   const normalized = normalizePath(path);
+
+  if (shouldUseLocalApiGateway(normalized)) {
+    return normalized;
+  }
 
   // Indexer-only surfaces (votes, token market, …).
   if (EXPLICIT_REALTIME_API_BASE && shouldUseRealtimeIndexer(normalized)) {

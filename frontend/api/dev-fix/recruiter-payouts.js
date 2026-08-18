@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
 import { badMethod, json, readJson, isAddress, isSolanaAddress } from "../../server/http.js";
+import { solanaLaneAddresses, verifySolanaRewardLaneClaim } from "../lib/solanaRewardLane.js";
 
 const COOKIE_NAME = "mwz_recruiter_session";
 const CHAINS = { bnb: { token: "BNB" }, solana: { token: "SOL" } };
@@ -182,23 +183,33 @@ async function getBalances(recruiterId) {
   const { rows } = await pool.query(
     `with ledger as (
        select chain, token,
-              coalesce(sum(amount_raw) filter (where status = 'claimable' and claim_id is null), 0)::numeric(78,0) as claimable_raw,
+              coalesce(sum(amount_raw) filter (where status in ('claimable','retriable') and claim_id is null), 0)::numeric(78,0) as claimable_raw,
               coalesce(sum(amount_raw) filter (where status in ('pending', 'pending_finality')), 0)::numeric(78,0) as pending_raw
          from public.recruiter_reward_ledger
         where recruiter_id = $1
         group by chain, token
+     ), batched as (
+       select c.chain, c.token,
+              coalesce(sum(c.amount_raw) filter (where c.status in ('created','retriable') and s.status in ('claimable','failed')), 0)::numeric(78,0) as claimable_raw
+         from public.recruiter_reward_claims c
+         join public.solana_reward_lane_claims s
+           on s.lane='recruiter' and s.source_type='recruiter_reward_claim' and s.source_ref=c.id::text
+        where c.recruiter_id=$1 and c.chain='solana'
+        group by c.chain,c.token
      ), wallets as (
        select chain, max(wallet_address) filter (where verified_at is not null) as payout_wallet
          from public.recruiter_payout_wallets
         where recruiter_id = $1
         group by chain
      )
-     select coalesce(l.chain, w.chain) as chain,
-            coalesce(l.token, case when coalesce(l.chain, w.chain) = 'solana' then 'SOL' else 'BNB' end) as token,
-            coalesce(l.claimable_raw, 0)::text as claimable_raw,
-            coalesce(l.pending_raw, 0)::text as pending_raw,
+     select coalesce(l.chain,b.chain,w.chain) as chain,
+            coalesce(l.token,b.token,case when coalesce(l.chain,b.chain,w.chain)='solana' then 'SOL' else 'BNB' end) as token,
+            (coalesce(l.claimable_raw,0)+coalesce(b.claimable_raw,0))::text as claimable_raw,
+            coalesce(l.pending_raw,0)::text as pending_raw,
             w.payout_wallet
-       from ledger l full join wallets w on w.chain = l.chain`,
+       from ledger l
+       full join batched b on b.chain=l.chain
+       full join wallets w on w.chain=coalesce(l.chain,b.chain)`,
     [recruiterId],
   );
   const byChain = new Map();
@@ -273,6 +284,110 @@ export async function recruiterMeWalletLink(req, res) {
   }
 }
 
+async function preparedSolanaClaim(client, recruiterId, payoutWallet) {
+  const { rows } = await client.query(
+    `select c.id as recruiter_claim_id,
+            c.amount_raw::text as amount_raw,
+            c.payout_wallet,
+            s.id as settlement_claim_id,
+            s.amount_lamports::text as amount_lamports,
+            s.merkle_proof,
+            s.claim_receipt_address,
+            s.status as settlement_status,
+            b.id as settlement_batch_id,
+            b.chain_id,
+            b.epoch_id::text as epoch_id,
+            b.program_id,
+            b.vault_address,
+            b.batch_address,
+            b.status as batch_status
+       from public.recruiter_reward_claims c
+       join public.solana_reward_lane_claims s
+         on s.lane='recruiter' and s.source_type='recruiter_reward_claim' and s.source_ref=c.id::text
+       join public.solana_reward_lane_batches b on b.id=s.batch_id
+      where c.recruiter_id=$1 and c.chain='solana' and c.payout_wallet=$2
+        and c.status in ('created','retriable')
+        and s.status in ('claimable','failed')
+        and b.status='claim_open'
+      order by b.epoch_id asc
+      limit 1`,
+    [recruiterId, payoutWallet],
+  );
+  return rows[0] || null;
+}
+
+async function confirmSolanaClaim(client, account, payoutWallet, body) {
+  const claimId = String(body.claimId || body.recruiterClaimId || "").trim();
+  const txHash = String(body.txHash || "").trim();
+  if (!claimId || !txHash) return { status: 400, payload: { error: "claimId and txHash are required", code: "SOLANA_CLAIM_RECORD_MISSING" } };
+
+  const { rows } = await client.query(
+    `select c.id as recruiter_claim_id,
+            c.amount_raw::text as amount_raw,
+            c.payout_wallet,
+            c.status as recruiter_claim_status,
+            c.tx_hash,
+            s.id as settlement_claim_id,
+            s.amount_lamports::text as amount_lamports,
+            s.claim_receipt_address,
+            s.status as settlement_status,
+            b.id as settlement_batch_id,
+            b.chain_id,
+            b.epoch_id::text as epoch_id,
+            b.program_id,
+            b.vault_address,
+            b.batch_address
+       from public.recruiter_reward_claims c
+       join public.solana_reward_lane_claims s
+         on s.lane='recruiter' and s.source_type='recruiter_reward_claim' and s.source_ref=c.id::text
+       join public.solana_reward_lane_batches b on b.id=s.batch_id
+      where c.id=$1 and c.recruiter_id=$2 and c.chain='solana' and c.payout_wallet=$3
+      limit 1`,
+    [claimId, account.recruiter_id, payoutWallet],
+  );
+  const claim = rows[0];
+  if (!claim) return { status: 404, payload: { error: "Prepared Solana recruiter claim not found", code: "SOLANA_RECRUITER_CLAIM_NOT_FOUND" } };
+  if (claim.recruiter_claim_status === "confirmed") {
+    if (String(claim.tx_hash || "") === txHash) return { status: 200, payload: { ok: true, idempotent: true, txHash } };
+    return { status: 409, payload: { error: "Recruiter reward already confirmed with another transaction", code: "CLAIM_ALREADY_CONFIRMED" } };
+  }
+
+  const verification = await verifySolanaRewardLaneClaim({
+    lane: "recruiter",
+    chainId: Number(claim.chain_id),
+    epochId: claim.epoch_id,
+    walletAddress: payoutWallet,
+    amountLamports: claim.amount_lamports,
+    txHash,
+  });
+
+  await client.query("begin");
+  try {
+    await client.query(
+      `update public.recruiter_reward_claims
+          set status='confirmed',tx_hash=$2,error=null,updated_at=now()
+        where id=$1 and status in ('created','submitted','retriable')`,
+      [claimId, txHash],
+    );
+    await client.query(
+      `update public.recruiter_reward_ledger set status='claimed',updated_at=now() where claim_id=$1`,
+      [claimId],
+    );
+    await client.query(
+      `update public.solana_reward_lane_claims
+          set status='claimed',tx_hash=$2,error=null,claimed_at=coalesce(claimed_at,now()),updated_at=now(),
+              metadata=coalesce(metadata,'{}'::jsonb)||$3::jsonb
+        where id=$1`,
+      [claim.settlement_claim_id, txHash, JSON.stringify({ verification, verifiedAt: new Date().toISOString() })],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+  return { status: 200, payload: { ok: true, txHash, verification, message: "SOL recruiter reward confirmed on-chain." } };
+}
+
 export async function recruiterMeClaims(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const client = await pool.connect();
@@ -284,13 +399,50 @@ export async function recruiterMeClaims(req, res) {
     const chain = normalizeChain(body.chain);
     if (!chain) return json(res, 400, { error: "Invalid chain. Use bnb or solana." });
     const token = CHAINS[chain].token;
-    await client.query("begin");
     const walletResult = await client.query(`select wallet_address from public.recruiter_payout_wallets where recruiter_id = $1 and chain = $2 and verified_at is not null order by verified_at desc limit 1`, [account.recruiter_id, chain]);
     const payoutWallet = walletResult.rows[0]?.wallet_address || "";
-    if (!payoutWallet) {
-      await client.query("rollback");
-      return json(res, 400, { error: `Verify a ${token} payout wallet before claiming ${token} rewards.`, code: "MISSING_PAYOUT_WALLET" });
+    if (!payoutWallet) return json(res, 400, { error: `Verify a ${token} payout wallet before claiming ${token} rewards.`, code: "MISSING_PAYOUT_WALLET" });
+
+    if (chain === "solana") {
+      if (String(body.action || "").toLowerCase() === "recordsolanaclaim") {
+        const result = await confirmSolanaClaim(client, account, payoutWallet, body);
+        return json(res, result.status, result.payload);
+      }
+      const prepared = await preparedSolanaClaim(client, account.recruiter_id, payoutWallet);
+      if (!prepared) {
+        return json(res, 409, { error: "SOL recruiter rewards are awaiting the next published weekly settlement batch.", code: "RECRUITER_SOLANA_BATCH_PENDING" });
+      }
+      const addresses = solanaLaneAddresses("recruiter", prepared.epoch_id, payoutWallet, prepared.program_id);
+      return json(res, 200, {
+        ok: true,
+        claim: {
+          id: String(prepared.recruiter_claim_id),
+          chain: "solana",
+          token: "SOL",
+          amountRaw: rawAmount(prepared.amount_raw),
+          payoutWallet,
+          status: "created",
+          txHash: null,
+        },
+        solanaClaim: {
+          lane: "recruiter",
+          chainId: Number(prepared.chain_id),
+          epochId: String(prepared.epoch_id),
+          amount: rawAmount(prepared.amount_lamports),
+          proof: Array.isArray(prepared.merkle_proof) ? prepared.merkle_proof : [],
+          programId: addresses.programId,
+          configAddress: addresses.configAddress,
+          vaultAddress: addresses.vaultAddress,
+          batchAddress: addresses.batchAddress,
+          claimReceiptAddress: addresses.claimReceiptAddress,
+          recipient: payoutWallet,
+          instruction: "claim_recruiter",
+        },
+        message: "SOL recruiter reward is ready for native claim.",
+      });
     }
+
+    await client.query("begin");
     const ledgerResult = await client.query(
       `select id, amount_raw::text as amount_raw
          from public.recruiter_reward_ledger
@@ -307,12 +459,12 @@ export async function recruiterMeClaims(req, res) {
     const claim = claimResult.rows[0];
     await client.query(`update public.recruiter_reward_ledger set status = 'created', claim_id = $4, updated_at = now() where recruiter_id = $1 and chain = $2 and token = $3 and status = 'claimable' and claim_id is null`, [account.recruiter_id, chain, token, claim.id]);
     await client.query("commit");
-    return json(res, 200, { ok: true, claim: { id: String(claim.id), chain, token, amountRaw, payoutWallet, status: "created", txHash: null, createdAt: claim.created_at }, message: `${token} claim created. On-chain payout submission is pending vault integration.` });
+    return json(res, 200, { ok: true, claim: { id: String(claim.id), chain, token, amountRaw, payoutWallet, status: "created", txHash: null, createdAt: claim.created_at }, message: `${token} claim created.` });
   } catch (error) {
     await client.query("rollback").catch(() => {});
     if (schemaMissing(error)) return json(res, 503, { error: "Recruiter payout schema has not been applied yet.", code: "PAYOUT_SCHEMA_MISSING" });
     console.error("[recruiter claim] failed", error);
-    return json(res, 500, { error: "Server error" });
+    return json(res, 500, { error: error?.message || "Server error" });
   } finally {
     client.release();
   }

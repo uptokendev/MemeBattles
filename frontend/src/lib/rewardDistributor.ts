@@ -1,6 +1,7 @@
 import type { JsonRpcSigner } from "ethers";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 import { signWalletAction, type WalletActionAuthPayload } from "@/lib/walletActionAuth";
+import type { SolanaAirdropClaimCall } from "@/lib/solanaRewardClaim";
 
 export const REWARD_DISTRIBUTOR_ABI = [
   {
@@ -47,12 +48,13 @@ export type RewardClaimConfig = {
   chainId: number;
   tokenSymbol: string;
   enabled: boolean;
-  mode: "reward_distributor_merkle" | "disabled";
+  mode: "reward_distributor_merkle" | "solana_treasury" | "disabled";
   reason: string | null;
   distributorAddress: string;
+  supportedRewardTypes?: string[];
 };
 
-export type RewardClaimCall = {
+export type EvmRewardClaimCall = {
   rewardLedgerId: string;
   chainId: number;
   tokenSymbol: string;
@@ -72,14 +74,18 @@ export type RewardClaimCall = {
   explorerTxBase: string;
 };
 
+export type RewardClaimCall = EvmRewardClaimCall | SolanaAirdropClaimCall;
+
 export type RewardClaimIntent = {
   id: string;
   walletAddress: string;
   chainId: number;
-  mode: "reward_distributor_merkle";
+  mode: "reward_distributor_merkle" | "solana_treasury";
   requiresWalletTransaction: true;
   calls: RewardClaimCall[];
 };
+
+const onchainConfirmedPending = new Set<string>();
 
 async function parseJson(response: Response) {
   const payload = await response.json().catch(() => ({}));
@@ -97,7 +103,6 @@ export async function fetchRewardClaimConfig(chainId: number): Promise<RewardCla
 type ClaimAuthOpts = {
   signer?: JsonRpcSigner | null;
   signMessage?: (message: string) => Promise<string>;
-  /** Pre-built auth (rare); otherwise signed when signer/signMessage provided. */
   auth?: WalletActionAuthPayload | null;
 };
 
@@ -119,7 +124,6 @@ async function maybeSignClaimAuth(
       signMessage: opts?.signMessage,
     });
   } catch (error) {
-    // Dual-auth period: allow unsigned when signing fails (enforce still off).
     console.warn(`[rewardDistributor] ${action} sign skipped:`, error);
     return null;
   }
@@ -160,25 +164,35 @@ export async function recordRewardClaimTx(params: {
   signMessage?: (message: string) => Promise<string>;
   auth?: WalletActionAuthPayload | null;
 }) {
-  // Public claim-record path (do not call /api/internal/* from the browser).
   const auth = await maybeSignClaimAuth("claim_record", params, params);
-  const response = await fetch(buildRealtimeApiUrl("/api/rewards/me/claim-record"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      walletAddress: params.walletAddress,
-      address: params.walletAddress,
-      chainId: params.chainId ?? null,
-      rewardLedgerIds: params.rewardLedgerIds,
-      claimIntentId: params.claimIntentId || null,
-      txHash: params.txHash,
-      status: "claimed",
-      reason: "Wallet claim transaction confirmed",
-      ...(auth || {}),
-      auth: auth || undefined,
-    }),
-  });
-  return [await parseJson(response)];
+  try {
+    const response = await fetch(buildRealtimeApiUrl("/api/rewards/me/claim-record"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        walletAddress: params.walletAddress,
+        address: params.walletAddress,
+        chainId: params.chainId ?? null,
+        rewardLedgerIds: params.rewardLedgerIds,
+        claimIntentId: params.claimIntentId || null,
+        txHash: params.txHash,
+        status: "claimed",
+        reason: "Wallet claim transaction confirmed",
+        ...(auth || {}),
+        auth: auth || undefined,
+      }),
+    });
+    const payload = await parseJson(response);
+    params.rewardLedgerIds.forEach((id) => onchainConfirmedPending.delete(String(id)));
+    return [payload];
+  } catch (error) {
+    // The wallet transaction is already confirmed before this function is called.
+    // Never let the UI downgrade that entitlement to `failed`: doing so could invite
+    // a second submission while the chain receipt already prevents/reports a claim.
+    params.rewardLedgerIds.forEach((id) => onchainConfirmedPending.add(String(id)));
+    const detail = String((error as any)?.message || error || "dashboard write failed");
+    throw new Error(`Claim confirmed on-chain, but dashboard reconciliation is pending. Do not submit another claim. ${detail}`);
+  }
 }
 
 export async function recordRewardClaimFailure(params: {
@@ -191,7 +205,15 @@ export async function recordRewardClaimFailure(params: {
   signMessage?: (message: string) => Promise<string>;
   auth?: WalletActionAuthPayload | null;
 }) {
-  // Public claim-record path (do not call /api/internal/* from the browser).
+  const hasConfirmedPending = params.rewardLedgerIds.some((id) => onchainConfirmedPending.has(String(id)));
+  if (hasConfirmedPending) {
+    return [{
+      ok: false,
+      reconciliationPending: true,
+      reason: "On-chain transaction confirmed; preserving claim_pending until the server reconciles it.",
+    }];
+  }
+
   const auth = params.walletAddress
     ? await maybeSignClaimAuth("claim_record", params, params)
     : null;
