@@ -188,7 +188,7 @@ async function financeRevenue(req, res, network) {
   }
 }
 
-async function financeInventory(req, res, network) {
+function financeInventoryItems(network) {
   const items = [];
   const seenAddresses = new Set();
   const add = (id, kind, label, address, role) => {
@@ -197,15 +197,7 @@ async function financeInventory(req, res, network) {
     const key = `${network.chain}:${value.toLowerCase()}`;
     if (seenAddresses.has(key)) return;
     seenAddresses.add(key);
-    items.push({
-      id,
-      chain: network.chain,
-      kind,
-      label,
-      address: value,
-      role,
-      status: "configured",
-    });
+    items.push({ id, chain: network.chain, kind, label, address: value, role, status: "configured" });
   };
 
   if (network.chain === "bnb") {
@@ -226,17 +218,78 @@ async function financeInventory(req, res, network) {
     add("sol102-protocol-treasury", "wallet", "Solana Protocol Treasury", process.env.SOLANA_MAINNET_PROTOCOL_TREASURY_ADDRESS || process.env.SOLANA_MAINNET_VOTE_TREASURY_ADDRESS, "protocol revenue destination");
     add("sol102-operator", "wallet", "Solana LP Operator", process.env.SOLANA_MAINNET_OPERATOR_ADDRESS || process.env.SOLANA_MAINNET_HARVEST_OPERATOR_ADDRESS, "Meteora position operator");
   }
+  return items;
+}
 
+async function financeInventory(req, res, network) {
   return res.status(200).json({
     schemaVersion: "finance-inventory-v1",
     generatedAt: new Date().toISOString(),
     source: "dashboard-api",
-    network: {
-      chainId: network.chainId,
+    network: { chainId: network.chainId, chain: network.chain, environment: network.environment },
+    items: financeInventoryItems(network),
+  });
+}
+
+function indexerHeaders() {
+  const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
+  return opsKey ? { Accept: "application/json", "x-ops-key": opsKey } : { Accept: "application/json" };
+}
+
+async function readIndexerLpFees(network) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(`${INDEXER_BASE}/api/dashboard/lp-fees?chainId=${network.chainId}&limit=50`, {
+      headers: indexerHeaders(),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || !Array.isArray(payload.items)) {
+      throw new Error(String(payload?.error || `Indexer LP read failed (${response.status}).`));
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function financeReconciliation(req, res, network) {
+  const inventory = financeInventoryItems(network);
+  let sourceErrorCount = 0;
+  let staleSourceCount = 0;
+  try {
+    const lp = await readIndexerLpFees(network);
+    for (const item of lp.items) {
+      if (item?.fees?.error) sourceErrorCount += 1;
+    }
+    const updatedAt = Date.parse(String(lp.updatedAt || ""));
+    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > 15 * 60 * 1000) staleSourceCount = 1;
+  } catch {
+    sourceErrorCount += 1;
+    staleSourceCount = 1;
+  }
+
+  const trackedInventoryCount = inventory.length;
+  const balanceCoverageMapped = false;
+  const balancedInventoryCount = 0;
+  const status = trackedInventoryCount === 0 || sourceErrorCount > 0 ? "blocked" : "attention";
+
+  return res.status(200).json({
+    schemaVersion: "finance-reconciliation-v1",
+    generatedAt: new Date().toISOString(),
+    source: "dashboard-api",
+    chains: [{
       chain: network.chain,
-      environment: network.environment,
-    },
-    items,
+      status: balanceCoverageMapped ? status : "blocked",
+      trackedInventoryCount,
+      balancedInventoryCount,
+      balanceBreakCount: 0,
+      missingPriceCount: 0,
+      duplicateCandidateCount: 0,
+      quarantinedTransferCount: 0,
+      staleSourceCount: staleSourceCount + sourceErrorCount,
+    }],
   });
 }
 
@@ -251,20 +304,14 @@ async function financeLpHarvest(req, res, network) {
   if (!pair) return res.status(400).json({ ok: false, error: "LP pair / position is required." });
 
   const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
-  if (!opsKey) {
-    return res.status(503).json({ ok: false, error: "LP harvest is not configured on the Frontend API." });
-  }
+  if (!opsKey) return res.status(503).json({ ok: false, error: "LP harvest is not configured on the Frontend API." });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const upstream = await fetch(`${INDEXER_BASE}/api/dashboard/lp-fees/collect`, {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "x-ops-key": opsKey,
-      },
+      headers: { Accept: "application/json", "Content-Type": "application/json", "x-ops-key": opsKey },
       body: JSON.stringify({
         chainId: network.chainId,
         pair,
@@ -276,12 +323,8 @@ async function financeLpHarvest(req, res, network) {
     });
     const payload = await upstream.json().catch(() => null);
     if (!upstream.ok) {
-      return res.status(upstream.status).json({
-        ok: false,
-        error: String(payload?.error || payload?.message || `Indexer harvest failed (${upstream.status}).`),
-      });
+      return res.status(upstream.status).json({ ok: false, error: String(payload?.error || payload?.message || `Indexer harvest failed (${upstream.status}).`) });
     }
-
     return res.status(200).json({
       ok: true,
       chainId: network.chainId,
@@ -304,9 +347,7 @@ export default async function financeAdmin(req, res) {
   if (!auth) return;
 
   const network = selectedNetwork(req);
-  if (!network) {
-    return res.status(400).json({ ok: false, error: "Finance network must be chainId 56, 97, 101, or 102." });
-  }
+  if (!network) return res.status(400).json({ ok: false, error: "Finance network must be chainId 56, 97, 101, or 102." });
 
   const pathname = String(req.path || new URL(req.url, "http://localhost").pathname);
   const method = String(req.method || "GET").toUpperCase();
@@ -319,11 +360,10 @@ export default async function financeAdmin(req, res) {
     if (pathname === "/api/admin/finance/rewards") return await financeRewards(req, res, network);
     if (pathname === "/api/admin/finance/revenue") return await financeRevenue(req, res, network);
     if (pathname === "/api/admin/finance/inventory") return await financeInventory(req, res, network);
+    if (pathname === "/api/admin/finance/reconciliation") return await financeReconciliation(req, res, network);
     return res.status(404).json({ ok: false, error: "Unknown finance admin route." });
   } catch (error) {
     console.error("[api/admin/finance]", pathname, error);
-    if (!res.headersSent) {
-      return res.status(500).json({ ok: false, error: "Finance operation failed." });
-    }
+    if (!res.headersSent) return res.status(500).json({ ok: false, error: "Finance operation failed." });
   }
 }
