@@ -10,6 +10,7 @@ import { RecruiterNativePayoutsPanel } from "@/components/command-center/Recruit
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { addressesMatch } from "@/lib/address";
+import { apiFetch } from "@/lib/apiBase";
 import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
 import {
   REWARD_DISTRIBUTOR_ABI,
@@ -18,6 +19,7 @@ import {
   recordRewardClaimTx,
 } from "@/lib/rewardDistributor";
 import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
+import { submitSolanaLeagueClaim } from "@/lib/solanaLeagueClaim";
 import { submitSolanaAirdropClaim } from "@/lib/solanaRewardClaim";
 import { getConfiguredSolanaRewardChainId, isSolanaRewardChainId } from "@/lib/solanaRewardNetwork";
 import { signSolanaMessage } from "@/lib/solanaWallet";
@@ -33,6 +35,51 @@ type RewardCardConfig = {
   amountLabel: string;
   state: RewardCardState;
   items: RewardLedgerItem[];
+};
+
+type LeagueRewardMetadata = {
+  claimSource: "league_api";
+  period: "weekly" | "monthly";
+  epochStart: string;
+  epochEnd: string | null;
+  expiresAt: string | null;
+  category: string;
+  rank: number;
+  recipient: string;
+  computedAt: string | null;
+  payload: Record<string, unknown>;
+};
+
+type LeagueRewardRow = {
+  period: "weekly" | "monthly";
+  epochStart: string;
+  epochEnd?: string | null;
+  expiresAt?: string | null;
+  category: string;
+  rank: number;
+  amountRaw: string;
+  payload?: Record<string, unknown>;
+  computedAt?: string | null;
+};
+
+type PreparedSolanaLeagueClaim = {
+  ok: boolean;
+  mode: "solana_treasury";
+  chainId: number;
+  programId: string;
+  vaultAddress: string;
+  configAddress: string;
+  epochAddress: string;
+  claimReceiptAddress: string;
+  periodCode: number;
+  epochStartSec: number;
+  epochTotal: string;
+  root: string;
+  categoryHash: string;
+  recipient: string;
+  rank: number;
+  amountRaw: string;
+  proof: string[];
 };
 
 const ACTIVE_SQUAD_STATES = new Set(["in_squad", "linked_squad", "active_squad", "squad_member", "member"]);
@@ -174,11 +221,10 @@ function buildRewardCards(
   }
 
   const baseline = ["league", "airdrop"];
-  if (recruiterOk || grouped.has("recruiter")) baseline.push("recruiter");
   if (squadOk || grouped.has("squad")) baseline.push("squad");
 
   const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()])).filter((type) => {
-    if (type === "recruiter") return recruiterOk || (grouped.get("recruiter")?.length ?? 0) > 0;
+    if (type === "recruiter") return (grouped.get("recruiter")?.length ?? 0) > 0;
     if (type === "squad") return squadOk || (grouped.get("squad")?.length ?? 0) > 0;
     return true;
   });
@@ -201,6 +247,172 @@ function buildRewardCards(
   });
 }
 
+async function parseApiJson(res: Response) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || (json as any)?.ok === false) {
+    throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
+  }
+  return json as any;
+}
+
+function buildLeagueRewardId(chainId: number, reward: LeagueRewardRow) {
+  return `league:${chainId}:${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`;
+}
+
+function readLeagueRewardMetadata(item: RewardLedgerItem): LeagueRewardMetadata | null {
+  const metadata = item.metadata as Partial<LeagueRewardMetadata> | undefined;
+  return metadata?.claimSource === "league_api" ? (metadata as LeagueRewardMetadata) : null;
+}
+
+async function fetchLeagueRewardItems(walletAddress?: string | null, chainId?: number | null): Promise<RewardLedgerItem[]> {
+  if (!walletAddress || !isSolanaRewardChainId(chainId)) return [];
+
+  const query = new URLSearchParams({ address: walletAddress, chainId: String(chainId) });
+  const res = await apiFetch(`/api/rewards?${query.toString()}`, { cache: "no-store" });
+  const json = await parseApiJson(res);
+  const rewards = Array.isArray(json?.rewards) ? (json.rewards as LeagueRewardRow[]) : [];
+
+  return rewards.map((reward) => {
+    const metadata: LeagueRewardMetadata = {
+      claimSource: "league_api",
+      period: reward.period,
+      epochStart: reward.epochStart,
+      epochEnd: reward.epochEnd || null,
+      expiresAt: reward.expiresAt || null,
+      category: String(reward.category || "").toLowerCase(),
+      rank: Number(reward.rank || 0),
+      recipient: walletAddress,
+      computedAt: reward.computedAt || null,
+      payload: reward.payload && typeof reward.payload === "object" ? reward.payload : {},
+    };
+
+    return {
+      id: buildLeagueRewardId(Number(chainId), reward),
+      rewardType: "league",
+      sourceId: null,
+      sourceLabel: `${metadata.period}:${metadata.category}:${metadata.rank}`,
+      walletAddress,
+      userId: null,
+      chain: "solana",
+      chainId: Number(chainId),
+      tokenSymbol: "SOL",
+      amount: String(reward.amountRaw || "0"),
+      amountUsd: null,
+      status: "claimable",
+      claimBatchId: null,
+      claimTxHash: null,
+      claimError: null,
+      metadata,
+      createdAt: metadata.computedAt || metadata.epochEnd || metadata.epochStart,
+      updatedAt: metadata.computedAt || metadata.epochEnd || metadata.epochStart,
+      claimableAt: metadata.epochEnd || metadata.computedAt,
+      claimedAt: null,
+      expiresAt: metadata.expiresAt,
+    } satisfies RewardLedgerItem;
+  });
+}
+
+async function fetchWalletNonce(chainId: number, walletAddress: string): Promise<string> {
+  const query = new URLSearchParams({ chainId: String(chainId), address: walletAddress });
+  const res = await apiFetch(`/api/auth/nonce?${query.toString()}`, { cache: "no-store" });
+  const json = await parseApiJson(res);
+  if (!json?.nonce) throw new Error("League claim nonce missing from response.");
+  return String(json.nonce);
+}
+
+function buildLeagueClaimMessage(input: {
+  chainId: number;
+  recipient: string;
+  period: "weekly" | "monthly";
+  epochStart: string;
+  category: string;
+  rank: number;
+  nonce: string;
+}) {
+  return [
+    "MemeWarzone League",
+    "Action: LEAGUE_CLAIM",
+    `ChainId: ${input.chainId}`,
+    `Recipient: ${input.recipient}`,
+    `Period: ${input.period}`,
+    `EpochStart: ${input.epochStart}`,
+    `Category: ${input.category}`,
+    `Rank: ${input.rank}`,
+    `Nonce: ${input.nonce}`,
+  ].join("\n");
+}
+
+async function prepareLeagueRewardClaim(
+  metadata: LeagueRewardMetadata,
+  walletAddress: string,
+  chainId: number,
+): Promise<PreparedSolanaLeagueClaim> {
+  const nonce = await fetchWalletNonce(chainId, walletAddress);
+  const message = buildLeagueClaimMessage({
+    chainId,
+    recipient: walletAddress,
+    period: metadata.period,
+    epochStart: metadata.epochStart,
+    category: metadata.category,
+    rank: metadata.rank,
+    nonce,
+  });
+  const { signature } = await signSolanaMessage(message, walletAddress);
+  const res = await apiFetch("/api/league", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "claim",
+      chainId,
+      period: metadata.period,
+      epochStart: metadata.epochStart,
+      category: metadata.category,
+      rank: metadata.rank,
+      recipient: walletAddress,
+      nonce,
+      signature,
+    }),
+  });
+  const json = await parseApiJson(res);
+  return { ...json, chainId } as PreparedSolanaLeagueClaim;
+}
+
+async function recordLeagueRewardClaim(
+  metadata: LeagueRewardMetadata,
+  walletAddress: string,
+  chainId: number,
+  txHash: string,
+) {
+  const nonce = await fetchWalletNonce(chainId, walletAddress);
+  const message = buildLeagueClaimMessage({
+    chainId,
+    recipient: walletAddress,
+    period: metadata.period,
+    epochStart: metadata.epochStart,
+    category: metadata.category,
+    rank: metadata.rank,
+    nonce,
+  });
+  const { signature } = await signSolanaMessage(message, walletAddress);
+  const res = await apiFetch("/api/league", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "record",
+      chainId,
+      period: metadata.period,
+      epochStart: metadata.epochStart,
+      category: metadata.category,
+      rank: metadata.rank,
+      recipient: walletAddress,
+      nonce,
+      signature,
+      txHash,
+    }),
+  });
+  return parseApiJson(res);
+}
+
 export default function CommandCenterClaims() {
   const { attribution, chainId, walletAddress } = useCommandCenterData();
   const wallet = useWallet();
@@ -215,8 +427,11 @@ export default function CommandCenterClaims() {
   const loadClaims = () => {
     setLoading(true);
     setMessage(null);
-    void fetchRewardClaims({ walletAddress, chainId: rewardChainId, limit: 100 })
-      .then((next) => setItems(Array.isArray(next) ? next : []))
+    void (async () => {
+      const ledgerItems = await fetchRewardClaims({ walletAddress, chainId: rewardChainId, limit: 100 });
+      const leagueItems = await fetchLeagueRewardItems(walletAddress, rewardChainId).catch(() => []);
+      setItems([...(Array.isArray(ledgerItems) ? ledgerItems : []), ...leagueItems]);
+    })()
       .catch((err: any) => setMessage(String(err?.message || err || "Failed to load rewards")))
       .finally(() => setLoading(false));
   };
@@ -253,6 +468,61 @@ export default function CommandCenterClaims() {
   async function claimRewards(card: RewardCardConfig) {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
     if (!claimable.length) return;
+
+    const leagueClaimable = claimable.filter((item) => Boolean(readLeagueRewardMetadata(item)));
+    if (leagueClaimable.length) {
+      if (leagueClaimable.length !== claimable.length) {
+        setMessage("League rewards must be claimed separately.");
+        return;
+      }
+      if (!walletAddress) {
+        setMessage("Connect the wallet that owns these league rewards before claiming.");
+        return;
+      }
+      if (!solanaAccount || solanaAccount !== walletAddress) {
+        setMessage("Connect the same Solana wallet that owns these league rewards before claiming.");
+        try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
+        return;
+      }
+
+      setClaimingType(card.rewardType);
+      setMessage(null);
+      const completed: string[] = [];
+
+      try {
+        for (const item of leagueClaimable) {
+          const metadata = readLeagueRewardMetadata(item);
+          if (!metadata) throw new Error("League reward claim metadata is missing.");
+          const claimChainId = Number(item.chainId || rewardChainId || 0);
+          const toastId = toast.loading(`Confirm ${formatNativeAmount(item.amount, claimChainId, item.tokenSymbol)} claim in your wallet...`);
+          try {
+            const prepared = await prepareLeagueRewardClaim(metadata, walletAddress, claimChainId);
+            const txHash = await submitSolanaLeagueClaim(prepared);
+            toast.dismiss(toastId);
+            const recordToast = toast.loading("Finalizing league claim...");
+            try {
+              await recordLeagueRewardClaim(metadata, walletAddress, claimChainId, txHash);
+            } finally {
+              toast.dismiss(recordToast);
+            }
+            completed.push(item.id);
+          } catch (err) {
+            toast.dismiss(toastId);
+            throw err;
+          }
+        }
+
+        const count = completed.length;
+        setMessage(count === 1 ? `${card.title} claimed on-chain.` : `${count} ${card.title} claims completed on-chain.`);
+        toast.success(count === 1 ? "League reward claimed." : `${count} league rewards claimed.`);
+        loadClaims();
+      } catch (err: any) {
+        setMessage(String(err?.shortMessage || err?.message || err || "League claim request failed"));
+      } finally {
+        setClaimingType(null);
+      }
+      return;
+    }
 
     const hasSolana = claimable.some((item) => isSolanaRewardChainId(item.chainId));
     const hasEvm = claimable.some((item) => !isSolanaRewardChainId(item.chainId));
