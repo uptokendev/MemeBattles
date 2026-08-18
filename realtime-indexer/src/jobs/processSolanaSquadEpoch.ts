@@ -37,6 +37,8 @@ async function main() {
   const dryRun = envBool("SOLANA_SQUAD_DRY_RUN", true);
   const epochId = await resolveEpochId(chainId);
 
+  console.log("[solana-squad-epoch] start", { chainId, dryRun, epochId });
+
   const eligibility = await processSolanaSquadEligibilityForEpoch(epochId);
   if (eligibility.epoch.chainId !== chainId) {
     throw new Error(`Epoch ${epochId} belongs to chain ${eligibility.epoch.chainId}, expected ${chainId}`);
@@ -45,11 +47,26 @@ async function main() {
     throw new Error(`Epoch ${epochId} has not ended yet`);
   }
 
+  console.log("[solana-squad-epoch] eligibility complete", {
+    memberCount: eligibility.memberCount,
+    eligibleCount: eligibility.eligibleCount,
+    reviewCount: eligibility.reviewCount,
+    hardFlaggedCount: eligibility.hardFlaggedCount,
+  });
+
   const preview = await getSquadAllocationPreview(epochId, pool, chainId);
   const positiveMembers = preview.members.filter((member) => BigInt(member.estimatedPayoutAmount || "0") > 0n);
   const allocated = positiveMembers.reduce((sum, member) => sum + BigInt(member.estimatedPayoutAmount), 0n);
   const globalPool = BigInt(preview.globalPoolAmount || "0");
   const carryover = BigInt(preview.carryoverAmount || "0");
+
+  console.log("[solana-squad-epoch] preview complete", {
+    squadCount: preview.leaderboard.length,
+    recipientCount: positiveMembers.length,
+    globalPoolLamports: globalPool.toString(),
+    allocatedLamports: allocated.toString(),
+    carryoverLamports: carryover.toString(),
+  });
 
   if (allocated + carryover !== globalPool) {
     throw new Error(`Squad allocation mismatch: allocated=${allocated} carryover=${carryover} pool=${globalPool}`);
