@@ -1,9 +1,13 @@
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
 import { badMethod, isAddress, json, readJson } from "../server/http.js";
-import { publishSolanaLeagueRoot } from "./lib/solanaLeagueRootPublisher.js";
 
 const SOLANA_CHAINS = new Set([101, 102]);
+
+async function loadSolanaLeaguePublisher() {
+  const module = await import("./lib/solanaLeagueRootPublisher.js");
+  return module.publishSolanaLeagueRoot;
+}
 
 // POST /api/leagueRoot
 // Admin-only helper to publish a weekly epoch root or seal a monthly league root.
@@ -56,6 +60,7 @@ export default async function handler(req, res) {
         }
       }
 
+      const publishSolanaLeagueRoot = await loadSolanaLeaguePublisher();
       const publication = await publishSolanaLeagueRoot({ chainId, period, epochStart, winners });
       return json(res, 200, {
         ok: true,
