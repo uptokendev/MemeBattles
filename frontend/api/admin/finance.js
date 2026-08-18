@@ -1,6 +1,7 @@
 import { pool } from "../../server/db.js";
 import { requireAdminOrOps } from "../lib/apiAuth.js";
 import { configuredRewardVaultAddresses, readRewardFunding } from "../lib/financeFunding.js";
+import { readNativeUpvoteRevenue } from "../lib/financeVoteRevenue.js";
 
 const FINANCE_NETWORKS = new Map([
   [56, { chain: "bnb", decimals: 18, asset: "BNB", environment: "mainnet" }],
@@ -178,6 +179,37 @@ async function financeRewards(req, res, network) {
   }
 }
 
+async function bondingRevenueAggregate(network) {
+  const { rows } = await pool.query(
+    `select min(occurred_at) as period_start,
+            max(occurred_at) as period_end,
+            count(*)::int as evidence_count,
+            coalesce(sum(protocol_amount), 0)::text as amount_raw
+       from public.reward_events
+      where chain_id = $1
+        and route_kind = 'trade'
+        and protocol_amount > 0`,
+    [network.chainId],
+  );
+  const row = rows[0] || {};
+  const nativeAmount = atomicToDecimal(row.amount_raw, network.decimals);
+  const periodStart = toIso(row.period_start);
+  const periodEnd = toIso(row.period_end);
+  if (!nativeAmount || nativeAmount === "0" || !periodStart || !periodEnd) return null;
+
+  return {
+    id: `bonding-route:${network.chainId}`,
+    periodStart,
+    periodEnd,
+    chain: network.chain,
+    lane: "bonding_curve_fee",
+    assetSymbol: network.asset,
+    sourceInventoryId: `bnb${network.chainId}-treasury-router`,
+    nativeAmount,
+    evidenceCount: Number(row.evidence_count || 0),
+  };
+}
+
 async function financeRevenue(req, res, network) {
   if (network.chain !== "bnb") {
     return res.status(200).json({
@@ -189,55 +221,45 @@ async function financeRevenue(req, res, network) {
     });
   }
 
+  const aggregates = [];
   try {
-    const { rows } = await pool.query(
-      `select min(occurred_at) as period_start,
-              max(occurred_at) as period_end,
-              count(*)::int as evidence_count,
-              coalesce(sum(protocol_amount), 0)::text as amount_raw
-         from public.reward_events
-        where chain_id = $1
-          and route_kind = 'trade'
-          and protocol_amount > 0`,
-      [network.chainId],
-    );
-    const row = rows[0] || {};
-    const nativeAmount = atomicToDecimal(row.amount_raw, network.decimals);
-    const periodStart = toIso(row.period_start);
-    const periodEnd = toIso(row.period_end);
-    const aggregates = nativeAmount && nativeAmount !== "0" && periodStart && periodEnd
-      ? [{
-          id: `bonding-route:${network.chainId}`,
+    const bonding = await bondingRevenueAggregate(network);
+    if (bonding) aggregates.push(bonding);
+  } catch (error) {
+    if (!schemaMissing(error)) throw error;
+  }
+
+  try {
+    const upvotes = await readNativeUpvoteRevenue(network);
+    if (upvotes.approved && upvotes.aggregate) {
+      const nativeAmount = atomicToDecimal(upvotes.aggregate.amountRaw, network.decimals);
+      const periodStart = toIso(upvotes.aggregate.periodStart);
+      const periodEnd = toIso(upvotes.aggregate.periodEnd);
+      if (nativeAmount && nativeAmount !== "0" && periodStart && periodEnd) {
+        aggregates.push({
+          id: `upvotes:${network.chainId}:native`,
           periodStart,
           periodEnd,
           chain: network.chain,
-          lane: "bonding_curve_fee",
+          lane: "upvotes",
           assetSymbol: network.asset,
-          sourceInventoryId: `treasury-router:${network.chainId}`,
+          sourceInventoryId: `bnb${network.chainId}-vote-treasury`,
           nativeAmount,
-          evidenceCount: Number(row.evidence_count || 0),
-        }]
-      : [];
-
-    return res.status(200).json({
-      schemaVersion: "finance-revenue-v1",
-      generatedAt: new Date().toISOString(),
-      source: "dashboard-api",
-      aggregates,
-      quarantine: [],
-    });
-  } catch (error) {
-    if (schemaMissing(error)) {
-      return res.status(200).json({
-        schemaVersion: "finance-revenue-v1",
-        generatedAt: new Date().toISOString(),
-        source: "dashboard-api",
-        aggregates: [],
-        quarantine: [],
-      });
+          evidenceCount: upvotes.aggregate.evidenceCount,
+        });
+      }
     }
-    throw error;
+  } catch (error) {
+    if (!schemaMissing(error)) console.warn("[finance/revenue] upvote lane omitted", error?.message || error);
   }
+
+  return res.status(200).json({
+    schemaVersion: "finance-revenue-v1",
+    generatedAt: new Date().toISOString(),
+    source: "dashboard-api",
+    aggregates,
+    quarantine: [],
+  });
 }
 
 function financeInventoryItems(network) {
