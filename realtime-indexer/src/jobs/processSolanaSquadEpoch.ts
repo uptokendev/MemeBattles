@@ -72,23 +72,23 @@ async function main() {
 
   console.log("[solana-squad-epoch] start", { chainId, dryRun, epochId });
 
-  const eligibility = await processSolanaSquadEligibilityForEpoch(epochId);
-  if (eligibility.epoch.chainId !== chainId) {
-    throw new Error(`Epoch ${epochId} belongs to chain ${eligibility.epoch.chainId}, expected ${chainId}`);
-  }
-  if (new Date(eligibility.epoch.endAt).getTime() > Date.now()) {
-    throw new Error(`Epoch ${epochId} has not ended yet`);
-  }
-
-  console.log("[solana-squad-epoch] eligibility complete", {
-    memberCount: eligibility.memberCount,
-    eligibleCount: eligibility.eligibleCount,
-    reviewCount: eligibility.reviewCount,
-    hardFlaggedCount: eligibility.hardFlaggedCount,
-  });
-
   await withSimpleClient(async (db) => {
     console.log("[solana-squad-epoch] preview client acquired", { epochId });
+
+    const eligibility = await processSolanaSquadEligibilityForEpoch(epochId);
+    if (eligibility.epoch.chainId !== chainId) {
+      throw new Error(`Epoch ${epochId} belongs to chain ${eligibility.epoch.chainId}, expected ${chainId}`);
+    }
+    if (new Date(eligibility.epoch.endAt).getTime() > Date.now()) {
+      throw new Error(`Epoch ${epochId} has not ended yet`);
+    }
+
+    console.log("[solana-squad-epoch] eligibility complete", {
+      memberCount: eligibility.memberCount,
+      eligibleCount: eligibility.eligibleCount,
+      reviewCount: eligibility.reviewCount,
+      hardFlaggedCount: eligibility.hardFlaggedCount,
+    });
 
     const preview = await getSquadAllocationPreview(epochId, db, chainId);
     const positiveMembers = preview.members.filter((member) => BigInt(member.estimatedPayoutAmount || "0") > 0n);
