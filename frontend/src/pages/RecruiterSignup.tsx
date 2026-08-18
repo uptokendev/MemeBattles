@@ -74,8 +74,8 @@ export default function RecruiterSignup() {
       try {
         const status = await fetchRecruiterSignupStatus(account);
         if (!cancelled) setSignupStatus(status);
-      } catch (error: any) {
-        if (!cancelled) setStatusError(String(error?.message || error || "Failed to load recruiter signup status"));
+      } catch {
+        if (!cancelled) setStatusError("We couldn’t load your recruiter status. Please refresh and try again.");
       } finally {
         if (!cancelled) setLoadingStatus(false);
       }
@@ -101,13 +101,13 @@ export default function RecruiterSignup() {
         try {
           const availability = await checkRecruiterCodeAvailability(nextCode);
           if (!cancelled) setCodeAvailability(availability);
-        } catch (error: any) {
+        } catch {
           if (!cancelled) {
             setCodeAvailability({
               code: nextCode,
               isAvailable: null,
               checkedVia: "unavailable",
-              message: String(error?.message || error || "Failed to check recruiter code"),
+              message: "Code availability couldn’t be checked. Try again.",
             });
           }
         } finally {
@@ -194,8 +194,8 @@ export default function RecruiterSignup() {
 
       toast.success("Recruiter signup submitted.");
       navigate("/profile?tab=recruiter");
-    } catch (error: any) {
-      toast.error(String(error?.message || error || "Recruiter signup failed"));
+    } catch {
+      toast.error("Recruiter signup couldn’t be completed. Please try again.");
     } finally {
       setSubmitting(false);
     }
