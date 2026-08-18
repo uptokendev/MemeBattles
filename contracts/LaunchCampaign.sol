@@ -9,6 +9,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+import {IPancakeV2Factory, IPancakeV2Pair, IWrappedNative} from "./interfaces/IPancakeAdditional.sol";
+
+interface ILaunchFactory {
+    function onCampaignFinalized(address creator) external;
+    function globalPauseBuys() external view returns (bool);
+}
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
@@ -36,6 +42,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         address feeRecipient;
         address creator;
         address factory;
+        // Protection framework fields
+        uint256 creatorNoSellBlocks;
+        uint256 firstMinWalletCapWei;
+        bool    antiBotEnabled;
     }
 
     uint256 private constant WAD = 1e18;
@@ -75,12 +85,34 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _;
     }
 
-// ---- Phase 2 cheap counters (no backend / no log scanning) ----
-uint256 public totalBuyVolumeWei;
-uint256 public totalSellVolumeWei;
-uint256 public buyersCount;
-mapping(address => bool) public hasBought;
-mapping(address => uint256) public pendingNative;
+    // ---- Phase 2 cheap counters (no backend / no log scanning) ----
+    uint256 public totalBuyVolumeWei;
+    uint256 public totalSellVolumeWei;
+    uint256 public buyersCount;
+    mapping(address => bool) public hasBought;
+    mapping(address => uint256) public pendingNative;
+
+    // ---- Protection framework ----
+    address public creator;              // immutable after initialize (distinct from owner())
+    uint256 public creatorNoSellBlocks;
+    uint256 public startBlock;
+    uint256 public campaignStartTime;
+    uint256 public lastActivityTime;
+    uint256 public firstMinWalletCap;
+    bool public antiBotEnabled;
+    bool public abandoned;
+    /// @notice Per-campaign pause flag. Set only via factory.setCampaignPaused.
+    /// Blocks new buys; sells stay open so holders always have an exit.
+    bool public paused;
+    uint256 public constant ANTI_BOT_BLOCKS = 6;
+    mapping(address => uint256) public firstMinuteSpent;
+    mapping(address => uint256) public lastBuyBlock;
+
+    error CreatorSellLocked();
+    error WalletCapExceeded();
+    error OnePerBlock();
+    error CampaignAbandoned();
+    error CampaignPaused();
 
     event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost);
     event TokensSold(address indexed seller, uint256 amountIn, uint256 payout);
@@ -93,6 +125,8 @@ mapping(address => uint256) public pendingNative;
         uint256 protocolFee,
         uint256 creatorPayout
     );
+    event Abandoned();
+    event PausedSet(bool paused);
 
     bool private _initialized;
 
@@ -150,7 +184,15 @@ function initialize(InitParams memory params) external {
         MAX_BPS;
     creatorReserve = params.totalSupply - curveSupply - liquiditySupply;
     require(liquiditySupply > 0, "liquidity zero");
-    require(creatorReserve >= 0, "creator portion");
+
+    // Protection framework
+    creator = params.creator;
+    creatorNoSellBlocks = params.creatorNoSellBlocks;
+    firstMinWalletCap = params.firstMinWalletCapWei;
+    antiBotEnabled = params.antiBotEnabled;
+    startBlock = block.number;
+    campaignStartTime = block.timestamp;
+    lastActivityTime = block.timestamp;
 
     token = new LaunchToken(
         params.name,
@@ -257,34 +299,44 @@ receive() external payable {}
         return basePrice + Math.mulDiv(priceSlope, sold, WAD);
     }
 
-    function buyExactTokens(uint256 amountOut, uint256 maxCost)
-        external
-        payable
-        nonReentrant
-        returns (uint256 cost)
-    {
-        require(!launched, "campaign launched");
-        require(amountOut > 0, "zero amount");
-        require(sold + amountOut <= curveSupply, "sold out");
-        uint256 costNoFee = _quoteBuyNoFee(amountOut);
-        uint256 fee = _fee(costNoFee);
-        uint256 total = costNoFee + fee;
-        require(total <= maxCost, "slippage");
-        require(msg.value >= total, "insufficient value");
+    /// @dev Shared buy execution. The four external entry points compute
+    /// (recipient, amountOut, costNoFee, fee, total) up front, validate
+    /// slippage / msg.value, then delegate here. `isUserFacing` skips the
+    /// premium-mode checks for the factory-only initial-buy variants
+    /// (creators are not subject to the wallet cap or anti-bot rule on
+    /// their own initial buy executed in the same tx as creation).
+    function _executeBuy(
+        address recipient,
+        uint256 amountOut,
+        uint256 costNoFee,
+        uint256 fee,
+        uint256 total,
+        bool isUserFacing
+    ) internal {
+        // Premium-mode checks (user-facing only).
+        if (isUserFacing) {
+            if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
+                firstMinuteSpent[recipient] += costNoFee;
+                if (firstMinuteSpent[recipient] > firstMinWalletCap) revert WalletCapExceeded();
+            }
+            if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
+                if (lastBuyBlock[recipient] >= block.number) revert OnePerBlock();
+                lastBuyBlock[recipient] = block.number;
+            }
+        }
 
-// Phase 2 counters (volume excludes protocol fee)
-totalBuyVolumeWei += costNoFee;
-if (!hasBought[msg.sender]) {
-    hasBought[msg.sender] = true;
-    buyersCount += 1;
-}
+        // Phase 2 counters (volume excludes protocol fee).
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[recipient]) {
+            hasBought[recipient] = true;
+            buyersCount += 1;
+        }
 
         sold += amountOut;
-        tokenInterface.safeTransfer(msg.sender, amountOut);
+        tokenInterface.safeTransfer(recipient, amountOut);
 
         if (fee > 0) {
             (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
             if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
             if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
         }
@@ -293,13 +345,41 @@ if (!hasBought[msg.sender]) {
             _sendNative(msg.sender, msg.value - total);
         }
 
-        // Auto-finalize (graduate) immediately once the campaign becomes eligible.
-        // This matches pump.fun / gra.fun style behavior: the completion trade triggers LP deployment.
+        // Auto-finalize (graduate) immediately once eligible.
         if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, msg.sender);
+            _finalize(0, 0, recipient);
         }
 
-        emit TokensPurchased(msg.sender, amountOut, total);
+        if (isUserFacing) {
+            lastActivityTime = block.timestamp;
+        }
+        emit TokensPurchased(recipient, amountOut, total);
+    }
+
+    function buyExactTokens(uint256 amountOut, uint256 maxCost)
+        external
+        payable
+        nonReentrant
+        returns (uint256 cost)
+    {
+        require(!launched, "campaign launched");
+        if (abandoned) revert CampaignAbandoned();
+        if (paused) revert CampaignPaused();
+        // Read the global flag from the factory. Guard for the test
+        // scenarios where `factory` is an EOA (no code) — in production the
+        // factory is always the deploying LaunchFactory contract.
+        if (factory.code.length > 0 && ILaunchFactory(factory).globalPauseBuys()) {
+            revert CampaignPaused();
+        }
+        require(amountOut > 0, "zero amount");
+        require(sold + amountOut <= curveSupply, "sold out");
+        uint256 costNoFee = _quoteBuyNoFee(amountOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total <= maxCost, "slippage");
+        require(msg.value >= total, "insufficient value");
+
+        _executeBuy(msg.sender, amountOut, costNoFee, fee, total, true);
         return total;
     }
 
@@ -312,6 +392,14 @@ if (!hasBought[msg.sender]) {
         returns (uint256 tokensOut, uint256 totalSpent)
     {
         require(!launched, "campaign launched");
+        if (abandoned) revert CampaignAbandoned();
+        if (paused) revert CampaignPaused();
+        // Read the global flag from the factory. Guard for the test
+        // scenarios where `factory` is an EOA (no code) — in production the
+        // factory is always the deploying LaunchFactory contract.
+        if (factory.code.length > 0 && ILaunchFactory(factory).globalPauseBuys()) {
+            revert CampaignPaused();
+        }
         (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
         require(tokensOut > 0, "zero amount");
         require(tokensOut >= minTokensOut, "slippage");
@@ -322,33 +410,7 @@ if (!hasBought[msg.sender]) {
         uint256 total = costNoFee + fee;
         require(total == totalSpent, "quote mismatch");
 
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[msg.sender]) {
-            hasBought[msg.sender] = true;
-            buyersCount += 1;
-        }
-
-        sold += tokensOut;
-        tokenInterface.safeTransfer(msg.sender, tokensOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, msg.sender);
-        }
-
-        emit TokensPurchased(msg.sender, tokensOut, total);
+        _executeBuy(msg.sender, tokensOut, costNoFee, fee, total, true);
         return (tokensOut, total);
     }
 
@@ -372,33 +434,7 @@ if (!hasBought[msg.sender]) {
         require(total <= maxCost, "slippage");
         require(msg.value >= total, "insufficient value");
 
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[recipient]) {
-            hasBought[recipient] = true;
-            buyersCount += 1;
-        }
-
-        sold += amountOut;
-        tokenInterface.safeTransfer(recipient, amountOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible (factory initial buy can trigger this too).
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, recipient);
-        }
-
-        emit TokensPurchased(recipient, amountOut, total);
+        _executeBuy(recipient, amountOut, costNoFee, fee, total, false);
         return total;
     }
 
@@ -424,33 +460,7 @@ if (!hasBought[msg.sender]) {
         uint256 total = costNoFee + fee;
         require(total == totalSpent, "quote mismatch");
 
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[recipient]) {
-            hasBought[recipient] = true;
-            buyersCount += 1;
-        }
-
-        sold += tokensOut;
-        tokenInterface.safeTransfer(recipient, tokensOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, recipient);
-        }
-
-        emit TokensPurchased(recipient, tokensOut, total);
+        _executeBuy(recipient, tokensOut, costNoFee, fee, total, false);
         return (tokensOut, total);
     }
 
@@ -461,6 +471,13 @@ if (!hasBought[msg.sender]) {
     {
         require(!launched, "campaign launched");
         require(amountIn > 0, "zero amount");
+
+        // Creator no-sell window (mandatory, per-tier duration). Sells remain
+        // open for everyone else even if the campaign is paused/abandoned —
+        // holders must always have an exit.
+        if (msg.sender == creator && creatorNoSellBlocks > 0) {
+            if (block.number < startBlock + creatorNoSellBlocks) revert CreatorSellLocked();
+        }
         require(amountIn <= sold, "exceeds sold");
         uint256 gross = _quoteSellNoFee(amountIn);
         uint256 fee = _fee(gross);
@@ -472,7 +489,6 @@ if (!hasBought[msg.sender]) {
 
         if (fee > 0) {
             (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(gross);
-            // fee == protocolNet + leagueFee
             if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
             if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
         }
@@ -480,9 +496,25 @@ if (!hasBought[msg.sender]) {
 
         // Phase 2 counters (volume excludes protocol fee)
         totalSellVolumeWei += gross;
+        lastActivityTime = block.timestamp;
 
         emit TokensSold(msg.sender, amountIn, payout);
         return payout;
+    }
+
+    /// @notice Marks the campaign as abandoned. Blocks new buys; sells stay open.
+    /// @dev Only callable by the factory (which enforces the abandon timeout).
+    function markAbandoned() external onlyFactory {
+        require(!launched, "finalized");
+        abandoned = true;
+        emit Abandoned();
+    }
+
+    /// @notice Pause or unpause new buys on this campaign. Sells remain open.
+    /// @dev Only callable by the factory (admin gates this in setCampaignPaused).
+    function setPaused(bool v) external onlyFactory {
+        paused = v;
+        emit PausedSet(v);
     }
 
     function claimPendingNative() external nonReentrant returns (uint256 amount) {
@@ -531,23 +563,47 @@ if (!hasBought[msg.sender]) {
         uint256 tokensForLp = liquiditySupply;
 
         if (tokensForLp > 0 && liquidityValue > 0) {
+            // Mitigates Ackee Printr audit finding W15: an attacker can call
+            // factory.createPair() and donate WBNB into the resulting pair
+            // before graduation, producing a one-sided pre-seed. Calling
+            // router.addLiquidityETH against such a pair triggers
+            // UniswapV2Library.quote() with a zero reserve, which reverts
+            // and bricks the campaign. To stay graduation-safe we detect
+            // a one-sided pre-seed and bypass the router by transferring
+            // wrapped native + tokens directly into the pair and minting
+            // LP via pair.mint(). The pair's invariant math absorbs any
+            // attacker donation as added LP value at the burn address.
+            address weth = router.WETH();
+            IPancakeV2Factory pancakeFactory = IPancakeV2Factory(router.factory());
+            address pair = pancakeFactory.getPair(address(token), weth);
+            bool oneSidedPreseed;
+            if (pair != address(0)) {
+                (uint112 r0, uint112 r1, ) = IPancakeV2Pair(pair).getReserves();
+                oneSidedPreseed = (r0 == 0 && r1 > 0) || (r0 > 0 && r1 == 0);
+            }
 
-            // NOTE: We intentionally do NOT revert if the v2 pair already exists or even has reserves.
-            // LaunchToken blocks user transfers pre-finalize, so meaningful preseeding should be impossible.
-            // Reverting here can brick campaigns, which is worse than any theoretical edge case.
-
-            tokenInterface.forceApprove(address(router), tokensForLp);
-            (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
-                address(token),
-                tokensForLp,
-                minTokens,
-                minBnb,
-                lpReceiver,
-                block.timestamp + 30 minutes
-            );
-            tokenInterface.forceApprove(address(router), 0);
-            if (tokensForLp > usedTokens) {
-                tokenInterface.safeTransfer(owner(), tokensForLp - usedTokens);
+            if (oneSidedPreseed) {
+                // Direct mint: bypass router, donate to pair, call mint().
+                IWrappedNative(weth).deposit{value: liquidityValue}();
+                IWrappedNative(weth).transfer(pair, liquidityValue);
+                tokenInterface.safeTransfer(pair, tokensForLp);
+                IPancakeV2Pair(pair).mint(lpReceiver);
+                usedTokens = tokensForLp;
+                usedBnb = liquidityValue;
+            } else {
+                tokenInterface.forceApprove(address(router), tokensForLp);
+                (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
+                    address(token),
+                    tokensForLp,
+                    minTokens,
+                    minBnb,
+                    lpReceiver,
+                    block.timestamp + 30 minutes
+                );
+                tokenInterface.forceApprove(address(router), 0);
+                if (tokensForLp > usedTokens) {
+                    tokenInterface.safeTransfer(owner(), tokensForLp - usedTokens);
+                }
             }
         }
 
@@ -564,6 +620,11 @@ if (!hasBought[msg.sender]) {
         uint256 creatorPayout = address(this).balance;
         if (creatorPayout > 0) {
             _sendNative(owner(), creatorPayout);
+        }
+
+        // Notify factory: decrement active campaign count.
+        if (factory != address(0)) {
+            ILaunchFactory(factory).onCampaignFinalized(creator);
         }
 
         // Enable unrestricted token transfers after liquidity is added and funds are distributed
