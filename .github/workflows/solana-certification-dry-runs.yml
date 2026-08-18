@@ -1,0 +1,160 @@
+name: Solana Certification Dry Runs
+
+on:
+  push:
+    branches:
+      - agent/devpostgrad-launch-solana-incentives
+    paths:
+      - .github/workflows/solana-certification-dry-runs.yml
+
+permissions:
+  contents: read
+
+jobs:
+  squad-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: squad-solana-devnet
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      SOLANA_SQUAD_CHAIN_ID: "102"
+      SOLANA_SQUAD_EPOCH_ID: "41"
+      SOLANA_SQUAD_DRY_RUN: "true"
+      SQUAD_SOLANA_CHAIN_ID: "102"
+      SQUAD_SOLANA_DB_EPOCH_ID: "41"
+      SQUAD_SOLANA_DRY_RUN: "true"
+      SQUAD_SOLANA_AUTOMATION_ENABLED: "false"
+      SQUAD_CLAIM_WINDOW_DAYS: "7"
+      SOLANA_INCENTIVE_CERTIFICATION_MODE: "true"
+      SOLANA_SQUAD_ACTIVITY_CHAIN_ID: "101"
+      SOLANA_SQUAD_TRADER_MIN_VOLUME_LAMPORTS: "1000000"
+      SOLANA_SQUAD_TRADER_MIN_TRADES: "1"
+      SOLANA_SQUAD_TRADER_MIN_ACTIVE_DAYS: "1"
+      SOLANA_SQUAD_CREATOR_MIN_VOLUME_LAMPORTS: "20000000"
+      SOLANA_SQUAD_CREATOR_MIN_UNIQUE_BUYERS: "1"
+      SOLANA_SQUAD_CREATOR_MAX_CAMPAIGNS: "2"
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            realtime-indexer/package-lock.json
+            frontend/package-lock.json
+      - name: Build reward indexer
+        working-directory: realtime-indexer
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - name: Calculate Squad eligibility
+        working-directory: realtime-indexer
+        run: npm run cron:process-solana-squad-epoch
+      - name: Install settlement dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Squad settlement dry run
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/weekly-squad-solana.mjs
+
+  airdrop-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: airdrop-solana-devnet
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      AIRDROP_CHAIN_ID: "102"
+      AIRDROP_ACTIVITY_CHAIN_ID: "101"
+      AIRDROP_CERTIFICATION_MODE: "true"
+      AIRDROP_DRY_RUN: "true"
+      AIRDROP_AUTOMATION_ENABLED: "false"
+      AIRDROP_WEEKLY_DISTRIBUTION_BPS: "1000"
+      AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION: "false"
+      AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS: "false"
+      AIRDROP_CLAIM_WINDOW_DAYS: "7"
+      AIRDROP_TARGET_PAYOUT_WEI: "10000"
+      AIRDROP_MAX_WINNERS_PER_PROGRAM: "1"
+      AIRDROP_TRADER_MIN_VOLUME_WEI: "1000000"
+      AIRDROP_TRADER_VOLUME_CAP_WEI: "15000000000"
+      AIRDROP_TRADER_MIN_TRADES: "1"
+      AIRDROP_TRADER_MIN_ACTIVE_DAYS: "1"
+      AIRDROP_CREATOR_MIN_VOLUME_WEI: "20000000"
+      AIRDROP_CREATOR_VOLUME_CAP_WEI: "25000000000"
+      AIRDROP_CREATOR_MIN_UNIQUE_BUYERS: "1"
+      AIRDROP_CREATOR_MAX_CAMPAIGNS: "2"
+      AIRDROP_DRAW_SEED_SECRET: ${{ secrets.AIRDROP_DRAW_SEED_SECRET }}
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Airdrop settlement dry run
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-weekly-airdrop-solana.mjs
+
+  recruiter-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: recruiter-solana-devnet
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      RECRUITER_SOLANA_CHAIN_ID: "102"
+      RECRUITER_SOLANA_DRY_RUN: "true"
+      RECRUITER_SOLANA_AUTOMATION_ENABLED: "false"
+      RECRUITER_CLAIM_WINDOW_DAYS: "7"
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Recruiter settlement dry run
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/weekly-recruiter-solana.mjs
+
+  league-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: airdrop-solana-devnet
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      LEAGUE_SOLANA_CHAIN_ID: "102"
+      LEAGUE_SOLANA_PERIOD: "weekly"
+      LEAGUE_SOLANA_EPOCH_START: "2026-08-13T00:00:00Z"
+      LEAGUE_SOLANA_DRY_RUN: "true"
+      LEAGUE_SOLANA_AUTOMATION_ENABLED: "false"
+      SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
+      SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
+      SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: League settlement dry run
+        working-directory: frontend
+        run: node --import ./api/load-local-env.mjs scripts/publish-league-solana.mjs
