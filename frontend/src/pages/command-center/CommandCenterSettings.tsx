@@ -5,7 +5,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
-import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import { useWallet } from "@/contexts/WalletContext";
@@ -58,16 +57,17 @@ export default function CommandCenterSettings() {
       return;
     }
     setSwitchingChain(true);
+    const target = getActiveChainId(wallet.chainId);
+    const targetLabel = getChainLabel(target) ?? `Chain ${target}`;
     try {
-      const target = getActiveChainId(wallet.chainId);
       await requestWalletChainSwitch(wallet.provider, target);
-      toast.success(`Switched to ${getChainLabel(target) ?? `Chain ${target}`}.`);
+      toast.success(`Switched to ${targetLabel}.`);
     } catch (err: any) {
       const message = String(err?.message || err || "");
       if (/user rejected|user denied|4001/i.test(message)) {
         toast("Switch cancelled.");
       } else {
-        toast.error(message || "Failed to switch network.");
+        toast.error(`We couldn’t switch networks automatically. Please switch to ${targetLabel} in your wallet and try again.`);
       }
     } finally {
       setSwitchingChain(false);
@@ -81,12 +81,8 @@ export default function CommandCenterSettings() {
 
   return (
     <div className="space-y-4">
-
-
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <CommandCenterCard
-          title="Profile settings"
-        >
+        <CommandCenterCard title="Profile settings">
           <div className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-background/25 p-4 sm:flex-row sm:items-center">
             <img
               src={avatarUrl}
@@ -135,9 +131,7 @@ export default function CommandCenterSettings() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard
-          title="Wallet / linked address"
-        >
+        <CommandCenterCard title="Wallet / linked address">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="mb-2 flex items-center gap-2 font-retro text-sm text-foreground">
