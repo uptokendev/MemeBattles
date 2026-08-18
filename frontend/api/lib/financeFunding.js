@@ -28,20 +28,19 @@ function unique(values, normalizer = (value) => value) {
   return result;
 }
 
-function bnbEnv(network, name) {
+function bnbRewardCustody(network) {
   const suffix = network.chainId === 97 ? "97" : "56";
-  return firstEnv(
-    `${name}_${suffix}`,
-    `VITE_${name}_${suffix}`,
-    ...(network.chainId === 56 ? [name, `VITE_${name}`] : []),
-  );
-}
+  const explicit = csvEnv(`FINANCE_REWARD_CUSTODY_ADDRESSES_${suffix}`)
+    .filter((value) => isAddress(value));
+  if (explicit.length > 0) return unique(explicit, (value) => value.toLowerCase());
 
-function bnbRewardVaults(network) {
-  return unique([
-    bnbEnv(network, "COMMUNITY_REWARDS_VAULT_ADDRESS"),
-    bnbEnv(network, "RECRUITER_REWARDS_VAULT_ADDRESS"),
-  ].filter((value) => isAddress(value)), (value) => value.toLowerCase());
+  const distributor = firstEnv(
+    `REWARD_DISTRIBUTOR_ADDRESS_${suffix}`,
+    `VITE_REWARD_DISTRIBUTOR_ADDRESS_${suffix}`,
+    ...(network.chainId === 97 ? ["BNB_TESTNET_REWARD_DISTRIBUTOR_ADDRESS"] : []),
+    ...(network.chainId === 56 ? ["BNB_REWARD_DISTRIBUTOR_ADDRESS", "REWARD_DISTRIBUTOR_ADDRESS_BNB", "REWARD_DISTRIBUTOR_ADDRESS", "VITE_REWARD_DISTRIBUTOR_ADDRESS"] : []),
+  );
+  return isAddress(distributor) ? [distributor] : [];
 }
 
 function bnbRpcUrls(network) {
@@ -49,12 +48,16 @@ function bnbRpcUrls(network) {
   return unique(csvEnv(`BSC_RPC_HTTP_${suffix}`, `VITE_PUBLIC_RPC_${suffix}`));
 }
 
-function solanaRewardVaults(network) {
+function solanaRewardCustody(network) {
+  const explicitName = `FINANCE_REWARD_CUSTODY_ADDRESSES_${network.chainId}`;
+  const explicit = csvEnv(explicitName);
+  if (explicit.length > 0) return unique(explicit);
+
   const names = network.chainId === 101
     ? ["SOLANA_DEVNET_REWARD_VAULT_ADDRESS", "SOLANA_REWARD_VAULT_ADDRESS"]
     : ["SOLANA_MAINNET_REWARD_VAULT_ADDRESS"];
   const values = names.map((name) => firstEnv(name)).filter(Boolean);
-  return unique(values, (value) => value);
+  return unique(values);
 }
 
 function solanaRpcUrls(network) {
@@ -82,8 +85,8 @@ async function readSolanaBalanceFromRpc(rpcUrl, addresses) {
 }
 
 export function configuredRewardVaultAddresses(network) {
-  if (network.chain === "bnb") return bnbRewardVaults(network);
-  return solanaRewardVaults(network);
+  if (network.chain === "bnb") return bnbRewardCustody(network);
+  return solanaRewardCustody(network);
 }
 
 export async function readRewardFunding(network) {
@@ -96,7 +99,7 @@ export async function readRewardFunding(network) {
       readable: false,
       vaultCount: 0,
       fundedRaw: 0n,
-      error: "Reward vault is not configured for the selected network.",
+      error: "Approved reward claim custody is not configured for the selected network.",
     };
   }
   if (rpcUrls.length === 0) {
