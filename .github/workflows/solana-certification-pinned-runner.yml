@@ -64,9 +64,6 @@ jobs:
       DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
       PG_SSL_ALLOW_SELF_SIGNED: "1"
       PGOPTIONS: "-c statement_timeout=300000"
-      # The Solana squad epoch job imports the shared indexer env module, which
-      # hard-requires these unrelated services even though this certification run
-      # does not touch Ably or BSC indexing.
       ABLY_API_KEY: solana-cert-placeholder
       BSC_RPC_HTTP_97: https://example.invalid
       SOLANA_SQUAD_CHAIN_ID: "102"
@@ -92,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0fd4b195f71bc57f723dfd65df8ce46503f799d2
+          ref: 1eae812bc3b5a25cf47038777a8e6d7089af4c2c
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -154,7 +151,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0fd4b195f71bc57f723dfd65df8ce46503f799d2
+          ref: 1eae812bc3b5a25cf47038777a8e6d7089af4c2c
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -187,7 +184,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0fd4b195f71bc57f723dfd65df8ce46503f799d2
+          ref: 1eae812bc3b5a25cf47038777a8e6d7089af4c2c
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -221,7 +218,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0fd4b195f71bc57f723dfd65df8ce46503f799d2
+          ref: 1eae812bc3b5a25cf47038777a8e6d7089af4c2c
       - uses: actions/setup-node@v4
         with:
           node-version: 22
