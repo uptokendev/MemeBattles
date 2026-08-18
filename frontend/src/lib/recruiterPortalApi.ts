@@ -197,30 +197,30 @@ export async function updateRecruiterPortalSquadImage(imageUrl: string, walletAd
 
 export async function fetchRecruiterNativePayouts(walletAddress?: string | null): Promise<RecruiterNativePayouts | null> {
   if (!hasRecruiterPortalSession(walletAddress)) return null;
-  const res = await apiFetch("/api/recruiter-portal?action=payouts", { credentials: PORTAL_CREDENTIALS, cache: "no-store", headers: portalHeaders(walletAddress) });
+  const res = await apiFetch("/api/recruiters/me/payouts", { credentials: PORTAL_CREDENTIALS, cache: "no-store", headers: portalHeaders(walletAddress) });
   if (res.status === 401) { clearPortalSessionToken(walletAddress); return null; }
   return parseJson(res) as Promise<RecruiterNativePayouts>;
 }
 
 export async function requestRecruiterPayoutWalletChallenge(chain: "bnb" | "solana", walletAddress: string, sessionWalletAddress?: string | null): Promise<RecruiterPayoutWalletChallenge> {
-  const res = await apiFetch("/api/recruiter-portal", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ action: "linkPayoutWallet", chain, walletAddress }) });
+  const res = await apiFetch("/api/recruiters/me/wallets/link", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ chain, walletAddress }) });
   const json = await parseJsonAllowingChallenge(res);
   if (!json?.message || !json?.nonce) throw new Error("Payout wallet challenge missing from response.");
   return { nonce: String(json.nonce), message: String(json.message), error: json.error, code: json.code };
 }
 
 export async function verifyRecruiterPayoutWallet(chain: "bnb" | "solana", walletAddress: string, nonce: string, signature: string, sessionWalletAddress?: string | null) {
-  const res = await apiFetch("/api/recruiter-portal", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ action: "linkPayoutWallet", chain, walletAddress, nonce, signature }) });
+  const res = await apiFetch("/api/recruiters/me/wallets/link", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ chain, walletAddress, nonce, signature }) });
   return parseJson(res);
 }
 
 export async function createRecruiterNativeClaim(chain: "bnb" | "solana", sessionWalletAddress?: string | null): Promise<RecruiterNativeClaimIntent> {
-  const res = await apiFetch("/api/recruiter-portal", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ action: "createClaim", chain }) });
+  const res = await apiFetch("/api/recruiters/me/claims", { method: "POST", credentials: PORTAL_CREDENTIALS, headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }), body: JSON.stringify({ chain }) });
   return parseJson(res) as Promise<RecruiterNativeClaimIntent>;
 }
 
 export async function recordRecruiterSolanaClaim(claimId: string, txHash: string, sessionWalletAddress?: string | null) {
-  const res = await apiFetch("/api/recruiter-portal", {
+  const res = await apiFetch("/api/recruiters/me/claims", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
     headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }),
