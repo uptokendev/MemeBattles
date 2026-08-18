@@ -73,12 +73,12 @@ export default function CommandCenterReportAbuse({ embedded = false }: { embedde
       for (const file of files.slice(0, 5)) {
         await withSession((token) => uploadAbuseEvidence(token, report.id, file));
       }
-      toast.success(`Report ${report.id} sent. Wait for the Abuse department.`);
+      toast.success(`Report ${report.id} submitted. Updates and staff replies will appear in your Command Center.`);
       if (embedded) setFiledId(report.id);
       else navigate(`${base}/reports/${report.id}?filed=1`);
     } catch (error) {
       const existingId = String((error as Error & { reportId?: string })?.reportId || "").trim();
-      toast.error(String((error as Error)?.message || "Could not file the abuse report."));
+      toast.error("We couldn’t submit your report. Please try again.");
       if (existingId) navigate(`${base}/reports/${existingId}`);
     } finally {
       setSubmitting(false);
@@ -89,7 +89,7 @@ export default function CommandCenterReportAbuse({ embedded = false }: { embedde
     return (
       <CommandCenterCard eyebrow="Report submitted" title={filedId}>
         <p className="text-sm leading-6 text-muted-foreground">
-          The Abuse department has the case. Stand by here. Email is only a ping.
+          Your report has been submitted. Updates and staff replies will appear here. Email is only used to notify you when something changes.
         </p>
         <Button asChild className="mt-4 font-retro">
           <Link to={`${base}/reports/${filedId}?filed=1`}>View case file</Link>

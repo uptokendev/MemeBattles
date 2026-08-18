@@ -31,6 +31,18 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
 }
 
+function formatEligibilityReason(reason: string): string {
+  const normalized = String(reason || "").trim().toLowerCase();
+  const known: Record<string, string> = {
+    minimum_volume_not_met: "Minimum weekly trading volume not reached.",
+    cooldown_active: "This wallet is still in a reward cooldown period.",
+    battle_league_excluded: "Battle League activity is excluded from this reward draw.",
+    creator_not_eligible: "Creator eligibility requirements were not met this week.",
+    trader_not_eligible: "Trader eligibility requirements were not met this week.",
+  };
+  return known[normalized] || reason.replace(/_/g, " ");
+}
+
 function getLatestEligibility(items: WalletEligibilityItem[], program: string): WalletEligibilityItem | null {
   return items.find((item) => item.program === program) ?? null;
 }
@@ -68,17 +80,17 @@ function EligibilityCard(props: {
       </div>
 
       <div className="mt-4 rounded-2xl border border-border/60 bg-background/20 p-4">
-        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Reason codes</p>
+        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Why this result?</p>
         {item?.reasonCodes?.length ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {item.reasonCodes.map((reason) => (
-              <span key={reason} className="rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-foreground">
-                {reason.replace(/_/g, " ")}
+              <span key={reason} className="rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[10px] tracking-[0.06em] text-foreground">
+                {formatEligibilityReason(reason)}
               </span>
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted-foreground">No public blockers on the latest eligibility result.</p>
+          <p className="mt-3 text-sm text-muted-foreground">No eligibility issues were found for this result.</p>
         )}
       </div>
     </Card>
@@ -115,8 +127,8 @@ export default function AirdropOverview() {
         setWinners(Array.isArray(winnerItems) ? winnerItems : []);
         setSummary(rewardSummary);
         setEligibility(Array.isArray(eligibilityItems) ? eligibilityItems : []);
-      } catch (err: any) {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop overview"));
+      } catch {
+        if (!cancelled) setError("Airdrop information is temporarily unavailable. Please try again later.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -144,10 +156,10 @@ export default function AirdropOverview() {
               Warzone {symbol} Airdrops
             </p>
             <h1 className="font-retro text-3xl text-foreground md:text-5xl">
-              Weekly trader and creator draws, published from backend state.
+              Weekly rewards for active traders and creators.
             </h1>
             <p className="text-sm text-muted-foreground md:text-base">
-              Eligibility, cooldowns, Battle League exclusions, winner selection, and claimable balances are all sourced from the reward engine. This page reads the same state the ledger and draws use.
+              See your weekly eligibility, why you qualify or don’t qualify, available rewards and recent winners in one place.
             </p>
           </div>
 
@@ -194,7 +206,7 @@ export default function AirdropOverview() {
               <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Wallet required</p>
               <h2 className="mt-1 font-retro text-2xl text-foreground">Connect to inspect your airdrop eligibility.</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Once connected, we’ll show your latest trader and creator eligibility state, public reason codes, and any claimable airdrop rewards.
+                Once connected, we’ll show your latest trader and creator eligibility state, why you qualify or don’t qualify, and any claimable airdrop rewards.
               </p>
             </div>
             <ConnectWalletButton />
@@ -202,7 +214,7 @@ export default function AirdropOverview() {
         </Card>
       ) : loading ? (
         <Card className="border-border/60 bg-card/65 px-6 py-12 text-center text-sm text-muted-foreground">
-          Loading airdrop state...
+          Loading airdrop information...
         </Card>
       ) : error ? (
         <Card className="border-rose-400/30 bg-rose-400/10 px-6 py-12 text-center text-sm text-rose-100">

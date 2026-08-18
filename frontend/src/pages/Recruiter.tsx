@@ -44,7 +44,7 @@ export default function Recruiter() {
           <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Recruiter Program</p>
           <h1 className="font-retro text-3xl text-foreground md:text-5xl">Build your squad before the battlefield opens.</h1>
           <p className="text-sm text-muted-foreground md:text-base">
-            Recruiters get a public profile, routed rewards, squad visibility, and a dedicated profile dashboard. This route is the entry point for wallets that want to participate in the recruiter program.
+            Recruit creators and traders, share your referral link, grow your squad and track your rewards from the Command Center.
           </p>
         </div>
       </Card>
@@ -54,21 +54,21 @@ export default function Recruiter() {
           <Users className="h-5 w-5 text-amber-200" />
           <h2 className="mt-4 font-retro text-xl text-foreground">Grow your network</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Recruit creators and traders into your orbit and route them into a squad-linked incentive flow.
+            Invite creators and traders with your recruiter link and grow your squad as your network expands.
           </p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
           <ShieldCheck className="h-5 w-5 text-sky-200" />
           <h2 className="mt-4 font-retro text-xl text-foreground">Track rewards</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Pending, claimable, claimed, and historical recruiter rewards are all surfaced from the same reward ledger.
+            See pending, claimable, claimed and historical recruiter rewards in one place.
           </p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
           <ArrowRight className="h-5 w-5 text-emerald-200" />
           <h2 className="mt-4 font-retro text-xl text-foreground">Stay public</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Leaderboard placement, public recruiter profiles, and referral links remain visible even while personal controls move into Profile.
+            Your leaderboard position, public recruiter profile and referral link remain visible to the community. Manage your recruiter account from the Command Center.
           </p>
         </Card>
       </div>
@@ -80,7 +80,7 @@ export default function Recruiter() {
               <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Wallet required</p>
               <h2 className="mt-2 font-retro text-2xl text-foreground">Connect to continue into recruiter setup.</h2>
               <p className="mt-3 text-sm text-muted-foreground">
-                The dedicated signup flow is the next frontend batch. This route already gives us a clean recruiter CTA target instead of a dead link.
+                Connect the wallet you want to use as your recruiter identity, then choose your recruiter code and complete signup.
               </p>
             </div>
             <ConnectWalletButton />
@@ -97,7 +97,7 @@ export default function Recruiter() {
               <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Existing recruiter</p>
               <h2 className="mt-2 font-retro text-2xl text-foreground">{status.recruiter.displayName || status.recruiter.code}</h2>
               <p className="mt-3 text-sm text-muted-foreground">
-                This {activeWallet?.chain === "solana" ? "Solana" : "BNB"} wallet already owns recruiter code <span className="text-foreground">{status.recruiter.code}</span>. Continue in your Profile recruiter tab.
+                This {activeWallet?.chain === "solana" ? "Solana" : "BNB"} wallet already owns recruiter code <span className="text-foreground">{status.recruiter.code}</span>. Continue in Command Center → Recruiter.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -117,7 +117,7 @@ export default function Recruiter() {
               <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Recruiter signup</p>
               <h2 className="mt-2 font-retro text-2xl text-foreground">This wallet is not a recruiter yet.</h2>
               <p className="mt-3 text-sm text-muted-foreground">
-                Continue into the wallet-first signup flow to reserve a recruiter code, provide your contact details, and sign the submission payload.
+                Choose your recruiter code, add your contact details and confirm the signup with your wallet.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">

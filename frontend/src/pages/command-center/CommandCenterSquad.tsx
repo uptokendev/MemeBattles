@@ -13,7 +13,7 @@ const squadRules = [
   "Squad rewards are based on your contribution",
   "Your contribution appears after squad activity is recorded",
   "Squad standings stay public",
-  "Personal reward details stay inside your creator dashboard",
+  "Personal reward details stay inside your Command Center",
 ];
 
 export default function CommandCenterSquad() {
@@ -55,7 +55,7 @@ export default function CommandCenterSquad() {
                 <div>
                   <div className="font-retro text-sm text-foreground">When your wallet is part of a squad, your contribution and estimated reward will appear here.</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    The live panel displays member score and estimated payout when this wallet has an active squad member record.
+                    When you’re an active squad member, you’ll see your score and estimated weekly reward here.
                   </p>
                 </div>
               </div>
@@ -66,7 +66,7 @@ export default function CommandCenterSquad() {
                 <div>
                   <div className="font-retro text-sm text-foreground">Leaderboard visibility</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Public squad standings stay on the squad leaderboard, while wallet-specific reward state remains inside your creator dashboard.
+                    Public squad standings stay on the squad leaderboard, while wallet-specific reward details remain inside your Command Center.
                   </p>
                 </div>
               </div>
