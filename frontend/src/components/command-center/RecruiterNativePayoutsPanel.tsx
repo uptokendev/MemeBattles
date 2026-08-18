@@ -23,6 +23,13 @@ import { submitSolanaRewardLaneClaim } from "@/lib/solanaRewardLaneClaim";
 type NativeChain = "bnb" | "solana";
 type RecruiterWalletIdentity = { chain: NativeChain; address: string; canSign: boolean };
 
+type BalanceStateCopy = {
+  badge: string;
+  tone: "ready" | "pending" | "warning" | "idle";
+  amountRaw: string;
+  caption: string;
+};
+
 const EMPTY_BALANCES: RecruiterPayoutBalance[] = [
   { chain: "bnb", token: "BNB", claimableRaw: "0", pendingRaw: "0", payoutWallet: null, status: "missing_payout_wallet" },
   { chain: "solana", token: "SOL", claimableRaw: "0", pendingRaw: "0", payoutWallet: null, status: "missing_payout_wallet" },
@@ -68,7 +75,53 @@ function payoutErrorCopy(message: string) {
   return raw || "Could not load recruiter rewards.";
 }
 function rewardReady(balance: RecruiterPayoutBalance) {
-  try { return BigInt(balance.claimableRaw || "0") > 0n && Boolean(balance.payoutWallet); } catch { return false; }
+  try {
+    return String(balance.status || "") === "claimable" && BigInt(balance.claimableRaw || "0") > 0n && Boolean(balance.payoutWallet);
+  } catch {
+    return false;
+  }
+}
+function balanceStateCopy(balance: RecruiterPayoutBalance): BalanceStateCopy {
+  const status = String(balance.status || "");
+  if (status === "claimable") {
+    return { badge: "Ready", tone: "ready", amountRaw: balance.claimableRaw || "0", caption: `Available ${balance.token}` };
+  }
+  if (status === "pending_batch_publication") {
+    return {
+      badge: "Batch pending",
+      tone: "pending",
+      amountRaw: balance.pendingRaw || balance.claimableRaw || "0",
+      caption: `Earned ${balance.token} awaiting weekly batch`,
+    };
+  }
+  if (status === "pending_finality") {
+    return {
+      badge: "Pending",
+      tone: "pending",
+      amountRaw: balance.pendingRaw || balance.claimableRaw || "0",
+      caption: `Pending ${balance.token}`,
+    };
+  }
+  if (status === "missing_payout_wallet") {
+    return {
+      badge: "Wallet needed",
+      tone: "warning",
+      amountRaw: balance.claimableRaw || balance.pendingRaw || "0",
+      caption: `Verify payout wallet to claim ${balance.token}`,
+    };
+  }
+  return {
+    badge: "No rewards yet",
+    tone: "idle",
+    amountRaw: balance.claimableRaw || balance.pendingRaw || "0",
+    caption: `Available ${balance.token}`,
+  };
+}
+function balanceBadgeClass(copy: BalanceStateCopy) {
+  if (copy.tone === "ready") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
+  if (copy.tone === "warning") return "border-amber-400/30 bg-amber-400/10 text-amber-100";
+  if (copy.tone === "pending") return "border-sky-400/30 bg-sky-400/10 text-sky-100";
+  return "border-border/40 bg-card/25 text-muted-foreground";
 }
 
 export function RecruiterNativePayoutsPanel() {
@@ -220,13 +273,14 @@ export function RecruiterNativePayoutsPanel() {
           const verified = Boolean(balance.payoutWallet);
           const verifyPending = pendingAction === (isBnb ? "link-bnb" : "link-solana");
           const claimPending = pendingAction === `claim-${chain}`;
+          const stateCopy = balanceStateCopy(balance);
           return (
             <div key={chain} className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div><div className="font-retro text-sm text-foreground">{chainLabel(chain)} Rewards</div><div className="mt-1 text-xs text-muted-foreground">Paid in {balance.token}</div></div>
-                <span className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] ${canClaim ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-border/40 bg-card/25 text-muted-foreground"}`}>{canClaim ? "Ready" : "No rewards yet"}</span>
+                <span className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] ${balanceBadgeClass(stateCopy)}`}>{stateCopy.badge}</span>
               </div>
-              <div className="mt-5 rounded-xl border border-border/40 bg-card/25 p-4 text-center"><div className="font-retro text-2xl text-foreground">{formatNative(balance.claimableRaw, balance.token)}</div><div className="mt-1 text-xs text-muted-foreground">Available {balance.token}</div></div>
+              <div className="mt-5 rounded-xl border border-border/40 bg-card/25 p-4 text-center"><div className="font-retro text-2xl text-foreground">{formatNative(stateCopy.amountRaw, balance.token)}</div><div className="mt-1 text-xs text-muted-foreground">{stateCopy.caption}</div></div>
               <div className="mt-4 rounded-xl border border-border/40 bg-card/25 p-3 text-xs text-muted-foreground"><div className="flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{verified ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <ShieldAlert className="h-4 w-4 text-amber-200" />}{chainLabel(chain)} wallet verification</div><div className="mt-2 font-mono text-sm text-foreground">{shortAddress(balance.payoutWallet)}</div></div>
               <div className="mt-4 space-y-2"><label className="font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{chainLabel(chain)} wallet</label><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder={walletPlaceholder(chain)} className="min-h-10 w-full rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60" /></div>
               <div className="mt-4 flex flex-wrap gap-2">
