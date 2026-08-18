@@ -45,7 +45,7 @@ jobs:
       SQUAD_SOLANA_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.SOLANA_SQUAD_CHAIN_ID || '101' }}
       SQUAD_SOLANA_DB_EPOCH_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.db_epoch_id || '0' }}
       SQUAD_SOLANA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-      SQUAD_SOLANA_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_SQUAD_AUTOMATION_ENABLED || 'false' }}
+      SQUAD_SOLANA_AUTOMATION_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.SOLANA_SQUAD_AUTOMATION_ENABLED || 'false') }}
       SQUAD_CLAIM_WINDOW_DAYS: ${{ vars.SQUAD_CLAIM_WINDOW_DAYS || '7' }}
 
       # Manual chain-102 runs are isolated reward certification on Solana devnet.
@@ -66,7 +66,7 @@ jobs:
       SOLANA_REWARDS_RPC_URL: ${{ secrets.SOLANA_REWARDS_RPC_URL }}
       SOLANA_REWARDS_TREASURY_PROGRAM_ID: ${{ vars.SOLANA_REWARDS_TREASURY_PROGRAM_ID }}
       SOLANA_REWARDS_AUTHORITY_SECRET_KEY: ${{ secrets.SOLANA_REWARDS_AUTHORITY_SECRET_KEY }}
-      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
+      SOLANA_REWARDS_AUTO_ENABLE_CLAIMS: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '102' && inputs.dry_run == false) && 'true' || vars.SOLANA_REWARDS_AUTO_ENABLE_CLAIMS || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
