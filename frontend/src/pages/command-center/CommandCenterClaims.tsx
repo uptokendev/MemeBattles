@@ -554,3 +554,120 @@ export default function CommandCenterClaims() {
     setClaimingType(card.rewardType);
     setMessage(null);
     const rewardLedgerIds = claimable.map((item) => item.id);
+    let claimIntentId: string | null = null;
+    const completed: string[] = [];
+
+    try {
+      const intent = await createRewardClaimIntent({
+        walletAddress,
+        chainId: rewardChainId,
+        rewardLedgerIds,
+        signer: signer || undefined,
+        signMessage: solanaSignMessage,
+      });
+      claimIntentId = intent.id;
+
+      for (const call of intent.calls) {
+        const toastId = toast.loading(`Confirm ${formatNativeAmount(call.amount, call.chainId, call.tokenSymbol)} claim in your wallet...`);
+        try {
+          let txHash = "";
+          if (call.mode === "solana_airdrop") {
+            txHash = await submitSolanaAirdropClaim(call);
+          } else {
+            if (!signer) throw new Error("BNB signer is unavailable for this reward claim.");
+            const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
+            const tx = await contract.claim(call.batchId, call.amount, call.proof);
+            toast.dismiss(toastId);
+            const waitToast = toast.loading("Waiting for claim confirmation...");
+            try {
+              await tx.wait();
+            } finally {
+              toast.dismiss(waitToast);
+            }
+            txHash = String(tx.hash || "");
+          }
+          toast.dismiss(toastId);
+
+          await recordRewardClaimTx({
+            walletAddress,
+            chainId: rewardChainId,
+            rewardLedgerIds: [call.rewardLedgerId],
+            claimIntentId,
+            txHash,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
+          });
+          completed.push(call.rewardLedgerId);
+        } catch (err: any) {
+          toast.dismiss(toastId);
+          const reason = String(err?.shortMessage || err?.message || "Wallet claim transaction failed");
+          await recordRewardClaimFailure({
+            walletAddress,
+            chainId: rewardChainId,
+            rewardLedgerIds: [call.rewardLedgerId],
+            claimIntentId,
+            error: reason,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
+          }).catch(() => {});
+          throw err;
+        }
+      }
+
+      const count = completed.length;
+      setMessage(count === 1 ? `${card.title} claimed on-chain.` : `${count} ${card.title} claims completed on-chain.`);
+      toast.success(count === 1 ? "Reward claimed." : `${count} rewards claimed.`);
+      loadClaims();
+    } catch (err: any) {
+      setMessage(String(err?.shortMessage || err?.message || err || "Claim request failed"));
+    } finally {
+      setClaimingType(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <CommandCenterCard title={isSolana(rewardChainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
+        {message ? <div className="mb-3 rounded-xl border border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">{message}</div> : null}
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {rewardCards.map((card) => {
+            const Icon = card.icon;
+            const stateCopy = getRewardStateCopy(card.state);
+            return (
+              <div key={card.rewardType} className="rounded-2xl border border-border/50 bg-background/25 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 font-retro text-sm text-foreground">
+                      <Icon className="h-4 w-4 text-accent" />
+                      {card.title}
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">{card.description}</p>
+                  </div>
+                  <span className="rounded-full border border-border/40 bg-card/25 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {stateCopy.label}
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="font-retro text-2xl text-foreground">{loading ? "..." : card.amountLabel}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{stateCopy.amountCaption}</div>
+                  </div>
+                  <Button
+                    disabled={stateCopy.disabled || claimingType === card.rewardType}
+                    className="font-retro"
+                    onClick={() => void claimRewards(card)}
+                  >
+                    {claimingType === card.rewardType ? "Claiming..." : card.buttonLabel}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CommandCenterCard>
+
+      {showRecruiterRewards ? <RecruiterNativePayoutsPanel /> : null}
+    </div>
+  );
+}
