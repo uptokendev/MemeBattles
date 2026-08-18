@@ -64,6 +64,24 @@ type EligibilityConfig = {
   creatorMaxEligibleCampaigns: number;
 };
 
+type AutomaticFlagInput = {
+  walletAddress: string;
+  epochId: number;
+  flagType: EligibilityReasonCode;
+  severity: "hard" | "review";
+  details: Record<string, unknown>;
+  detector: string;
+};
+
+type EligibilityRowInput = {
+  epochId: number;
+  walletAddress: string;
+  isEligible: boolean;
+  score: string;
+  reasonCodes: EligibilityReasonCode[];
+  metadata: Record<string, unknown>;
+};
+
 function asNumber(value: unknown): number {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -151,7 +169,11 @@ async function withTransaction<T>(fn: (db: PoolClient & DbLike) => Promise<T>): 
     await client.query("commit");
     return result;
   } catch (error) {
-    try { await client.query("rollback"); } catch { /* ignore rollback failure */ }
+    try {
+      await client.query("rollback");
+    } catch {
+      /* ignore rollback failure */
+    }
     throw error;
   } finally {
     client.release();
@@ -287,32 +309,88 @@ async function loadCreatorMetrics(db: DbLike, epoch: RewardEpochRecord, config: 
   return map;
 }
 
-async function upsertAutomaticFlag(
-  db: DbLike,
-  input: {
-    walletAddress: string;
-    epochId: number;
-    flagType: EligibilityReasonCode;
-    severity: "hard" | "review";
-    details: Record<string, unknown>;
-    detector: string;
-  },
-) {
+async function upsertAutomaticFlags(db: DbLike, inputs: AutomaticFlagInput[]) {
+  if (!inputs.length) return;
   await db.query(
-    `insert into public.exclusion_flags(
+    `with incoming as (
+       select distinct
+         item->>'walletAddress' as wallet_address,
+         (item->>'epochId')::int as epoch_id,
+         item->>'flagType' as flag_type,
+         item->>'severity' as severity,
+         coalesce(item->'details', '{}'::jsonb) as details_json,
+         jsonb_build_object('detector', item->>'detector') as metadata
+       from jsonb_array_elements($1::jsonb) item
+     )
+     insert into public.exclusion_flags(
        wallet_address, epoch_id, program, flag_type, severity, details_json, metadata, created_at, updated_at
      )
-     select $1,$2,'squad',$3,$4,$5::jsonb,$6::jsonb,now(),now()
+     select
+       i.wallet_address,
+       i.epoch_id,
+       'squad',
+       i.flag_type,
+       i.severity,
+       i.details_json,
+       i.metadata,
+       now(),
+       now()
+     from incoming i
      where not exists (
-       select 1 from public.exclusion_flags
-        where wallet_address=$1 and epoch_id=$2 and program='squad'
-          and flag_type=$3 and resolved_at is null
+       select 1
+         from public.exclusion_flags e
+        where e.wallet_address=i.wallet_address
+          and e.epoch_id=i.epoch_id
+          and e.program='squad'
+          and e.flag_type=i.flag_type
+          and e.resolved_at is null
      )`,
-    [input.walletAddress, input.epochId, input.flagType, input.severity, JSON.stringify(input.details), JSON.stringify({ detector: input.detector })],
+    [JSON.stringify(inputs)],
+  );
+}
+
+async function upsertEligibilityResults(db: DbLike, inputs: EligibilityRowInput[]) {
+  if (!inputs.length) return;
+  await db.query(
+    `with incoming as (
+       select
+         (item->>'epochId')::int as epoch_id,
+         item->>'walletAddress' as wallet_address,
+         coalesce((item->>'isEligible')::boolean, false) as is_eligible,
+         coalesce(item->>'score', '0') as score_raw,
+         coalesce(item->'reasonCodes', '[]'::jsonb) as reason_codes_json,
+         coalesce(item->'metadata', '{}'::jsonb) as metadata
+       from jsonb_array_elements($1::jsonb) item
+     )
+     insert into public.eligibility_results(
+       epoch_id, wallet_address, program, is_eligible, score, reason_codes, metadata, computed_at, created_at, updated_at
+     )
+     select
+       i.epoch_id,
+       i.wallet_address,
+       'squad',
+       i.is_eligible,
+       i.score_raw::numeric,
+       coalesce(array(select jsonb_array_elements_text(i.reason_codes_json)), ARRAY[]::text[]),
+       i.metadata,
+       now(),
+       now(),
+       now()
+     from incoming i
+     on conflict (epoch_id, wallet_address, program) do update set
+       is_eligible=excluded.is_eligible,
+       score=excluded.score,
+       reason_codes=excluded.reason_codes,
+       metadata=excluded.metadata,
+       computed_at=now(),
+       updated_at=now()`,
+    [JSON.stringify(inputs)],
   );
 }
 
 async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord, config: EligibilityConfig) {
+  const pendingFlags: AutomaticFlagInput[] = [];
+
   const self = await db.query(
     `select t.wallet as wallet_address, count(*)::int as matched_trade_count
        from public.curve_trades t
@@ -323,15 +401,23 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord, config: 
     [config.activityChainId, epoch.startAt, epoch.endAt],
   );
   for (const row of self.rows) {
-    await upsertAutomaticFlag(db, {
-      walletAddress: String(row.wallet_address), epochId: epoch.id,
-      flagType: "SELF_TRADING", severity: "hard",
-      details: { matchedTradeCount: asNumber(row.matched_trade_count) }, detector: "solana_self_trading_v1",
+    const walletAddress = String(row.wallet_address);
+    const matchedTradeCount = asNumber(row.matched_trade_count);
+    pendingFlags.push({
+      walletAddress,
+      epochId: epoch.id,
+      flagType: "SELF_TRADING",
+      severity: "hard",
+      details: { matchedTradeCount },
+      detector: "solana_self_trading_v1",
     });
-    await upsertAutomaticFlag(db, {
-      walletAddress: String(row.wallet_address), epochId: epoch.id,
-      flagType: "CREATOR_FUNDED_FAKE_DEMAND", severity: "review",
-      details: { matchedTradeCount: asNumber(row.matched_trade_count) }, detector: "solana_creator_fake_demand_v1",
+    pendingFlags.push({
+      walletAddress,
+      epochId: epoch.id,
+      flagType: "CREATOR_FUNDED_FAKE_DEMAND",
+      severity: "review",
+      details: { matchedTradeCount },
+      detector: "solana_creator_fake_demand_v1",
     });
   }
 
@@ -352,9 +438,13 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord, config: 
     circularByWallet.set(wallet, items);
   }
   for (const [walletAddress, campaignAddresses] of circularByWallet) {
-    await upsertAutomaticFlag(db, {
-      walletAddress, epochId: epoch.id, flagType: "CIRCULAR_TRADING", severity: "review",
-      details: { campaignAddresses: uniq(campaignAddresses) }, detector: "solana_circular_trading_v1",
+    pendingFlags.push({
+      walletAddress,
+      epochId: epoch.id,
+      flagType: "CIRCULAR_TRADING",
+      severity: "review",
+      details: { campaignAddresses: uniq(campaignAddresses) },
+      detector: "solana_circular_trading_v1",
     });
   }
 
@@ -380,13 +470,17 @@ async function syncAutomaticFlags(db: DbLike, epoch: RewardEpochRecord, config: 
     [config.activityChainId, epoch.startAt, epoch.endAt, config.traderMinVolume.toString()],
   );
   for (const row of split.rows) {
-    await upsertAutomaticFlag(db, {
-      walletAddress: String(row.wallet_address), epochId: epoch.id,
-      flagType: "WALLET_SPLITTING", severity: "review",
+    pendingFlags.push({
+      walletAddress: String(row.wallet_address),
+      epochId: epoch.id,
+      flagType: "WALLET_SPLITTING",
+      severity: "review",
       details: { recruiterId: asNumber(row.recruiter_id), volumeRaw: String(row.volume_raw) },
       detector: "solana_wallet_splitting_v1",
     });
   }
+
+  await upsertAutomaticFlags(db, pendingFlags);
 }
 
 async function loadOpenFlags(db: DbLike, epochId: number): Promise<Map<string, OpenFlag[]>> {
@@ -402,7 +496,10 @@ async function loadOpenFlags(db: DbLike, epochId: number): Promise<Map<string, O
   for (const row of r.rows) {
     const wallet = String(row.wallet_address);
     const items = map.get(wallet) ?? [];
-    items.push({ flagType: String(row.flag_type) as EligibilityReasonCode, severity: String(row.severity) as OpenFlag["severity"] });
+    items.push({
+      flagType: String(row.flag_type) as EligibilityReasonCode,
+      severity: String(row.severity) as OpenFlag["severity"],
+    });
     map.set(wallet, items);
   }
   return map;
@@ -492,17 +589,37 @@ export async function processSolanaSquadEligibilityForEpoch(epochId: number): Pr
     await db.query(`select pg_advisory_xact_lock(hashtext($1))`, [`mwz:solana:squad:eligibility:${epochId}`]);
     const epoch = await requireSolanaWeeklyEpoch(db, epochId);
     const config = resolveEligibilityConfig(epoch);
+
+    console.log("[solana-squad-eligibility] start", {
+      epochId,
+      rewardChainId: epoch.chainId,
+      activityChainId: config.activityChainId,
+      certificationMode: config.certificationMode,
+    });
+
     const members = await loadMembers(db, epoch);
     const [trades, creators] = await Promise.all([
       loadTradeMetrics(db, epoch, config),
       loadCreatorMetrics(db, epoch, config),
     ]);
+
+    console.log("[solana-squad-eligibility] loaded activity", {
+      memberCount: members.length,
+      traderWallets: trades.size,
+      creatorWallets: creators.size,
+    });
+
     await syncAutomaticFlags(db, epoch, config);
     const flags = await loadOpenFlags(db, epoch.id);
+
+    console.log("[solana-squad-eligibility] synced flags", {
+      flaggedWalletCount: flags.size,
+    });
 
     let eligibleCount = 0;
     let reviewCount = 0;
     let hardFlaggedCount = 0;
+    const eligibilityRows: EligibilityRowInput[] = [];
 
     for (const member of members) {
       const memberFlags = flags.get(member.walletAddress) ?? [];
@@ -511,26 +628,35 @@ export async function processSolanaSquadEligibilityForEpoch(epochId: number): Pr
       const result = evaluateMember(
         member,
         trades.get(member.walletAddress) ?? { volume: 0n, tradeCount: 0, activeDays: 0, ownCampaignTradeCount: 0 },
-        creators.get(member.walletAddress) ?? { totalBuyVolume: 0n, countedQualifiedVolume: 0n, qualifyingCampaignCount: 0, maxUniqueNonLinkedBuyers: 0 },
+        creators.get(member.walletAddress) ?? {
+          totalBuyVolume: 0n,
+          countedQualifiedVolume: 0n,
+          qualifyingCampaignCount: 0,
+          maxUniqueNonLinkedBuyers: 0,
+        },
         memberFlags,
         config,
       );
 
-      await db.query(
-        `insert into public.eligibility_results(
-           epoch_id, wallet_address, program, is_eligible, score, reason_codes, metadata, computed_at, created_at, updated_at
-         ) values ($1,$2,'squad',$3,$4,$5::text[],$6::jsonb,now(),now(),now())
-         on conflict (epoch_id, wallet_address, program) do update set
-           is_eligible=excluded.is_eligible,
-           score=excluded.score,
-           reason_codes=excluded.reason_codes,
-           metadata=excluded.metadata,
-           computed_at=now(),
-           updated_at=now()`,
-        [epoch.id, member.walletAddress, result.isEligible, result.score.toString(), result.reasonCodes, JSON.stringify({ ...result.metadata, rewardChainId: epoch.chainId })],
-      );
+      eligibilityRows.push({
+        epochId: epoch.id,
+        walletAddress: member.walletAddress,
+        isEligible: result.isEligible,
+        score: result.score.toString(),
+        reasonCodes: result.reasonCodes,
+        metadata: { ...result.metadata, rewardChainId: epoch.chainId },
+      });
       if (result.isEligible) eligibleCount += 1;
     }
+
+    await upsertEligibilityResults(db, eligibilityRows);
+
+    console.log("[solana-squad-eligibility] wrote eligibility rows", {
+      rowCount: eligibilityRows.length,
+      eligibleCount,
+      reviewCount,
+      hardFlaggedCount,
+    });
 
     return { epoch, memberCount: members.length, eligibleCount, reviewCount, hardFlaggedCount };
   });
