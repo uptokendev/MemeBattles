@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+          ref: 8377f498622703552bfcd2bba568fa5925fecd1b
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -154,7 +154,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+          ref: 8377f498622703552bfcd2bba568fa5925fecd1b
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -187,7 +187,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+          ref: 8377f498622703552bfcd2bba568fa5925fecd1b
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -221,7 +221,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: a0cde91a91db5b934e749e376fd7d402cd4ffbba
+          ref: 8377f498622703552bfcd2bba568fa5925fecd1b
       - uses: actions/setup-node@v4
         with:
           node-version: 22
