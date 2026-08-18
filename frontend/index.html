@@ -46,94 +46,10 @@
     <!-- Google tag (gtag.js). Initialization is self-hosted so CSP can remain strict. -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-C4MH8V5EHY"></script>
     <script src="/gtag-init.js"></script>
-
-    <style>
-      html, body {
-        min-height: 100%;
-        margin: 0;
-        background: #010600;
-        color: #39ff4f;
-        font-family: "Press Start 2P", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      }
-
-      body {
-        display: block;
-      }
-
-      #root {
-        min-height: 100vh;
-      }
-
-      .mwz-html-boot {
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        text-align: center;
-        background:
-          radial-gradient(circle at 50% 10%, rgba(57, 255, 79, 0.08), transparent 28%),
-          radial-gradient(circle at 80% 80%, rgba(255, 153, 0, 0.08), transparent 32%),
-          linear-gradient(180deg, rgba(0, 0, 0, 0.86), rgba(0, 9, 0, 0.94));
-      }
-
-      .mwz-html-boot__title {
-        font-size: 18px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      .mwz-html-boot__status {
-        margin-top: 18px;
-        font-size: 11px;
-        line-height: 1.8;
-        letter-spacing: 0.05em;
-        opacity: 0.84;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-    </style>
-
-    <script>
-      (function () {
-        function setBootStatus(message) {
-          var node = document.getElementById("mwz-html-boot-status");
-          if (node) node.textContent = message;
-        }
-
-        window.__mwzSetBootStatus = setBootStatus;
-
-        window.addEventListener("error", function (event) {
-          var message = event && (event.message || (event.error && event.error.message)) || "Unknown browser error";
-          setBootStatus("Browser error before app mount:\n" + message);
-        });
-
-        window.addEventListener("unhandledrejection", function (event) {
-          var reason = event && event.reason;
-          var message = (reason && reason.message) || String(reason || "Unknown rejected promise");
-          setBootStatus("Unhandled promise before app mount:\n" + message);
-        });
-      })();
-    </script>
   </head>
 
   <body>
-    <div id="root">
-      <div class="mwz-html-boot">
-        <div>
-          <div class="mwz-html-boot__title">Booting MemeWarzone...</div>
-          <div id="mwz-html-boot-status" class="mwz-html-boot__status">Preparing local frontend...</div>
-        </div>
-      </div>
-    </div>
-    <noscript>
-      <div class="mwz-html-boot">
-        <div>
-          <div class="mwz-html-boot__title">JavaScript is required</div>
-          <div class="mwz-html-boot__status">Enable JavaScript to load MemeWarzone.</div>
-        </div>
-      </div>
-    </noscript>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

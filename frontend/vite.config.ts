@@ -80,10 +80,22 @@ export default defineConfig(({ mode }) => {
           find: /^rpc-websockets\/dist\/lib\/client\/websocket(?:\.browser)?$/,
           replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-websocket-browser.ts"),
         },
+        {
+          find: /^jayson\/lib\/client\/browser(?:\/index(?:\.js)?)?$/,
+          replacement: path.resolve(__dirname, "./src/shims/jayson-browser-client.ts"),
+        },
       ],
     },
     optimizeDeps: {
-      include: ["buffer"],
+      include: [
+        "buffer",
+        "bn.js",
+        "bs58",
+        "borsh",
+        "bigint-buffer",
+        "eventemitter3",
+        "@solana/buffer-layout",
+      ],
       exclude: [
         "@solana/web3.js",
         "@solana/spl-token",
@@ -91,6 +103,8 @@ export default defineConfig(({ mode }) => {
         "rpc-websockets/dist/lib/client",
         "rpc-websockets/dist/lib/client/websocket",
         "rpc-websockets/dist/lib/client/websocket.browser",
+        "jayson",
+        "jayson/lib/client/browser",
       ],
       esbuildOptions: {
         define: {
