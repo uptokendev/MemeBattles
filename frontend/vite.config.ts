@@ -68,10 +68,24 @@ export default defineConfig(({ mode }) => {
           find: "buffer",
           replacement: path.resolve(__dirname, "./node_modules/buffer/"),
         },
+        {
+          find: "rpc-websockets/dist/lib/client",
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-client.ts"),
+        },
+        {
+          find: "rpc-websockets/dist/lib/client/websocket.browser",
+          replacement: path.resolve(__dirname, "./src/shims/rpc-websockets-websocket-browser.ts"),
+        },
       ],
     },
     optimizeDeps: {
-      include: ["buffer", "@solana/web3.js", "@solana/spl-token"],
+      include: ["buffer"],
+      exclude: [
+        "@solana/web3.js",
+        "@solana/spl-token",
+        "rpc-websockets/dist/lib/client",
+        "rpc-websockets/dist/lib/client/websocket.browser",
+      ],
       esbuildOptions: {
         define: {
           global: "globalThis",
