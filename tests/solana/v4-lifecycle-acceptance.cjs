@@ -27,6 +27,7 @@ const {
   SYSVAR_INSTRUCTIONS_PUBKEY,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
 } = require("@solana/web3.js");
 const {
   TOKEN_PROGRAM_ID,
@@ -60,6 +61,10 @@ const GRADUATION_TARGET_6_USD_MICROS = 6_000_000n;
 const BUY_LAMPORTS = 10_000_000n; // 0.01 SOL
 const CLOSE_TARGET_LAMPORTS = 40_000_000n; // 0.04 SOL net-raised close
 const CLOSE_BUY_LAMPORTS = 50_000_000n;
+const METEORA_CP_AMM = new PublicKey("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
+const NATIVE_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+const GRADUATION_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_GRADUATION_V1", "utf8");
+const GRADUATION_AUTH_SCHEMA_VERSION = 1;
 
 function hash32(label) {
   return crypto.createHash("sha256").update(label, "utf8").digest();
@@ -619,5 +624,222 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       closedBuyFailed = /CurveClosed|simulation failed|custom program error/i.test(String(error));
     }
     assert.equal(closedBuyFailed, true, "buy after curve close must fail");
+  });
+
+  function orderedPubkeys(a, b) {
+    return Buffer.compare(a.toBuffer(), b.toBuffer()) > 0 ? [a, b] : [b, a];
+  }
+
+  function deriveMeteoraPool(launchMint) {
+    const [first, second] = orderedPubkeys(launchMint, NATIVE_MINT);
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("cpool"), first.toBuffer(), second.toBuffer()],
+      METEORA_CP_AMM,
+    )[0];
+  }
+
+  function deriveMeteoraPosition(nftMint) {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("position"), nftMint.toBuffer()],
+      METEORA_CP_AMM,
+    )[0];
+  }
+
+  function graduationDigest(input) {
+    return crypto
+      .createHash("sha256")
+      .update(
+        Buffer.concat([
+          GRADUATION_AUTH_DOMAIN,
+          u16le(GRADUATION_AUTH_SCHEMA_VERSION),
+          program.programId.toBuffer(),
+          input.campaign.toBuffer(),
+          input.mint.toBuffer(),
+          input.authority.toBuffer(),
+          u64le(input.graduationTargetUsdMicros),
+          u64le(input.nativeTargetLamports),
+          u64le(input.oraclePriceUsdMicros),
+          input.pool.toBuffer(),
+          input.position.toBuffer(),
+          input.nftMint.toBuffer(),
+          i64le(input.deadline),
+          input.nonce,
+        ]),
+      )
+      .digest();
+  }
+
+  async function simulateUnsigned(tx, label, signers) {
+    const latest = await connection.getLatestBlockhash("confirmed");
+    tx.feePayer = signers[0].publicKey;
+    tx.recentBlockhash = latest.blockhash;
+    tx.partialSign(...signers);
+    const simulated = await connection.simulateTransaction(tx);
+    const logs = simulated.value.logs || [];
+    assert.equal(
+      logs.some((line) => /Access violation/i.test(line)),
+      false,
+      `${label} hit BPF stack overflow:\n${logs.join("\n")}`,
+    );
+    return { err: simulated.value.err, logs };
+  }
+
+  it("begin_graduation our-side simulates without stack overflow (no Meteora LP)", async function () {
+    assert.ok(campaignAccounts, "bonding lifecycle must create+close a campaign first");
+    const adminKeypair = provider.wallet.payer;
+    assert.ok(adminKeypair?.secretKey, "Anchor wallet must expose a local Keypair payer");
+
+    await program.methods
+      .setPauseFlags({
+        paused: false,
+        createPaused: false,
+        buyPaused: false,
+        sellPaused: false,
+        graduationPaused: false,
+        claimsPaused: true,
+      })
+      .accountsStrict({ globalConfig, authority: admin })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+
+    const nftMint = Keypair.generate();
+    const pool = deriveMeteoraPool(campaignAccounts.mint);
+    const position = deriveMeteoraPosition(nftMint.publicKey);
+    const graduationState = derivePda(program.programId, "graduation", campaignAccounts.campaign.toBuffer());
+    const authorityAta = getAssociatedTokenAddressSync(campaignAccounts.mint, admin);
+    if (!(await connection.getAccountInfo(authorityAta, "confirmed"))) {
+      const ataTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(admin, authorityAta, admin, campaignAccounts.mint),
+      );
+      await simulateThenSend(ataTx, "createAuthorityAta", [adminKeypair]);
+    }
+
+    const campaign = decodeCampaign(
+      (await connection.getAccountInfo(campaignAccounts.campaign, "confirmed")).data,
+    );
+    const now = await chainUnixTimestamp(connection);
+    const deadline = now + 3_600;
+    const nonce = hash32("graduation:lifecycle");
+    const nativeTarget = CLOSE_TARGET_LAMPORTS;
+    const oraclePrice = 150_000_000n; // $150 / SOL, unused except in digest
+    const digest = graduationDigest({
+      campaign: campaignAccounts.campaign,
+      mint: campaignAccounts.mint,
+      authority: admin,
+      graduationTargetUsdMicros: campaign.graduationTargetUsdMicros,
+      nativeTargetLamports: nativeTarget,
+      oraclePriceUsdMicros: oraclePrice,
+      pool,
+      position,
+      nftMint: nftMint.publicKey,
+      deadline,
+      nonce,
+    });
+
+    const ed25519 = Ed25519Program.createInstructionWithPrivateKey({
+      privateKey: routeSigner.secretKey,
+      message: digest,
+    });
+    const beginIx = await program.methods
+      .beginGraduation({
+        nativeTargetLamports: new BN(nativeTarget.toString()),
+        oraclePriceUsdMicros: new BN(oraclePrice.toString()),
+        deadline: new BN(deadline),
+        nonce: Array.from(nonce),
+        positionNftMint: nftMint.publicKey,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        generationConfig,
+        campaign: campaignAccounts.campaign,
+        mint: campaignAccounts.mint,
+        tokenVault: campaignAccounts.tokenVault,
+        solVault: campaignAccounts.solVault,
+        authorityTokenAccount: authorityAta,
+        meteoraPool: pool,
+        meteoraPosition: position,
+        positionNftMint: nftMint.publicKey,
+        graduationState,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const beginOnly = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 }),
+      ed25519,
+      beginIx,
+    );
+    const atomic = await simulateUnsigned(beginOnly, "begin_graduation without Meteora follow-up", [
+      adminKeypair,
+      nftMint,
+    ]);
+    assert.ok(atomic.err, "begin_graduation must refuse to run without atomic Meteora+confirm");
+    assert.ok(
+      atomic.logs.some((line) => /BeginGraduation|GraduationAtomicity|custom program error/i.test(line)),
+      `expected our graduation handler, got:\n${atomic.logs.join("\n")}`,
+    );
+
+    const creatorAta = getAssociatedTokenAddressSync(campaignAccounts.mint, creator.keypair.publicKey);
+    if (!(await connection.getAccountInfo(creatorAta, "confirmed"))) {
+      const tx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(
+          admin,
+          creatorAta,
+          creator.keypair.publicKey,
+          campaignAccounts.mint,
+        ),
+      );
+      await simulateThenSend(tx, "createCreatorAta", [adminKeypair]);
+    }
+
+    const confirmIx = await program.methods
+      .confirmGraduation()
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        campaign: campaignAccounts.campaign,
+        mint: campaignAccounts.mint,
+        tokenVault: campaignAccounts.tokenVault,
+        solVault: campaignAccounts.solVault,
+        authorityTokenAccount: authorityAta,
+        creator: creator.keypair.publicKey,
+        creatorTokenAccount: creatorAta,
+        creatorProfile: creator.creatorProfile,
+        graduationState,
+        meteoraPool: pool,
+        meteoraPosition: position,
+        meteoraTokenVault: derivePda(METEORA_CP_AMM, "token_vault", campaignAccounts.mint.toBuffer(), pool.toBuffer()),
+        meteoraNativeVault: derivePda(METEORA_CP_AMM, "token_vault", NATIVE_MINT.toBuffer(), pool.toBuffer()),
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const dummyMeteora = new TransactionInstruction({
+      programId: METEORA_CP_AMM,
+      keys: [],
+      data: Buffer.from([0]),
+    });
+    const full = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 }),
+      ed25519,
+      beginIx,
+      dummyMeteora,
+      confirmIx,
+    );
+    const withMeteoraSlot = await simulateUnsigned(
+      full,
+      "begin_graduation + placeholder Meteora + confirm",
+      [adminKeypair, nftMint],
+    );
+    assert.ok(
+      withMeteoraSlot.logs.some((line) => /Instruction: BeginGraduation/i.test(line))
+        || /Attempt to load a program that does not exist|InvalidMeteora|Graduation/i.test(
+          JSON.stringify(withMeteoraSlot.err) + withMeteoraSlot.logs.join("\n"),
+        ),
+      `our graduation path never ran:\n${withMeteoraSlot.logs.join("\n")}\n${JSON.stringify(withMeteoraSlot.err)}`,
+    );
   });
 });
