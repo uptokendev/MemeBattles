@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/apply-solana-preflight-final-pr.yml
-      - .github/workflows/apply-solana-preflight-final.yml
+      - .github/scripts/apply-solana-preflight-final.py
       - .github/solana-preflight-final-trigger
   workflow_dispatch:
 
@@ -27,32 +27,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Extract and run patch body
+      - name: Apply preflight-first architecture patch
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          source = Path('.github/workflows/apply-solana-preflight-final.yml').read_text(encoding='utf-8').splitlines()
-          marker = '      - name: Apply preflight-first launch patch'
-          start = source.index(marker)
-          run_index = next(i for i in range(start + 1, len(source)) if source[i] == '        run: |')
-          body = []
-          for line in source[run_index + 1:]:
-              if line.startswith('      - name: ') or line.startswith('      - uses: '):
-                  break
-              if line.startswith('          '):
-                  body.append(line[10:])
-              elif line == '':
-                  body.append('')
-              else:
-                  raise SystemExit(f'unexpected workflow indentation while extracting patch: {line!r}')
-          if not body:
-              raise SystemExit('patch body was empty')
-          Path('/tmp/apply-solana-preflight-final.py').write_text('\n'.join(body) + '\n', encoding='utf-8')
-          PY
-          python /tmp/apply-solana-preflight-final.py
+          python .github/scripts/apply-solana-preflight-final.py
 
       - name: Validate patched surfaces
         shell: bash
