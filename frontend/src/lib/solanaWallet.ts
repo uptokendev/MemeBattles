@@ -275,20 +275,14 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
 
   // Force disconnect the current wallet to clear any stale session.
   // This guarantees Phantom will show the connect/unlock popup.
-  // We use a very short timeout (200ms) because if this hangs longer than 1000ms,
-  // the browser destroys the transient user gesture and the subsequent connect() popup will be blocked.
-  debugLog("Disconnecting current wallet to force fresh session", { walletId: wallet.id });
+  // We DO NOT await this! Awaiting this yields execution to the microtask queue,
+  // allowing React to flush DOM updates (like disabling the clicked button),
+  // which can instantly invalidate the user gesture in production browsers.
+  debugLog("Disconnecting current wallet to force fresh session (fire-and-forget)", { walletId: wallet.id });
   try {
-    const start = performance.now();
-    await withTimeout(
-      Promise.resolve(wallet.provider.disconnect?.()),
-      200,
-      "Current wallet disconnect timed out",
-    );
-    debugLog(`Current wallet disconnected successfully in ${Math.round(performance.now() - start)}ms`);
+    wallet.provider.disconnect?.().catch(() => {});
   } catch (e) {
-    debugLog("Current wallet disconnect failed or timed out (expected if stale)", e);
-    // Ignore disconnect failures
+    debugLog("Current wallet disconnect failed synchronously", e);
   }
 
   let result: { publicKey?: { toString: () => string } } | undefined;
