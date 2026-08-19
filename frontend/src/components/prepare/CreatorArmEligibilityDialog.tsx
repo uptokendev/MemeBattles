@@ -182,6 +182,7 @@ export function classifyCreatorArmBlock(input: {
   eligibility?: {
     allowed?: boolean;
     cooldownEndsAt?: number;
+    lastRecordedLaunchAt?: number;
     currentLiveCount?: number;
     maxLiveBonding?: number;
     restricted?: boolean;
@@ -209,13 +210,15 @@ export function classifyCreatorArmBlock(input: {
     return { reason: "live_limit", mode: input.mode, ...snap(eligibility), message: input.errorMessage };
   }
 
-  const cooldownActive = Number(eligibility?.cooldownEndsAt || 0) > now;
-  if (cooldownActive && (eligibility?.allowed === false || looksLikeCooldown(text, code) || !text)) {
+  const recordedLaunch = Number(eligibility?.lastRecordedLaunchAt || 0) > 0;
+  const cooldownEndsAt = Number(eligibility?.cooldownEndsAt || 0);
+  const cooldownActive = recordedLaunch && cooldownEndsAt > now + 30;
+  if (cooldownActive && (eligibility?.allowed === false || looksLikeExplicitCooldown(text, code))) {
     return {
       reason: "cooldown",
       mode: input.mode,
       ...snap(eligibility),
-      cooldownEndsAt: Number(eligibility?.cooldownEndsAt),
+      cooldownEndsAt,
       message: input.errorMessage,
     };
   }
@@ -223,13 +226,7 @@ export function classifyCreatorArmBlock(input: {
   if (looksLikeLiveLimit(text, code)) {
     return { reason: "live_limit", mode: input.mode, ...snap(eligibility), message: input.errorMessage };
   }
-  if (looksLikeCooldown(text, code)) {
-    const isoMatch = String(input.errorMessage || "").match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
-    let cooldownEndsAt = Number(eligibility?.cooldownEndsAt || 0) || null;
-    if (isoMatch) {
-      const ms = Date.parse(isoMatch[0]);
-      if (Number.isFinite(ms)) cooldownEndsAt = Math.floor(ms / 1000);
-    }
+  if (looksLikeExplicitCooldown(text, code) && recordedLaunch && cooldownEndsAt > now + 30) {
     return {
       reason: "cooldown",
       mode: input.mode,
@@ -265,21 +262,12 @@ export function resolveCreatorArmBlock(input: {
   );
 }
 
-function looksLikeCooldown(text: string, code: string) {
+function looksLikeExplicitCooldown(text: string, code: string) {
   return (
     text.includes("cooldown") ||
-    text.includes("cannot deploy or arm another") ||
-    text.includes("cannot arm another") ||
-    text.includes("creatornoteligible") ||
-    text.includes("creator not eligible") ||
-    text.includes("not eligible") ||
     text.includes("24h between") ||
     text.includes("24 hours between") ||
-    code.includes("COOLDOWN") ||
-    code.includes("CREATOR_NOT_ELIGIBLE") ||
-    code.includes("CREATE_ONCHAIN_ELIGIBILITY") ||
-    code.includes("SCHEDULED_CREATE_ONCHAIN_ELIGIBILITY") ||
-    code === "CALL_EXCEPTION"
+    code.includes("COOLDOWN")
   );
 }
 

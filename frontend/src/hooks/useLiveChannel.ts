@@ -1,6 +1,7 @@
 // frontend/src/hooks/useLiveChannel.ts
 import { useEffect, useMemo, useRef, useState } from "react";
 import Ably from "ably";
+import { getFrontendApiOrigin } from "@/lib/apiBase";
 import type { LiveChatDelete, LiveChatMessage, LiveChatMute, LiveChatUnmute } from "@/lib/liveChat";
 
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
@@ -21,10 +22,9 @@ function shouldDisableLocalAbly() {
 function getAuthBase() {
   if (shouldDisableLocalAbly()) return "";
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) return ABLY_AUTH_BASE.replace(/\/$/, "");
+  const frontendApi = getFrontendApiOrigin();
+  if (frontendApi) return frontendApi;
   if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) return REALTIME_API_BASE.replace(/\/$/, "");
-  // Same-origin fallback so production (where /api/ably/token is co-hosted) works
-  // without requiring VITE_ABLY_AUTH_BASE to be set — matches the existing
-  // useAblyTokenChannel pattern for token-comment realtime.
   if (typeof window !== "undefined" && window.location?.origin) return window.location.origin.replace(/\/$/, "");
   return "";
 }

@@ -1,4 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "@/lib/apiBase";
+
+async function readJsonPrice(fetcher: () => Promise<Response>, pick: (body: any) => unknown): Promise<number> {
+  const res = await fetcher();
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = await res.json();
+  const price = Number(pick(body));
+  if (!Number.isFinite(price) || price <= 0) throw new Error("invalid price");
+  return price;
+}
+
+async function fetchBnbUsdFromSources(): Promise<number> {
+  const sources: Array<() => Promise<number>> = [
+    () => readJsonPrice(() => apiFetch("/api/price/bnb-usd", { cache: "no-store" as RequestCache }), (body) => body?.price),
+    () => readJsonPrice(() => fetch("https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT"), (body) => body?.price),
+    () => readJsonPrice(
+      () => fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd", { headers: { Accept: "application/json" } }),
+      (body) => body?.binancecoin?.usd,
+    ),
+  ];
+  for (const source of sources) {
+    try {
+      return await source();
+    } catch {
+      // try the next public source
+    }
+  }
+  throw new Error("BNB/USD price unavailable");
+}
 
 type BnbUsdState = {
   price: number | null;
@@ -74,15 +103,7 @@ export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_0
 
         if (showLoading) setLoading(true);
 
-        const res = await fetch(
-          "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd",
-          { headers: { Accept: "application/json" } }
-        );
-
-        if (!res.ok) throw new Error(`BNB price fetch failed (${res.status})`);
-        const data = (await res.json()) as any;
-
-        const p = Number(data?.binancecoin?.usd);
+        const p = await fetchBnbUsdFromSources();
         if (!Number.isFinite(p) || p <= 0) throw new Error("Invalid BNB/USD price");
 
         writeCache(p);
@@ -94,8 +115,15 @@ export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_0
         }
       } catch (e: any) {
         if (!cancelled) {
+          const stale = readCache();
+          if (stale?.price) {
+            setPrice(stale.price);
+            setUpdatedAt(stale.updatedAt);
+            setError(null);
+          } else {
+            setError(e?.message ? String(e.message) : "BNB price fetch failed");
+          }
           setLoading(false);
-          setError(e?.message ? String(e.message) : "BNB price fetch failed");
         }
       }
     };

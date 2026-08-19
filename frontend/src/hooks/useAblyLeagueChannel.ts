@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
+import { getFrontendApiOrigin } from "@/lib/apiBase";
 
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
 const ENABLE_LOCAL_ABLY = String(import.meta.env.VITE_ENABLE_LOCAL_ABLY || "").trim() === "1";
@@ -26,6 +27,8 @@ function getAuthBase() {
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
   }
+  const frontendApi = getFrontendApiOrigin();
+  if (frontendApi) return frontendApi;
   if (typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin.replace(/\/$/, "");
   }

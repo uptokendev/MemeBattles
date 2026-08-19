@@ -1,7 +1,20 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import fs from "node:fs";
 import path from "path";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+
+function spaFallback404() {
+  return {
+    name: "spa-fallback-404",
+    closeBundle() {
+      const indexFile = path.resolve(__dirname, "dist/index.html");
+      const notFoundFile = path.resolve(__dirname, "dist/404.html");
+      if (!fs.existsSync(indexFile)) return;
+      fs.copyFileSync(indexFile, notFoundFile);
+    },
+  };
+}
 
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
@@ -14,6 +27,17 @@ export default defineConfig(({ mode }) => {
   const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3001";
   const apiProxyTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
   const hmrEnabled = !explicitlyFalse(env.VITE_HMR);
+
+  if (mode === "production") {
+    const leaked = Object.entries(env)
+      .filter(([key, value]) => key.startsWith("VITE_") && /\{\{/.test(String(value || "")))
+      .map(([key, value]) => `${key}=${String(value).slice(0, 80)}`);
+    if (leaked.length) {
+      throw new Error(
+        `Coolify template vars were not interpolated before the Vite build:\n${leaked.join("\n")}\nPaste real https:// URLs into these VITE_* keys and rebuild.`,
+      );
+    }
+  }
 
   console.log(`[vite] proxy /api -> ${apiProxyTarget}`);
   console.log(`[vite] hmr ${hmrEnabled ? "enabled" : "disabled"}`);
@@ -48,6 +72,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      spaFallback404(),
       // @solana/web3.js + wallet serialize need Node Buffer in the browser.
       nodePolyfills({
         include: ["buffer", "process"],

@@ -253,11 +253,17 @@ function normalizeRpcUrl(u: string) {
   return s;
 }
 
+function usableHttpUrl(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw || /\{\{/.test(raw) || /%7B%7B/i.test(raw)) return "";
+  return /^https?:\/\//i.test(raw) ? raw : "";
+}
+
 function firstFromCsv(raw?: string) {
   if (!raw) return "";
   const parts = String(raw)
     .split(",")
-    .map((p) => normalizeRpcUrl(p))
+    .map((p) => usableHttpUrl(normalizeRpcUrl(p)))
     .filter(Boolean);
   return parts[0] ?? "";
 }
@@ -266,7 +272,7 @@ function fromCsv(raw?: string) {
   if (!raw) return [];
   return String(raw)
     .split(",")
-    .map((p) => normalizeRpcUrl(p))
+    .map((p) => usableHttpUrl(normalizeRpcUrl(p)))
     .filter((p) => Boolean(p));
 }
 

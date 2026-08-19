@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { pool } from "../server/db.js";
 import { persistDirectFundingCluster } from "../api/dev-fix/creator-cluster-detector.js";
 
-const DEFAULT_CHAIN_ID = 97;
+const DEFAULT_CHAIN_ID = 56;
 const DEFAULT_POLL_INTERVAL_MS = 1_500;
 const DEFAULT_CREATOR_REFRESH_MS = 30_000;
 const DEFAULT_RPC_TIMEOUT_MS = 8_000;
@@ -24,7 +24,10 @@ function positiveInt(value, fallback, max = Number.MAX_SAFE_INTEGER) {
 
 function chainId() {
   const parsed = positiveInt(
-    process.env.CREATOR_CLUSTER_CHAIN_ID || process.env.VITE_DEFAULT_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID,
+    process.env.CREATOR_CLUSTER_CHAIN_ID ||
+      process.env.DEFAULT_EVM_CHAIN_ID ||
+      process.env.VITE_DEFAULT_CHAIN_ID ||
+      process.env.VITE_TARGET_CHAIN_ID,
     DEFAULT_CHAIN_ID,
     Number.MAX_SAFE_INTEGER,
   );

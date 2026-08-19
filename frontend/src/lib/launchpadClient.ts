@@ -21,6 +21,7 @@ import {
 import { getReadProvider } from "@/lib/readProvider";
 import { apiFetch } from "@/lib/apiBase";
 import { resolveImageUri } from "@/lib/media";
+import { assertOnchainLogoUri } from "@/lib/onchainLogoUri";
 import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
 import { createSolanaLaunchpadAdapter } from "@/lib/launchpad/adapters/solanaLaunchpadAdapter";
 import type {
@@ -798,7 +799,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     const campaignRequest: CampaignRequestPayload = {
       name: params.name,
       symbol: params.symbol,
-      logoURI: params.logoURI,
+      logoURI: assertOnchainLogoUri(params.logoURI),
       xAccount: params.xAccount,
       website: params.website,
       extraLink: params.extraLink,

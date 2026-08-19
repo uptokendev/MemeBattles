@@ -5,6 +5,7 @@ import { createRailwayProxyMiddleware } from "../server/railwayProxy.js";
 
 import activityTrades from "./activity/trades.js";
 import ablyToken from "./ably/token.js";
+import bnbUsdPrice from "./price/bnb-usd.js";
 import authNonce from "./auth/nonce.js";
 import campaignsUpsert from "./campaigns/upsert.js";
 import campaigns from "./campaigns.js";
@@ -377,6 +378,7 @@ const router = express.Router();
 
 router.all("/activity/trades", wrap(activityTrades));
 router.all("/ably/token", wrap(ablyToken));
+router.get("/price/bnb-usd", wrap(bnbUsdPrice));
 router.all("/auth/nonce", wrap(authNonce));
 router.all("/campaigns/upsert", wrap(campaignsUpsert));
 router.all("/campaigns", wrap(campaigns));

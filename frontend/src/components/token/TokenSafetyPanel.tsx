@@ -77,8 +77,8 @@ export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: 
         return;
       }
       const [nextBuy, nextSell] = await Promise.all([
-        adapter.preflightTrade({ side: "buy", walletAddress: connectedWallet, campaignAddress: campaign }),
-        adapter.preflightTrade({ side: "sell", walletAddress: connectedWallet, campaignAddress: campaign }),
+        adapter.preflightTrade({ side: "buy", walletAddress: connectedWallet, campaignAddress: campaign, chainId }),
+        adapter.preflightTrade({ side: "sell", walletAddress: connectedWallet, campaignAddress: campaign, chainId }),
       ]);
       setBuyPreflight(nextBuy);
       setSellPreflight(nextSell);
@@ -123,7 +123,7 @@ export function TokenSafetyPanel({ campaignAddress, chainId, compact = false }: 
     return () => {
       cancelled = true;
     };
-  }, [adapter, connectedWallet, campaign]);
+  }, [adapter, connectedWallet, campaign, chainId]);
 
   const allWarnings = useMemo(() => uniq([
     ...(status?.warnings || []),

@@ -52,6 +52,7 @@ export type LaunchpadAdapter = {
     side: TradeSide;
     walletAddress?: string | null;
     campaignAddress?: string | null;
+    chainId?: number | string | null;
   }): Promise<LaunchpadTradePreflight>;
 };
 

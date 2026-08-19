@@ -10,6 +10,7 @@ const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 function normalizeApiBase(value: unknown): string {
   const raw = String(value || "").trim().replace(/\/+$/, "");
   if (!raw) return "";
+  if (/\{\{/.test(raw) || /%7B%7B/i.test(raw)) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
   if (/^\/\//.test(raw)) return `https:${raw}`;
   return `https://${raw}`;
@@ -62,6 +63,10 @@ const EXPLICIT_API_BASE = firstNonIndexerBase([
   import.meta.env.RAILWAY_FRONTEND_API_BASE_URL,
 ]);
 
+export function getFrontendApiOrigin(): string {
+  return EXPLICIT_API_BASE.replace(/\/$/, "");
+}
+
 // Realtime indexer (votes, token markets, some rewards). VITE_API_BASE is a legacy alias.
 const EXPLICIT_REALTIME_API_BASE = firstAnyBase([
   import.meta.env.VITE_TOKEN_API_BASE,
@@ -111,6 +116,8 @@ const FRONTEND_API_PREFIXES = [
   "/api/upload",
   "/api/auth",
   "/api/ably",
+  "/api/launchpad",
+  "/api/price",
   "/api/follows",
 ];
 
