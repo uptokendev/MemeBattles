@@ -2,7 +2,7 @@ FROM node:20-bookworm-slim
 
 # Install CA certificates (critical for TLS trust)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
