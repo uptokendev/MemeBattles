@@ -102,10 +102,9 @@ export function detectSolanaWallets(): DetectedSolanaWallet[] {
   const wallets: DetectedSolanaWallet[] = [];
   const seen = new Set<SolanaProvider>();
 
-  // Official Phantom inject is window.phantom.solana. window.solana is a
-  // compatibility shim that other wallets overwrite — using it first hangs connect().
-  addWallet(wallets, seen, w.phantom?.solana ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.phantom.solana } : null);
+  // Reverted: using window.solana first as window.phantom.solana appears to silently hang on connect() in some server environments.
   addWallet(wallets, seen, w.solana?.isPhantom ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.solana } : null);
+  addWallet(wallets, seen, w.phantom?.solana ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.phantom.solana } : null);
   addWallet(wallets, seen, w.solflare ? { id: "solflare", name: "Solflare", icon: "☀️", provider: w.solflare } : null);
   addWallet(wallets, seen, w.solana?.isSolflare ? { id: "solflare", name: "Solflare", icon: "SOL", provider: w.solana } : null);
   addWallet(wallets, seen, w.backpack?.solana ? { id: "backpack", name: "Backpack", icon: "🎒", provider: w.backpack.solana } : null);
@@ -218,15 +217,15 @@ export function ensureSolanaListeners(options: { readExistingAccount?: boolean }
       if (key || clearIfEmpty) notifySolanaWalletChanged(key, wallet);
     };
 
-    try { provider.on?.("connect", () => sync(true)); } catch {}
+    try { provider.on?.("connect", () => sync(true)); } catch { }
     try {
       provider.on?.("disconnect", () => {
         const storedId = getStoredSolanaWalletId();
         if (storedId && storedId !== wallet.id) return;
         notifySolanaWalletChanged("");
       });
-    } catch {}
-    try { provider.on?.("accountChanged", () => sync(true)); } catch {}
+    } catch { }
+    try { provider.on?.("accountChanged", () => sync(true)); } catch { }
 
     if (options.readExistingAccount) sync(false);
   });
@@ -578,7 +577,7 @@ export async function signSolanaDraftAction(input: {
   if (providerKey && providerKey !== walletAddress) {
     throw new Error(
       `Connected wallet (${detectedWallet?.name || "extension"}) is ${providerKey.slice(0, 4)}…${providerKey.slice(-4)}, ` +
-        `but this action expects ${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}. Reconnect the correct wallet.`,
+      `but this action expects ${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}. Reconnect the correct wallet.`,
     );
   }
 
