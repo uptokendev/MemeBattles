@@ -26,6 +26,11 @@ const {
   buildCreateAuthorizationPayload,
   createAuthorizationDigest,
 } = require("./authorization-v4.cjs");
+const {
+  decodeCampaign,
+  decodeCreateAuthorization,
+  decodeCampaignSolVault,
+} = require("./decode-campaign.cjs");
 
 const {
   AnchorProvider,
@@ -174,14 +179,9 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
   }
 
   async function fundCreator(creator) {
-    const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: admin,
-        toPubkey: creator.publicKey,
-        lamports: 3 * LAMPORTS_PER_SOL,
-      }),
-    );
-    await provider.sendAndConfirm(transaction, []);
+    const sig = await connection.requestAirdrop(creator.publicKey, 3 * LAMPORTS_PER_SOL);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   }
 
   async function setupCreator(label) {
@@ -360,6 +360,18 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
       `create transaction is ${rawTransaction.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
     );
 
+    // web3 1.95: legacy Transaction.simulateTransaction() only accepts signers[]
+    // as the second arg. A config object throws "Invalid arguments".
+    const simulated = await connection.simulateTransaction(transaction);
+    if (simulated.value.err) {
+      throw new Error(
+        `create simulation failed: ${JSON.stringify(simulated.value.err)}\n${(simulated.value.logs || []).join("\n")}`,
+      );
+    }
+    if ((simulated.value.logs || []).some((line) => /Access violation/i.test(line))) {
+      throw new Error(`create simulation hit BPF stack overflow:\n${(simulated.value.logs || []).join("\n")}`);
+    }
+
     const signature = await connection.sendRawTransaction(rawTransaction, {
       preflightCommitment: "confirmed",
       skipPreflight: false,
@@ -395,15 +407,19 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     result,
     expectedScheduledLaunch,
   }) {
-    const campaign = await program.account.campaign.fetch(
-      result.accounts.campaign,
-    );
-    const authorization = await program.account.createAuthorization.fetch(
-      result.accounts.createAuthorization,
-    );
-    const solVaultState = await program.account.campaignSolVault.fetch(
-      result.accounts.solVault,
-    );
+    // Campaign / CreateAuthorization / CampaignSolVault are UncheckedAccount in
+    // the program, so they are not in the IDL `accounts` map.
+    const [campaignInfo, authInfo, solVaultAccount] = await Promise.all([
+      connection.getAccountInfo(result.accounts.campaign, "confirmed"),
+      connection.getAccountInfo(result.accounts.createAuthorization, "confirmed"),
+      connection.getAccountInfo(result.accounts.solVault, "confirmed"),
+    ]);
+    assert.ok(campaignInfo, "campaign account missing after create");
+    assert.ok(authInfo, "createAuthorization account missing after create");
+    assert.ok(solVaultAccount, "sol vault account missing after create");
+    const campaign = decodeCampaign(campaignInfo.data);
+    const authorization = decodeCreateAuthorization(authInfo.data);
+    const solVaultState = decodeCampaignSolVault(solVaultAccount.data);
     const mint = await getMint(
       connection,
       result.accounts.mint,
@@ -495,8 +511,20 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     assert.equal(accountInfo, null, `failed campaign ${campaign} must not exist`);
   }
 
+  async function ensureAdminSol() {
+    const min = 50 * LAMPORTS_PER_SOL;
+    const balance = await connection.getBalance(admin, "confirmed");
+    if (balance >= min) return;
+    const sig = await connection.requestAirdrop(admin, 100 * LAMPORTS_PER_SOL);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+    const after = await connection.getBalance(admin, "confirmed");
+    assert.ok(after >= min, `admin ${admin.toBase58()} has ${after} lamports; local airdrop failed`);
+  }
+
   before(async function () {
     assert.equal(CREATE_AUTH_SCHEMA_VERSION, 4);
+    await ensureAdminSol();
 
     await program.methods
       .initializeGlobalConfig({
@@ -650,9 +678,12 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     );
     assert.ok(balanceAfter > balanceBefore, "raw SOL-vault balance must increase");
 
-    const campaignAfterTransfer = await program.account.campaign.fetch(
+    const campaignAfterInfo = await connection.getAccountInfo(
       result.accounts.campaign,
+      "confirmed",
     );
+    assert.ok(campaignAfterInfo, "campaign missing after unsolicited SOL transfer");
+    const campaignAfterTransfer = decodeCampaign(campaignAfterInfo.data);
     assertBigIntEqual(
       campaignAfterTransfer.netRaisedLamports,
       0n,

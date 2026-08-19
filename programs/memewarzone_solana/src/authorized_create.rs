@@ -579,62 +579,18 @@ pub fn create_campaign_handler(
         None,
     )?;
 
-    {
-        let mint_state_after = {
-            let data = mint_info.try_borrow_data()?;
-            SplMint::unpack(&data)?
-        };
-        require!(
-            mint_state_after.mint_authority == COption::None,
-            LaunchpadError::InvalidCampaign
-        );
-        require!(
-            mint_state_after.freeze_authority == COption::None,
-            LaunchpadError::InvalidCampaign
-        );
-    }
-
-    {
-        let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
-        let mut slice: &[u8] = &data;
-        let mut campaign = Campaign::try_deserialize(&mut slice)?;
-        campaign.mint_authority_revoked = true;
-        let mut cursor = std::io::Cursor::new(&mut data[..]);
-        campaign.try_serialize(&mut cursor)?;
-    }
-
-    {
-        let create_authorization = CreateAuthorization {
-            creator: creator_key,
-            nonce: args.nonce,
-            deadline: args.deadline,
-            used_at: now,
-            route_signer: prep.route_signer,
-            message_hash: prep.authorization_hash,
-            schema_version: CREATE_AUTH_SCHEMA_VERSION,
-            bump: ctx.bumps.create_authorization,
-        };
-        let mut data = ctx.accounts.create_authorization.try_borrow_mut_data()?;
-        let mut cursor = std::io::Cursor::new(&mut data[..]);
-        create_authorization.try_serialize(&mut cursor)?;
-    }
-
-    {
-        let mut data = ctx.accounts.creator_profile.try_borrow_mut_data()?;
-        let mut slice: &[u8] = &data;
-        let mut creator_profile = CreatorProfile::try_deserialize(&mut slice)?;
-        creator_profile.live_bonding_count = creator_profile
-            .live_bonding_count
-            .checked_add(1)
-            .ok_or(LaunchpadError::MathOverflow)?;
-        creator_profile.total_launches = creator_profile
-            .total_launches
-            .checked_add(1)
-            .ok_or(LaunchpadError::MathOverflow)?;
-        creator_profile.last_launch_timestamp = now;
-        let mut cursor = std::io::Cursor::new(&mut data[..]);
-        creator_profile.try_serialize(&mut cursor)?;
-    }
+    verify_mint_authority_revoked(&mint_info)?;
+    write_create_authorization(
+        &ctx.accounts.create_authorization.to_account_info(),
+        creator_key,
+        args.nonce,
+        args.deadline,
+        now,
+        prep.route_signer,
+        prep.authorization_hash,
+        ctx.bumps.create_authorization,
+    )?;
+    bump_creator_launch_stats(&ctx.accounts.creator_profile.to_account_info(), now)?;
 
     emit_campaign_created(ctx, args, &prep, now, generation_key, campaign_key, mint_key, token_vault_key, sol_vault_key, creator_key)?;
 
@@ -645,7 +601,6 @@ struct CreateAuthPrep {
     route_signer: Pubkey,
     authorization_hash: [u8; 32],
     launch_at: i64,
-    creator_buy_lock_seconds: u32,
     creator_buy_cap_bps: u16,
     creator_buy_lock_until: i64,
     token_decimals: u8,
@@ -787,7 +742,6 @@ fn prepare_and_verify_create_auth<'info>(
         route_signer,
         authorization_hash,
         launch_at,
-        creator_buy_lock_seconds,
         creator_buy_cap_bps,
         creator_buy_lock_until,
         token_decimals,
@@ -797,23 +751,92 @@ fn prepare_and_verify_create_auth<'info>(
 }
 
 #[inline(never)]
-fn write_campaign_body<'info>(
-    ctx: &Context<CreateCampaign<'info>>,
+fn verify_mint_authority_revoked(mint_info: &AccountInfo<'_>) -> Result<()> {
+    let mint_state_after = {
+        let data = mint_info.try_borrow_data()?;
+        SplMint::unpack(&data)?
+    };
+    require!(
+        mint_state_after.mint_authority == COption::None,
+        LaunchpadError::InvalidCampaign
+    );
+    require!(
+        mint_state_after.freeze_authority == COption::None,
+        LaunchpadError::InvalidCampaign
+    );
+    Ok(())
+}
+
+#[inline(never)]
+fn write_create_authorization(
+    account: &AccountInfo<'_>,
+    creator: Pubkey,
+    nonce: [u8; 32],
+    deadline: i64,
+    used_at: i64,
+    route_signer: Pubkey,
+    message_hash: [u8; 32],
+    bump: u8,
+) -> Result<()> {
+    let create_authorization = CreateAuthorization {
+        creator,
+        nonce,
+        deadline,
+        used_at,
+        route_signer,
+        message_hash,
+        schema_version: CREATE_AUTH_SCHEMA_VERSION,
+        bump,
+    };
+    let mut data = account.try_borrow_mut_data()?;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    create_authorization.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn bump_creator_launch_stats(account: &AccountInfo<'_>, now: i64) -> Result<()> {
+    let mut data = account.try_borrow_mut_data()?;
+    let mut slice: &[u8] = &data;
+    let mut creator_profile = CreatorProfile::try_deserialize(&mut slice)?;
+    creator_profile.live_bonding_count = creator_profile
+        .live_bonding_count
+        .checked_add(1)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    creator_profile.total_launches = creator_profile
+        .total_launches
+        .checked_add(1)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    creator_profile.last_launch_timestamp = now;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    creator_profile.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+#[inline(never)]
+fn load_generation_config(account: &AccountInfo<'_>) -> Result<Box<GenerationConfig>> {
+    let data = account.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    Ok(Box::new(GenerationConfig::try_deserialize(&mut slice)?))
+}
+
+#[inline(never)]
+fn assemble_campaign(
+    generation: &GenerationConfig,
     args: &CreateCampaignArgs,
     prep: &CreateAuthPrep,
     now: i64,
     generation_key: Pubkey,
-    campaign_key: Pubkey,
+    creator_key: Pubkey,
     mint_key: Pubkey,
     token_vault_key: Pubkey,
     sol_vault_key: Pubkey,
-    creator_key: Pubkey,
-) -> Result<()> {
-    let data = ctx.accounts.generation_config.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    let generation = GenerationConfig::try_deserialize(&mut slice)?;
-
-    let campaign = Campaign {
+    campaign_bump: u8,
+    mint_bump: u8,
+    token_vault_bump: u8,
+    sol_vault_bump: u8,
+) -> Box<Campaign> {
+    Box::new(Campaign {
         campaign_id: args.campaign_id,
         generation_id: generation.generation_id,
         generation_config: generation_key,
@@ -862,14 +885,47 @@ fn write_campaign_body<'info>(
         buyer_count: 0,
         creator_bought_tokens: 0,
         asset_initialization_version: ASSET_INITIALIZATION_VERSION,
-        mint_authority_revoked: false,
+        // Written true up front: mint authority is revoked later in this same atomic tx.
+        // Re-deserializing Campaign in the parent frame overflowed BPF stack frame 9.
+        mint_authority_revoked: true,
         graduated: false,
         curve_closed: false,
-        bump: ctx.bumps.campaign,
-        mint_bump: ctx.bumps.mint,
-        token_vault_bump: ctx.bumps.token_vault,
-        sol_vault_bump: ctx.bumps.sol_vault,
-    };
+        bump: campaign_bump,
+        mint_bump,
+        token_vault_bump,
+        sol_vault_bump,
+    })
+}
+
+#[inline(never)]
+fn write_campaign_body<'info>(
+    ctx: &Context<CreateCampaign<'info>>,
+    args: &CreateCampaignArgs,
+    prep: &CreateAuthPrep,
+    now: i64,
+    generation_key: Pubkey,
+    campaign_key: Pubkey,
+    mint_key: Pubkey,
+    token_vault_key: Pubkey,
+    sol_vault_key: Pubkey,
+    creator_key: Pubkey,
+) -> Result<()> {
+    let generation = load_generation_config(&ctx.accounts.generation_config.to_account_info())?;
+    let campaign = assemble_campaign(
+        &generation,
+        args,
+        prep,
+        now,
+        generation_key,
+        creator_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+        ctx.bumps.campaign,
+        ctx.bumps.mint,
+        ctx.bumps.token_vault,
+        ctx.bumps.sol_vault,
+    );
     {
         let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
         let mut cursor = std::io::Cursor::new(&mut data[..]);
@@ -902,9 +958,34 @@ fn emit_campaign_created<'info>(
     sol_vault_key: Pubkey,
     creator_key: Pubkey,
 ) -> Result<()> {
-    let data = ctx.accounts.generation_config.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    let generation = GenerationConfig::try_deserialize(&mut slice)?;
+    let generation = load_generation_config(&ctx.accounts.generation_config.to_account_info())?;
+    emit_campaign_created_body(
+        &generation,
+        args,
+        prep,
+        now,
+        generation_key,
+        campaign_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+        creator_key,
+    )
+}
+
+#[inline(never)]
+fn emit_campaign_created_body(
+    generation: &GenerationConfig,
+    args: &CreateCampaignArgs,
+    prep: &CreateAuthPrep,
+    now: i64,
+    generation_key: Pubkey,
+    campaign_key: Pubkey,
+    mint_key: Pubkey,
+    token_vault_key: Pubkey,
+    sol_vault_key: Pubkey,
+    creator_key: Pubkey,
+) -> Result<()> {
     emit!(CampaignCreated {
         campaign: campaign_key,
         campaign_id: args.campaign_id,

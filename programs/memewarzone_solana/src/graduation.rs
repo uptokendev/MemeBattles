@@ -18,7 +18,7 @@ use anchor_lang::{
     solana_program::{
         ed25519_program,
         hash::hash,
-        program::{invoke, invoke_signed},
+        program::invoke,
         program_pack::Pack,
         system_instruction,
         sysvar::instructions::{
@@ -34,7 +34,7 @@ use anchor_spl::token::{
 
 use crate::{
     authorized_create::{
-        Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
+        Campaign, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
     },
     CreatorProfile, GenerationConfig, GlobalConfig, LaunchpadError, BPS_DENOMINATOR,
     CREATOR_PROFILE_SEED, DEX_ADAPTER_METEORA_DAMM_V2, ECONOMICS_VERSION_V3,
