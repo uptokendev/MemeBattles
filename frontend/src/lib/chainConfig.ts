@@ -155,7 +155,7 @@ export function getActiveChainId(walletChainId?: number | null): SupportedChainI
  * mainnet (56) while browsing testnet (97) tokens — that produced totally wrong
  * price/mcap/liquidity (reading the wrong chain's contracts).
  *
- * Order: pinned token-page chain → last featured EVM feed → default EVM → 97.
+ * Order: pinned token-page chain → last featured EVM feed → default EVM (56).
  */
 export const TOKEN_DETAILS_CHAIN_KEY = "mwz:token_details_chain_id";
 export const LAST_EVM_CHAIN_KEY = "mwz:last_evm_chain_id";
@@ -371,15 +371,9 @@ function isEvmAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-// BSC testnet clean-slate: single creation factory only (no dual inventory).
-// Env VITE_SUPPORTED_FACTORY_ADDRESSES_97 can still extend.
-const DEFAULT_SUPPORTED_FACTORIES_97 = [
-  "0x77Af7634837643d4f93d1086b492571268b30B5F", // clean-slate 2026-08-04
-];
-
 /**
  * Active creation factory + supported inventory for read/index discovery.
- * War Room / Token Details only scan these factories on testnet (plus env overrides).
+ * No hardcoded testnet factory — 97 only appears if env still lists it.
  */
 export function getSupportedFactoryAddresses(chainId: SupportedChainId): string[] {
   if (isSolanaChainId(chainId)) return [];
@@ -393,9 +387,8 @@ export function getSupportedFactoryAddresses(chainId: SupportedChainId): string[
     .split(",")
     .map((value) => value.trim())
     .filter((value) => isEvmAddress(value));
-  const defaults = chainId === 97 ? DEFAULT_SUPPORTED_FACTORIES_97 : [];
 
-  const ordered = [active, ...fromEnv, ...defaults]
+  const ordered = [active, ...fromEnv]
     .map((value) => String(value || "").trim())
     .filter((value) => isEvmAddress(value));
 
