@@ -94,7 +94,7 @@ export default async function handler(req, res) {
 
   const q = req.query || {};
   const kind = String(q.kind || "avatar");
-  const chainId = Number(q.chainId || 97);
+  const chainId = Number(q.chainId || 56);
   const address = normalizeUploadAddress(q.address, chainId);
   const draftId = String(q.draftId || "").trim();
 

@@ -2,6 +2,7 @@ import { pool } from "../../server/db.js";
 import { requireAdminOrOps } from "../lib/apiAuth.js";
 import { configuredRewardVaultAddresses, readRewardFunding } from "../lib/financeFunding.js";
 import { readNativeUpvoteRevenue } from "../lib/financeVoteRevenue.js";
+import { defaultEvmChainId } from "../lib/defaultEvmChain.js";
 
 const FINANCE_NETWORKS = new Map([
   [56, { chain: "bnb", decimals: 18, asset: "BNB", environment: "mainnet" }],
@@ -13,7 +14,10 @@ const FINANCE_NETWORKS = new Map([
 const INDEXER_BASE = String(
   process.env.INDEXER_API_BASE_URL ||
   process.env.INDEXER_BASE_URL ||
-  "https://memebattles-production-dca0.up.railway.app",
+  process.env.RAILWAY_INDEXER_URL ||
+  process.env.VITE_TOKEN_API_BASE ||
+  process.env.VITE_REALTIME_API_BASE ||
+  "",
 ).trim().replace(/\/+$/, "");
 
 function schemaMissing(error) {
@@ -48,7 +52,7 @@ function safeAsset(value, fallback) {
 }
 
 function selectedNetwork(req) {
-  const chainId = Number(req.query?.chainId ?? 97);
+  const chainId = Number(req.query?.chainId ?? defaultEvmChainId());
   const network = FINANCE_NETWORKS.get(chainId);
   if (!network) return null;
   return { chainId, ...network };
@@ -66,8 +70,8 @@ function rewardState(status) {
 }
 
 function rewardChainCandidates(chainId) {
-  if (chainId === 101) return ["101", "solana", "solana-devnet"];
-  if (chainId === 102) return ["102", "solana-mainnet"];
+  if (chainId === 101) return ["101", "solana", "solana-mainnet", "solana-mainnet-beta"];
+  if (chainId === 102) return ["102", "solana-devnet"];
   return [String(chainId)];
 }
 
@@ -314,6 +318,7 @@ function indexerHeaders() {
 }
 
 async function readIndexerLpFees(network) {
+  if (!INDEXER_BASE) throw new Error("Indexer base URL is not configured.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
@@ -514,6 +519,7 @@ async function financeLpHarvest(req, res, network) {
 
   const opsKey = String(process.env.DASHBOARD_OPS_KEY || process.env.OPS_READ_KEY || "").trim();
   if (!opsKey) return res.status(503).json({ ok: false, error: "LP harvest is not configured on the Frontend API." });
+  if (!INDEXER_BASE) return res.status(503).json({ ok: false, error: "Indexer base URL is not configured." });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);

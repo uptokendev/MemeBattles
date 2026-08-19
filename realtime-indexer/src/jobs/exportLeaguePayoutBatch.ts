@@ -15,7 +15,10 @@ import { pool } from "../db.js";
 // 2) Execute the resulting payouts from the TreasuryVault multisig/Safe
 // 3) Call POST /api/leaguePayouts to record txHash + payouts (so UI pools update)
 
-const CHAIN_IDS = [97, 56];
+const CHAIN_IDS = String(process.env.LEAGUE_EVM_PAYOUT_CHAIN_IDS || "56")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => value === 56 || value === 97);
 
 async function runForChain(chainId: number) {
   const { rows } = await pool.query(

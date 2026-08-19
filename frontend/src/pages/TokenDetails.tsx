@@ -830,7 +830,7 @@ const TokenDetails = () => {
   // CrypticPump listing badge (public)
   useEffect(() => {
     const campaignKey = String(campaign?.campaign ?? campaignAddr ?? "").trim();
-    const chainIdNum = Number(chainIdForStorage || 97);
+    const chainIdNum = Number(chainIdForStorage || 56);
     if (!campaignKey || !Number.isFinite(chainIdNum)) {
       setCrypticPumpListing(null);
       return;
@@ -1597,7 +1597,7 @@ const TokenDetails = () => {
 
   // Maker profiles after topazMarket exists so we can skip protocol/router senders.
   useEffect(() => {
-    const chainIdNum = Number(chainIdForStorage ?? 97);
+    const chainIdNum = Number(chainIdForStorage ?? 56);
     if (!txs.length) return;
 
     const protocolSkip = new Set(
@@ -4295,7 +4295,7 @@ const toSeconds = (ts: number): number => {
                         return (
                           <CrypticPumpListButton
                             className="flex-shrink-0 self-center"
-                            chainId={Number(chainIdForStorage || 97)}
+                            chainId={Number(chainIdForStorage || 56)}
                             campaignAddress={campaignKey}
                             tokenAddress={campaign?.token || null}
                             name={tokenData.name}
@@ -4691,7 +4691,7 @@ const toSeconds = (ts: number): number => {
                         const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
                         const txUrl = tx.txHash
                           ? isSolanaPage
-                            ? `https://explorer.solana.com/tx/${tx.txHash}${Number(chainIdForStorage) === 101 ? "?cluster=devnet" : ""}`
+                            ? `https://explorer.solana.com/tx/${tx.txHash}`
                             : `${explorer}/tx/${tx.txHash}`
                           : "";
 

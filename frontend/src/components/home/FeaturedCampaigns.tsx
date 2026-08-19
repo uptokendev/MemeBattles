@@ -11,7 +11,7 @@ import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/fol
 import { ChevronLeft, ChevronRight, Star, ThumbsUp } from "lucide-react";
 import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
-import { getFactoryAddress } from "@/lib/chainConfig";
+import { getDefaultChainId, getFactoryAddress } from "@/lib/chainConfig";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
 import { getReadProvider } from "@/lib/readProvider";
@@ -152,7 +152,7 @@ function preserveFeaturedAddress(value: unknown, chainId?: number): string {
 function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   if (!raw) return null;
   const src = raw.campaign && typeof raw.campaign === "object" ? { ...raw.campaign, ...raw } : raw;
-  const chainId = Number(src.chainId ?? src.chain_id ?? 97);
+  const chainId = Number(src.chainId ?? src.chain_id ?? getDefaultChainId());
   const campaignAddress = preserveFeaturedAddress(
     src.campaignAddress ?? src.campaign_address ?? src.campaign,
     chainId,
@@ -223,7 +223,7 @@ function buildFeedQuery(chainId: number, refetchNonce: number, path: "campaigns"
   }
 
   // Always pull testnet inventory for chain 97 (and when flag on).
-  if (chainId === 97 || isTestnetCampaignsEnabled()) {
+  if (chainId === 97 && isTestnetCampaignsEnabled()) {
     params.set("includeTestnet", "true");
     params.set("testnet", "true");
     params.set("includeDrafts", "true");
@@ -297,18 +297,13 @@ async function fetchOnChainFeaturedItems(chainId: number): Promise<FeaturedItemA
 
 async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
   const normalizedCampaigns = await fetchCampaignItemsMultiChain(chainId, refetchNonce);
-  const onChainPrimary = await fetchOnChainFeaturedItems(chainId);
-  // Also try testnet on-chain if dual-feed and primary empty.
-  let onChain = onChainPrimary;
-  if (!onChain.length && chainId !== 97) {
-    onChain = await fetchOnChainFeaturedItems(97);
-  }
+  const onChain = await fetchOnChainFeaturedItems(chainId);
 
   if (normalizedCampaigns.length || onChain.length) {
     return mergeFeaturedItems(normalizedCampaigns, onChain).slice(0, 20);
   }
 
-  const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId === 56 ? 97 : chainId, refetchNonce, "featured")}`, {
+  const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, {
     cache: "no-store" as RequestCache,
   });
   const featuredJson = await featured.json().catch(() => null);

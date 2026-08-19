@@ -163,7 +163,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
   try {
     const q = getQuery(req);
-    const chainId = Number(q.chainId ?? 97);
+    const chainId = Number(q.chainId ?? 56);
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 

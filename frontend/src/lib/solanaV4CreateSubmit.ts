@@ -217,7 +217,7 @@ export async function submitSolanaV4CreatePlan(
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com";
+    "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
 
   const campaignPk = new PublicKey(plan.createCampaign.accounts.campaign);

@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
-    const chainId = Number(q.chainId ?? 97);
+    const chainId = Number(q.chainId ?? 56);
     const raw = String(q.campaigns ?? "").trim();
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });

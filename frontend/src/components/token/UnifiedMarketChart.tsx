@@ -426,7 +426,10 @@ function formatNativeAmt(raw: bigint, decimals: number, symbol: string): string 
 }
 
 function explorerTxUrl(chainId: number, txHash: string): string {
-  if (isSolanaChainId(chainId)) return `https://explorer.solana.com/tx/${encodeURIComponent(txHash)}?cluster=devnet`;
+  if (isSolanaChainId(chainId)) {
+    const cluster = Number(chainId) === 102 ? "?cluster=devnet" : "";
+    return `https://explorer.solana.com/tx/${encodeURIComponent(txHash)}${cluster}`;
+  }
   const base = Number(chainId) === 56 ? "https://bscscan.com" : "https://testnet.bscscan.com";
   return `${base}/tx/${txHash}`;
 }

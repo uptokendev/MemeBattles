@@ -48,15 +48,20 @@ const CAMPAIGN_EVENT_BY_TOPIC = new Map(
 );
 
 function inventories(): SupportedFactory[] {
+  const includeTestnet =
+    Number(ENV.DEFAULT_EVM_CHAIN_ID) === 97 ||
+    ["1", "true", "yes", "on"].includes(String(process.env.VITE_ENABLE_TESTNET_CAMPAIGNS || process.env.ENABLE_TESTNET_CAMPAIGNS || "").trim().toLowerCase());
   return [
-    ...buildFactoryInventory({
-      chainId: 97,
-      rpcHttp: ENV.BSC_RPC_HTTP_97,
-      activeFactoryAddress: ENV.FACTORY_ADDRESS_97,
-      activeFactoryStartBlock: ENV.FACTORY_START_BLOCK_97,
-      supportedFactoryAddresses: ENV.SUPPORTED_FACTORY_ADDRESSES_97,
-      supportedFactoryStartBlocks: ENV.SUPPORTED_FACTORY_START_BLOCKS_97,
-    }),
+    ...(includeTestnet
+      ? buildFactoryInventory({
+          chainId: 97,
+          rpcHttp: ENV.BSC_RPC_HTTP_97,
+          activeFactoryAddress: ENV.FACTORY_ADDRESS_97,
+          activeFactoryStartBlock: ENV.FACTORY_START_BLOCK_97,
+          supportedFactoryAddresses: ENV.SUPPORTED_FACTORY_ADDRESSES_97,
+          supportedFactoryStartBlocks: ENV.SUPPORTED_FACTORY_START_BLOCKS_97,
+        })
+      : []),
     ...(ENV.BSC_RPC_HTTP_56
       ? buildFactoryInventory({
           chainId: 56,

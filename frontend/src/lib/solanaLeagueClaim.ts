@@ -1,4 +1,4 @@
-import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getSolanaRewardRpcUrl, isSolanaRewardChainId } from "@/lib/solanaRewardNetwork";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
 
@@ -44,6 +44,7 @@ function claimLeagueDiscriminator(): Uint8Array {
 }
 
 export async function submitSolanaLeagueClaim(prepared: {
+  chainId?: number;
   programId: string;
   vaultAddress: string;
   configAddress: string;
@@ -57,6 +58,9 @@ export async function submitSolanaLeagueClaim(prepared: {
   proof: string[];
   recipient: string;
 }): Promise<string> {
+  const chainId = Number(prepared.chainId || 101);
+  if (!isSolanaRewardChainId(chainId)) throw new Error("Wrong Solana reward chain for league claim.");
+
   const provider = getSolanaProvider();
   if (!provider?.publicKey || typeof provider.signTransaction !== "function") {
     throw new Error("Connect a Solana wallet that can sign the league claim.");
@@ -68,11 +72,7 @@ export async function submitSolanaLeagueClaim(prepared: {
 
   const web3 = await loadSolanaWeb3();
   const { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram } = web3;
-  const rpc =
-    String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
-    getPublicRpcUrl(SOLANA_CHAIN_ID) ||
-    "https://api.devnet.solana.com";
-  const connection = new Connection(rpc, "confirmed");
+  const connection = new Connection(getSolanaRewardRpcUrl(chainId), "confirmed");
 
   const categoryHash = hexToBytes(prepared.categoryHash);
   if (categoryHash.length !== 32) throw new Error("Invalid category hash");

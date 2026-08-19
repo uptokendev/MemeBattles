@@ -59,11 +59,11 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
   const initialLoadedRef = useRef(false);
 
   const cid = useMemo<SupportedChainId>(() => {
-    const n = Number(chainId ?? 97);
+    const n = Number(chainId ?? 56);
     if (n === 56 || n === 97 || isSolanaChainId(n)) return n as SupportedChainId;
     const addr = String(campaignAddress || "");
     if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x")) return 101;
-    return 97;
+    return 56;
   }, [campaignAddress, chainId]);
 
   const url = useMemo(() => {

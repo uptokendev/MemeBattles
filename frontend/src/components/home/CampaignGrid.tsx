@@ -6,7 +6,7 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
-import { type SupportedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
@@ -131,7 +131,7 @@ function mergeCampaignItems(primary: CampaignFeedItemApi[], fallback: CampaignFe
 }
 
 async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
-  const chainId = Number(params.chainId || 97);
+  const chainId = Number(params.chainId || getDefaultChainId());
   const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
   const cursor = Math.max(0, Number(params.cursor || 0));
   const page = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
@@ -199,9 +199,9 @@ async function fetchCampaignFeedForChain(params: Record<string, any>): Promise<C
   }
 }
 
-/** For BNB UI, merge testnet (97) + mainnet (56) so feed is not empty when default chain drifts. */
+/** Fetch the selected feed chain. Multi-id merge remains only if the helper returns more than one. */
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
-  const selected = Number(params.chainId || 97);
+  const selected = Number(params.chainId || getDefaultChainId());
   const chainIds = getBnbCampaignFeedChainIds(selected);
   const limit = Number(params.limit || 24);
 
@@ -209,16 +209,15 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
     return fetchCampaignFeedForChain(params);
   }
 
-  // Prefer testnet first; if it already has rows, still merge mainnet but skip
-  // empty-chain on-chain factory scans by fetching API-only when possible.
+  // Multi-chain merge is unused when the helper returns a single selected chain.
   const pages = await Promise.all(
     chainIds.map((chainId) =>
       fetchCampaignFeedForChain({
         ...params,
         chainId,
-        includeTestnet: chainId === 97 ? "true" : params.includeTestnet,
-        testnet: chainId === 97 ? "true" : params.testnet,
-        includeDrafts: chainId === 97 ? "true" : params.includeDrafts,
+        includeTestnet: chainId === 97 && params.includeTestnet === "true" ? "true" : params.includeTestnet,
+        testnet: chainId === 97 && params.testnet === "true" ? "true" : params.testnet,
+        includeDrafts: chainId === 97 && params.includeDrafts === "true" ? "true" : params.includeDrafts,
       }).catch((error) => {
         console.warn(`[CampaignGrid] feed failed for chain ${chainId}`, error);
         return { items: [], nextCursor: null, pageSize: limit, source: "error" } as CampaignFeedResponse;
@@ -268,7 +267,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const { fetchCampaignLogoURI } = useLaunchpad();
   const [selectedChainId] = useSelectedFeedChainId();
   const activeChainId = selectedChainId;
-  const includeTestnet = activeChainId === 97 || isTestnetCampaignsEnabled();
+  const includeTestnet = activeChainId === 97 && isTestnetCampaignsEnabled();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
   // Soft refresh while Ably is up so trending/mcap order can change with new activity + feed membership.

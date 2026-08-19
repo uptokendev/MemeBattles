@@ -268,6 +268,14 @@ type ChainCfg = {
 
 const CHAINS: ChainCfg[] = [
   {
+    chainId: 56,
+    rpcHttp: ENV.BSC_RPC_HTTP_56,
+    factoryAddress: ENV.FACTORY_ADDRESS_56 || undefined,
+    factoryStartBlock: ENV.FACTORY_START_BLOCK_56 || undefined,
+    voteTreasuryAddress: ENV.VOTE_TREASURY_ADDRESS_56 || undefined,
+    voteTreasuryStartBlock: ENV.VOTE_TREASURY_START_BLOCK_56 || undefined
+  },
+  {
     chainId: 97,
     rpcHttp: ENV.BSC_RPC_HTTP_97,
     factoryAddress: ENV.FACTORY_ADDRESS_97 || undefined,
@@ -275,14 +283,7 @@ const CHAINS: ChainCfg[] = [
     voteTreasuryAddress: ENV.VOTE_TREASURY_ADDRESS_97 || undefined,
     voteTreasuryStartBlock: ENV.VOTE_TREASURY_START_BLOCK_97 || undefined
   }
-  // enable later:
-  // {
-  //   chainId: 56,
-  //   rpcHttp: ENV.BSC_RPC_HTTP_56,
-  //   factoryAddress: ENV.FACTORY_ADDRESS_56 || undefined,
-  //   factoryStartBlock: ENV.FACTORY_START_BLOCK_56 || undefined
-  // }
-];
+].filter((chain) => Boolean(chain.rpcHttp));
 
 // ---------------------------------------------------------------------------
 // DB state

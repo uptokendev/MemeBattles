@@ -40,18 +40,20 @@ app.use(express.json({ limit: "256kb" }));
 // Boot self-check: prove this process pins static networks (no detect-network retry spam).
 // If this throws, deploy/runtime is wrong — better fail loud than flood logs.
 try {
-  const urls = parseRpcList(ENV.BSC_RPC_HTTP_97);
+  const defaultEvmChainId = ENV.DEFAULT_EVM_CHAIN_ID === 97 ? 97 : 56;
+  const defaultRpc = defaultEvmChainId === 97 ? ENV.BSC_RPC_HTTP_97 : ENV.BSC_RPC_HTTP_56;
+  const urls = parseRpcList(defaultRpc);
   if (urls[0]) {
-    const probeProvider = createStaticJsonRpcProvider(urls[0], 97, { timeoutMs: 3_000 });
+    const probeProvider = createStaticJsonRpcProvider(urls[0], defaultEvmChainId, { timeoutMs: 3_000 });
     // Accessing _network throws if unpinned — that is the detect-loop bug class.
     const pinned = (probeProvider as any)._network;
     console.log("[rpc] static network pin OK", {
-      chainId: String(pinned?.chainId ?? "97"),
+      chainId: String(pinned?.chainId ?? defaultEvmChainId),
       url: maskRpcUrl(urls[0]),
     });
     probeProvider.destroy();
   } else {
-    console.warn("[rpc] BSC_RPC_HTTP_97 empty — indexer loops will idle/fail without a URL");
+    console.warn(`[rpc] BSC_RPC_HTTP_${defaultEvmChainId} empty - indexer loops will idle/fail without a URL`);
   }
 } catch (error: any) {
   console.error("[rpc] static network pin FAILED", error?.message || String(error));
@@ -372,7 +374,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.get("/api/indexer/status", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const rawAddress = normalizeAddress(req.query.campaign || req.query.campaignAddress || req.query.token || "");
   const identity = rawAddress
     ? await resolveMarketIdentityOrPassthrough(chainId, rawAddress)
@@ -491,7 +493,7 @@ app.post("/internal/wtr/reconcile-graduations", wrap(async (req, res) => {
 // Repair missing dex_pools row (full schema) for one graduated campaign, then optional index pass.
 app.post("/internal/wtr/ensure-dex-pool", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
-  const chainId = Number(req.query.chainId || req.body?.chainId || 97);
+  const chainId = Number(req.query.chainId || req.body?.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const campaign = normalizeAddress(
     req.query.campaign || req.query.campaignAddress || req.body?.campaign || req.body?.campaignAddress || "",
   );
@@ -549,7 +551,7 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
 app.post("/internal/indexer/ingest-tx", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
 
-  const chainId = Number(req.query.chainId || req.body?.chainId || 97);
+  const chainId = Number(req.query.chainId || req.body?.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const campaign = normalizeAddress(req.query.campaign || req.query.campaignAddress || req.body?.campaign || req.body?.campaignAddress || "");
   const txHash = String(req.query.txHash || req.query.tx || req.body?.txHash || req.body?.tx || "").trim().toLowerCase();
 
@@ -575,7 +577,7 @@ app.post("/internal/indexer/ingest-tx", wrap(async (req, res) => {
  */
 app.get("/api/ably/token", async (req, res) => {
   try {
-    const chainId = Number(req.query.chainId || 97);
+    const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
     const scope = String(req.query.scope || "token");
 
     if (scope === "live") {
@@ -641,7 +643,7 @@ app.get("/api/ably/token", async (req, res) => {
 app.post("/internal/user-rank-updated", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
 
-  const chainId = Number(req.body?.chainId || 97);
+  const chainId = Number(req.body?.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const address = normalizeAddress(req.body?.address ?? req.body?.userAddress ?? req.body?.wallet);
   const requestedOldRank = normalizeRank(req.body?.oldRank ?? req.body?.previousRank);
   const newRank = normalizeRank(req.body?.newRank ?? req.body?.rank);
@@ -1053,7 +1055,7 @@ app.post("/api/recruiter-routing/create-authorization", wrap(async (req, res) =>
 
 app.get("/internal/rewards/epochs/current", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ ok: false, error: "Invalid chainId" });
   }
@@ -1064,7 +1066,7 @@ app.get("/internal/rewards/epochs/current", wrap(async (req, res) => {
 
 app.get("/internal/rewards/epochs", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const limit = Math.min(Number(req.query.limit || 20), 100);
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ ok: false, error: "Invalid chainId" });
@@ -1076,7 +1078,7 @@ app.get("/internal/rewards/epochs", wrap(async (req, res) => {
 
 app.get("/internal/rewards/events", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
   const limit = Math.min(Number(req.query.limit || 50), 200);
   if (!Number.isFinite(chainId)) {
@@ -1599,7 +1601,7 @@ app.post("/internal/rewards/publications", wrap(async (req, res) => {
 
 app.get("/internal/rewards/ops/routing", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
-  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : 97;
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : ENV.DEFAULT_EVM_CHAIN_ID;
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ ok: false, error: "Invalid chainId" });
   }
@@ -1690,7 +1692,7 @@ app.get("/api/rewards/me/eligibility", wrap(async (req, res) => {
 }));
 
 app.get("/api/airdrops/current", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   if (!Number.isFinite(chainId) || chainId <= 0) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
@@ -1698,7 +1700,7 @@ app.get("/api/airdrops/current", wrap(async (req, res) => {
 }));
 
 app.get("/api/airdrops/preview", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   if (!Number.isFinite(chainId) || chainId <= 0) {
     return res.status(400).json({ error: "Invalid chainId" });
   }
@@ -1798,7 +1800,7 @@ app.get("/api/squads/:recruiterCode/summary", wrap(async (req, res) => {
 // Trades activity (bonding curve buys/sells) for a wallet.
 // GET /api/activity/trades?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
 app.get("/api/activity/trades", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
@@ -1884,7 +1886,7 @@ app.get("/api/activity/trades", wrap(async (req, res) => {
 // Comments activity for a wallet (authored comments).
 // GET /api/activity/comments?chainId=97&address=0x...&limit=50&cursor=TS:ID
 app.get("/api/activity/comments", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
@@ -1966,7 +1968,7 @@ app.get("/api/activity/comments", wrap(async (req, res) => {
 // Created campaigns for a wallet.
 // GET /api/activity/created?chainId=97&address=0x...&limit=50&cursor=TS:ADDR
 app.get("/api/activity/created", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
@@ -2039,7 +2041,7 @@ app.get("/api/activity/created", wrap(async (req, res) => {
 // Interactions (Upvotes) for a wallet.
 // GET /api/activity/interactions?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
 app.get("/api/activity/interactions", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const address = parseWalletAddressOrNull(req.query.address);
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const cursorRaw = String(req.query.cursor || "").trim();
@@ -2127,7 +2129,7 @@ app.get("/api/activity/interactions", wrap(async (req, res) => {
  * Path :campaign accepts either LaunchCampaign or public ERC-20 token address.
  */
 app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
   const campaign = identity.campaignAddress;
 
@@ -2198,7 +2200,7 @@ function serializeCurveTradeRow(row: Record<string, unknown>) {
 }
 
 async function handleTokenTrades(req: any, res: any) {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   let identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
   let campaign = identity.campaignAddress;
   const limit = Math.min(Number(req.query.limit || 50), 200);
@@ -2293,7 +2295,7 @@ app.get("/api/token/:campaign/trade", wrap(handleTokenTrades));
 // ---------------------------------------------
 // /api/league?chainId=97&category=straight_up|fastest_graduation|largest_buy&period=weekly|monthly|all_time&limit=50
 app.get("/api/league", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const category = String(req.query.category || "fastest_graduation");
   const period = String(req.query.period || "weekly");
   const limit = Math.min(Number(req.query.limit || 50), 200);
@@ -2489,7 +2491,7 @@ app.get("/api/league", wrap(async (req, res) => {
 }));
 
 app.get("/api/token/:campaign/candles", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const identity = await resolveMarketIdentityOrPassthrough(chainId, String(req.params.campaign || ""));
   const campaign = identity.campaignAddress;
   const tf = String(req.query.tf || "5s");
@@ -2513,7 +2515,7 @@ app.get("/api/token/:campaign/candles", wrap(async (req, res) => {
 
 // /api/votes?chainId=97&campaignAddress=0x..&voter=0x..&limit=50
 app.get("/api/votes", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const campaign = String(req.query.campaignAddress || "").toLowerCase();
   const voter = String(req.query.voter || "").toLowerCase();
   const limit = Math.min(Number(req.query.limit || 50), 200);
@@ -2550,7 +2552,7 @@ app.get("/api/votes", wrap(async (req, res) => {
 registerLpFeesRoutes(app);
 
 app.get("/api/featured", wrap(async (req, res) => {
-  const chainId = Number(req.query.chainId || 97);
+  const chainId = Number(req.query.chainId || ENV.DEFAULT_EVM_CHAIN_ID);
   const sort = String(req.query.sort || "trending");
   const limit = Math.min(Number(req.query.limit || 50), 200);
 
@@ -2607,9 +2609,10 @@ async function getLastIndexedBlock(chainId: number): Promise<number | null> {
 }
 
 async function getRpcHeadBlock(): Promise<number | null> {
-  const urls = parseRpcList(ENV.BSC_RPC_HTTP_97);
+  const chainId = ENV.DEFAULT_EVM_CHAIN_ID === 97 ? 97 : 56;
+  const urls = parseRpcList(chainId === 97 ? ENV.BSC_RPC_HTTP_97 : ENV.BSC_RPC_HTTP_56);
   for (const url of urls.slice(0, 3)) {
-    const probe = await probeRpcUrl(url, 97, 4_000);
+    const probe = await probeRpcUrl(url, chainId, 4_000);
     if (probe.ok && probe.headBlock != null) return probe.headBlock;
   }
   return null;
@@ -2617,8 +2620,9 @@ async function getRpcHeadBlock(): Promise<number | null> {
 
 startTelemetryReporter(async () => {
   const ts = Math.floor(Date.now() / 1000);
+  const defaultChainId = ENV.DEFAULT_EVM_CHAIN_ID === 97 ? 97 : 56;
   const head = await getRpcHeadBlock();
-  const last = await getLastIndexedBlock(97);
+  const last = await getLastIndexedBlock(defaultChainId);
   const lag = head != null && last != null ? Math.max(0, head - last) : null;
 
   const snap: TelemetrySnapshot = {

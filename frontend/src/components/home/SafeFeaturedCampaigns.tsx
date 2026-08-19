@@ -18,9 +18,10 @@ import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 import { getPublicTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { useNativeUsdPrice } from "@/hooks/useNativeUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
-import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, getDefaultChainId, type SupportedChainId } from "@/lib/chainConfig";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
@@ -190,7 +191,7 @@ function applyVotePatch(
     if (!delta && patch.votes24h == null && patch.votesAllTime == null) return items;
     const seedVotes = Math.max(1, Number(patch.votes24h ?? delta ?? 1));
     const seed: FeaturedItem = {
-      chainId: Number(patch.chainId || 0) || BNB_TESTNET_CHAIN_ID,
+      chainId: Number(patch.chainId || 0) || getDefaultChainId(),
       campaignAddress: addr,
       votes24h: seedVotes,
       votesAllTime: Math.max(seedVotes, Number(patch.votesAllTime ?? delta ?? 1)),
@@ -255,7 +256,7 @@ async function loadApiCandidatesForChain(chainId: number): Promise<FeaturedItem[
   query.set("status", "all");
   query.set("tab", "trending");
   query.set("sort", "default");
-  if (chainId === 97) {
+  if (chainId === 97 && isTestnetCampaignsEnabled()) {
     query.set("includeTestnet", "true");
     query.set("testnet", "true");
   }

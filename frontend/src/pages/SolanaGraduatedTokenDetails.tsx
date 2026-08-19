@@ -95,7 +95,7 @@ function explorerHref(kind: "address" | "tx", value?: string | null): string | n
   const raw = String(value || "").trim();
   if (!raw) return null;
   const segment = kind === "tx" ? "tx" : "address";
-  return `${DEVNET_EXPLORER_BASE}/${segment}/${encodeURIComponent(raw)}?cluster=devnet`;
+  return `${DEVNET_EXPLORER_BASE}/${segment}/${encodeURIComponent(raw)}`;
 }
 
 function friendlyError(error: unknown): string {

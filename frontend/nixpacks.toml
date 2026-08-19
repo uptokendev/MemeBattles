@@ -1,0 +1,53 @@
+# nixpacks.toml — MemeBattles frontend (Express API gateway)
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# 1. Nixpacks scans the directory for runtime signals. The presence of
+#    `deno.lock` (from the Netlify edge function) can mislead Nixpacks into
+#    treating this as a Deno project, causing it to skip `npm ci` or run
+#    `deno install` instead — which exits 1 and dumps the Deno usage menu.
+#
+# 2. `package.json` has no `engines` field and no `volta` pin. Without an
+#    explicit signal Nixpacks picks the Node version heuristically; we need
+#    Node 20 to match `.nvmrc` and `netlify.toml` (NODE_VERSION=20).
+#
+# 3. The `packageManager: npm@10.9.2` Corepack directive requires npm 10,
+#    which ships with Node 20. Locking the version here prevents a mismatch.
+#
+# ARCHITECTURE NOTE
+# ---------------------------------------
+# Both the Express API gateway and the Vite static frontend are deployed
+# from this directory. 
+#
+# WHAT RUNS AT RUNTIME
+# ---------------------
+# `npm run start`  ->  node scripts/run-railway-api-start.mjs
+#   1. Best-effort runs closeout-fixes (45 s timeout, non-fatal)
+#   2. Spawns api/server.mjs with:
+#        --require scripts/rpc-websockets-compat.cjs   (CJS compat shim)
+#        --import  api/load-local-env.mjs               (env aliasing)
+
+[phases.setup]
+# Pin Node 20 explicitly. Matches .nvmrc and netlify.toml NODE_VERSION=20.
+# This also ensures npm 10.x (which ships with Node 20) is used, satisfying
+# the `packageManager: npm@10.9.2` Corepack hint in package.json.
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+# --include=dev is required: vite, tailwindcss, TypeScript et al. are
+# devDependencies. Without this flag a production npm ci would omit them
+# and the build phase would fail with "vite: not found".
+cmds = ["npm install --include=dev"]
+
+[phases.build]
+# Compile the Vite SPA into dist/.
+cmds = ["npm run build"]
+
+[start]
+# Runs the Express API gateway. Mirrors the `start` script in package.json:
+#   node scripts/run-railway-api-start.mjs
+# That script:
+#   - best-effort patches DB schema (non-fatal, 45 s timeout)
+#   - then boots api/server.mjs via Node with rpc-websockets CJS compat shim
+#     and load-local-env.mjs (env aliasing for DATABASE_URL variants etc.)
+cmd = "npm run start"

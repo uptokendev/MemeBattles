@@ -15,6 +15,8 @@ import {
   ROUTE_PROFILE_OG_LINKED,
 } from "./route-decision.js";
 import { signCreateAuthorization, signTradeAuthorization } from "./routeAuthorizationSigner.js";
+import { defaultEvmChainId } from "../lib/defaultEvmChain.js";
+import { isCreatorArmCooldownActive, normalizeCreatorArmCooldownEndsAt } from "../lib/creatorArmCooldown.js";
 
 const VALID_PROFILES = new Set([
   ROUTE_PROFILE_STANDARD_LINKED,
@@ -30,9 +32,14 @@ const FACTORY_CREATION_PREFLIGHT_ABI = [
   "function live() view returns (bool)",
   "function globalPaused() view returns (bool)",
   "function createPaused() view returns (bool)",
+  "function creatorRegistry() view returns (address)",
   "function FACTORY_GENERATION() view returns (uint32)",
   "function CAMPAIGN_GENERATION() view returns (uint32)",
   "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
+];
+const CREATOR_REGISTRY_PREFLIGHT_ABI = [
+  "function getCreatorProfile(address) view returns (uint8 tier,uint256 trustScore,uint256 liveBondingCount,uint256 lastLaunchTimestamp,bool restricted,bool manualReviewRequired)",
+  "function getCreatorRules(address) view returns (uint256 maxLiveBonding,uint256 cooldownSeconds,uint256 creatorBuyLockSeconds,uint256 creatorBuyCapWei,uint256 maxClusterWallets)",
 ];
 
 function methodAllowed(req, res, allowed) {
@@ -152,7 +159,7 @@ function validateGraduationTarget(chainId, graduationTarget) {
   if (graduationTarget === "0") return;
   if (STANDARD_GRADUATION_TARGETS.has(graduationTarget)) return;
   const testThresholdEnabled = isTruthy(
-    process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD || "true",
+    process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD || "false",
   );
   const cid = Number(chainId);
   if (testThresholdEnabled && (cid === 97 || cid === 101 || cid === 102) && graduationTarget === TEST_GRADUATION_TARGET) {
@@ -251,8 +258,29 @@ async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAdd
       };
     }
 
-    const allowed = Boolean(eligibility.allowed ?? eligibility[0]);
-    const cooldownEndsAt = Number(eligibility.cooldownEndsAt ?? eligibility[1] ?? 0);
+    const allowed = eligibility[0] === true || eligibility.allowed === true;
+    let lastRecordedLaunchAt = 0;
+    let cooldownSeconds = 0;
+    try {
+      const registryAddress = await factory.creatorRegistry();
+      if (registryAddress && registryAddress !== ethers.ZeroAddress) {
+        const registry = new ethers.Contract(registryAddress, CREATOR_REGISTRY_PREFLIGHT_ABI, provider);
+        const [profile, rules] = await Promise.all([
+          registry.getCreatorProfile(walletAddress),
+          registry.getCreatorRules(walletAddress),
+        ]);
+        lastRecordedLaunchAt = Number(profile.lastLaunchTimestamp ?? profile[3] ?? 0);
+        cooldownSeconds = Number(rules.cooldownSeconds ?? rules[1] ?? 0);
+      }
+    } catch {
+      lastRecordedLaunchAt = 0;
+    }
+    const cooldownEndsAt = normalizeCreatorArmCooldownEndsAt({
+      allowed,
+      lastRecordedLaunchAt,
+      cooldownSeconds,
+      cooldownEndsAt: Number(eligibility.cooldownEndsAt ?? eligibility[1] ?? 0),
+    });
     const onChainLiveCampaignCount = Number(eligibility.currentLiveCount ?? eligibility[2] ?? 0);
     const onChainLiveCampaignLimit = Number(eligibility.maxLiveBonding ?? eligibility[3] ?? 0);
     if (!allowed) {
@@ -262,10 +290,10 @@ async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAdd
         code: "CREATE_ONCHAIN_ELIGIBILITY_BLOCKED",
         error: onChainLiveCampaignCount >= onChainLiveCampaignLimit
           ? `Live campaign limit reached (${onChainLiveCampaignCount}/${onChainLiveCampaignLimit}). Graduate an existing live campaign before another deploy. Tier 1 max is 3 concurrent live campaigns.`
-          : cooldownEndsAt > Math.floor(Date.now() / 1000)
+          : isCreatorArmCooldownActive({ allowed, lastRecordedLaunchAt, cooldownEndsAt })
             ? `Creator arm cooldown active until ${new Date(cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.`
             : "This creator wallet cannot deploy or arm another campaign right now.",
-        onChain: { allowed, cooldownEndsAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
+        onChain: { allowed, cooldownEndsAt, lastRecordedLaunchAt, onChainLiveCampaignCount, onChainLiveCampaignLimit, factoryGeneration, campaignGeneration },
       };
     }
 
@@ -275,6 +303,7 @@ async function readOnchainCreationPreflight({ chainId, factoryAddress, walletAdd
         allowed,
         canArmNow: true,
         cooldownEndsAt,
+        lastRecordedLaunchAt,
         onChainLiveCampaignCount,
         onChainLiveCampaignLimit,
         factoryGeneration,
@@ -317,7 +346,7 @@ export async function routingStatus(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
 
   const q = getQuery(req);
-  const chainId = parsePositiveInt(q.chainId || process.env.VITE_DEFAULT_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID, 97);
+  const chainId = parsePositiveInt(q.chainId || process.env.VITE_DEFAULT_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID, defaultEvmChainId());
   const signer = getSigner();
   const routeAuthority = signer?.address || null;
   const factoryAddress = normalizeAddress(q.factoryAddress) || getFactoryAddressFromEnv(chainId);

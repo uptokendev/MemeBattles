@@ -82,7 +82,7 @@ function TokenLine({ row }: { row: LeagueBase }) {
   );
 }
 
-export function LeagueCampaigns({ chainId = 97, limit = 3 }: { chainId?: number; limit?: number }) {
+export function LeagueCampaigns({ chainId = 56, limit = 3 }: { chainId?: number; limit?: number }) {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);

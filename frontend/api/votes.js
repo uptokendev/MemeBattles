@@ -6,7 +6,7 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
-    const chainId = Number(q.chainId ?? 97);
+    const chainId = Number(q.chainId ?? 56);
     const campaignAddress = q.campaignAddress ? String(q.campaignAddress).toLowerCase() : "";
     const voter = q.voter ? String(q.voter).toLowerCase() : "";
     const limit = Math.max(1, Math.min(100, Number(q.limit ?? 50)));

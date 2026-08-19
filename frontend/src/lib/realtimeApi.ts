@@ -55,6 +55,7 @@ const NETLIFY_OWNED_API_PREFIXES = [
   "/api/recruiter-routing",
   "/api/recruiter-signup",
   "/api/recruiters",
+  "/api/rewards",
   "/api/rewards/me",
   "/api/routing",
   "/api/squads",
@@ -82,11 +83,25 @@ function shouldUseAppApi(path: string): boolean {
   return NETLIFY_OWNED_API_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function shouldUseLocalApiGateway(path: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (!isLoopbackHost(window.location.hostname)) return false;
+  } catch {
+    return false;
+  }
+  return path === "/api" || path.startsWith("/api/") || path === "/internal" || path.startsWith("/internal/");
+}
+
 export const REALTIME_API_BASE = EXPLICIT_REALTIME_API_BASE || inferLocalRealtimeApiBase();
 
 export function buildRealtimeApiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
   const normalized = path.startsWith("/") ? path : `/${path}`;
+
+  if (shouldUseLocalApiGateway(normalized)) {
+    return normalized;
+  }
 
   if (shouldUseAppApi(normalized)) {
     return EXPLICIT_APP_API_BASE ? `${EXPLICIT_APP_API_BASE}${normalized}` : normalized;

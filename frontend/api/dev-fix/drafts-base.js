@@ -506,9 +506,11 @@ export async function drafts(req, res) {
   const reservationCluster =
     body.cluster ||
     body.networkCluster ||
-    (Number(chainId) === 101 || Number(chainId) === 102
-      ? process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-devnet"
-      : "");
+    (Number(chainId) === 102
+      ? "solana-devnet"
+      : Number(chainId) === 101
+        ? process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta"
+        : "");
 
   if (pool) {
     try {

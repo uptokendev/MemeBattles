@@ -31,6 +31,8 @@ test("maps supported chain identifiers to canonical clusters", () => {
   assert.equal(canonicalClusterForChain(56), "bsc-mainnet");
   assert.equal(canonicalClusterForChain(97), "bsc-testnet");
   assert.equal(canonicalClusterForChain(8453), "chain-8453");
+  assert.equal(canonicalClusterForChain(101), "solana-mainnet-beta");
+  assert.equal(canonicalClusterForChain(102), "solana-devnet");
   assert.equal(canonicalClusterForChain(101, "solana-devnet"), "solana-devnet");
   assert.equal(canonicalClusterForChain(101, "devnet"), "solana-devnet");
   assert.equal(canonicalClusterForChain(101, "mainnet-beta"), "solana-mainnet-beta");

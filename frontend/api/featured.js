@@ -215,7 +215,7 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
-    const chainId = Number(q.chainId ?? 97);
+    const chainId = Number(q.chainId ?? 56);
     const sortKeyRaw = String(q.sort ?? "activity").toLowerCase();
     const sortCol = SORT_MAP[sortKeyRaw] ?? SORT_MAP.activity;
     const limit = Math.max(1, Math.min(50, Number(q.limit ?? 10)));

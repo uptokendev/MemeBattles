@@ -3,19 +3,25 @@ import { cn } from "@/lib/utils";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { isEvmAddress } from "@/lib/address";
-import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, isEvmChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, isAllowedChainId, isEvmChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { getCampaignFeedChainId } from "@/lib/feedChainConfig";
 import { ACTIVE_WALLET_KIND_KEY, FEED_CHAIN_EVENT, FEED_CHAIN_KEY, getActiveWalletKind, setActiveWalletKind } from "@/lib/activeWalletChain";
 
 export function resolveBnbFeedChainId(): SupportedChainId {
-  // Prefer configured/dev-testnet feed chain (usually 97 for postgrad inventory).
   const configured = getCampaignFeedChainId();
-  if (configured === BNB_TESTNET_CHAIN_ID || configured === BNB_CHAIN_ID) return configured;
+  if (configured === BNB_TESTNET_CHAIN_ID && isTestnetCampaignsEnabled() && isAllowedChainId(BNB_TESTNET_CHAIN_ID)) {
+    return BNB_TESTNET_CHAIN_ID;
+  }
+  if (configured === BNB_CHAIN_ID) return BNB_CHAIN_ID;
   return BNB_CHAIN_ID;
 }
 
 function bnbFeedForWallet(chainId?: number | null): SupportedChainId {
-  if (isEvmChainId(chainId)) return chainId as SupportedChainId;
+  if (chainId === BNB_TESTNET_CHAIN_ID && (!isTestnetCampaignsEnabled() || !isAllowedChainId(BNB_TESTNET_CHAIN_ID))) {
+    return BNB_CHAIN_ID;
+  }
+  if (isEvmChainId(chainId) && isAllowedChainId(chainId)) return chainId as SupportedChainId;
   return resolveBnbFeedChainId();
 }
 
@@ -74,8 +80,10 @@ export function FeedChainWalletLatch() {
 function normalizeFeedChainId(value: unknown): SupportedChainId {
   const chainId = Number(value);
   if (chainId === SOLANA_CHAIN_ID) return SOLANA_CHAIN_ID;
-  if (chainId === BNB_CHAIN_ID || chainId === BNB_TESTNET_CHAIN_ID) return resolveBnbFeedChainId();
-  return resolveBnbFeedChainId();
+  if (chainId === BNB_TESTNET_CHAIN_ID && isTestnetCampaignsEnabled() && isAllowedChainId(BNB_TESTNET_CHAIN_ID)) {
+    return BNB_TESTNET_CHAIN_ID;
+  }
+  return BNB_CHAIN_ID;
 }
 
 export function getSelectedFeedChainId(): SupportedChainId {

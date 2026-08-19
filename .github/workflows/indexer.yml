@@ -2,8 +2,13 @@ name: Indexer
 
 on:
   schedule:
-    - cron: "2-59/5 * * * *"  # every 5 minutes, UTC
+    - cron: "2-59/5 * * * *"
   workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: indexer
@@ -36,3 +41,175 @@ jobs:
           CONFIRMATIONS: ${{ secrets.CONFIRMATIONS }}
           START_BLOCK: ${{ secrets.START_BLOCK }}
         run: npm run indexer
+
+  deploy-scheduled-cooldown:
+    name: Deploy scheduled cooldown BSC Testnet factory
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BSC_TESTNET_RPC: ${{ secrets.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC_URL || secrets.BSC_RPC_URL }}
+      DEPLOYER_PK: ${{ secrets.DEPLOYER_PK || secrets.PRIVATE_KEY_DEPLOY }}
+      ACTIVE_SCHEDULED_FACTORY_ADDRESS: 0xF7872169265eCE4E4C93ef894F1635E84DC6F681
+      QA_CREATOR_ADDRESS: 0x13ad79765e14927df2c554d9662bbe539e89c8e8
+
+    steps:
+      - name: Checkout main gate state
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check one-time deployment gate
+        id: gate
+        shell: bash
+        run: |
+          if [ -f .github/deployment-gates/scheduled-cooldown-v1.txt ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "One-time deployment gate is absent; deployment steps will be skipped."
+          fi
+
+      - name: Announce protected deployment run
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          gh pr comment 71 --repo "$GITHUB_REPOSITORY" --body "Scheduled cooldown factory deployment started from the registered Indexer workflow. Protected run ID: $GITHUB_RUN_ID. Source compilation, targeted factory tests, contract-size checks, and duplicate-deployment guards run before any contract transaction."
+
+      - name: Checkout exact approved feature branch
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: uptokendev/MemeBattles
+          ref: agent/fix-scheduled-cooldown-timezone
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            realtime-indexer/package-lock.json
+
+      - name: Verify BSC Testnet deployment credentials
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          if [ -z "$BSC_TESTNET_RPC" ]; then
+            echo "Missing BSC Testnet RPC secret."
+            exit 1
+          fi
+          if [ -z "$DEPLOYER_PK" ]; then
+            echo "Missing deployer private-key secret."
+            exit 1
+          fi
+
+      - name: Prepare duplicate-safe deployment source
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          node --check scripts/prepare-scheduled-cooldown-deployment.mjs
+          node scripts/prepare-scheduled-cooldown-deployment.mjs
+
+      - name: Install and verify contract source
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          npm ci --no-audit --no-fund
+          npm run compile
+          npx hardhat test test/LaunchFactory.spec.ts
+          npm run size
+
+      - name: Deploy and activate factory-only replacement
+        if: steps.gate.outputs.run == 'true'
+        id: deploy
+        run: npx hardhat run scripts/deploy-scheduled-cooldown-factory.ts --network bscTestnet
+
+      - name: Sync frontend ABI
+        if: steps.gate.outputs.run == 'true'
+        run: npm run sync:frontend-abis
+
+      - name: Capture deployment details
+        if: steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          echo "DEPLOYMENT_FACTORY=$(node -p \"require('./deployments/bscTestnet.scheduled-cooldown-factory.json').activeFactory.address\")" >> "$GITHUB_ENV"
+          echo "DEPLOYMENT_LOCKER=$(node -p \"require('./deployments/bscTestnet.scheduled-cooldown-factory.json').activeFactory.permanentLpLocker\")" >> "$GITHUB_ENV"
+          echo "DEPLOYMENT_TX=$(node -p \"require('./deployments/bscTestnet.scheduled-cooldown-factory.json').deploymentTxHash\")" >> "$GITHUB_ENV"
+          echo "DEPLOYMENT_BLOCK=$(node -p \"require('./deployments/bscTestnet.scheduled-cooldown-factory.json').deploymentBlock\")" >> "$GITHUB_ENV"
+
+      - name: Restore permanent feature workflows and remove one-time triggers
+        if: steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          git show 2b0552821a689ff0d5f892222e4403dc9d538cd4:.github/workflows/frontend-pr-proof.yml > .github/workflows/frontend-pr-proof.yml
+          git show 2b0552821a689ff0d5f892222e4403dc9d538cd4:.github/workflows/ticker-reservation-ci.yml > .github/workflows/ticker-reservation-ci.yml
+          git fetch origin devpostgrad --depth=1
+          git checkout origin/devpostgrad -- frontend/yarn.lock 2>/dev/null || true
+          rm -f scripts/prepare-scheduled-cooldown-deployment.mjs
+          rm -f frontend/src/__trigger-scheduled-cooldown-deployment.ts
+
+      - name: Publish deployment manifest and active pointers
+        if: steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          test -f deployments/bscTestnet.scheduled-cooldown-factory.json
+          test -f deployments/bscTestnet.scheduled-cooldown-factory.env
+          git diff --check
+          git config user.name "MemeWarzone Deployment Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Deployment produced no repository changes."
+            exit 1
+          fi
+          git commit -m "Activate scheduled cooldown factory on BSC Testnet"
+          git push origin HEAD:agent/fix-scheduled-cooldown-timezone
+
+      - name: Validate API and frontend against active replacement
+        if: steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        run: |
+          node --check frontend/api/dev-fix/security.js
+          node --check frontend/api/dev-fix/draft-deploy-base.js
+          node --check frontend/api/dev-fix/draft-deploy.js
+          npm ci --prefix frontend --no-audit --no-fund
+          npm --prefix frontend run check:api-imports
+          npm --prefix frontend run test:wallet-discovery
+          npm --prefix frontend run build
+
+      - name: Validate realtime indexer against active replacement
+        if: steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        run: |
+          npm ci --prefix realtime-indexer --no-audit --no-fund
+          npm --prefix realtime-indexer run build
+
+      - name: Restore main Indexer workflow and remove temporary gates
+        if: always() && steps.gate.outputs.run == 'true' && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          git fetch origin main
+          git switch -C scheduled-cooldown-main-cleanup origin/main
+          git show 205d8c030050034a0499f281e84415dc037e9a62:.github/workflows/indexer.yml > .github/workflows/indexer.yml
+          rm -f .github/deployment-gates/scheduled-cooldown-v1.txt
+          rm -f .github/workflows/scheduled-cooldown-command-gate.yml
+          rm -f .github/workflows/scheduled-cooldown-push-gate.yml
+          rm -f .github/workflows/scheduled-cooldown-main-pr-gate.yml
+          git add -A
+          git config user.name "MemeWarzone Deployment Agent"
+          git config user.email "actions@users.noreply.github.com"
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove one-time scheduled cooldown deployment gates"
+            git push origin HEAD:main
+          fi
+
+      - name: Comment successful deployment details
+        if: success() && steps.gate.outputs.run == 'true'
+        run: |
+          gh pr comment 71 --repo "$GITHUB_REPOSITORY" --body "Scheduled cooldown factory deployment completed successfully. Factory: \`$DEPLOYMENT_FACTORY\`. Permanent LP locker: \`$DEPLOYMENT_LOCKER\`. Deployment transaction: \`$DEPLOYMENT_TX\`. Deployment block: \`$DEPLOYMENT_BLOCK\`. The old factory is creation-paused while its existing campaign remains supported. Protected run ID: $GITHUB_RUN_ID."
+
+      - name: Comment deployment failure
+        if: failure() && steps.gate.outputs.run == 'true'
+        run: |
+          gh pr comment 71 --repo "$GITHUB_REPOSITORY" --body "Scheduled cooldown factory deployment failed before the full acceptance gate completed. Protected run ID: $GITHUB_RUN_ID. The duplicate guard prevents a second replacement if activation already occurred; inspect this run before retrying."

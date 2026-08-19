@@ -29,7 +29,7 @@ import { submitSolanaV4CreateFromAuthorization } from "@/lib/solanaV4CreateSubmi
 import { tokenDetailsPath } from "@/lib/tokenDetailsPath";
 import { apiFetch } from "@/lib/apiBase";
 import {
-  BNB_TESTNET_CHAIN_ID,
+  BNB_CHAIN_ID,
   getActiveChainId,
   getChainLabel,
   getDefaultChainId,
@@ -44,6 +44,7 @@ import {
   graduationTargetToUsdMicros,
   type GraduationTier,
 } from "@/lib/graduationTiers";
+import { isCreatorArmCooldownActive } from "@/lib/creatorArmCooldown";
 import {
   readScheduledCreatorLaunchEligibility,
   type ScheduledCreatorLaunchEligibility,
@@ -139,8 +140,7 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
-  // Prefer env default (usually 97 testnet). Never seed from mainnet-only BNB_CHAIN_ID (56) —
-  // that hides $6 test graduation and leaves the selector stuck on $30K.
+  // Seed from the explicitly configured production default.
   const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(() =>
     getDefaultGraduationTargetWei(getDefaultChainId()),
   );
@@ -158,7 +158,7 @@ const Create = () => {
   const graduationOptions: GraduationTier[] = useMemo(() => getGraduationTiers(chainId), [chainId]);
   const configuredBnbChainId = useMemo(() => {
     const configured = getDefaultChainId();
-    return isEvmChainId(configured) ? configured : BNB_TESTNET_CHAIN_ID;
+    return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
   }, []);
   const bnbContractReadiness = useMemo(
     () => getBnbContractReadiness(configuredBnbChainId),
@@ -277,20 +277,23 @@ const Create = () => {
           if (cancelled) return;
           setCreatorEligibility(result);
           setCreatorEligibilityError(null);
-          if (!result.allowed) {
-            const walletKey = `${wallet.account}:${chainId}:${result.cooldownEndsAt}:${result.currentLiveCount}`;
+          const liveCap =
+            Number(result.maxLiveBonding || 0) > 0 &&
+            Number(result.currentLiveCount || 0) >= Number(result.maxLiveBonding || 0);
+          const cooldownActive = isCreatorArmCooldownActive(result);
+          if (result.allowed) {
+            armDialogShownForWallet.current = null;
+          } else if (cooldownActive || liveCap) {
+            const walletKey = `${wallet.account}:${chainId}:${result.lastRecordedLaunchAt}:${result.cooldownEndsAt}:${result.currentLiveCount}`;
             if (armDialogShownForWallet.current !== walletKey) {
               armDialogShownForWallet.current = walletKey;
               emitCreatorArmBlocked(
                 resolveCreatorArmBlock({
                   mode: "now",
                   eligibility: result,
-                  errorMessage:
-                    result.cooldownEndsAt > Math.floor(Date.now() / 1000)
-                      ? `Creator arm cooldown active until ${new Date(result.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
-                      : result.currentLiveCount >= result.maxLiveBonding
-                        ? `Live campaign limit reached (${result.currentLiveCount}/${result.maxLiveBonding}).`
-                        : "This creator wallet cannot deploy or arm another campaign right now.",
+                  errorMessage: cooldownActive
+                    ? `Creator arm cooldown active until ${new Date(result.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
+                    : `Live campaign limit reached (${result.currentLiveCount}/${result.maxLiveBonding}).`,
                 }),
               );
             }
@@ -464,7 +467,7 @@ const Create = () => {
         visibility: "private",
         // Keep Solana reservations on the same cluster as create-auth (Railway SOLANA_CLUSTER).
         ...(isSolanaCreator
-          ? { cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-devnet") }
+          ? { cluster: String(import.meta.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta") }
           : {}),
       });
       cacheDraftLogo(draft.id, logoUrl);
@@ -661,7 +664,7 @@ const Create = () => {
           const message =
             eligibility.currentLiveCount >= eligibility.maxLiveBonding
               ? `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). Graduate an existing live campaign before another deploy.`
-              : eligibility.cooldownEndsAt > now
+              : isCreatorArmCooldownActive({ ...eligibility, nowSeconds: now })
                 ? `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
                 : "This creator wallet cannot deploy or arm another campaign right now.";
           emitCreatorArmBlocked(resolveCreatorArmBlock({ mode: "now", eligibility, errorMessage: message }));
@@ -700,9 +703,8 @@ const Create = () => {
         lower.includes("cannot arm another") ||
         code.includes("ELIGIB") ||
         code.includes("COOLDOWN") ||
-        code === "CALL_EXCEPTION" ||
         (latestEligibility != null && latestEligibility.allowed === false) ||
-        (latestEligibility != null && Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000));
+        (latestEligibility != null && isCreatorArmCooldownActive(latestEligibility));
 
       if (looksLikeArmBlock) {
         emitCreatorArmBlocked(

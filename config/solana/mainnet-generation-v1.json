@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "network": "solana-mainnet-beta",
+  "name": "memewarzone-solana-mainnet-generation-v1",
+  "generationIdSeed": "memewarzone-solana-mainnet-generation-v1",
+  "riskClusterIdSeed": "memewarzone-solana-mainnet-acceptance-cluster-v1",
+  "settings": {
+    "clusterKind": 2,
+    "allowedGraduationTierMask": 14,
+    "economicsVersion": 3,
+    "curveKind": 1,
+    "tokenTotalSupply": "1000000000000000",
+    "tokenDecimals": 6,
+    "curveSupplyBps": 8400,
+    "liquidityTokenBps": 1400,
+    "basePriceLamports": "1",
+    "priceSlopeLamports": "850",
+    "buyFeeBps": 200,
+    "sellFeeBps": 200,
+    "finalizeFeeBps": 200,
+    "creatorPostFinalizeBps": 2000,
+    "liquidityPostFinalizeBps": 8000,
+    "dexAdapter": 1,
+    "tradeRouteProfileSeed": "memewarzone-solana-trade-route-profile-v1",
+    "finalizeRouteProfileSeed": "memewarzone-solana-finalize-route-profile-v1",
+    "treasuryProfileSeed": "memewarzone-solana-treasury-profile-v1",
+    "dexProfileSeed": "memewarzone-solana-meteora-damm-v2-profile-v1",
+    "oracleProfileSeed": "memewarzone-solana-oracle-profile-v1",
+    "activeCreation": false,
+    "supportEnabled": true,
+    "routeAuthorizationRequired": true,
+    "authorizedTradingRequired": true
+  },
+  "clusterProfile": {
+    "size": 1,
+    "riskLevel": 1,
+    "restricted": false
+  },
+  "pauseFlags": {
+    "paused": true,
+    "createPaused": true,
+    "buyPaused": true,
+    "sellPaused": true,
+    "graduationPaused": true,
+    "claimsPaused": true
+  },
+  "notes": {
+    "economics": "Production V3 BNB-parity curve. Tier mask 14 is $15k/$30k/$50k only. The $6 test tier must stay off.",
+    "activation": "Keep activeCreation false until backend, indexer, and read-only frontend agree with on-chain GlobalConfig and this manifest hash.",
+    "dex": "Meteora DAMM v2 only. Graduation stays paused until pool, LP custody, and fee-routing proof pass."
+  }
+}

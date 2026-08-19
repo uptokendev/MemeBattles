@@ -10,7 +10,7 @@ import { RecruiterNativePayoutsPanel } from "@/components/command-center/Recruit
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { addressesMatch } from "@/lib/address";
-import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { apiFetch } from "@/lib/apiBase";
 import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
 import {
   REWARD_DISTRIBUTOR_ABI,
@@ -19,6 +19,10 @@ import {
   recordRewardClaimTx,
 } from "@/lib/rewardDistributor";
 import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
+import { submitSolanaLeagueClaim } from "@/lib/solanaLeagueClaim";
+import { submitSolanaAirdropClaim } from "@/lib/solanaRewardClaim";
+import { getConfiguredSolanaRewardChainId, isSolanaRewardChainId } from "@/lib/solanaRewardNetwork";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 
 type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
 
@@ -31,6 +35,51 @@ type RewardCardConfig = {
   amountLabel: string;
   state: RewardCardState;
   items: RewardLedgerItem[];
+};
+
+type LeagueRewardMetadata = {
+  claimSource: "league_api";
+  period: "weekly" | "monthly";
+  epochStart: string;
+  epochEnd: string | null;
+  expiresAt: string | null;
+  category: string;
+  rank: number;
+  recipient: string;
+  computedAt: string | null;
+  payload: Record<string, unknown>;
+};
+
+type LeagueRewardRow = {
+  period: "weekly" | "monthly";
+  epochStart: string;
+  epochEnd?: string | null;
+  expiresAt?: string | null;
+  category: string;
+  rank: number;
+  amountRaw: string;
+  payload?: Record<string, unknown>;
+  computedAt?: string | null;
+};
+
+type PreparedSolanaLeagueClaim = {
+  ok: boolean;
+  mode: "solana_treasury";
+  chainId: number;
+  programId: string;
+  vaultAddress: string;
+  configAddress: string;
+  epochAddress: string;
+  claimReceiptAddress: string;
+  periodCode: number;
+  epochStartSec: number;
+  epochTotal: string;
+  root: string;
+  categoryHash: string;
+  recipient: string;
+  rank: number;
+  amountRaw: string;
+  proof: string[];
 };
 
 const ACTIVE_SQUAD_STATES = new Set(["in_squad", "linked_squad", "active_squad", "squad_member", "member"]);
@@ -92,14 +141,14 @@ function hasActiveSquad(value?: string | null, recruiterLinkState?: string | nul
 }
 
 function isSolana(chainId?: number | null) {
-  return chainId === SOLANA_CHAIN_ID;
+  return isSolanaRewardChainId(chainId);
 }
 
 function formatNativeAmount(raw: string, chainId?: number | null, symbol?: string | null) {
   try {
     if (isSolana(chainId)) {
       const value = Number(BigInt(raw || "0")) / LAMPORTS_PER_SOL;
-      return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "SOL"}`;
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 9 })} ${symbol || "SOL"}`;
     }
     const value = Number(formatEther(BigInt(raw || "0")));
     return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "BNB"}`;
@@ -126,10 +175,7 @@ function rewardState(items: RewardLedgerItem[]): RewardCardState {
   return "empty";
 }
 
-function getRewardStateCopy(state: RewardCardState, solanaDisabled: boolean) {
-  if (solanaDisabled && state === "claimable") {
-    return { label: "Tracked", amountCaption: "Solana claiming disabled", disabled: true };
-  }
+function getRewardStateCopy(state: RewardCardState) {
   switch (state) {
     case "claimable":
       return { label: "Ready", amountCaption: "Available to claim", disabled: false };
@@ -149,7 +195,6 @@ function hasRecruiterAccess(recruiterLinkState?: string | null, isRecruiterFlag?
   if (isRecruiterFlag) return true;
   const state = String(recruiterLinkState || "").trim().toLowerCase();
   if (!state || state === "unlinked") return false;
-  // Accept self_recruiter_wallet, self_recruiter_inactive, recruiter_owner, etc.
   return (
     state.includes("self_recruiter") ||
     state.includes("recruiter_wallet") ||
@@ -162,31 +207,22 @@ function buildRewardCards(
   items: RewardLedgerItem[],
   squadState?: string | null,
   recruiterLinkState?: string | null,
-  isRecruiterFlag?: boolean,
   chainId?: number | null,
 ): RewardCardConfig[] {
-  const recruiterOk = hasRecruiterAccess(recruiterLinkState, isRecruiterFlag);
   const squadOk = hasActiveSquad(squadState, recruiterLinkState);
 
   const grouped = new Map<string, RewardLedgerItem[]>();
   for (const item of items) {
     const type = String(item.rewardType || "future").toLowerCase();
-    // Keep ledger rows even if attribution is slow/missing; filter empty baselines below.
     if (!grouped.has(type)) grouped.set(type, []);
     grouped.get(type)!.push(item);
   }
 
-  // Visibility rules:
-  // - everyone: league + airdrop
-  // - recruiter only: + recruiter claim
-  // - squad only: + squad claim
-  // - both: both
   const baseline = ["league", "airdrop"];
-  if (recruiterOk || grouped.has("recruiter")) baseline.push("recruiter");
   if (squadOk || grouped.has("squad")) baseline.push("squad");
 
   const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()])).filter((type) => {
-    if (type === "recruiter") return recruiterOk || (grouped.get("recruiter")?.length ?? 0) > 0;
+    if (type === "recruiter") return (grouped.get("recruiter")?.length ?? 0) > 0;
     if (type === "squad") return squadOk || (grouped.get("squad")?.length ?? 0) > 0;
     return true;
   });
@@ -209,6 +245,172 @@ function buildRewardCards(
   });
 }
 
+async function parseApiJson(res: Response) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || (json as any)?.ok === false) {
+    throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
+  }
+  return json as any;
+}
+
+function buildLeagueRewardId(chainId: number, reward: LeagueRewardRow) {
+  return `league:${chainId}:${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`;
+}
+
+function readLeagueRewardMetadata(item: RewardLedgerItem): LeagueRewardMetadata | null {
+  const metadata = item.metadata as Partial<LeagueRewardMetadata> | undefined;
+  return metadata?.claimSource === "league_api" ? (metadata as LeagueRewardMetadata) : null;
+}
+
+async function fetchLeagueRewardItems(walletAddress?: string | null, chainId?: number | null): Promise<RewardLedgerItem[]> {
+  if (!walletAddress || !isSolanaRewardChainId(chainId)) return [];
+
+  const query = new URLSearchParams({ address: walletAddress, chainId: String(chainId) });
+  const res = await apiFetch(`/api/rewards?${query.toString()}`, { cache: "no-store" });
+  const json = await parseApiJson(res);
+  const rewards = Array.isArray(json?.rewards) ? (json.rewards as LeagueRewardRow[]) : [];
+
+  return rewards.map((reward) => {
+    const metadata: LeagueRewardMetadata = {
+      claimSource: "league_api",
+      period: reward.period,
+      epochStart: reward.epochStart,
+      epochEnd: reward.epochEnd || null,
+      expiresAt: reward.expiresAt || null,
+      category: String(reward.category || "").toLowerCase(),
+      rank: Number(reward.rank || 0),
+      recipient: walletAddress,
+      computedAt: reward.computedAt || null,
+      payload: reward.payload && typeof reward.payload === "object" ? reward.payload : {},
+    };
+
+    return {
+      id: buildLeagueRewardId(Number(chainId), reward),
+      rewardType: "league",
+      sourceId: null,
+      sourceLabel: `${metadata.period}:${metadata.category}:${metadata.rank}`,
+      walletAddress,
+      userId: null,
+      chain: "solana",
+      chainId: Number(chainId),
+      tokenSymbol: "SOL",
+      amount: String(reward.amountRaw || "0"),
+      amountUsd: null,
+      status: "claimable",
+      claimBatchId: null,
+      claimTxHash: null,
+      claimError: null,
+      metadata,
+      createdAt: metadata.computedAt || metadata.epochEnd || metadata.epochStart,
+      updatedAt: metadata.computedAt || metadata.epochEnd || metadata.epochStart,
+      claimableAt: metadata.epochEnd || metadata.computedAt,
+      claimedAt: null,
+      expiresAt: metadata.expiresAt,
+    } satisfies RewardLedgerItem;
+  });
+}
+
+async function fetchWalletNonce(chainId: number, walletAddress: string): Promise<string> {
+  const query = new URLSearchParams({ chainId: String(chainId), address: walletAddress });
+  const res = await apiFetch(`/api/auth/nonce?${query.toString()}`, { cache: "no-store" });
+  const json = await parseApiJson(res);
+  if (!json?.nonce) throw new Error("League claim nonce missing from response.");
+  return String(json.nonce);
+}
+
+function buildLeagueClaimMessage(input: {
+  chainId: number;
+  recipient: string;
+  period: "weekly" | "monthly";
+  epochStart: string;
+  category: string;
+  rank: number;
+  nonce: string;
+}) {
+  return [
+    "MemeWarzone League",
+    "Action: LEAGUE_CLAIM",
+    `ChainId: ${input.chainId}`,
+    `Recipient: ${input.recipient}`,
+    `Period: ${input.period}`,
+    `EpochStart: ${input.epochStart}`,
+    `Category: ${input.category}`,
+    `Rank: ${input.rank}`,
+    `Nonce: ${input.nonce}`,
+  ].join("\n");
+}
+
+async function prepareLeagueRewardClaim(
+  metadata: LeagueRewardMetadata,
+  walletAddress: string,
+  chainId: number,
+): Promise<PreparedSolanaLeagueClaim> {
+  const nonce = await fetchWalletNonce(chainId, walletAddress);
+  const message = buildLeagueClaimMessage({
+    chainId,
+    recipient: walletAddress,
+    period: metadata.period,
+    epochStart: metadata.epochStart,
+    category: metadata.category,
+    rank: metadata.rank,
+    nonce,
+  });
+  const { signature } = await signSolanaMessage(message, walletAddress);
+  const res = await apiFetch("/api/league", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "claim",
+      chainId,
+      period: metadata.period,
+      epochStart: metadata.epochStart,
+      category: metadata.category,
+      rank: metadata.rank,
+      recipient: walletAddress,
+      nonce,
+      signature,
+    }),
+  });
+  const json = await parseApiJson(res);
+  return { ...json, chainId } as PreparedSolanaLeagueClaim;
+}
+
+async function recordLeagueRewardClaim(
+  metadata: LeagueRewardMetadata,
+  walletAddress: string,
+  chainId: number,
+  txHash: string,
+) {
+  const nonce = await fetchWalletNonce(chainId, walletAddress);
+  const message = buildLeagueClaimMessage({
+    chainId,
+    recipient: walletAddress,
+    period: metadata.period,
+    epochStart: metadata.epochStart,
+    category: metadata.category,
+    rank: metadata.rank,
+    nonce,
+  });
+  const { signature } = await signSolanaMessage(message, walletAddress);
+  const res = await apiFetch("/api/league", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "record",
+      chainId,
+      period: metadata.period,
+      epochStart: metadata.epochStart,
+      category: metadata.category,
+      rank: metadata.rank,
+      recipient: walletAddress,
+      nonce,
+      signature,
+      txHash,
+    }),
+  });
+  return parseApiJson(res);
+}
+
 export default function CommandCenterClaims() {
   const { attribution, chainId, walletAddress } = useCommandCenterData();
   const wallet = useWallet();
@@ -218,12 +420,16 @@ export default function CommandCenterClaims() {
   const [claimingType, setClaimingType] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRecruiterFlag, setIsRecruiterFlag] = useState(false);
+  const rewardChainId = isSolana(chainId) ? getConfiguredSolanaRewardChainId() : chainId;
 
   const loadClaims = () => {
     setLoading(true);
     setMessage(null);
-    void fetchRewardClaims({ walletAddress, chainId, limit: 100 })
-      .then((next) => setItems(Array.isArray(next) ? next : []))
+    void (async () => {
+      const ledgerItems = await fetchRewardClaims({ walletAddress, chainId: rewardChainId, limit: 100 });
+      const leagueItems = await fetchLeagueRewardItems(walletAddress, rewardChainId).catch(() => []);
+      setItems([...(Array.isArray(ledgerItems) ? ledgerItems : []), ...leagueItems]);
+    })()
       .catch((err: any) => setMessage(String(err?.message || err || "Failed to load rewards")))
       .finally(() => setLoading(false));
   };
@@ -231,7 +437,7 @@ export default function CommandCenterClaims() {
   useEffect(() => {
     loadClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletAddress, chainId]);
+  }, [walletAddress, rewardChainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,8 +458,8 @@ export default function CommandCenterClaims() {
   }, [walletAddress]);
 
   const rewardCards = useMemo(
-    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, isRecruiterFlag, chainId),
-    [items, attribution?.recruiterLinkState, attribution?.squadState, isRecruiterFlag, chainId],
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState, rewardChainId),
+    [items, attribution?.recruiterLinkState, attribution?.squadState, rewardChainId],
   );
   const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState, isRecruiterFlag);
 
@@ -261,21 +467,86 @@ export default function CommandCenterClaims() {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
     if (!claimable.length) return;
 
-    if (claimable.some((item) => item.chainId === SOLANA_CHAIN_ID)) {
-      setMessage("Solana rewards are tracked, but Solana claiming is not enabled yet.");
-      return;
-    }
+    const leagueClaimable = claimable.filter((item) => Boolean(readLeagueRewardMetadata(item)));
+    if (leagueClaimable.length) {
+      if (leagueClaimable.length !== claimable.length) {
+        setMessage("League rewards must be claimed separately.");
+        return;
+      }
+      if (!walletAddress) {
+        setMessage("Connect the wallet that owns these league rewards before claiming.");
+        return;
+      }
+      if (!solanaAccount || solanaAccount !== walletAddress) {
+        setMessage("Connect the same Solana wallet that owns these league rewards before claiming.");
+        try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
+        return;
+      }
 
-    const signer = wallet?.signer;
-    if (!signer) {
-      setMessage("Connect the wallet that owns these rewards before claiming.");
+      setClaimingType(card.rewardType);
+      setMessage(null);
+      const completed: string[] = [];
+
       try {
-        window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal"));
-      } catch {}
+        for (const item of leagueClaimable) {
+          const metadata = readLeagueRewardMetadata(item);
+          if (!metadata) throw new Error("League reward claim metadata is missing.");
+          const claimChainId = Number(item.chainId || rewardChainId || 0);
+          const toastId = toast.loading(`Confirm ${formatNativeAmount(item.amount, claimChainId, item.tokenSymbol)} claim in your wallet...`);
+          try {
+            const prepared = await prepareLeagueRewardClaim(metadata, walletAddress, claimChainId);
+            const txHash = await submitSolanaLeagueClaim(prepared);
+            toast.dismiss(toastId);
+            const recordToast = toast.loading("Finalizing league claim...");
+            try {
+              await recordLeagueRewardClaim(metadata, walletAddress, claimChainId, txHash);
+            } finally {
+              toast.dismiss(recordToast);
+            }
+            completed.push(item.id);
+          } catch (err) {
+            toast.dismiss(toastId);
+            throw err;
+          }
+        }
+
+        const count = completed.length;
+        setMessage(count === 1 ? `${card.title} claimed on-chain.` : `${count} ${card.title} claims completed on-chain.`);
+        toast.success(count === 1 ? "League reward claimed." : `${count} league rewards claimed.`);
+        loadClaims();
+      } catch (err: any) {
+        setMessage(String(err?.shortMessage || err?.message || err || "League claim request failed"));
+      } finally {
+        setClaimingType(null);
+      }
       return;
     }
 
-    if (!addressesMatch(wallet.account, walletAddress) && !addressesMatch(solanaAccount, walletAddress)) {
+    const hasSolana = claimable.some((item) => isSolanaRewardChainId(item.chainId));
+    const hasEvm = claimable.some((item) => !isSolanaRewardChainId(item.chainId));
+    if (hasSolana && hasEvm) {
+      setMessage("Mixed-chain rewards must be claimed separately.");
+      return;
+    }
+
+    const signer = hasSolana ? null : wallet?.signer;
+    const solanaSignMessage = hasSolana
+      ? async (text: string) => (await signSolanaMessage(text, walletAddress)).signature
+      : undefined;
+
+    if (hasSolana) {
+      if (!solanaAccount || solanaAccount !== walletAddress) {
+        setMessage("Connect the same Solana wallet that owns these rewards before claiming.");
+        try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
+        return;
+      }
+    } else if (!signer) {
+      setMessage("Connect the wallet that owns these rewards before claiming.");
+      try { window.dispatchEvent(new CustomEvent("memewarzone:openWalletModal")); } catch {}
+      return;
+    }
+
+    if (!addressesMatch(wallet.account, walletAddress) && solanaAccount !== walletAddress) {
       setMessage("Connect the same wallet that owns these rewards before claiming.");
       return;
     }
@@ -287,30 +558,44 @@ export default function CommandCenterClaims() {
     const completed: string[] = [];
 
     try {
-      const intent = await createRewardClaimIntent({ walletAddress, chainId, rewardLedgerIds, signer });
+      const intent = await createRewardClaimIntent({
+        walletAddress,
+        chainId: rewardChainId,
+        rewardLedgerIds,
+        signer: signer || undefined,
+        signMessage: solanaSignMessage,
+      });
       claimIntentId = intent.id;
 
       for (const call of intent.calls) {
-        const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
         const toastId = toast.loading(`Confirm ${formatNativeAmount(call.amount, call.chainId, call.tokenSymbol)} claim in your wallet...`);
         try {
-          const tx = await contract.claim(call.batchId, call.amount, call.proof);
-          toast.dismiss(toastId);
-          const waitToast = toast.loading("Waiting for claim confirmation...");
-          try {
-            await tx.wait();
-          } finally {
-            toast.dismiss(waitToast);
+          let txHash = "";
+          if (call.mode === "solana_airdrop") {
+            txHash = await submitSolanaAirdropClaim(call);
+          } else {
+            if (!signer) throw new Error("BNB signer is unavailable for this reward claim.");
+            const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
+            const tx = await contract.claim(call.batchId, call.amount, call.proof);
+            toast.dismiss(toastId);
+            const waitToast = toast.loading("Waiting for claim confirmation...");
+            try {
+              await tx.wait();
+            } finally {
+              toast.dismiss(waitToast);
+            }
+            txHash = String(tx.hash || "");
           }
+          toast.dismiss(toastId);
 
-          const txHash = String(tx.hash || "");
           await recordRewardClaimTx({
             walletAddress,
-            chainId,
+            chainId: rewardChainId,
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             txHash,
-            signer,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
           });
           completed.push(call.rewardLedgerId);
         } catch (err: any) {
@@ -318,11 +603,12 @@ export default function CommandCenterClaims() {
           const reason = String(err?.shortMessage || err?.message || "Wallet claim transaction failed");
           await recordRewardClaimFailure({
             walletAddress,
-            chainId,
+            chainId: rewardChainId,
             rewardLedgerIds: [call.rewardLedgerId],
             claimIntentId,
             error: reason,
-            signer,
+            signer: signer || undefined,
+            signMessage: solanaSignMessage,
           }).catch(() => {});
           throw err;
         }
@@ -341,13 +627,12 @@ export default function CommandCenterClaims() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterCard title={isSolana(chainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
+      <CommandCenterCard title={isSolana(rewardChainId) ? "Your Solana Rewards" : "Your BNB Rewards"}>
         {message ? <div className="mb-3 rounded-xl border border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">{message}</div> : null}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {
             const Icon = card.icon;
-            const solanaDisabled = card.items.some((item) => item.chainId === SOLANA_CHAIN_ID);
-            const stateCopy = getRewardStateCopy(card.state, solanaDisabled);
+            const stateCopy = getRewardStateCopy(card.state);
             return (
               <div key={card.rewardType} className="rounded-2xl border border-border/50 bg-background/25 p-4">
                 <div className="flex items-start justify-between gap-3">

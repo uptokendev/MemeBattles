@@ -32,7 +32,7 @@ function resolveRealtimeApiBase(): string {
     if (/^\/\//.test(raw)) return `https:${raw}`;
     return `https://${raw}`;
   }
-  return "https://memebattles-production-dca0.up.railway.app";
+  return "";
 }
 
 const API_BASE = resolveRealtimeApiBase();
@@ -305,11 +305,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     const explicit = coerceSupportedChainId(opts?.chainId);
     // A 0x market is never Solana, even if Token Details passed a latched 101.
     if (/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
-      return isEvmChainId(explicit) ? explicit : 97;
+      return isEvmChainId(explicit) ? explicit : 56;
     }
     if (explicit) return explicit;
     if (SOLANA_ADDRESS_RE.test(addr)) return 101;
-    return 97;
+    return 56;
   }, [campaignAddress, opts?.chainId]);
 
   const inFlightRef = useRef(false);

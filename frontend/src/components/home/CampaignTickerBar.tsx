@@ -35,9 +35,9 @@ const FACTORY_ABI = [
   "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
 ] as const;
 
-const REALTIME_API_BASE = String(
-  import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production-dca0.up.railway.app"
-).replace(/\/$/, "");
+const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || import.meta.env.VITE_TOKEN_API_BASE || "")
+  .trim()
+  .replace(/\/+$/, "");
 
 const MIN_TICKER_RENDERED_ITEMS = 18;
 
@@ -72,6 +72,7 @@ function formatMc(value: number | null, bnbUsd: number | null) {
 }
 
 async function fetchTokenSummary(chainId: number, campaignAddress: string): Promise<{ marketcapBnb: number | null; votes24h: number }> {
+  if (!REALTIME_API_BASE) return { marketcapBnb: null, votes24h: 0 };
   try {
     const res = await fetch(`${REALTIME_API_BASE}/api/token/${campaignAddress}/summary?chainId=${chainId}`, {
       cache: "no-store" as RequestCache,

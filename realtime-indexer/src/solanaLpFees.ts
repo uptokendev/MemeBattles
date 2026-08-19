@@ -25,7 +25,7 @@ const DEFAULT_SOLANA_OPERATOR = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 function solanaRpcUrl(): string {
-  return String(process.env.SOLANA_RPC_URL || process.env.SOLANA_RPC || "https://api.devnet.solana.com").trim();
+  return String(process.env.SOLANA_RPC_URL || process.env.SOLANA_RPC || "https://api.mainnet-beta.solana.com").trim();
 }
 
 function protocolTreasury(operator: PublicKey): PublicKey {

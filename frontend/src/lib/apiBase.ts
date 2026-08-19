@@ -2,6 +2,7 @@ import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { getReadProvider } from "@/lib/readProvider";
+import { getDefaultChainId } from "@/lib/chainConfig";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -15,9 +16,18 @@ function normalizeApiBase(value: unknown): string {
 }
 
 /** Indexer hosts must never receive frontend-api routes (league/summary, featured, upload, …). */
+function looksLikeRetiredRailwayHost(url: string): boolean {
+  const host = String(url || "").toLowerCase();
+  return (
+    host.includes("memebattles-frontend-7dcf.up.railway.app") ||
+    host.includes("memebattles-production-dca0.up.railway.app")
+  );
+}
+
 function looksLikeIndexerBase(url: string): boolean {
   const host = String(url || "").toLowerCase();
   return (
+    looksLikeRetiredRailwayHost(host) ||
     host.includes("memebattles-production") ||
     host.includes("memewarzone-production") ||
     host.includes("-dca0") ||
@@ -29,7 +39,9 @@ function looksLikeIndexerBase(url: string): boolean {
 function firstNonIndexerBase(candidates: unknown[]): string {
   for (const candidate of candidates) {
     const normalized = normalizeApiBase(candidate);
-    if (normalized && !looksLikeIndexerBase(normalized)) return normalized;
+    if (normalized && !looksLikeIndexerBase(normalized) && !looksLikeRetiredRailwayHost(normalized)) {
+      return normalized;
+    }
   }
   return "";
 }
@@ -37,7 +49,7 @@ function firstNonIndexerBase(candidates: unknown[]): string {
 function firstAnyBase(candidates: unknown[]): string {
   for (const candidate of candidates) {
     const normalized = normalizeApiBase(candidate);
-    if (normalized) return normalized;
+    if (normalized && !looksLikeRetiredRailwayHost(normalized)) return normalized;
   }
   return "";
 }
@@ -66,9 +78,6 @@ const EXPLICIT_REALTIME_API_BASE = firstAnyBase([
 // TokenDetails is protected below by a preemptive /token/0x... contract fallback
 // when legacy code asks for /api/campaigns.
 const REALTIME_INDEXER_API_PREFIXES = [
-  // League standings/prize/claim live on frontend-api (frontend/api/league.js), not indexer.
-  "/api/recruiters",
-  "/api/rewards",
   "/api/token/",
   "/api/market/",
   "/api/votes",
@@ -79,11 +88,13 @@ const REALTIME_INDEXER_API_PREFIXES = [
 const FRONTEND_API_PREFIXES = [
   "/api/token-metadata",
   "/api/topaz-trades",
+  "/api/recruiters",
   "/api/recruiters/signup",
   "/api/recruiter-auth-nonce",
   "/api/recruiter-auth-verify",
   "/api/recruiter-portal",
   "/api/recruiter-logout",
+  "/api/rewards",
   // Full UP Only League stack (epoch windows, prize meta, all categories).
   "/api/league",
   "/api/leaguePayouts",
@@ -111,17 +122,27 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+function shouldUseLocalApiGateway(path: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (!isLoopbackHost(window.location.hostname)) return false;
+  } catch {
+    return false;
+  }
+  return path === "/api" || path.startsWith("/api/") || path === "/internal" || path.startsWith("/internal/");
+}
+
 function matchesApiPrefix(path: string, prefix: string): boolean {
   if (prefix.endsWith("/")) return path.startsWith(prefix);
   return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
 }
 
-function isRecruiterCanonicalSummaryPath(path: string): boolean {
-  return /^\/api\/recruiters\/(?:wallet\/[^/?]+\/summary|[^/?]+\/summary)(?:[/?]|$)/.test(path);
-}
-
 function shouldUseFrontendApi(path: string): boolean {
-  if (isRecruiterCanonicalSummaryPath(path)) return true;
   return FRONTEND_API_PREFIXES.some((prefix) => matchesApiPrefix(path, prefix));
 }
 
@@ -152,10 +173,10 @@ function getTokenPageCampaignAddress(): string {
 function getChainIdFromApiPath(path: string): number {
   try {
     const url = new URL(path, "http://local");
-    const raw = Number(url.searchParams.get("chainId") || 97);
-    return Number.isFinite(raw) ? raw : 97;
+    const raw = Number(url.searchParams.get("chainId") || getDefaultChainId());
+    return Number.isFinite(raw) ? raw : getDefaultChainId();
   } catch {
-    return 97;
+    return getDefaultChainId();
   }
 }
 
@@ -392,6 +413,10 @@ async function notifyCreatorProtectionResponse(res: Response): Promise<void> {
 export function apiUrl(path: string): string {
   if (isHttpUrl(path)) return path;
   const normalized = normalizePath(path);
+
+  if (shouldUseLocalApiGateway(normalized)) {
+    return normalized;
+  }
 
   // Indexer-only surfaces (votes, token market, …).
   if (EXPLICIT_REALTIME_API_BASE && shouldUseRealtimeIndexer(normalized)) {

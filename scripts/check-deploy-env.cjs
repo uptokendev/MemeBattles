@@ -8,7 +8,12 @@ const TARGET = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_RE = /^(0x)?[a-fA-F0-9]{64}$/;
 
-const BSC_RPC_ENVS = ["BSC_TESTNET_RPC", "BSC_TESTNET_RPC_URL"];
+const IS_BSC_TESTNET = TARGET === "bscTestnet";
+const IS_BSC_MAINNET = TARGET === "bscMainnet";
+const IS_REAL_BSC_NETWORK = IS_BSC_TESTNET || IS_BSC_MAINNET;
+const BSC_RPC_ENVS = IS_BSC_MAINNET
+  ? ["BSC_MAINNET_RPC", "BSC_MAINNET_RPC_URL"]
+  : ["BSC_TESTNET_RPC", "BSC_TESTNET_RPC_URL"];
 const DEPLOYER_PRIVATE_KEY_ENVS = ["DEPLOYER_PK", "PRIVATE_KEY_DEPLOY"];
 const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
 const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
@@ -186,11 +191,22 @@ function checkTopazManifest(required = false) {
     requireManifestAddress(manifest, "Router", resolved);
     requireManifestAddress(manifest, "PoolFactory", resolved);
     requireManifestAddress(manifest, "WBNB", resolved);
+    if (IS_BSC_MAINNET) {
+      for (const key of ["Router", "PoolFactory", "WBNB"]) {
+        const value = String(manifest.contracts?.[key] || "").toLowerCase();
+        if (value === "0x0000000000000000000000000000000000000000") {
+          errors.push(`TOPAZ_MANIFEST: contracts.${key} is still the unsigned placeholder`);
+        }
+      }
+    }
 
     const chainId = Number(manifest.chainId || 0);
     const fee = Number(manifest.configuration && manifest.configuration.volatileFeeBps);
     const graduationPoolStable = manifest.configuration && manifest.configuration.graduationPoolStable;
-    if (TARGET === "bscTestnet" && chainId !== 97) errors.push(`TOPAZ_MANIFEST: chainId must be 97 for bscTestnet, got ${chainId}`);
+    const expectedChainId = IS_BSC_MAINNET ? 56 : IS_BSC_TESTNET ? 97 : null;
+    if (expectedChainId && chainId !== expectedChainId) {
+      errors.push(`TOPAZ_MANIFEST: chainId must be ${expectedChainId} for ${TARGET}, got ${chainId}`);
+    }
     if (fee !== 100) errors.push(`TOPAZ_MANIFEST: configuration.volatileFeeBps must be 100, got ${fee}`);
     if (graduationPoolStable !== false) errors.push(`TOPAZ_MANIFEST: configuration.graduationPoolStable must be false, got ${graduationPoolStable}`);
     return true;
@@ -259,8 +275,10 @@ function checkLocal() {
   if (!hasAny(PRICE_ENVS)) warnings.push("No graduation oracle/price feed configured; local deploy will use a mock price feed.");
 }
 
-function checkBscTestnet() {
-  checkRequiredAny(BSC_RPC_ENVS, "required for --network bscTestnet");
+function checkBscNetwork() {
+  const expectedChainId = IS_BSC_MAINNET ? 56 : 97;
+  const networkLabel = IS_BSC_MAINNET ? "mainnet" : "testnet";
+  checkRequiredAny(BSC_RPC_ENVS, `required for --network ${TARGET}`);
   if (!hasAny(DEPLOYER_PRIVATE_KEY_ENVS)) errors.push("DEPLOYER_PK: missing private key");
   for (const name of DEPLOYER_PRIVATE_KEY_ENVS) checkPrivateKey(name);
   checkCommon({ requireTreasurySafe: true, warnMissingRouteAuthority: false });
@@ -268,7 +286,7 @@ function checkBscTestnet() {
   checkNotLocalPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   REAL_NETWORK_ADMIN_ENVS.forEach(checkNotLocalAddress);
 
-  if (!raw("ETHERSCAN_API_KEY")) {
+  if (!raw("ETHERSCAN_API_KEY") && !IS_BSC_MAINNET) {
     warnings.push("ETHERSCAN_API_KEY is unset; deployment can run, but Etherscan V2 contract verification will fail.");
   }
 
@@ -286,15 +304,37 @@ function checkBscTestnet() {
   for (const name of PRICE_ENVS) checkAddress(name);
 
   if (!raw("ROUTE_AUTHORITY_ADDRESS") && !raw("ROUTE_AUTHORITY_PRIVATE_KEY")) {
-    errors.push("ROUTE_AUTHORITY_ADDRESS or ROUTE_AUTHORITY_PRIVATE_KEY is required for testnet rollout");
+    errors.push(`ROUTE_AUTHORITY_ADDRESS or ROUTE_AUTHORITY_PRIVATE_KEY is required for ${networkLabel} rollout`);
   }
 
   for (const name of MOCK_FLAG_ENVS) {
     if (isTruthyEnv(name)) errors.push(`${name}: mocks are only allowed for local hardhat rehearsal`);
   }
+
+  if (IS_BSC_MAINNET) {
+    const rpcName = firstConfigured(BSC_RPC_ENVS);
+    const rpcValue = rpcName ? raw(rpcName).toLowerCase() : "";
+    if (/(?:testnet|prebsc|chapel)/.test(rpcValue)) {
+      errors.push(`${rpcName}: mainnet deployment RPC looks like a BSC testnet endpoint`);
+    }
+    const graduationTarget = raw("GRADUATION_TARGET_USD");
+    if (!/^\d+(?:\.\d+)?$/.test(graduationTarget)) {
+      errors.push("GRADUATION_TARGET_USD: explicit positive USD target is required for mainnet");
+    } else if (Number(graduationTarget) < 15000) {
+      errors.push("GRADUATION_TARGET_USD: mainnet target must be at least 15000 USD");
+    }
+    if (!useTreasuryRouterV2()) {
+      errors.push("DEPLOY_TREASURY_ROUTER_V2: mainnet requires TreasuryRouterV2");
+    }
+    if (!raw("ETHERSCAN_API_KEY")) {
+      errors.push("ETHERSCAN_API_KEY: required for mainnet source verification");
+    }
+  }
+
+  if (!Number.isInteger(expectedChainId)) errors.push(`Unsupported BSC target ${TARGET}`);
 }
 
-if (TARGET === "bscTestnet") checkBscTestnet();
+if (IS_REAL_BSC_NETWORK) checkBscNetwork();
 else checkLocal();
 
 console.log(`[deploy-env] target=${TARGET}`);

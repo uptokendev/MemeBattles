@@ -38,14 +38,14 @@ const tokenApiBase = normalizeUrl(
 if (!frontendApiBase) {
   console.error("\n[dev:railway] Missing frontend Railway API URL.");
   console.error("Set this in frontend/.env.local:");
-  console.error("  RAILWAY_FRONTEND_API_BASE_URL=https://memebattles-frontend-7dcf.up.railway.app\n");
+  console.error("  RAILWAY_FRONTEND_API_BASE_URL=https://your-frontend-api.example\n");
   process.exit(1);
 }
 
 if (!tokenApiBase) {
   console.error("\n[dev:railway] Missing token/indexer Railway API URL.");
   console.error("Set this in frontend/.env.local:");
-  console.error("  RAILWAY_TOKEN_API_BASE_URL=https://memebattles-production-dca0.up.railway.app\n");
+  console.error("  RAILWAY_TOKEN_API_BASE_URL=https://your-indexer.example\n");
   process.exit(1);
 }
 

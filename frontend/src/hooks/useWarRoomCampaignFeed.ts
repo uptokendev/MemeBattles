@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
+import { fetchPostGradWarRoomCampaignFeed, isWarRoomTestnetFeedEnabled } from "@/features/postgrad/apiClient";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import type { CampaignInfo } from "@/lib/launchpadClient";
@@ -7,10 +7,7 @@ import { resolveImageUri } from "@/lib/media";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { isSolanaAddress } from "@/lib/address";
 import {
-  BNB_CHAIN_ID,
-  BNB_TESTNET_CHAIN_ID,
-  SOLANA_CHAIN_ID,
-  isEvmChainId,
+  getDefaultChainId,
   isSolanaChainId,
   type SupportedChainId,
 } from "@/lib/chainConfig";
@@ -48,11 +45,9 @@ async function mapPool<T, R>(items: T[], concurrency: number, worker: (item: T, 
   return results;
 }
 
-/** Match Showcase: BNB feed toggle loads both mainnet + testnet prepare drafts. */
+/** Drafts follow the selected feed chain only — do not mix 97 inventory into 56. */
 function draftFeedChainIds(selectedChainId: number): number[] {
-  if (Number(selectedChainId) === SOLANA_CHAIN_ID) return [SOLANA_CHAIN_ID];
-  if (isEvmChainId(selectedChainId)) return [BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID];
-  return [Number(selectedChainId)];
+  return [Number(selectedChainId || getDefaultChainId())];
 }
 
 function scheduledLaunchSeconds(draft: CampaignDraftLifecycle | CampaignDraft) {
@@ -423,9 +418,11 @@ async function fetchCampaignApiInventoryForChain(chainId: number, signal: AbortS
     tab: "trending",
     sort: "default",
     status: "all",
-    includeTestnet: "true",
-    testnet: "true",
   });
+  if (chainId === 97 && isWarRoomTestnetFeedEnabled()) {
+    params.set("includeTestnet", "true");
+    params.set("testnet", "true");
+  }
   const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache, signal });
   const json = await response.json().catch(() => null);
   if (!response.ok) throw new Error(String(json?.error || `Campaign inventory HTTP ${response.status}`));
@@ -433,14 +430,9 @@ async function fetchCampaignApiInventoryForChain(chainId: number, signal: AbortS
   return items.map((item: any, index: number) => normalizeApiCampaign(item, index));
 }
 
-/** EVM: load 97 + 56 so testnet + mainnet coins all appear in War Room. */
+/** Inventory follows the selected feed chain only — do not mix 97 inventory into 56. */
 async function fetchCampaignApiInventory(selectedChainId: number, signal: AbortSignal): Promise<WarRoomCampaign[]> {
-  const chainIds =
-    Number(selectedChainId) === SOLANA_CHAIN_ID
-      ? [SOLANA_CHAIN_ID]
-      : isEvmChainId(selectedChainId)
-        ? [BNB_TESTNET_CHAIN_ID, BNB_CHAIN_ID]
-        : [Number(selectedChainId || 97)];
+  const chainIds = [Number(selectedChainId || getDefaultChainId())];
 
   const pages = await Promise.all(
     chainIds.map((id) => fetchCampaignApiInventoryForChain(id, signal).catch(() => [] as WarRoomCampaign[])),
@@ -605,7 +597,7 @@ export function useWarRoomCampaignFeed({
       try {
         setLoading(true);
         setError(null);
-        const chainId = Number(activeChainId || 97);
+        const chainId = Number(activeChainId || getDefaultChainId());
         const nowSec = Math.floor(Date.now() / 1000);
 
         // ── Phase 0: full market inventory once (bonding + graduated) — no search param ──
@@ -619,7 +611,7 @@ export function useWarRoomCampaignFeed({
               chainId,
               mode: "trending",
               search: "",
-              includeTestnet: chainId === 97,
+              includeTestnet: chainId === 97 && isWarRoomTestnetFeedEnabled(),
               signal: controller.signal,
             });
             apiItems = Array.isArray(json?.items)
