@@ -518,9 +518,11 @@ export async function submitSolanaTradeV1(
   tx.feePayer = new PublicKey(traderPk);
   tx.recentBlockhash = latest.blockhash;
 
-  // Simulate the unsigned tx before Phantom. skipPreflight after a passing sim is
-  // intentional: the wallet popup often burns the blockhash on a second RPC preflight.
-  const simulation = await connection.simulateTransaction(tx, { sigVerify: false });
+  // web3 1.95: legacy Transaction.simulateTransaction() only accepts signers[]
+  // as the second arg. A config object throws "Invalid arguments" and never RPCs.
+  // No signers ⇒ library does not set sigVerify, so this simulates unsigned.
+  // skipPreflight after a passing sim is intentional: Phantom delay burns blockhashes.
+  const simulation = await connection.simulateTransaction(tx);
   const simLogs = Array.isArray(simulation.value?.logs) ? simulation.value.logs.map(String) : [];
   if (simulation.value?.err) {
     const source = collectSimSource(simulation.value.err, simLogs);
