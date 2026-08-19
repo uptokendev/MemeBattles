@@ -68,7 +68,8 @@ export function getBnbCampaignFeedChainIds(selectedChainId?: number | null): Sup
   const selected = Number(selectedChainId);
   if (selected === 101) return [101 as SupportedChainId];
   // Prefer testnet first (current inventory), then mainnet.
-  return [BNB_TESTNET_CHAIN_ID, BNB_MAINNET_CHAIN_ID];
+  const chains = [BNB_TESTNET_CHAIN_ID, BNB_MAINNET_CHAIN_ID].filter(isAllowedChainId);
+  return chains.length ? chains : [BNB_MAINNET_CHAIN_ID];
 }
 
 function rememberFeaturedChain(chainId: SupportedChainId): SupportedChainId {
@@ -85,7 +86,7 @@ function rememberFeaturedChain(chainId: SupportedChainId): SupportedChainId {
 function resolveFeedChainId(envNames: string[], walletChainId?: number | null, options?: { devTestnetFallback?: boolean }): SupportedChainId {
   const configured = readConfiguredChainId(envNames);
   if (configured) return configured;
-  if (options?.devTestnetFallback && shouldDefaultDevFeedsToTestnet()) return BNB_TESTNET_CHAIN_ID;
+  if (options?.devTestnetFallback && shouldDefaultDevFeedsToTestnet() && isAllowedChainId(BNB_TESTNET_CHAIN_ID)) return BNB_TESTNET_CHAIN_ID;
   return getActiveChainId(walletChainId);
 }
 
@@ -108,7 +109,7 @@ export function getTickerFeedChainId(walletChainId?: number | null): SupportedCh
 export function getFeaturedFeedChainId(walletChainId?: number | null): SupportedChainId {
   const configured = readConfiguredChainId(["VITE_FEATURED_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"]);
   if (configured) return rememberFeaturedChain(configured);
-  if (shouldDefaultDevFeedsToTestnet()) return rememberFeaturedChain(BNB_TESTNET_CHAIN_ID);
+  if (shouldDefaultDevFeedsToTestnet() && isAllowedChainId(BNB_TESTNET_CHAIN_ID)) return rememberFeaturedChain(BNB_TESTNET_CHAIN_ID);
   return rememberFeaturedChain(getActiveChainId(walletChainId));
 }
 

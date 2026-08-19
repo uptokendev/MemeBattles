@@ -177,7 +177,7 @@ function readLastEvmChainId(): SupportedChainId | null {
     if (typeof window === "undefined") return null;
     for (const key of [TOKEN_DETAILS_CHAIN_KEY, LAST_EVM_CHAIN_KEY, LAST_FEATURED_CHAIN_KEY]) {
       const value = Number(window.localStorage.getItem(key) || "");
-      if (isEvmChainId(value)) return value as SupportedChainId;
+      if (isEvmChainId(value) && isAllowedChainId(value)) return value as SupportedChainId;
     }
   } catch {
     // ignore
@@ -189,16 +189,16 @@ export function getEvmReadChainIdForTokenPage(): SupportedChainId {
   try {
     if (typeof window !== "undefined") {
       const queryChainId = Number(new URLSearchParams(window.location.search).get("chainId") || "");
-      if (isEvmChainId(queryChainId)) return queryChainId as SupportedChainId;
+      if (isEvmChainId(queryChainId) && isAllowedChainId(queryChainId)) return queryChainId as SupportedChainId;
     }
   } catch {
     // ignore
   }
   const lastEvm = readLastEvmChainId();
-  if (lastEvm) return lastEvm;
-  // Production inventory defaults to BNB mainnet. Explicit chain context can
-  // still select testnet for rehearsals.
-  return BNB_CHAIN_ID;
+  if (lastEvm && isAllowedChainId(lastEvm)) return lastEvm;
+  
+  const def = getDefaultChainId();
+  return isEvmChainId(def) ? def : BNB_CHAIN_ID;
 }
 
 /**
