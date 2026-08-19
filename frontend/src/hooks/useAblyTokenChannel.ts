@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 import { isAddress } from "ethers";
+import { getFrontendApiOrigin } from "@/lib/apiBase";
 import { isEvmChainId, isSolanaChainId } from "@/lib/chainConfig";
 
 // Token realtime belongs to the realtime-indexer Railway service.
@@ -13,11 +14,13 @@ const CLOSE_GRACE_MS = 15_000;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function getAuthBase() {
-  if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) {
-    return REALTIME_API_BASE.replace(/\/$/, "");
-  }
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
+  }
+  const frontendApi = getFrontendApiOrigin();
+  if (frontendApi) return frontendApi;
+  if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) {
+    return REALTIME_API_BASE.replace(/\/$/, "");
   }
   if (typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin.replace(/\/$/, "");

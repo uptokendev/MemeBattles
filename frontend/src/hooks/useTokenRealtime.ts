@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Ably from "ably";
+import { getFrontendApiOrigin } from "@/lib/apiBase";
 
 const API_BASE = import.meta.env.VITE_REALTIME_API_BASE as string;
 const ABLY_AUTH_BASE = import.meta.env.VITE_ABLY_AUTH_BASE as string;
@@ -78,7 +79,9 @@ export function useTokenRealtime(chainId: number, campaign: string) {
     if (!API_BASE || !campaign) return;
 
     void API_BASE;
-    const authBase = String(ABLY_AUTH_BASE || (typeof window !== "undefined" ? window.location.origin : "") || "").replace(/\/$/, "");
+    const authBase = String(
+      ABLY_AUTH_BASE || getFrontendApiOrigin() || (typeof window !== "undefined" ? window.location.origin : "") || "",
+    ).replace(/\/$/, "");
     if (!authBase) return;
     const client = new Ably.Realtime({
       authUrl: `${authBase}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`,

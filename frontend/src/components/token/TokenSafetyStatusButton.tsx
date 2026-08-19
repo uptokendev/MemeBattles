@@ -103,7 +103,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
       }
       const sides: TradeSide[] = ["buy", "sell"];
       const [nextBuy, nextSell] = await Promise.all(
-        sides.map((side) => adapter.preflightTrade({ side, walletAddress, campaignAddress: campaign })),
+        sides.map((side) => adapter.preflightTrade({ side, walletAddress, campaignAddress: campaign, chainId })),
       );
       setBuyPreflight(nextBuy);
       setSellPreflight(nextSell);
@@ -111,7 +111,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
       refreshInFlightRef.current = false;
       if (!options?.silent) setLoading(false);
     }
-  }, [adapter, walletAddress, campaign]);
+  }, [adapter, walletAddress, campaign, chainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,8 +129,8 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
           return;
         }
         const [nextBuy, nextSell] = await Promise.all([
-          adapter.preflightTrade({ side: "buy", walletAddress, campaignAddress: campaign }),
-          adapter.preflightTrade({ side: "sell", walletAddress, campaignAddress: campaign }),
+          adapter.preflightTrade({ side: "buy", walletAddress, campaignAddress: campaign, chainId }),
+          adapter.preflightTrade({ side: "sell", walletAddress, campaignAddress: campaign, chainId }),
         ]);
         if (cancelled) return;
         setBuyPreflight(nextBuy);
@@ -142,7 +142,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     return () => {
       cancelled = true;
     };
-  }, [adapter, walletAddress, campaign]);
+  }, [adapter, walletAddress, campaign, chainId]);
 
   useEffect(() => {
     if (!campaign) return;

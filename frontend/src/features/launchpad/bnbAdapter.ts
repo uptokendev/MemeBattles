@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/apiBase";
+import { getDefaultChainId } from "@/lib/chainConfig";
 import type { LaunchpadAdapter, LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
 import { normalizeEvmAddress } from "@/features/launchpad/adapters";
 
@@ -82,9 +83,11 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
       };
     },
 
-    async preflightTrade({ side, walletAddress, campaignAddress }): Promise<LaunchpadTradePreflight> {
+    async preflightTrade({ side, walletAddress, campaignAddress, chainId }): Promise<LaunchpadTradePreflight> {
       const wallet = normalizeEvmAddress(walletAddress);
       const campaign = normalizeEvmAddress(campaignAddress);
+      const resolvedChainId = Number(chainId);
+      const tradeChainId = resolvedChainId === 97 || resolvedChainId === 56 ? resolvedChainId : getDefaultChainId();
       if (!campaign) {
         return {
           allowed: false,
@@ -110,7 +113,7 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
       const endpoint = side === "buy" ? "/api/launchpad/preflight-buy" : "/api/launchpad/preflight-sell";
       const payload = await postJson<any>(
         endpoint,
-        { walletAddress: wallet, campaignAddress: campaign },
+        { walletAddress: wallet, campaignAddress: campaign, chainId: tradeChainId },
         { preflight: null },
       );
       return normalizePreflight(payload, side, { campaignOnly: false });
