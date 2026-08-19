@@ -38,7 +38,9 @@ export type CandleUpsert = {
 type Msg = RealtimeTrade | StatsPatch | CandleUpsert;
 
 function tokenChannel(chainId: number, campaign: string) {
-  return `token:${chainId}:${campaign.toLowerCase()}`;
+  const raw = String(campaign || "").trim();
+  const address = Number(chainId) === 101 || Number(chainId) === 102 ? raw : raw.toLowerCase();
+  return `token:${chainId}:${address}`;
 }
 
 // simple batching to prevent render storms
