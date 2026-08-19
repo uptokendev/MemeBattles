@@ -1,0 +1,215 @@
+name: Solana Final Launch Blocker Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - programs/memewarzone_solana/**
+      - tests/solana/**
+      - frontend/src/lib/solanaV4CreateSubmit.ts
+      - .github/workflows/solana-final-launch-blockers.yml
+  workflow_dispatch:
+
+concurrency:
+  group: solana-final-launch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  IDL_RUST_TOOLCHAIN: nightly-2024-05-09
+  CARGO_NET_RETRY: 10
+  ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+  PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
+
+jobs:
+  exact-sbf-gate:
+    name: Exact SBF create + buy/sell gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+
+      - name: Record release environment
+        shell: bash
+        run: |
+          echo "git_sha=$(git rev-parse HEAD)"
+          anchor --version
+          solana --version
+          rustc --version
+          cargo --version
+          node --version
+          npm --version
+
+      - name: Create ephemeral test payer
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
+          echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
+
+      - name: Build exact SBF artifact once
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+          anchor build --no-idl 2>&1 | tee /tmp/mwz-anchor-build.log | tail -n 180
+          if grep -Eqi 'Stack offset .*exceeded max offset|exceeded max offset.*4096|stack frame.*exceed' /tmp/mwz-anchor-build.log; then
+            echo 'FATAL: SBF stack-frame diagnostic found in build output' >&2
+            grep -Ein 'Stack offset|exceeded max offset|stack frame' /tmp/mwz-anchor-build.log >&2 || true
+            exit 1
+          fi
+          test -s target/deploy/memewarzone_solana.so
+          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-sha256.txt
+          wc -c target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-bytes.txt
+
+      - name: Generate matching IDL
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/idl
+          (
+            cd programs/memewarzone_solana
+            RUSTUP_TOOLCHAIN="$IDL_RUST_TOOLCHAIN" anchor idl build \
+              --out ../../target/idl/memewarzone_solana.json
+          ) 2>&1 | tee /tmp/mwz-idl-build.log | tail -n 220
+          test -s target/idl/memewarzone_solana.json
+
+      - name: Install acceptance dependencies
+        run: npm install --prefix tests/solana --no-audit --no-fund
+
+      - name: Run CREATE acceptance against exact .so
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mwz-create-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-create-ledger \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-create-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 90 ]; then tail -n 200 /tmp/mwz-create-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          solana airdrop 100 >/dev/null
+          ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+            npx --prefix tests/solana mocha --timeout 1000000 tests/solana/v4-create-acceptance.cjs \
+            2>&1 | tee /tmp/mwz-create-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-create-acceptance.log; then
+            echo 'FATAL: CREATE acceptance contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Run BUY/SELL lifecycle against same exact .so
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mwz-lifecycle-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-lifecycle-ledger \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-lifecycle-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 90 ]; then tail -n 200 /tmp/mwz-lifecycle-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          solana airdrop 100 >/dev/null
+          ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+            npx --prefix tests/solana mocha --timeout 1000000 tests/solana/v4-lifecycle-acceptance.cjs \
+            2>&1 | tee /tmp/mwz-lifecycle-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-lifecycle-acceptance.log; then
+            echo 'FATAL: lifecycle acceptance contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Emit candidate manifest
+        shell: bash
+        run: |
+          printf '%s\n' '========================================'
+          printf '%s\n' 'MEMEWARZONE SOLANA FINAL RELEASE GATE'
+          printf '%s\n' '========================================'
+          echo "git_sha=$(git rev-parse HEAD)"
+          echo "program_id=$PROGRAM_ID"
+          cat /tmp/mwz-so-bytes.txt
+          cat /tmp/mwz-so-sha256.txt
+          echo 'CREATE_ACCEPTANCE=PASS'
+          echo 'BONDING_LIFECYCLE=PASS'
+          echo 'BPF_ACCESS_VIOLATIONS=0'
+          echo 'PROGRAM_FAILED_TO_COMPLETE=0'
+          echo 'STACK_FRAME_ERRORS=0'
+          echo 'FINAL_GATE=PASS'
+          printf '%s\n' '========================================'
+
+      - name: Upload launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-final-launch-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            /tmp/mwz-anchor-build.log
+            /tmp/mwz-idl-build.log
+            /tmp/mwz-so-sha256.txt
+            /tmp/mwz-so-bytes.txt
+            /tmp/mwz-create-validator.log
+            /tmp/mwz-create-acceptance.log
+            /tmp/mwz-lifecycle-validator.log
+            /tmp/mwz-lifecycle-acceptance.log
+            target/deploy/memewarzone_solana.so
+            target/idl/memewarzone_solana.json
