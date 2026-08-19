@@ -248,30 +248,6 @@ export async function submitSolanaV4CreatePlan(
   const ed25519Ix = buildEd25519VerifyIx(web3, plan);
   const createIx = buildCreateCampaignIx(web3, plan);
 
-  const tx = new Transaction();
-  try {
-    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
-  } catch {
-    // optional
-  }
-  // Ed25519 must immediately precede createCampaign (program invariant).
-  tx.add(ed25519Ix);
-  tx.add(createIx);
-
-  const latest = await connection.getLatestBlockhash("confirmed");
-  tx.feePayer = new PublicKey(creatorPk);
-  tx.recentBlockhash = latest.blockhash;
-
-  // Soft size guard (Solana max ~1232 bytes).
-  try {
-    const estimated = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
-    if (estimated > 1200) {
-      console.warn("[solanaV4CreateSubmit] large transaction", estimated);
-    }
-  } catch {
-    // ignore estimate failures
-  }
-
   const balance = await connection.getBalance(new PublicKey(creatorPk), "confirmed");
   const MIN_CREATE_LAMPORTS = 30_000_000; // ~0.03 SOL covers mint/vault/campaign/auth rent
   if (balance < MIN_CREATE_LAMPORTS) {
@@ -280,51 +256,85 @@ export async function submitSolanaV4CreatePlan(
     );
   }
 
-  const signed = await provider.signTransaction(tx);
-  const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
-  let signature: string;
-  try {
-    // Simulate ourselves so we keep the full log list. sendRawTransaction often
-    // only surfaces Anchor's first "Instruction: CreateCampaign" line.
+  const buildUnsigned = (blockhash: string) => {
+    const next = new Transaction();
     try {
-      const simulated = await connection.simulateTransaction(signed, {
-        sigVerify: false,
-        commitment: "confirmed",
-      });
-      if (simulated?.value?.err) {
-        throw Object.assign(new Error("Solana create simulation failed."), {
-          logs: simulated.value.logs || [],
-          simulationErr: simulated.value.err,
-        });
-      }
-    } catch (simError: unknown) {
-      if ((simError as { logs?: string[] })?.logs || /simulation failed|custom program error|AnchorError/i.test(String((simError as Error)?.message || simError))) {
-        throw simError;
-      }
-      // If the RPC cannot simulate (some public endpoints), fall through to send.
+      next.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
+    } catch {
+      // optional
+    }
+    // Ed25519 must immediately precede createCampaign (program invariant).
+    next.add(ed25519Ix);
+    next.add(createIx);
+    next.feePayer = new PublicKey(creatorPk);
+    next.recentBlockhash = blockhash;
+    return next;
+  };
+
+  const signAndSend = async () => {
+    // Take the blockhash immediately before the wallet popup so a long Phantom
+    // warning / "proceed unsafe" delay is less likely to expire it.
+    const latest = await connection.getLatestBlockhash("confirmed");
+    const unsigned = buildUnsigned(latest.blockhash);
+    try {
+      const estimated = unsigned.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
+      if (estimated > 1200) console.warn("[solanaV4CreateSubmit] large transaction", estimated);
+    } catch {
+      // ignore estimate failures
     }
 
-    signature = await connection.sendRawTransaction(raw, {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
+    const signed = await provider.signTransaction(unsigned);
+    const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
+    // Phantom already simulated. A second RPC sim after the user paid often
+    // returns "Blockhash not found" on load-balanced public endpoints.
+    const signature = await connection.sendRawTransaction(raw, {
+      skipPreflight: true,
+      maxRetries: 3,
     });
-    await connection.confirmTransaction({ signature, ...latest }, "confirmed");
-  } catch (error: unknown) {
-    const msg = await formatSolanaSendError(error);
-    if (/already in use|account.*exist/i.test(msg) || /InvalidCampaign/.test(msg)) {
-      const again = await connection.getAccountInfo(campaignPk, "confirmed");
-      if (again && again.owner.equals(programPk)) {
-        return {
-          signature: "already-on-chain",
-          campaignAddress: plan.createCampaign.accounts.campaign,
-          mintAddress: plan.createCampaign.accounts.mint,
-          programId: plan.programId,
-          plan,
-          recovered: true,
-        };
-      }
+    const confirmed = await confirmCreateSignature(connection, signature, latest);
+    if (confirmed.err) {
+      const logs = await fetchTransactionLogs(connection, signature);
+      throw Object.assign(new Error("Solana create transaction failed on-chain."), {
+        logs,
+        simulationErr: confirmed.err,
+      });
     }
-    throw new Error(msg);
+    return signature;
+  };
+
+  const recoverIfLanded = async () => {
+    const again = await connection.getAccountInfo(campaignPk, "confirmed");
+    if (again && again.owner.equals(programPk)) {
+      return {
+        signature: "already-on-chain" as const,
+        campaignAddress: plan.createCampaign.accounts.campaign,
+        mintAddress: plan.createCampaign.accounts.mint,
+        programId: plan.programId,
+        plan,
+        recovered: true as const,
+      };
+    }
+    return null;
+  };
+
+  let signature: string;
+  try {
+    signature = await signAndSend();
+  } catch (error: unknown) {
+    const recovered = await recoverIfLanded();
+    if (recovered) return recovered;
+    const msg = await formatSolanaSendError(error);
+    if (isBlockhashError(error) || isBlockhashError(msg)) {
+      try {
+        signature = await signAndSend();
+      } catch (retryError: unknown) {
+        const recoveredRetry = await recoverIfLanded();
+        if (recoveredRetry) return recoveredRetry;
+        throw new Error(await formatSolanaSendError(retryError));
+      }
+    } else {
+      throw new Error(msg);
+    }
   }
 
   return {
@@ -334,6 +344,52 @@ export async function submitSolanaV4CreatePlan(
     programId: plan.programId,
     plan,
   };
+}
+
+function isBlockhashError(value: unknown): boolean {
+  return /blockhash not found|block height exceeded|expired blockhash/i.test(String((value as Error)?.message || value || ""));
+}
+
+async function confirmCreateSignature(
+  connection: { confirmTransaction: Function; getSignatureStatuses: Function },
+  signature: string,
+  latest: { blockhash: string; lastValidBlockHeight: number },
+): Promise<{ err: unknown }> {
+  try {
+    const result = await connection.confirmTransaction(
+      {
+        signature,
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      },
+      "confirmed",
+    );
+    return { err: result?.value?.err || null };
+  } catch (error) {
+    if (!isBlockhashError(error)) throw error;
+    const status = await connection.getSignatureStatuses([signature]);
+    const value = status?.value?.[0];
+    if (value?.err) return { err: value.err };
+    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
+      return { err: null };
+    }
+    throw error;
+  }
+}
+
+async function fetchTransactionLogs(
+  connection: { getTransaction: Function },
+  signature: string,
+): Promise<string[]> {
+  try {
+    const tx = await connection.getTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    return Array.isArray(tx?.meta?.logMessages) ? tx.meta.logMessages : [];
+  } catch {
+    return [];
+  }
 }
 
 const LAUNCHPAD_ERROR_BY_CODE: Record<number, { name: string; hint: string }> = {
@@ -406,6 +462,9 @@ async function formatSolanaSendError(error: unknown): Promise<string> {
   }
 
   const explained = explainCustomProgramError(combined);
+  if (isBlockhashError(combined)) {
+    return "Solana create failed: the wallet took too long and the transaction blockhash expired. Approve the next Phantom popup quickly — do not wait on the simulation warning.";
+  }
   if (/InvalidCreateAuthorization/i.test(combined) || explained?.startsWith("InvalidCreateAuthorization")) {
     return "Solana create failed (InvalidCreateAuthorization): route digest mismatch, expired auth, or Ed25519 is not immediately before CreateCampaign. Retry Push Live.";
   }
