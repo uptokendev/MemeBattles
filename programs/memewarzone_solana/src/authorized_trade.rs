@@ -507,8 +507,9 @@ pub fn quote_sell_refund(
 pub struct BuyTokens<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
-    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
-    pub global_config: Account<'info, GlobalConfig>,
+    /// CHECK: typed load happens in an isolated stack frame.
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump)]
+    pub global_config: UncheckedAccount<'info>,
     /// CHECK: campaign PDA; loaded and validated in handler.
     #[account(mut)]
     pub campaign: UncheckedAccount<'info>,
@@ -549,8 +550,9 @@ pub struct BuyTokens<'info> {
 pub struct SellTokens<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
-    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
-    pub global_config: Account<'info, GlobalConfig>,
+    /// CHECK: typed load happens in an isolated stack frame.
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump)]
+    pub global_config: UncheckedAccount<'info>,
     /// CHECK: campaign PDA.
     #[account(mut)]
     pub campaign: UncheckedAccount<'info>,
@@ -588,9 +590,26 @@ pub struct SellTokens<'info> {
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
+struct PreparedBuy {
+    campaign_id: [u8; 32],
+    campaign_bump: u8,
+    fee: u64,
+    net: u64,
+    lamports_spent: u64,
+    tokens_out: u64,
+    buy_volume_increment: u64,
+    was_zero_sold: bool,
+    creator_bought_update: Option<u64>,
+}
+
+struct PreparedSell {
+    fee: u64,
+    gross: u64,
+    lamports_out: u64,
+}
+
 pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {
-    let clock = Clock::get()?;
-    let now = clock.unix_timestamp;
+    let now = Clock::get()?.unix_timestamp;
     require!(args.lamports_in > 0, LaunchpadError::InvalidTradeAmount);
     require!(args.deadline >= now, LaunchpadError::TradeAuthorizationExpired);
     require_keys_eq!(
@@ -599,151 +618,41 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
         LaunchpadError::InvalidCampaign
     );
 
-    let global = &ctx.accounts.global_config;
-    require!(!global.paused, LaunchpadError::LaunchpadPaused);
-    require!(!global.buy_paused, LaunchpadError::BuysPaused);
-
     let trader = ctx.accounts.trader.key();
     let campaign_key = ctx.accounts.campaign.key();
     let mint_key = ctx.accounts.mint.key();
     let token_vault_key = ctx.accounts.token_vault.key();
     let sol_vault_key = ctx.accounts.sol_vault.key();
-    let route_signer = global.route_signer;
-    let auth_required = global.authorized_trading_required;
     let trade_auth_bump = ctx.bumps.trade_authorization;
+    let risk_bump = ctx.bumps.risk_profile;
+    let (route_signer, auth_required) =
+        read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;
 
-    // Phase 1: read-only validation + quote (drop borrows before CPI).
-    let (
-        campaign_id,
-        campaign_bump,
-        fee,
-        net,
-        lamports_spent,
-        tokens_out,
-        buy_volume_increment,
-        was_zero_sold,
-        creator_bought_update,
-    ) = {
-        let data = ctx.accounts.campaign.try_borrow_data()?;
-        let mut slice: &[u8] = &data;
-        let campaign = Campaign::try_deserialize(&mut slice)?;
-        validate_trade_accounts(
-            &campaign,
-            campaign_key,
-            mint_key,
-            token_vault_key,
-            sol_vault_key,
-        )?;
-        require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
-        require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
-        require!(!campaign.paused, LaunchpadError::CampaignPaused);
-        require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
-        require!(
-            campaign.curve_kind == CURVE_KIND_LINEAR_V1,
-            LaunchpadError::InvalidCampaign
-        );
-        validate_route_profile_id(args.route_profile)?;
-
-        let risk = load_risk_profile_or_default(
-            &ctx.accounts.risk_profile.to_account_info(),
-            trader,
-            ctx.bumps.risk_profile,
-        )?;
-        validate_trade_risk_profile(&risk, trader)?;
-        validate_trade_cluster_profile(&ctx.accounts.cluster_profile.to_account_info(), &risk)?;
-
-        if auth_required {
-            let digest = build_trade_authorization_digest(
-                crate::id(),
-                campaign_key,
-                campaign.mint,
-                trader,
-                TRADE_SIDE_BUY,
-                args.lamports_in,
-                args.min_tokens_out,
-                args.deadline,
-                &args.nonce,
-                args.native_target_lamports,
-                args.route_profile,
-            );
-            verify_detached_trade_authorization(
-                &ctx.accounts.instructions.to_account_info(),
-                route_signer,
-                &digest,
-            )?;
-        }
-
-        let (tokens_out, net, fee, lamports_spent) =
-            if campaign.economics_version >= ECONOMICS_VERSION_V3 {
-                let (tokens, curve_cost, curve_fee, total_spent) = quote_buy_tokens_v3_gross(
-                    campaign.base_price_lamports,
-                    campaign.price_slope_lamports,
-                    campaign.sold_tokens,
-                    campaign.curve_token_supply,
-                    args.lamports_in,
-                    campaign.buy_fee_bps,
-                    campaign.token_decimals,
-                )?;
-                (tokens, curve_cost, curve_fee, total_spent)
-            } else {
-                let legacy_fee = calculate_fee(args.lamports_in, campaign.buy_fee_bps)?;
-                let legacy_net = args
-                    .lamports_in
-                    .checked_sub(legacy_fee)
-                    .ok_or(LaunchpadError::MathOverflow)?;
-                require!(legacy_net > 0, LaunchpadError::InvalidTradeAmount);
-                let tokens = quote_buy_tokens(
-                    campaign.economics_version,
-                    campaign.base_price_lamports,
-                    campaign.price_slope_lamports,
-                    campaign.sold_tokens,
-                    campaign.curve_token_supply,
-                    legacy_net,
-                    campaign.token_decimals,
-                )?;
-                (tokens, legacy_net, legacy_fee, args.lamports_in)
-            };
-        require!(
-            tokens_out >= args.min_tokens_out,
-            LaunchpadError::SlippageExceeded
-        );
-
-        let mut creator_bought_update = None;
-        if trader == campaign.creator {
-            require!(
-                now >= campaign.creator_buy_lock_until,
-                LaunchpadError::CreatorBuyLocked
-            );
-            if campaign.creator_buy_cap_bps > 0 {
-                let cap_tokens = u128::from(campaign.curve_token_supply)
-                    .checked_mul(u128::from(campaign.creator_buy_cap_bps))
-                    .ok_or(LaunchpadError::MathOverflow)?
-                    .checked_div(u128::from(BPS_DENOMINATOR))
-                    .ok_or(LaunchpadError::MathOverflow)?;
-                let next = u128::from(campaign.creator_bought_tokens)
-                    .checked_add(u128::from(tokens_out))
-                    .ok_or(LaunchpadError::MathOverflow)?;
-                require!(next <= cap_tokens, LaunchpadError::CreatorBuyCap);
-                creator_bought_update = Some(next as u64);
-            }
-        }
-
-        (
-            campaign.campaign_id,
-            campaign.bump,
-            fee,
-            net,
-            lamports_spent,
-            tokens_out,
-            if campaign.economics_version >= ECONOMICS_VERSION_V3 {
-                net
-            } else {
-                lamports_spent
-            },
-            campaign.sold_tokens == 0,
-            creator_bought_update,
-        )
-    };
+    let prepared = prepare_buy(
+        &ctx.accounts.campaign.to_account_info(),
+        &ctx.accounts.risk_profile.to_account_info(),
+        &ctx.accounts.cluster_profile.to_account_info(),
+        &ctx.accounts.instructions.to_account_info(),
+        trader,
+        campaign_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+        risk_bump,
+        now,
+        route_signer,
+        auth_required,
+        &args,
+    )?;
+    let campaign_id = prepared.campaign_id;
+    let campaign_bump = prepared.campaign_bump;
+    let fee = prepared.fee;
+    let net = prepared.net;
+    let lamports_spent = prepared.lamports_spent;
+    let tokens_out = prepared.tokens_out;
+    let buy_volume_increment = prepared.buy_volume_increment;
+    let was_zero_sold = prepared.was_zero_sold;
+    let creator_bought_update = prepared.creator_bought_update;
 
     if auth_required {
         let digest = build_trade_authorization_digest(
@@ -808,42 +717,15 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
         tokens_out,
     )?;
 
-    let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
-    let mut slice: &[u8] = &data;
-    let mut campaign = Campaign::try_deserialize(&mut slice)?;
-    if let Some(v) = creator_bought_update {
-        campaign.creator_bought_tokens = v;
-    }
-    campaign.sold_tokens = campaign
-        .sold_tokens
-        .checked_add(tokens_out)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.net_raised_lamports = campaign
-        .net_raised_lamports
-        .checked_add(net)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.total_buy_volume_lamports = campaign
-        .total_buy_volume_lamports
-        .checked_add(buy_volume_increment)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    if was_zero_sold {
-        campaign.buyer_count = campaign
-            .buyer_count
-            .checked_add(1)
-            .ok_or(LaunchpadError::MathOverflow)?;
-    }
-    if should_close_curve(
-        campaign.sold_tokens,
-        campaign.curve_token_supply,
-        campaign.net_raised_lamports,
+    let (sold_after, net_after) = apply_buy_state(
+        &ctx.accounts.campaign.to_account_info(),
+        tokens_out,
+        net,
+        buy_volume_increment,
+        was_zero_sold,
+        creator_bought_update,
         args.native_target_lamports,
-    ) {
-        campaign.curve_closed = true;
-    }
-    let sold_after = campaign.sold_tokens;
-    let net_after = campaign.net_raised_lamports;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)?;
+    )?;
 
     emit!(TokensBought {
         campaign: campaign_key,
@@ -859,8 +741,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
 }
 
 pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Result<()> {
-    let clock = Clock::get()?;
-    let now = clock.unix_timestamp;
+    let now = Clock::get()?.unix_timestamp;
     require!(args.tokens_in > 0, LaunchpadError::InvalidTradeAmount);
     require!(args.deadline >= now, LaunchpadError::TradeAuthorizationExpired);
     require_keys_eq!(
@@ -869,91 +750,35 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
         LaunchpadError::InvalidCampaign
     );
 
-    let global = &ctx.accounts.global_config;
-    require!(!global.paused, LaunchpadError::LaunchpadPaused);
-    require!(!global.sell_paused, LaunchpadError::SellsPaused);
-
     let trader = ctx.accounts.trader.key();
     let campaign_key = ctx.accounts.campaign.key();
     let mint_key = ctx.accounts.mint.key();
     let token_vault_key = ctx.accounts.token_vault.key();
     let sol_vault_key = ctx.accounts.sol_vault.key();
-    let route_signer = global.route_signer;
-    let auth_required = global.authorized_trading_required;
     let trade_auth_bump = ctx.bumps.trade_authorization;
+    let risk_bump = ctx.bumps.risk_profile;
+    let (route_signer, auth_required) =
+        read_trade_global(&ctx.accounts.global_config.to_account_info(), false)?;
 
-    let (fee, gross, lamports_out) = {
-        let data = ctx.accounts.campaign.try_borrow_data()?;
-        let mut slice: &[u8] = &data;
-        let campaign = Campaign::try_deserialize(&mut slice)?;
-        validate_trade_accounts(
-            &campaign,
-            campaign_key,
-            mint_key,
-            token_vault_key,
-            sol_vault_key,
-        )?;
-        require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
-        require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
-        require!(!campaign.paused, LaunchpadError::CampaignPaused);
-        require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
-        require!(
-            campaign.curve_kind == CURVE_KIND_LINEAR_V1,
-            LaunchpadError::InvalidCampaign
-        );
-        validate_route_profile_id(args.route_profile)?;
-
-        let risk = load_risk_profile_or_default(
-            &ctx.accounts.risk_profile.to_account_info(),
-            trader,
-            ctx.bumps.risk_profile,
-        )?;
-        validate_trade_risk_profile(&risk, trader)?;
-        validate_trade_cluster_profile(&ctx.accounts.cluster_profile.to_account_info(), &risk)?;
-
-        if auth_required {
-            let digest = build_trade_authorization_digest(
-                crate::id(),
-                campaign_key,
-                campaign.mint,
-                trader,
-                TRADE_SIDE_SELL,
-                args.tokens_in,
-                args.min_lamports_out,
-                args.deadline,
-                &args.nonce,
-                0,
-                args.route_profile,
-            );
-            verify_detached_trade_authorization(
-                &ctx.accounts.instructions.to_account_info(),
-                route_signer,
-                &digest,
-            )?;
-        }
-
-        let gross = quote_sell_refund(
-            campaign.economics_version,
-            campaign.base_price_lamports,
-            campaign.price_slope_lamports,
-            campaign.sold_tokens,
-            args.tokens_in,
-            campaign.token_decimals,
-        )?;
-        let fee = calculate_fee(gross, campaign.sell_fee_bps)?;
-        let lamports_out = gross
-            .checked_sub(fee)
-            .ok_or(LaunchpadError::MathOverflow)?;
-        require!(
-            lamports_out >= args.min_lamports_out,
-            LaunchpadError::SlippageExceeded
-        );
-        require!(
-            campaign.net_raised_lamports >= gross,
-            LaunchpadError::InsufficientVaultBalance
-        );
-        (fee, gross, lamports_out)
-    };
+    let prepared = prepare_sell(
+        &ctx.accounts.campaign.to_account_info(),
+        &ctx.accounts.risk_profile.to_account_info(),
+        &ctx.accounts.cluster_profile.to_account_info(),
+        &ctx.accounts.instructions.to_account_info(),
+        trader,
+        campaign_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+        risk_bump,
+        now,
+        route_signer,
+        auth_required,
+        &args,
+    )?;
+    let fee = prepared.fee;
+    let gross = prepared.gross;
+    let lamports_out = prepared.lamports_out;
 
     if auth_required {
         let digest = build_trade_authorization_digest(
@@ -1019,25 +844,11 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
         args.route_profile,
     )?;
 
-    let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
-    let mut slice: &[u8] = &data;
-    let mut campaign = Campaign::try_deserialize(&mut slice)?;
-    campaign.sold_tokens = campaign
-        .sold_tokens
-        .checked_sub(args.tokens_in)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.net_raised_lamports = campaign
-        .net_raised_lamports
-        .checked_sub(gross)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.total_sell_volume_lamports = campaign
-        .total_sell_volume_lamports
-        .checked_add(gross)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    let sold_after = campaign.sold_tokens;
-    let net_after = campaign.net_raised_lamports;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)?;
+    let (sold_after, net_after) = apply_sell_state(
+        &ctx.accounts.campaign.to_account_info(),
+        args.tokens_in,
+        gross,
+    )?;
 
     emit!(TokensSold {
         campaign: campaign_key,
@@ -1053,6 +864,336 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+#[inline(never)]
+fn read_trade_global(info: &AccountInfo, is_buy: bool) -> Result<(Pubkey, bool)> {
+    require_keys_eq!(*info.owner, crate::ID, LaunchpadError::Unauthorized);
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let global = Box::new(GlobalConfig::try_deserialize(&mut slice)?);
+    require!(!global.paused, LaunchpadError::LaunchpadPaused);
+    if is_buy {
+        require!(!global.buy_paused, LaunchpadError::BuysPaused);
+    } else {
+        require!(!global.sell_paused, LaunchpadError::SellsPaused);
+    }
+    Ok((global.route_signer, global.authorized_trading_required))
+}
+
+#[inline(never)]
+fn load_campaign_box(info: &AccountInfo) -> Result<Box<Campaign>> {
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    Ok(Box::new(Campaign::try_deserialize(&mut slice)?))
+}
+
+#[inline(never)]
+fn prepare_buy(
+    campaign_info: &AccountInfo,
+    risk_info: &AccountInfo,
+    cluster_info: &AccountInfo,
+    instructions: &AccountInfo,
+    trader: Pubkey,
+    campaign_key: Pubkey,
+    mint_key: Pubkey,
+    token_vault_key: Pubkey,
+    sol_vault_key: Pubkey,
+    risk_bump: u8,
+    now: i64,
+    route_signer: Pubkey,
+    auth_required: bool,
+    args: &BuyTokensArgs,
+) -> Result<PreparedBuy> {
+    let campaign = load_campaign_box(campaign_info)?;
+    validate_trade_accounts(
+        &campaign,
+        campaign_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+    )?;
+    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
+    require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
+    require!(!campaign.paused, LaunchpadError::CampaignPaused);
+    require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
+    require!(
+        campaign.curve_kind == CURVE_KIND_LINEAR_V1,
+        LaunchpadError::InvalidCampaign
+    );
+    validate_route_profile_id(args.route_profile)?;
+
+    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
+    validate_trade_risk_profile(&risk, trader)?;
+    validate_trade_cluster_profile(cluster_info, &risk)?;
+
+    if auth_required {
+        let digest = build_trade_authorization_digest(
+            crate::id(),
+            campaign_key,
+            campaign.mint,
+            trader,
+            TRADE_SIDE_BUY,
+            args.lamports_in,
+            args.min_tokens_out,
+            args.deadline,
+            &args.nonce,
+            args.native_target_lamports,
+            args.route_profile,
+        );
+        verify_detached_trade_authorization(instructions, route_signer, &digest)?;
+    }
+
+    let economics_version = campaign.economics_version;
+    let base_price = campaign.base_price_lamports;
+    let slope = campaign.price_slope_lamports;
+    let sold = campaign.sold_tokens;
+    let supply = campaign.curve_token_supply;
+    let buy_fee_bps = campaign.buy_fee_bps;
+    let decimals = campaign.token_decimals;
+    let creator = campaign.creator;
+    let lock_until = campaign.creator_buy_lock_until;
+    let cap_bps = campaign.creator_buy_cap_bps;
+    let creator_bought = campaign.creator_bought_tokens;
+    let campaign_id = campaign.campaign_id;
+    let campaign_bump = campaign.bump;
+    drop(campaign);
+
+    let (tokens_out, net, fee, lamports_spent) = if economics_version >= ECONOMICS_VERSION_V3 {
+        let (tokens, curve_cost, curve_fee, total_spent) = quote_buy_tokens_v3_gross(
+            base_price,
+            slope,
+            sold,
+            supply,
+            args.lamports_in,
+            buy_fee_bps,
+            decimals,
+        )?;
+        (tokens, curve_cost, curve_fee, total_spent)
+    } else {
+        let legacy_fee = calculate_fee(args.lamports_in, buy_fee_bps)?;
+        let legacy_net = args
+            .lamports_in
+            .checked_sub(legacy_fee)
+            .ok_or(LaunchpadError::MathOverflow)?;
+        require!(legacy_net > 0, LaunchpadError::InvalidTradeAmount);
+        let tokens = quote_buy_tokens(
+            economics_version,
+            base_price,
+            slope,
+            sold,
+            supply,
+            legacy_net,
+            decimals,
+        )?;
+        (tokens, legacy_net, legacy_fee, args.lamports_in)
+    };
+    require!(
+        tokens_out >= args.min_tokens_out,
+        LaunchpadError::SlippageExceeded
+    );
+
+    let mut creator_bought_update = None;
+    if trader == creator {
+        require!(now >= lock_until, LaunchpadError::CreatorBuyLocked);
+        if cap_bps > 0 {
+            let cap_tokens = u128::from(supply)
+                .checked_mul(u128::from(cap_bps))
+                .ok_or(LaunchpadError::MathOverflow)?
+                .checked_div(u128::from(BPS_DENOMINATOR))
+                .ok_or(LaunchpadError::MathOverflow)?;
+            let next = u128::from(creator_bought)
+                .checked_add(u128::from(tokens_out))
+                .ok_or(LaunchpadError::MathOverflow)?;
+            require!(next <= cap_tokens, LaunchpadError::CreatorBuyCap);
+            creator_bought_update = Some(next as u64);
+        }
+    }
+
+    Ok(PreparedBuy {
+        campaign_id,
+        campaign_bump,
+        fee,
+        net,
+        lamports_spent,
+        tokens_out,
+        buy_volume_increment: if economics_version >= ECONOMICS_VERSION_V3 {
+            net
+        } else {
+            lamports_spent
+        },
+        was_zero_sold: sold == 0,
+        creator_bought_update,
+    })
+}
+
+#[inline(never)]
+fn prepare_sell(
+    campaign_info: &AccountInfo,
+    risk_info: &AccountInfo,
+    cluster_info: &AccountInfo,
+    instructions: &AccountInfo,
+    trader: Pubkey,
+    campaign_key: Pubkey,
+    mint_key: Pubkey,
+    token_vault_key: Pubkey,
+    sol_vault_key: Pubkey,
+    risk_bump: u8,
+    now: i64,
+    route_signer: Pubkey,
+    auth_required: bool,
+    args: &SellTokensArgs,
+) -> Result<PreparedSell> {
+    let campaign = load_campaign_box(campaign_info)?;
+    validate_trade_accounts(
+        &campaign,
+        campaign_key,
+        mint_key,
+        token_vault_key,
+        sol_vault_key,
+    )?;
+    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
+    require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
+    require!(!campaign.paused, LaunchpadError::CampaignPaused);
+    require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
+    require!(
+        campaign.curve_kind == CURVE_KIND_LINEAR_V1,
+        LaunchpadError::InvalidCampaign
+    );
+    validate_route_profile_id(args.route_profile)?;
+
+    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
+    validate_trade_risk_profile(&risk, trader)?;
+    validate_trade_cluster_profile(cluster_info, &risk)?;
+
+    if auth_required {
+        let digest = build_trade_authorization_digest(
+            crate::id(),
+            campaign_key,
+            campaign.mint,
+            trader,
+            TRADE_SIDE_SELL,
+            args.tokens_in,
+            args.min_lamports_out,
+            args.deadline,
+            &args.nonce,
+            0,
+            args.route_profile,
+        );
+        verify_detached_trade_authorization(instructions, route_signer, &digest)?;
+    }
+
+    let economics_version = campaign.economics_version;
+    let base_price = campaign.base_price_lamports;
+    let slope = campaign.price_slope_lamports;
+    let sold = campaign.sold_tokens;
+    let decimals = campaign.token_decimals;
+    let sell_fee_bps = campaign.sell_fee_bps;
+    let net_raised = campaign.net_raised_lamports;
+    drop(campaign);
+
+    let gross = quote_sell_refund(
+        economics_version,
+        base_price,
+        slope,
+        sold,
+        args.tokens_in,
+        decimals,
+    )?;
+    let fee = calculate_fee(gross, sell_fee_bps)?;
+    let lamports_out = gross
+        .checked_sub(fee)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(
+        lamports_out >= args.min_lamports_out,
+        LaunchpadError::SlippageExceeded
+    );
+    require!(
+        net_raised >= gross,
+        LaunchpadError::InsufficientVaultBalance
+    );
+    Ok(PreparedSell {
+        fee,
+        gross,
+        lamports_out,
+    })
+}
+
+#[inline(never)]
+fn apply_buy_state(
+    campaign_info: &AccountInfo,
+    tokens_out: u64,
+    net: u64,
+    buy_volume_increment: u64,
+    was_zero_sold: bool,
+    creator_bought_update: Option<u64>,
+    native_target_lamports: u64,
+) -> Result<(u64, u64)> {
+    let mut data = campaign_info.try_borrow_mut_data()?;
+    let mut slice: &[u8] = &data;
+    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
+    if let Some(v) = creator_bought_update {
+        campaign.creator_bought_tokens = v;
+    }
+    campaign.sold_tokens = campaign
+        .sold_tokens
+        .checked_add(tokens_out)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    campaign.net_raised_lamports = campaign
+        .net_raised_lamports
+        .checked_add(net)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    campaign.total_buy_volume_lamports = campaign
+        .total_buy_volume_lamports
+        .checked_add(buy_volume_increment)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    if was_zero_sold {
+        campaign.buyer_count = campaign
+            .buyer_count
+            .checked_add(1)
+            .ok_or(LaunchpadError::MathOverflow)?;
+    }
+    if should_close_curve(
+        campaign.sold_tokens,
+        campaign.curve_token_supply,
+        campaign.net_raised_lamports,
+        native_target_lamports,
+    ) {
+        campaign.curve_closed = true;
+    }
+    let sold_after = campaign.sold_tokens;
+    let net_after = campaign.net_raised_lamports;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    campaign.try_serialize(&mut cursor)?;
+    Ok((sold_after, net_after))
+}
+
+#[inline(never)]
+fn apply_sell_state(
+    campaign_info: &AccountInfo,
+    tokens_in: u64,
+    gross: u64,
+) -> Result<(u64, u64)> {
+    let mut data = campaign_info.try_borrow_mut_data()?;
+    let mut slice: &[u8] = &data;
+    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
+    campaign.sold_tokens = campaign
+        .sold_tokens
+        .checked_sub(tokens_in)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    campaign.net_raised_lamports = campaign
+        .net_raised_lamports
+        .checked_sub(gross)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    campaign.total_sell_volume_lamports = campaign
+        .total_sell_volume_lamports
+        .checked_add(gross)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let sold_after = campaign.sold_tokens;
+    let net_after = campaign.net_raised_lamports;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    campaign.try_serialize(&mut cursor)?;
+    Ok((sold_after, net_after))
+}
 
 pub(crate) fn route_fee_slices(
     remaining: &[AccountInfo],
@@ -1261,7 +1402,7 @@ pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) 
     let campaign_key = ctx.accounts.campaign.key();
     let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
     let mut slice: &[u8] = &data;
-    let mut campaign = Campaign::try_deserialize(&mut slice)?;
+    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
     let (expected_campaign, _) =
         Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign.campaign_id.as_ref()], &crate::ID);
     require_keys_eq!(
