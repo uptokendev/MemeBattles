@@ -37,7 +37,7 @@ env:
 
 jobs:
   exact-sbf-gate:
-    name: Exact SBF create + buy/sell gate
+    name: Exact launchpad SBF create + buy/sell gate
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -98,14 +98,15 @@ jobs:
           solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
           echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
 
-      - name: Build exact SBF artifact once
+      - name: Build exact launchpad SBF artifact once
         shell: bash
         run: |
           set -o pipefail
           rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
-          anchor build --no-idl 2>&1 | tee /tmp/mwz-anchor-build.log | tail -n 180
+          anchor build --program-name memewarzone_solana --no-idl \
+            2>&1 | tee /tmp/mwz-anchor-build.log | tail -n 180
           if grep -Eqi 'Stack offset .*exceeded max offset|exceeded max offset.*4096|stack frame.*exceed' /tmp/mwz-anchor-build.log; then
-            echo 'FATAL: SBF stack-frame diagnostic found in build output' >&2
+            echo 'FATAL: launchpad SBF stack-frame diagnostic found in build output' >&2
             grep -Ein 'Stack offset|exceeded max offset|stack frame' /tmp/mwz-anchor-build.log >&2 || true
             exit 1
           fi
@@ -143,7 +144,7 @@ jobs:
           fi
           exit 0
 
-      - name: Generate matching IDL
+      - name: Generate matching launchpad IDL
         shell: bash
         run: |
           set -o pipefail
