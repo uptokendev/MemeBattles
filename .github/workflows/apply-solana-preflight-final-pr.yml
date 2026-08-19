@@ -38,10 +38,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rustfmt --edition 2021 programs/memewarzone_solana/src/authorized_trade.rs
           git diff --check
           node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
           node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
-          cargo fmt --all -- --check
 
       - name: Commit patch
         shell: bash
