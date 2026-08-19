@@ -47,9 +47,11 @@ const { AnchorProvider, BN, Program, setProvider } = anchor;
 const PROGRAM_ID = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt";
 const SO_PATH = path.resolve(__dirname, "../../target/deploy/memewarzone_solana.so");
 const TRADE_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_TRADE_V1", "utf8");
-const TRADE_AUTH_SCHEMA_VERSION = 2;
+const TRADE_AUTH_SCHEMA_VERSION = 3;
 const TRADE_SIDE_BUY = 1;
 const TRADE_SIDE_SELL = 2;
+const ROUTE_PROFILE_UNLINKED = 1;
+const REWARDS_TREASURY = new PublicKey("2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX");
 const TOKEN_TOTAL_SUPPLY = 1_000_000_000_000_000n;
 const TOKEN_DECIMALS = 6;
 const CURVE_SUPPLY_BPS = 8_000;
@@ -63,7 +65,7 @@ const CLOSE_BUY_LAMPORTS = 50_000_000n;
 const METEORA_CP_AMM = new PublicKey("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
 const NATIVE_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const GRADUATION_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_GRADUATION_V1", "utf8");
-const GRADUATION_AUTH_SCHEMA_VERSION = 1;
+const GRADUATION_AUTH_SCHEMA_VERSION = 2;
 
 function hash32(label) {
   return crypto.createHash("sha256").update(label, "utf8").digest();
@@ -116,6 +118,7 @@ function tradeDigest({
   deadline,
   nonce,
   nativeTargetLamports,
+  routeProfile,
 }) {
   return crypto
     .createHash("sha256")
@@ -133,9 +136,33 @@ function tradeDigest({
         i64le(deadline),
         Buffer.from(nonce),
         u64le(nativeTargetLamports),
+        Buffer.from([routeProfile]),
       ]),
     )
     .digest();
+}
+
+function rewardVaultKeys() {
+  return {
+    league: derivePda(REWARDS_TREASURY, "league_vault"),
+    airdrop: derivePda(REWARDS_TREASURY, "airdrop_vault"),
+    monthly: derivePda(REWARDS_TREASURY, "monthly_league_vault"),
+    recruiter: derivePda(REWARDS_TREASURY, "recruiter_vault"),
+    squad: derivePda(REWARDS_TREASURY, "squad_vault"),
+    protocol: derivePda(REWARDS_TREASURY, "protocol_vault"),
+  };
+}
+
+function remainingRewardAccounts() {
+  const vaults = rewardVaultKeys();
+  return [
+    { pubkey: vaults.league, isWritable: true, isSigner: false },
+    { pubkey: vaults.airdrop, isWritable: true, isSigner: false },
+    { pubkey: vaults.monthly, isWritable: true, isSigner: false },
+    { pubkey: vaults.recruiter, isWritable: true, isSigner: false },
+    { pubkey: vaults.squad, isWritable: true, isSigner: false },
+    { pubkey: vaults.protocol, isWritable: true, isSigner: false },
+  ];
 }
 
 async function chainUnixTimestamp(connection) {
@@ -300,6 +327,12 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+
+    for (const vault of Object.values(rewardVaultKeys())) {
+      if ((await connection.getBalance(vault, "confirmed")) === 0) {
+        await fund(vault, 1);
+      }
+    }
   });
 
   async function setupWallet(label) {
@@ -437,7 +470,10 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     return ata;
   }
 
-  async function sendBuy(lamportsIn, nativeTargetLamports = 0n) {
+  async function sendBuy(lamportsIn, nativeTargetLamports = 0n, opts = {}) {
+    const clusterId = opts.clusterId || emptyClusterId;
+    const routeProfile = opts.routeProfile ?? ROUTE_PROFILE_UNLINKED;
+    const includeVaults = opts.includeVaults !== false;
     const now = await chainUnixTimestamp(connection);
     const nonce = hash32(`buy:${Date.now()}:${lamportsIn}:${Math.random()}`);
     const deadline = now + 3_600;
@@ -453,6 +489,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       deadline,
       nonce,
       nativeTargetLamports,
+      routeProfile,
     });
     const ed25519 = Ed25519Program.createInstructionWithPrivateKey({
       privateKey: routeSigner.secretKey,
@@ -465,13 +502,15 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       buyer.keypair.publicKey.toBuffer(),
       nonce,
     );
-    const buyIx = await program.methods
+    const clusterProfile = derivePda(program.programId, "cluster", clusterId);
+    let builder = program.methods
       .buyTokens({
         lamportsIn: new BN(lamportsIn.toString()),
         minTokensOut: new BN(minOut.toString()),
         deadline: new BN(deadline),
         nonce: Array.from(nonce),
         nativeTargetLamports: new BN(nativeTargetLamports.toString()),
+        routeProfile,
       })
       .accountsStrict({
         trader: buyer.keypair.publicKey,
@@ -482,12 +521,16 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         solVault: campaignAccounts.solVault,
         traderTokenAccount: ata,
         riskProfile: buyer.riskProfile,
+        clusterProfile,
         tradeAuthorization: tradeAuth,
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-      })
-      .instruction();
+      });
+    if (includeVaults) {
+      builder = builder.remainingAccounts(remainingRewardAccounts());
+    }
+    const buyIx = await builder.instruction();
     const tx = new Transaction().add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       ed25519,
@@ -496,7 +539,10 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     return simulateThenSend(tx, `buy_tokens ${lamportsIn}`, [buyer.keypair]);
   }
 
-  async function sendSell(tokensIn) {
+  async function sendSell(tokensIn, opts = {}) {
+    const clusterId = opts.clusterId || emptyClusterId;
+    const routeProfile = opts.routeProfile ?? ROUTE_PROFILE_UNLINKED;
+    const includeVaults = opts.includeVaults !== false;
     const now = await chainUnixTimestamp(connection);
     const nonce = hash32(`sell:${Date.now()}:${tokensIn}:${Math.random()}`);
     const deadline = now + 3_600;
@@ -512,6 +558,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       deadline,
       nonce,
       nativeTargetLamports: 0n,
+      routeProfile,
     });
     const ed25519 = Ed25519Program.createInstructionWithPrivateKey({
       privateKey: routeSigner.secretKey,
@@ -524,12 +571,14 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       buyer.keypair.publicKey.toBuffer(),
       nonce,
     );
-    const sellIx = await program.methods
+    const clusterProfile = derivePda(program.programId, "cluster", clusterId);
+    let builder = program.methods
       .sellTokens({
         tokensIn: new BN(tokensIn.toString()),
         minLamportsOut: new BN(minOut.toString()),
         deadline: new BN(deadline),
         nonce: Array.from(nonce),
+        routeProfile,
       })
       .accountsStrict({
         trader: buyer.keypair.publicKey,
@@ -540,12 +589,16 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         solVault: campaignAccounts.solVault,
         traderTokenAccount: ata,
         riskProfile: buyer.riskProfile,
+        clusterProfile,
         tradeAuthorization: tradeAuth,
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-      })
-      .instruction();
+      });
+    if (includeVaults) {
+      builder = builder.remainingAccounts(remainingRewardAccounts());
+    }
+    const sellIx = await builder.instruction();
     const tx = new Transaction().add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       ed25519,
@@ -578,17 +631,112 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       return { campaign, tokenAmount: token ? BigInt(token.amount.toString()) : 0n, vault };
     }
 
+    async function expectBuyFail(label, lamportsIn, nativeTarget, opts) {
+      let failed = false;
+      try {
+        await sendBuy(lamportsIn, nativeTarget, opts);
+      } catch (error) {
+        failed = /simulation failed|custom program error|ClusterRestricted|CampaignPaused|InvalidRewardsVault/i.test(
+          String(error),
+        );
+      }
+      assert.equal(failed, true, label);
+    }
+
+    const rewardsBefore = {};
+    for (const [name, pubkey] of Object.entries(rewardVaultKeys())) {
+      rewardsBefore[name] = BigInt(await connection.getBalance(pubkey, "confirmed"));
+    }
+
     let before = await snapshot();
     await sendBuy(BUY_LAMPORTS);
     let after = await snapshot();
     assert.ok(BigInt(after.campaign.soldTokens.toString()) > BigInt(before.campaign.soldTokens.toString()));
     assert.ok(BigInt(after.campaign.netRaisedLamports.toString()) > BigInt(before.campaign.netRaisedLamports.toString()));
     assert.ok(after.tokenAmount > before.tokenAmount);
-    assert.ok(after.vault > before.vault);
     const net1 = BigInt(after.campaign.netRaisedLamports.toString()) - BigInt(before.campaign.netRaisedLamports.toString());
     const spent1 = BigInt(after.vault) - BigInt(before.vault);
-    const fee1 = spent1 - net1;
-    assert.ok(fee1 * 10000n >= net1 * BigInt(BUY_FEE_BPS) - 10_000n, "buy fee should be ~2% of curve cost");
+    assert.equal(spent1, net1, "buy fee must leave the campaign vault via mandatory routing");
+    const expectedFee = (net1 * BigInt(BUY_FEE_BPS)) / 10000n;
+    let routed = 0n;
+    for (const [name, pubkey] of Object.entries(rewardVaultKeys())) {
+      const nowBal = BigInt(await connection.getBalance(pubkey, "confirmed"));
+      routed += nowBal - rewardsBefore[name];
+    }
+    assert.equal(routed, expectedFee, "unlinked trade fee must land in the six reward vaults");
+    const airdropNow = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
+    assert.ok(airdropNow > rewardsBefore.airdrop, "unlinked profile must fund the airdrop vault");
+    assert.equal(after.campaign.paused, false);
+
+    await expectBuyFail("buy without reward vaults must fail", BUY_LAMPORTS, 0n, { includeVaults: false });
+
+    await program.methods
+      .setCampaignPause(true)
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        campaign: campaignAccounts.campaign,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    await expectBuyFail("paused campaign buy must fail", BUY_LAMPORTS, 0n);
+    await program.methods
+      .setCampaignPause(false)
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        campaign: campaignAccounts.campaign,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+
+    const restrictedClusterId = hash32("restricted-cluster");
+    const restrictedCluster = derivePda(program.programId, "cluster", restrictedClusterId);
+    await program.methods
+      .syncClusterProfile({
+        clusterId: Array.from(restrictedClusterId),
+        size: 2,
+        riskLevel: 3,
+        restricted: true,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        clusterProfile: restrictedCluster,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    await program.methods
+      .syncRiskProfile({
+        wallet: buyer.keypair.publicKey,
+        riskLevel: 3,
+        restricted: false,
+        clusterId: Array.from(restrictedClusterId),
+        manualReviewRequired: false,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        riskProfile: buyer.riskProfile,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    await expectBuyFail("restricted cluster buy must fail", BUY_LAMPORTS, 0n, {
+      clusterId: restrictedClusterId,
+    });
+    await program.methods
+      .syncRiskProfile({
+        wallet: buyer.keypair.publicKey,
+        riskLevel: 0,
+        restricted: false,
+        clusterId: Array.from(emptyClusterId),
+        manualReviewRequired: false,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        riskProfile: buyer.riskProfile,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
 
     before = after;
     await sendBuy(BUY_LAMPORTS);
@@ -727,6 +875,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
           input.nftMint.toBuffer(),
           i64le(input.deadline),
           input.nonce,
+          Buffer.from([input.finalizeRouteProfile ?? ROUTE_PROFILE_UNLINKED]),
         ]),
       )
       .digest();
@@ -782,8 +931,10 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     const now = await chainUnixTimestamp(connection);
     const deadline = now + 3_600;
     const nonce = hash32("graduation:lifecycle");
-    const nativeTarget = CLOSE_TARGET_LAMPORTS;
-    const oraclePrice = 150_000_000n; // $150 / SOL, unused except in digest
+    const oraclePrice = 150_000_000n; // $150 / SOL
+    const nativeTarget =
+      (campaign.graduationTargetUsdMicros * 1_000_000_000n + oraclePrice - 1n) / oraclePrice;
+    assert.equal(nativeTarget, CLOSE_TARGET_LAMPORTS);
     const digest = graduationDigest({
       campaign: campaignAccounts.campaign,
       mint: campaignAccounts.mint,
@@ -796,6 +947,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       nftMint: nftMint.publicKey,
       deadline,
       nonce,
+      finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
     });
 
     const ed25519 = Ed25519Program.createInstructionWithPrivateKey({
@@ -809,6 +961,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         deadline: new BN(deadline),
         nonce: Array.from(nonce),
         positionNftMint: nftMint.publicKey,
+        finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
       })
       .accountsStrict({
         authority: admin,
@@ -828,6 +981,68 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         systemProgram: SystemProgram.programId,
       })
       .instruction();
+
+    const badNonce = hash32("graduation:bad-oracle");
+    const badNative = 1n;
+    const badDigest = graduationDigest({
+      campaign: campaignAccounts.campaign,
+      mint: campaignAccounts.mint,
+      authority: admin,
+      graduationTargetUsdMicros: campaign.graduationTargetUsdMicros,
+      nativeTargetLamports: badNative,
+      oraclePriceUsdMicros: oraclePrice,
+      pool,
+      position,
+      nftMint: nftMint.publicKey,
+      deadline,
+      nonce: badNonce,
+      finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
+    });
+    const badEd25519 = Ed25519Program.createInstructionWithPrivateKey({
+      privateKey: routeSigner.secretKey,
+      message: badDigest,
+    });
+    const badBeginIx = await program.methods
+      .beginGraduation({
+        nativeTargetLamports: new BN(badNative.toString()),
+        oraclePriceUsdMicros: new BN(oraclePrice.toString()),
+        deadline: new BN(deadline),
+        nonce: Array.from(badNonce),
+        positionNftMint: nftMint.publicKey,
+        finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        generationConfig,
+        campaign: campaignAccounts.campaign,
+        mint: campaignAccounts.mint,
+        tokenVault: campaignAccounts.tokenVault,
+        solVault: campaignAccounts.solVault,
+        authorityTokenAccount: authorityAta,
+        meteoraPool: pool,
+        meteoraPosition: position,
+        positionNftMint: nftMint.publicKey,
+        graduationState,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    const badTx = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 }),
+      badEd25519,
+      badBeginIx,
+    );
+    const badSim = await simulateUnsigned(badTx, "begin_graduation mismatched USD native target", [
+      adminKeypair,
+      nftMint,
+    ]);
+    assert.ok(badSim.err, "mismatched native_target × SOL/USD must fail");
+    assert.ok(
+      badSim.logs.some((line) => /InvalidGraduationTarget|custom program error/i.test(line)),
+      `expected USD threshold rejection, got:\n${badSim.logs.join("\n")}`,
+    );
 
     const beginOnly = new Transaction().add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 }),

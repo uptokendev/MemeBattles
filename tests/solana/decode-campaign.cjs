@@ -93,6 +93,7 @@ function decodeCampaign(data) {
     mintAuthorityRevoked: takeU8() === 1,
     graduated: takeU8() === 1,
     curveClosed: buf.length > o ? takeU8() === 1 : false,
+    paused: buf.length > o ? takeU8() === 1 : false,
   };
   return campaign;
 }

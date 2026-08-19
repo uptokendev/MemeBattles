@@ -99,6 +99,7 @@ export type SolanaCampaignCurveState = {
   buyerCount: bigint;
   graduated: boolean;
   curveClosed: boolean;
+  paused: boolean;
 };
 
 function readU64LE(view: DataView, offset: number): bigint {
@@ -234,9 +235,10 @@ export function decodeSolanaCampaignAccount(
   takeU16(); // asset_initialization_version
   takeU8(); // mint_authority_revoked
   const graduated = takeU8() !== 0;
-  // New layout is 719+ bytes with curve_closed at 714. Old 718-byte accounts
-  // store bump there — do not treat that as closed.
+  // New layout is 720 bytes with curve_closed at 714 and paused at 715.
+  // Old 718-byte accounts store bump at 714 — do not treat that as closed.
   const curveClosed = data.length >= 719 ? takeU8() !== 0 : false;
+  const paused = data.length >= 720 ? takeU8() !== 0 : false;
 
   const campaignIdHex = Array.from(campaignId)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -271,6 +273,7 @@ export function decodeSolanaCampaignAccount(
     buyerCount,
     graduated,
     curveClosed,
+    paused,
   };
 }
 

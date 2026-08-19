@@ -155,6 +155,8 @@ pub struct Campaign {
     pub graduated: bool,
     /// Sticky eligibility lock. Set on the threshold-crossing buy. Not `graduated`.
     pub curve_closed: bool,
+    /// Per-campaign emergency pause. Does not affect other campaigns.
+    pub paused: bool,
     pub bump: u8,
     pub mint_bump: u8,
     pub token_vault_bump: u8,
@@ -890,6 +892,7 @@ fn assemble_campaign(
         mint_authority_revoked: true,
         graduated: false,
         curve_closed: false,
+        paused: false,
         bump: campaign_bump,
         mint_bump,
         token_vault_bump,

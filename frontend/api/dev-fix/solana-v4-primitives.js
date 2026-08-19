@@ -648,6 +648,7 @@ export function decodeCampaignCurveFields(data) {
     netRaisedLamports: buf.readBigUInt64LE(670),
     graduated: buf.readUInt8(713) === 1,
     curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
+    paused: buf.length >= 720 ? buf.readUInt8(715) === 1 : false,
   };
 }
 

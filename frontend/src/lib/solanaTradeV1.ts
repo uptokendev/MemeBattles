@@ -44,6 +44,7 @@ export type SolanaTradeAuthResponse = {
     solVault: string | null;
     traderTokenAccount: string;
     riskProfile: string;
+    clusterProfile?: string;
     tradeAuthorization: string;
     instructions: string;
     tokenProgram: string;
@@ -100,10 +101,12 @@ function encodeTradeIxData(
   minOut: string,
   deadline: string,
   nonce: number[],
-  nativeTargetLamports?: string,
+  nativeTargetLamports: string | undefined,
+  routeProfile: number,
 ): Uint8Array {
   const parts = [discriminator, u64le(amountIn), u64le(minOut), i64le(deadline), Uint8Array.from(nonce)];
   if (nativeTargetLamports != null) parts.push(u64le(nativeTargetLamports));
+  parts.push(Uint8Array.from([routeProfile & 0xff]));
   let total = 0;
   for (const p of parts) total += p.length;
   const out = new Uint8Array(total);
@@ -321,6 +324,15 @@ export function mapSolanaTradeError(err: unknown): string {
   if (/InvalidRiskProfile|RiskProfile|WalletRestricted/i.test(msg)) {
     return "Buyer RiskProfile missing or restricted. Operator: sync-risk <BUYER_WALLET>.";
   }
+  if (/ClusterRestricted|SOLANA_CLUSTER_RESTRICTED|cluster is restricted/i.test(msg)) {
+    return "This wallet cluster is restricted from bonding trades.";
+  }
+  if (/CampaignPaused|campaign is paused/i.test(msg)) {
+    return "This campaign is paused. Trading will reopen after the operator unpauses it.";
+  }
+  if (/InvalidRewardsVault|reward vault/i.test(msg)) {
+    return "Reward vaults are missing from the trade. Retry after the latest frontend/API deploy.";
+  }
   if (/SOLANA_TRADE_VAULTS_UNRESOLVED|tokenVault|solVault/i.test(msg)) {
     return "Vaults unresolved — re-Push Live / Direct deploy so mark-deploy persists vaults.";
   }
@@ -437,6 +449,17 @@ export async function submitSolanaTradeV1(
   const ed25519Ix = buildEd25519Ix(web3, auth.authorization.routeSigner, digest, signature);
 
   const isBuy = auth.side === "buy";
+  const a = auth.accounts;
+  const routeProfile = Number(auth.createArgs.routeProfile ?? 1);
+  if (![0, 1, 2].includes(routeProfile)) {
+    throw new Error("Trade authorization is missing a valid routeProfile.");
+  }
+  if (!a.clusterProfile) {
+    throw new Error("Trade authorization is missing clusterProfile.");
+  }
+  if (!a.leagueVault || !a.airdropVault || !a.monthlyLeagueVault || !a.recruiterVault || !a.squadVault || !a.protocolVault) {
+    throw new Error("Trade authorization is missing the six reward vaults.");
+  }
   const data = encodeTradeIxData(
     isBuy ? BUY_TOKENS_DISCRIMINATOR : SELL_TOKENS_DISCRIMINATOR,
     auth.createArgs.amountIn,
@@ -444,9 +467,8 @@ export async function submitSolanaTradeV1(
     auth.createArgs.deadline,
     auth.createArgs.nonce,
     isBuy ? auth.createArgs.nativeTargetLamports || "0" : undefined,
+    routeProfile,
   );
-
-  const a = auth.accounts;
   const keys = [
     { pubkey: new PublicKey(a.trader), isSigner: true, isWritable: true },
     { pubkey: new PublicKey(a.globalConfig), isSigner: false, isWritable: false },
@@ -456,21 +478,18 @@ export async function submitSolanaTradeV1(
     { pubkey: new PublicKey(a.solVault!), isSigner: false, isWritable: true },
     { pubkey: new PublicKey(a.traderTokenAccount), isSigner: false, isWritable: true },
     { pubkey: new PublicKey(a.riskProfile), isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(a.clusterProfile), isSigner: false, isWritable: false },
     { pubkey: new PublicKey(a.tradeAuthorization), isSigner: false, isWritable: true },
     { pubkey: new PublicKey(a.instructions || SYSVAR_INSTRUCTIONS), isSigner: false, isWritable: false },
     { pubkey: new PublicKey(a.tokenProgram || TOKEN_PROGRAM), isSigner: false, isWritable: false },
     { pubkey: new PublicKey(a.systemProgram || SYSTEM_PROGRAM), isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(a.leagueVault), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(a.airdropVault), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(a.monthlyLeagueVault), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(a.recruiterVault), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(a.squadVault), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(a.protocolVault), isSigner: false, isWritable: true },
   ];
-  if (a.leagueVault && a.airdropVault && a.monthlyLeagueVault && a.recruiterVault && a.squadVault && a.protocolVault) {
-    keys.push(
-      { pubkey: new PublicKey(a.leagueVault), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(a.airdropVault), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(a.monthlyLeagueVault), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(a.recruiterVault), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(a.squadVault), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(a.protocolVault), isSigner: false, isWritable: true },
-    );
-  }
 
   const tradeIx = new TransactionInstruction({
     programId: new PublicKey(auth.programId),
