@@ -19,6 +19,7 @@ use anchor_lang::{
         ed25519_program,
         hash::hash,
         program::invoke,
+        program_pack::Pack,
         system_instruction,
         sysvar::instructions::{
             load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
