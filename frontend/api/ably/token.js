@@ -1,5 +1,5 @@
 import Ably from "ably";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, isSolanaChain, json } from "../../server/http.js";
 
 // CORS allow-list for cross-origin access from mw-dashboard.
 // Production origin is TBD by deploy config; set MW_DASHBOARD_ORIGIN env var.
@@ -109,7 +109,8 @@ export default async function handler(req, res) {
 
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 56);
-    const campaign = p(q.campaign).toLowerCase();
+    const campaignRaw = p(q.campaign);
+    const campaign = isSolanaChain(chainId) ? campaignRaw : campaignRaw.toLowerCase();
     const scope = p(q.scope).toLowerCase();
     const liveChannel = p(q.channel).toLowerCase();
 
@@ -146,7 +147,8 @@ export default async function handler(req, res) {
     } else {
       if (!Number.isFinite(chainId))
         return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(campaign)) {
+      const campaignOk = isSolanaChain(chainId) ? isSolanaAddress(campaign) : isAddress(campaign);
+      if (!campaignOk) {
         return json(res, 400, { error: "Invalid campaign address" });
       }
 

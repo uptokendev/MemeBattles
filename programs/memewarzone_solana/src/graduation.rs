@@ -1094,11 +1094,12 @@ fn unpack_spl_account(info: &AccountInfo) -> Result<SplTokenAccount> {
         .map_err(|_| error!(LaunchpadError::InvalidCampaign))
 }
 
-fn load_campaign(info: &AccountInfo) -> Result<Campaign> {
+#[inline(never)]
+fn load_campaign(info: &AccountInfo) -> Result<Box<Campaign>> {
     require_keys_eq!(*info.owner, crate::ID, LaunchpadError::InvalidCampaign);
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
-    Campaign::try_deserialize(&mut slice)
+    Ok(Box::new(Campaign::try_deserialize(&mut slice)?))
 }
 
 fn store_campaign(info: &AccountInfo, campaign: &Campaign) -> Result<()> {

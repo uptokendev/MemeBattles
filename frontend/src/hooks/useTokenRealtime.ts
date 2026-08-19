@@ -84,7 +84,9 @@ export function useTokenRealtime(chainId: number, campaign: string) {
     ).replace(/\/$/, "");
     if (!authBase) return;
     const client = new Ably.Realtime({
-      authUrl: `${authBase}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`,
+      authUrl: `${authBase}/api/ably/token?chainId=${chainId}&campaign=${encodeURIComponent(
+        Number(chainId) === 101 || Number(chainId) === 102 ? campaign : campaign.toLowerCase(),
+      )}`,
       authMethod: "GET",
     });
 

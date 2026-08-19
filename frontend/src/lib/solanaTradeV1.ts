@@ -512,8 +512,8 @@ export async function submitSolanaTradeV1(
 
   const signed = await provider.signTransaction(tx);
   const sig = await connection.sendRawTransaction(signed.serialize(), {
-    skipPreflight: false,
-    preflightCommitment: "confirmed",
+    skipPreflight: true,
+    maxRetries: 3,
   });
   await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   return { signature: sig };

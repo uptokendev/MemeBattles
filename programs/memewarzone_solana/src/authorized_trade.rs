@@ -922,27 +922,6 @@ fn prepare_buy(
     );
     validate_route_profile_id(args.route_profile)?;
 
-    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
-    validate_trade_risk_profile(&risk, trader)?;
-    validate_trade_cluster_profile(cluster_info, &risk)?;
-
-    if auth_required {
-        let digest = build_trade_authorization_digest(
-            crate::id(),
-            campaign_key,
-            campaign.mint,
-            trader,
-            TRADE_SIDE_BUY,
-            args.lamports_in,
-            args.min_tokens_out,
-            args.deadline,
-            &args.nonce,
-            args.native_target_lamports,
-            args.route_profile,
-        );
-        verify_detached_trade_authorization(instructions, route_signer, &digest)?;
-    }
-
     let economics_version = campaign.economics_version;
     let base_price = campaign.base_price_lamports;
     let slope = campaign.price_slope_lamports;
@@ -956,37 +935,31 @@ fn prepare_buy(
     let creator_bought = campaign.creator_bought_tokens;
     let campaign_id = campaign.campaign_id;
     let campaign_bump = campaign.bump;
+    let campaign_mint = campaign.mint;
     drop(campaign);
 
-    let (tokens_out, net, fee, lamports_spent) = if economics_version >= ECONOMICS_VERSION_V3 {
-        let (tokens, curve_cost, curve_fee, total_spent) = quote_buy_tokens_v3_gross(
-            base_price,
-            slope,
-            sold,
-            supply,
-            args.lamports_in,
-            buy_fee_bps,
-            decimals,
+    enforce_trade_risk(risk_info, cluster_info, trader, risk_bump)?;
+    if auth_required {
+        verify_buy_authorization(
+            instructions,
+            route_signer,
+            campaign_key,
+            campaign_mint,
+            trader,
+            args,
         )?;
-        (tokens, curve_cost, curve_fee, total_spent)
-    } else {
-        let legacy_fee = calculate_fee(args.lamports_in, buy_fee_bps)?;
-        let legacy_net = args
-            .lamports_in
-            .checked_sub(legacy_fee)
-            .ok_or(LaunchpadError::MathOverflow)?;
-        require!(legacy_net > 0, LaunchpadError::InvalidTradeAmount);
-        let tokens = quote_buy_tokens(
-            economics_version,
-            base_price,
-            slope,
-            sold,
-            supply,
-            legacy_net,
-            decimals,
-        )?;
-        (tokens, legacy_net, legacy_fee, args.lamports_in)
-    };
+    }
+
+    let (tokens_out, net, fee, lamports_spent) = quote_buy_prepared(
+        economics_version,
+        base_price,
+        slope,
+        sold,
+        supply,
+        args.lamports_in,
+        buy_fee_bps,
+        decimals,
+    )?;
     require!(
         tokens_out >= args.min_tokens_out,
         LaunchpadError::SlippageExceeded
@@ -1061,27 +1034,6 @@ fn prepare_sell(
     );
     validate_route_profile_id(args.route_profile)?;
 
-    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
-    validate_trade_risk_profile(&risk, trader)?;
-    validate_trade_cluster_profile(cluster_info, &risk)?;
-
-    if auth_required {
-        let digest = build_trade_authorization_digest(
-            crate::id(),
-            campaign_key,
-            campaign.mint,
-            trader,
-            TRADE_SIDE_SELL,
-            args.tokens_in,
-            args.min_lamports_out,
-            args.deadline,
-            &args.nonce,
-            0,
-            args.route_profile,
-        );
-        verify_detached_trade_authorization(instructions, route_signer, &digest)?;
-    }
-
     let economics_version = campaign.economics_version;
     let base_price = campaign.base_price_lamports;
     let slope = campaign.price_slope_lamports;
@@ -1089,7 +1041,20 @@ fn prepare_sell(
     let decimals = campaign.token_decimals;
     let sell_fee_bps = campaign.sell_fee_bps;
     let net_raised = campaign.net_raised_lamports;
+    let campaign_mint = campaign.mint;
     drop(campaign);
+
+    enforce_trade_risk(risk_info, cluster_info, trader, risk_bump)?;
+    if auth_required {
+        verify_sell_authorization(
+            instructions,
+            route_signer,
+            campaign_key,
+            campaign_mint,
+            trader,
+            args,
+        )?;
+    }
 
     let gross = quote_sell_refund(
         economics_version,
@@ -1365,6 +1330,110 @@ fn validate_reward_vaults(remaining: &[AccountInfo]) -> Result<()> {
     Ok(())
 }
 
+#[inline(never)]
+fn enforce_trade_risk(
+    risk_info: &AccountInfo,
+    cluster_info: &AccountInfo,
+    trader: Pubkey,
+    risk_bump: u8,
+) -> Result<()> {
+    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
+    validate_trade_risk_profile(&risk, trader)?;
+    validate_trade_cluster_profile(cluster_info, &risk)
+}
+
+#[inline(never)]
+fn verify_buy_authorization(
+    instructions: &AccountInfo,
+    route_signer: Pubkey,
+    campaign_key: Pubkey,
+    mint: Pubkey,
+    trader: Pubkey,
+    args: &BuyTokensArgs,
+) -> Result<()> {
+    let digest = build_trade_authorization_digest(
+        crate::id(),
+        campaign_key,
+        mint,
+        trader,
+        TRADE_SIDE_BUY,
+        args.lamports_in,
+        args.min_tokens_out,
+        args.deadline,
+        &args.nonce,
+        args.native_target_lamports,
+        args.route_profile,
+    );
+    verify_detached_trade_authorization(instructions, route_signer, &digest)
+}
+
+#[inline(never)]
+fn verify_sell_authorization(
+    instructions: &AccountInfo,
+    route_signer: Pubkey,
+    campaign_key: Pubkey,
+    mint: Pubkey,
+    trader: Pubkey,
+    args: &SellTokensArgs,
+) -> Result<()> {
+    let digest = build_trade_authorization_digest(
+        crate::id(),
+        campaign_key,
+        mint,
+        trader,
+        TRADE_SIDE_SELL,
+        args.tokens_in,
+        args.min_lamports_out,
+        args.deadline,
+        &args.nonce,
+        0,
+        args.route_profile,
+    );
+    verify_detached_trade_authorization(instructions, route_signer, &digest)
+}
+
+#[inline(never)]
+fn quote_buy_prepared(
+    economics_version: u16,
+    base_price: u64,
+    slope: u64,
+    sold: u64,
+    supply: u64,
+    lamports_in: u64,
+    buy_fee_bps: u16,
+    decimals: u8,
+) -> Result<(u64, u64, u64, u64)> {
+    if economics_version >= ECONOMICS_VERSION_V3 {
+        let (tokens, curve_cost, curve_fee, total_spent) = quote_buy_tokens_v3_gross(
+            base_price,
+            slope,
+            sold,
+            supply,
+            lamports_in,
+            buy_fee_bps,
+            decimals,
+        )?;
+        Ok((tokens, curve_cost, curve_fee, total_spent))
+    } else {
+        let legacy_fee = calculate_fee(lamports_in, buy_fee_bps)?;
+        let legacy_net = lamports_in
+            .checked_sub(legacy_fee)
+            .ok_or(LaunchpadError::MathOverflow)?;
+        require!(legacy_net > 0, LaunchpadError::InvalidTradeAmount);
+        let tokens = quote_buy_tokens(
+            economics_version,
+            base_price,
+            slope,
+            sold,
+            supply,
+            legacy_net,
+            decimals,
+        )?;
+        Ok((tokens, legacy_net, legacy_fee, lamports_in))
+    }
+}
+
+#[inline(never)]
 fn validate_trade_cluster_profile(cluster_info: &AccountInfo, risk: &RiskProfile) -> Result<()> {
     let (expected_cluster, _) = Pubkey::find_program_address(
         &[CLUSTER_PROFILE_SEED, risk.cluster_id.as_ref()],
@@ -1384,7 +1453,7 @@ fn validate_trade_cluster_profile(cluster_info: &AccountInfo, risk: &RiskProfile
     );
     let data = cluster_info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
-    let cluster = ClusterProfile::try_deserialize(&mut slice)?;
+    let cluster = Box::new(ClusterProfile::try_deserialize(&mut slice)?);
     require!(
         cluster.cluster_id == risk.cluster_id,
         LaunchpadError::InvalidCluster
