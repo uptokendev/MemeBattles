@@ -77,7 +77,10 @@ function verifySolanaSignature({ address, message, signature }) {
 }
 
 export function roomChannelName(chainId, campaignAddress) {
-  return `warroom:${Number(chainId)}:${String(campaignAddress).toLowerCase()}`;
+  const id = Number(chainId);
+  const raw = String(campaignAddress || "").trim();
+  const address = id === 101 || id === 102 ? raw : raw.toLowerCase();
+  return `warroom:${id}:${address}`;
 }
 
 export function hashToken(rawToken) {
