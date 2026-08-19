@@ -22,7 +22,7 @@ export type SolanaProvider = {
 };
 
 const CONNECT_TIMEOUT_MS = 25_000;
-const OTHER_WALLET_DISCONNECT_MS = 1_200;
+const OTHER_WALLET_DISCONNECT_MS = 200;
 
 async function withTimeout<T>(promise: Promise<T> | undefined | null, ms: number, message: string): Promise<T> {
   if (!promise) throw new Error(message);
@@ -264,11 +264,12 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
 
   // Force disconnect the current wallet to clear any stale session.
   // This guarantees Phantom will show the connect/unlock popup.
-  // Wrapped in withTimeout because Phantom's disconnect() sometimes hangs.
+  // We use a very short timeout (200ms) because if this hangs longer than 1000ms,
+  // the browser destroys the transient user gesture and the subsequent connect() popup will be blocked.
   try {
     await withTimeout(
       Promise.resolve(wallet.provider.disconnect?.()),
-      OTHER_WALLET_DISCONNECT_MS,
+      200,
       "Current wallet disconnect timed out",
     );
   } catch {
