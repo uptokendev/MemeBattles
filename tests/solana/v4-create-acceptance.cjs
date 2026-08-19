@@ -26,6 +26,11 @@ const {
   buildCreateAuthorizationPayload,
   createAuthorizationDigest,
 } = require("./authorization-v4.cjs");
+const {
+  decodeCampaign,
+  decodeCreateAuthorization,
+  decodeCampaignSolVault,
+} = require("./decode-campaign.cjs");
 
 const {
   AnchorProvider,
@@ -402,15 +407,19 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     result,
     expectedScheduledLaunch,
   }) {
-    const campaign = await program.account.campaign.fetch(
-      result.accounts.campaign,
-    );
-    const authorization = await program.account.createAuthorization.fetch(
-      result.accounts.createAuthorization,
-    );
-    const solVaultState = await program.account.campaignSolVault.fetch(
-      result.accounts.solVault,
-    );
+    // Campaign / CreateAuthorization / CampaignSolVault are UncheckedAccount in
+    // the program, so they are not in the IDL `accounts` map.
+    const [campaignInfo, authInfo, solVaultAccount] = await Promise.all([
+      connection.getAccountInfo(result.accounts.campaign, "confirmed"),
+      connection.getAccountInfo(result.accounts.createAuthorization, "confirmed"),
+      connection.getAccountInfo(result.accounts.solVault, "confirmed"),
+    ]);
+    assert.ok(campaignInfo, "campaign account missing after create");
+    assert.ok(authInfo, "createAuthorization account missing after create");
+    assert.ok(solVaultAccount, "sol vault account missing after create");
+    const campaign = decodeCampaign(campaignInfo.data);
+    const authorization = decodeCreateAuthorization(authInfo.data);
+    const solVaultState = decodeCampaignSolVault(solVaultAccount.data);
     const mint = await getMint(
       connection,
       result.accounts.mint,

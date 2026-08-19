@@ -40,6 +40,7 @@ const {
   buildCreateAuthorizationPayload,
   createAuthorizationDigest,
 } = require("./authorization-v4.cjs");
+const { decodeCampaign } = require("./decode-campaign.cjs");
 
 const { AnchorProvider, BN, Program, setProvider } = anchor;
 
@@ -548,14 +549,18 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     assert.notEqual(creator.keypair.publicKey.toBase58(), buyer.keypair.publicKey.toBase58());
 
     const created = await sendCreate();
-    const afterCreate = await program.account.campaign.fetch(campaignAccounts.campaign);
+    const afterCreateInfo = await connection.getAccountInfo(campaignAccounts.campaign, "confirmed");
+    assert.ok(afterCreateInfo, "campaign account missing after create");
+    const afterCreate = decodeCampaign(afterCreateInfo.data);
     assert.equal(afterCreate.mintAuthorityRevoked, true);
     assert.equal(afterCreate.curveClosed, false);
     assert.equal(afterCreate.soldTokens.toString(), "0");
     assert.ok(created.logs.some((line) => /Instruction: CreateCampaign/i.test(line)));
 
     async function snapshot() {
-      const campaign = await program.account.campaign.fetch(campaignAccounts.campaign);
+      const info = await connection.getAccountInfo(campaignAccounts.campaign, "confirmed");
+      assert.ok(info, "campaign account missing");
+      const campaign = decodeCampaign(info.data);
       const ata = getAssociatedTokenAddressSync(campaignAccounts.mint, buyer.keypair.publicKey);
       const token = await getAccount(connection, ata, "confirmed").catch(() => null);
       const vault = await connection.getBalance(campaignAccounts.solVault, "confirmed");
