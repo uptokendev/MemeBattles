@@ -17,6 +17,7 @@ const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
 const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const MAX_SOLANA_TRANSACTION_BYTES = 1_232;
 
 /** Anchor 0.30: first 8 bytes of sha256("global:create_campaign") */
 const CREATE_CAMPAIGN_DISCRIMINATOR = new Uint8Array([
@@ -271,22 +272,62 @@ export async function submitSolanaV4CreatePlan(
     return next;
   };
 
+  const simulateUnsignedCreate = async (unsigned: InstanceType<typeof Transaction>) => {
+    let serializedBytes = 0;
+    try {
+      serializedBytes = unsigned.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
+      }).length;
+    } catch (error) {
+      throw new Error(`Solana create could not be serialized before simulation: ${String((error as Error)?.message || error)}`);
+    }
+    if (serializedBytes > MAX_SOLANA_TRANSACTION_BYTES) {
+      throw new Error(
+        `Solana create transaction is too large (${serializedBytes} bytes; maximum ${MAX_SOLANA_TRANSACTION_BYTES}).`,
+      );
+    }
+    if (serializedBytes > 1_100) {
+      console.warn("[solanaV4CreateSubmit] create transaction near size limit", serializedBytes);
+    }
+
+    // web3.js 1.95 legacy Transaction overload: omit the second argument.
+    // This performs the same unsigned pre-sign simulation used by the accepted SBF gate.
+    const simulation = await connection.simulateTransaction(unsigned);
+    const logs = Array.isArray(simulation.value.logs) ? simulation.value.logs : [];
+    const source = `${simulation.value.err == null ? "" : JSON.stringify(simulation.value.err)}\n${logs.join("\n")}`;
+    if (/Access violation|stack frame|Program failed to complete/i.test(source)) {
+      throw Object.assign(
+        new Error("Solana create blocked before wallet signing: deployed program hit a BPF execution/stack failure."),
+        { logs, simulationErr: simulation.value.err },
+      );
+    }
+    if (simulation.value.err) {
+      throw Object.assign(
+        new Error("Solana create blocked before wallet signing: RPC simulation failed."),
+        { logs, simulationErr: simulation.value.err },
+      );
+    }
+
+    console.info("[solanaV4CreateSubmit] unsigned create simulation passed", {
+      serializedBytes,
+      unitsConsumed: simulation.value.unitsConsumed ?? null,
+      instructionCount: unsigned.instructions.length,
+      requiredWalletSigners: 1,
+    });
+  };
+
   const signAndSend = async () => {
-    // Take the blockhash immediately before the wallet popup so a long Phantom
-    // warning / "proceed unsafe" delay is less likely to expire it.
+    // Build and independently simulate the exact transaction before opening the wallet.
+    // A fresh blockhash is taken on every retry, so a slow wallet popup can safely retry.
     const latest = await connection.getLatestBlockhash("confirmed");
     const unsigned = buildUnsigned(latest.blockhash);
-    try {
-      const estimated = unsigned.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
-      if (estimated > 1200) console.warn("[solanaV4CreateSubmit] large transaction", estimated);
-    } catch {
-      // ignore estimate failures
-    }
+    await simulateUnsignedCreate(unsigned);
 
     const signed = await provider.signTransaction(unsigned);
     const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
-    // Phantom already simulated. A second RPC sim after the user paid often
-    // returns "Blockhash not found" on load-balanced public endpoints.
+    // Do not perform another RPC preflight after the user signs: a long wallet delay can
+    // expire the blockhash. The exact unsigned transaction already passed simulation.
     const signature = await connection.sendRawTransaction(raw, {
       skipPreflight: true,
       maxRetries: 3,
@@ -462,8 +503,11 @@ async function formatSolanaSendError(error: unknown): Promise<string> {
   }
 
   const explained = explainCustomProgramError(combined);
+  if (/Access violation|stack frame|Program failed to complete/i.test(combined)) {
+    return "Solana create blocked before signing: the deployed program hit a BPF execution/stack failure. Do not approve or deploy this transaction.";
+  }
   if (isBlockhashError(combined)) {
-    return "Solana create failed: the wallet took too long and the transaction blockhash expired. Approve the next Phantom popup quickly — do not wait on the simulation warning.";
+    return "Solana create failed: the wallet took too long and the transaction blockhash expired. Approve the next Phantom popup quickly after MemeWarzone simulation passes.";
   }
   if (/InvalidCreateAuthorization/i.test(combined) || explained?.startsWith("InvalidCreateAuthorization")) {
     return "Solana create failed (InvalidCreateAuthorization): route digest mismatch, expired auth, or Ed25519 is not immediately before CreateCampaign. Retry Push Live.";
