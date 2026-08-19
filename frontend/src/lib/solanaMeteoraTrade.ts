@@ -242,7 +242,19 @@ async function sendWalletTransaction(connection: Connection, transaction: Transa
   transaction.feePayer = walletAddress;
   transaction.recentBlockhash = latest.blockhash;
 
-  if (typeof provider.signAndSendTransaction === "function") {
+  if (typeof provider.signTransaction === "function") {
+    const signed = await provider.signTransaction(transaction);
+    const signature = await connection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: false,
+      maxRetries: 5,
+    });
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+      "confirmed",
+    );
+    if (confirmation.value.err) throw new Error(`Meteora swap failed: ${JSON.stringify(confirmation.value.err)}`);
+    return signature;
+  } else if (typeof provider.signAndSendTransaction === "function") {
     const result = await provider.signAndSendTransaction(transaction);
     const signature = typeof result === "string" ? result : String(result?.signature || "");
     if (!signature) throw new Error("Solana wallet did not return a transaction signature.");
@@ -252,22 +264,9 @@ async function sendWalletTransaction(connection: Connection, transaction: Transa
     );
     if (confirmation.value.err) throw new Error(`Meteora swap failed: ${JSON.stringify(confirmation.value.err)}`);
     return signature;
-  }
-
-  if (typeof provider.signTransaction !== "function") {
+  } else {
     throw new Error("This Solana wallet cannot sign transactions.");
   }
-  const signed = await provider.signTransaction(transaction);
-  const signature = await connection.sendRawTransaction(signed.serialize(), {
-    skipPreflight: false,
-    maxRetries: 5,
-  });
-  const confirmation = await connection.confirmTransaction(
-    { signature, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
-    "confirmed",
-  );
-  if (confirmation.value.err) throw new Error(`Meteora swap failed: ${JSON.stringify(confirmation.value.err)}`);
-  return signature;
 }
 
 /** Execute a previously displayed quote against the verified deterministic DAMM v2 pool. */
