@@ -617,6 +617,42 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     after = await snapshot();
     assert.equal(after.campaign.curveClosed, true);
 
+    const vaultTokens = await getAccount(connection, campaignAccounts.tokenVault, "confirmed");
+    const remainingCurve =
+      after.campaign.curveTokenSupply - after.campaign.soldTokens;
+    const expectedVault =
+      remainingCurve + after.campaign.liquidityTokenSupply + after.campaign.reserveTokenSupply;
+    assert.equal(
+      BigInt(vaultTokens.amount.toString()),
+      expectedVault,
+      "token vault must still hold unsold curve + LP allocation + reserve",
+    );
+    assert.equal(
+      BigInt(vaultTokens.amount.toString()) + after.tokenAmount,
+      after.campaign.tokenTotalSupply,
+      "vault + trader holdings must equal total supply",
+    );
+
+    const quote = graduationQuote(after.campaign);
+    console.log("[sbf-gate] graduation quote", {
+      netRaised: after.campaign.netRaisedLamports.toString(),
+      finalizeFee: quote.finalizeFeeLamports.toString(),
+      lpSol: quote.maxLiquidityLamports.toString(),
+      lpTokens: quote.maxLiquidityTokens.toString(),
+      creatorPayout: quote.creatorPayoutLamports.toString(),
+      pool: deriveMeteoraPool(campaignAccounts.mint).toBase58(),
+    });
+    assert.ok(quote.maxLiquidityLamports > 0n, "LP SOL must be > 0");
+    assert.ok(quote.maxLiquidityTokens > 0n, "LP tokens must be > 0");
+    assert.ok(quote.maxLiquidityTokens <= after.campaign.liquidityTokenSupply);
+    assert.ok(quote.finalizeFeeLamports + quote.maxLiquidityLamports + quote.creatorPayoutLamports
+      === after.campaign.netRaisedLamports);
+
+    const [poolA, poolB] = orderedPubkeys(campaignAccounts.mint, NATIVE_MINT);
+    assert.ok(poolA.equals(campaignAccounts.mint) || poolA.equals(NATIVE_MINT));
+    assert.ok(poolB.equals(campaignAccounts.mint) || poolB.equals(NATIVE_MINT));
+    assert.notEqual(poolA.equals(poolB), true, "LP pair must be launch mint + SOL");
+
     let closedBuyFailed = false;
     try {
       await sendBuy(BUY_LAMPORTS, CLOSE_TARGET_LAMPORTS);
@@ -625,6 +661,34 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     }
     assert.equal(closedBuyFailed, true, "buy after curve close must fail");
   });
+
+  function bpsAmount(amount, bps) {
+    return (BigInt(amount) * BigInt(bps)) / 10000n;
+  }
+
+  function graduationQuote(campaign) {
+    const scale = 10n ** BigInt(campaign.tokenDecimals);
+    const nano = 1_000_000_000n;
+    const spot =
+      BigInt(campaign.basePriceLamports) * nano
+      + (BigInt(campaign.priceSlopeLamports) * BigInt(campaign.soldTokens)) / scale;
+    const finalizeFee = bpsAmount(campaign.netRaisedLamports, campaign.finalizeFeeBps);
+    const remaining = campaign.netRaisedLamports - finalizeFee;
+    const targetLiquidity = bpsAmount(remaining, campaign.liquidityPostFinalizeBps);
+    const desiredTokens = (targetLiquidity * scale * nano) / spot;
+    const maxTokens = desiredTokens < campaign.liquidityTokenSupply
+      ? desiredTokens
+      : campaign.liquidityTokenSupply;
+    const lpSol = desiredTokens <= campaign.liquidityTokenSupply
+      ? targetLiquidity
+      : (maxTokens * spot) / (scale * nano);
+    return {
+      finalizeFeeLamports: finalizeFee,
+      maxLiquidityLamports: lpSol,
+      maxLiquidityTokens: maxTokens,
+      creatorPayoutLamports: remaining - lpSol,
+    };
+  }
 
   function orderedPubkeys(a, b) {
     return Buffer.compare(a.toBuffer(), b.toBuffer()) > 0 ? [a, b] : [b, a];
