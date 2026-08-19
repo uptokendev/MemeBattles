@@ -351,7 +351,15 @@ export function mapSolanaTradeError(err: unknown): string {
   if (/buffer is not defined|Buffer is not defined/i.test(msg)) {
     return "Browser crypto missing Buffer — hard-refresh after the latest frontend deploy.";
   }
+  if (/Access violation|stack frame|Program failed to complete/i.test(msg)) {
+    return "Trade simulation crashed the program (Access violation / stack overflow). Not submitting this transaction.";
+  }
   return msg;
+}
+
+function collectSimSource(err: unknown, logs: string[]): string {
+  const errText = typeof err === "string" ? err : JSON.stringify(err);
+  return `${errText}\n${logs.join("\n")}`;
 }
 
 /** SPL token balance (raw base units) for owner ATA. */
@@ -510,12 +518,35 @@ export async function submitSolanaTradeV1(
   tx.feePayer = new PublicKey(traderPk);
   tx.recentBlockhash = latest.blockhash;
 
+  // Simulate the unsigned tx before Phantom. skipPreflight after a passing sim is
+  // intentional: the wallet popup often burns the blockhash on a second RPC preflight.
+  const simulation = await connection.simulateTransaction(tx, { sigVerify: false });
+  const simLogs = Array.isArray(simulation.value?.logs) ? simulation.value.logs.map(String) : [];
+  if (simulation.value?.err) {
+    const source = collectSimSource(simulation.value.err, simLogs);
+    try {
+      console.error("[solanaTradeV1] trade simulation failed", {
+        err: simulation.value.err,
+        logs: simLogs,
+      });
+    } catch {
+      /* ignore console failures */
+    }
+    throw new Error(source);
+  }
+
   const signed = await provider.signTransaction(tx);
   const sig = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: true,
     maxRetries: 3,
   });
-  await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+  const confirmation = await connection.confirmTransaction(
+    { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+    "confirmed",
+  );
+  if (confirmation.value?.err) {
+    throw new Error(`Trade failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+  }
   return { signature: sig };
 }
 
