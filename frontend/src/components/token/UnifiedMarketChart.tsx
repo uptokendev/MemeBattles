@@ -16,7 +16,7 @@ import type { MarketCandle, MarketState } from "@/lib/marketContinuityApi";
 import { buildCandles, type CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 import { fetchUserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
-import { isSolanaChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, isSolanaChainId } from "@/lib/chainConfig";
 import {
   solanaMarginalSpotSol,
   type SolanaCurvePricingState,
@@ -351,7 +351,42 @@ function marketCandlesForChart(
 }
 
 function authoritativeCandleData(client: CandleRow[], server: CandleRow[]): CandleRow[] {
-  return server.length ? server : client;
+  const byTime = new Map<number, CandleRow>();
+  const ingest = (rows: CandleRow[]) => {
+    for (const row of rows) {
+      const time = Number(row.time);
+      if (!Number.isFinite(time)) continue;
+      const prev = byTime.get(time);
+      if (!prev) {
+        byTime.set(time, { ...row, time: time as Time });
+        continue;
+      }
+      prev.high = Math.max(prev.high, row.high);
+      prev.low = Math.min(prev.low, row.low);
+      prev.close = row.close;
+    }
+  };
+  ingest(server);
+  ingest(client);
+  return [...byTime.keys()]
+    .sort((a, b) => a - b)
+    .map((time) => {
+      const row = byTime.get(time)!;
+      return {
+        time: time as Time,
+        open: row.open,
+        high: Math.max(row.open, row.high, row.low, row.close),
+        low: Math.min(row.open, row.high, row.low, row.close),
+        close: row.close,
+      };
+    });
+}
+
+function candlePolarity(row: CandleRow | undefined): number {
+  if (!row) return 0;
+  if (row.close > row.open) return 1;
+  if (row.close < row.open) return -1;
+  return 0;
 }
 
 function sameCandle(a: CandleRow | undefined, b: CandleRow | undefined): boolean {
@@ -442,7 +477,7 @@ export function UnifiedMarketChart({
   creatorAddress,
   creatorAvatarUrl,
   creatorDisplayName,
-  chainId = 97,
+  chainId = getDefaultChainId(),
   currentBondingSoldRaw,
   solanaCurvePricing,
   solanaGraduated = false,
@@ -596,9 +631,10 @@ export function UnifiedMarketChart({
     const lastSec = last ? timeToSec(last.time) : 0;
 
     if (last && lastSec === bucketSec) {
-      last.high = Math.max(last.high, liveValue);
-      last.low = Math.min(last.low, liveValue);
-      last.close = liveValue;
+      // Keep the printed trade close. Live spot may only extend the wick so a
+      // buy+sell in the same minute stays one candle instead of a gapped red stub.
+      last.high = Math.max(last.high, liveValue, last.open, last.close);
+      last.low = Math.min(last.low, liveValue, last.open, last.close);
       return rows;
     }
 
@@ -682,7 +718,7 @@ export function UnifiedMarketChart({
     const addr = normalizedWallet(chainId, creatorAddress);
     if (!addr) { setResolvedAvatar(null); setResolvedName(null); return; }
     let cancelled = false;
-    void fetchUserProfile(Number(chainId || 97), addr)
+    void fetchUserProfile(Number(chainId || getDefaultChainId()), addr)
       .then((profile) => { if (!cancelled) { setResolvedAvatar(resolveImageUri(profile?.avatarUrl || "") || null); setResolvedName(profile?.displayName?.trim() || creatorDisplayName?.trim() || null); } })
       .catch(() => { if (!cancelled) { setResolvedAvatar(null); setResolvedName(creatorDisplayName?.trim() || null); } });
     return () => { cancelled = true; };
@@ -742,7 +778,15 @@ export function UnifiedMarketChart({
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: true, price: false } },
     });
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#26a69a", downColor: "#ef5350", borderVisible: true, wickUpColor: "#26a69a", wickDownColor: "#ef5350", priceLineVisible: true, lastValueVisible: true,
+      upColor: "#26a69a",
+      downColor: "#ef5350",
+      borderVisible: true,
+      borderUpColor: "#26a69a",
+      borderDownColor: "#ef5350",
+      wickUpColor: "#26a69a",
+      wickDownColor: "#ef5350",
+      priceLineVisible: true,
+      lastValueVisible: true,
       priceFormat: { type: "custom", minMove: metric === "price" ? (solana ? 0.000000000001 : 0.00000001) : 0.01, formatter: (value: number) => formatValue(value, metric, denomination, nativeSymbol) },
     });
     chartRef.current = chart;
@@ -809,7 +853,8 @@ export function UnifiedMarketChart({
     const visibleBefore = initialRangeSetRef.current ? chart.timeScale().getVisibleLogicalRange() : null;
     const wasFollowingRealtime = !visibleBefore || !previous.length || visibleBefore.to >= previous.length - 2;
     const appendedBar = previous.length > 0 && data.length === previous.length + 1 && Number(data[data.length - 1]?.time || 0) > Number(previous[previous.length - 1]?.time || 0);
-    const incremental = canUpdateIncrementally(previous, data);
+    const polarityFlipped = candlePolarity(previous[previous.length - 1]) !== candlePolarity(data[data.length - 1]);
+    const incremental = canUpdateIncrementally(previous, data) && !polarityFlipped;
 
     if (incremental) {
       series.update(data[data.length - 1] as any);
@@ -950,7 +995,7 @@ export function UnifiedMarketChart({
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5"><div className="text-orange-200/55">Market cap</div><div className="font-semibold text-white">{hoverPin.mcapUsd != null ? formatValue(hoverPin.mcapUsd, "marketcap", "USD", nativeSymbol) : "—"}</div></div>
                 <div className="rounded-lg border border-orange-400/15 bg-orange-500/[0.06] px-2 py-1.5"><div className="text-orange-200/55">Price</div><div className="font-semibold text-white">{formatValue(denomination === "USD" ? hoverPin.priceNative * (nativeUsd || 1) : hoverPin.priceNative, "price", denomination, nativeSymbol)}</div></div>
               </div>
-              {isValidTradeTxHash(hoverPin.txHash) ? <a href={explorerTxUrl(Number(chainId || 97), hoverPin.txHash)} target="_blank" rel="noreferrer" className="mt-2 flex w-full items-center justify-center rounded-lg border border-orange-400/45 bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25 hover:text-orange-100" onMouseEnter={() => openCreatorTooltip(hoverPin.id)} onClick={(event) => event.stopPropagation()}>View tx</a> : null}
+              {isValidTradeTxHash(hoverPin.txHash) ? <a href={explorerTxUrl(Number(chainId || getDefaultChainId()), hoverPin.txHash)} target="_blank" rel="noreferrer" className="mt-2 flex w-full items-center justify-center rounded-lg border border-orange-400/45 bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25 hover:text-orange-100" onMouseEnter={() => openCreatorTooltip(hoverPin.id)} onClick={(event) => event.stopPropagation()}>View tx</a> : null}
             </div>
           ) : null}
         </div>
