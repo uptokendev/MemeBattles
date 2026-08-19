@@ -44,5 +44,5 @@ export function chainIdForWalletKind(kind: ActiveWalletKind, evmChainId?: number
   if (evmChainId === 56 || evmChainId === 97) return evmChainId;
   const stored = readStoredFeedChainId();
   if (stored === 56 || stored === 97) return stored;
-  return 97;
+  return 56;
 }
