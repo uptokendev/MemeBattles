@@ -105,6 +105,7 @@ async function loadLifecycleRows(chainId, campaignAddresses, { includeUnindexedS
   );
   // Only attach draft metadata for campaigns already in the indexer, unless
   // includeTestnet is on (legacy Solana path that promoted public deployed drafts).
+  const queryArgs = isSolana ? [chain, addresses, includeUnindexedSolanaDrafts] : [chain, addresses];
   const result = await pool.query(
     isSolana
       ? `select *
@@ -134,7 +135,7 @@ async function loadLifecycleRows(chainId, campaignAddresses, { includeUnindexedS
               )
             )
           order by updated_at desc`,
-    [chain, addresses, includeUnindexedSolanaDrafts],
+    queryArgs,
   );
 
   const byCampaign = new Map();
