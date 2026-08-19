@@ -1769,20 +1769,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_risk_manual_review_blocks_trade() {
-        let trader = Pubkey::new_unique();
-        let risk = RiskProfile {
-            wallet: trader,
-            risk_level: 1,
-            restricted: false,
-            cluster_id: [0; 32],
-            manual_review_required: true,
-            bump: 1,
-        };
-        assert!(validate_trade_risk_profile(&risk, trader).is_err());
-    }
-
-    #[test]
     fn raise_target_overshoot_closes_curve_without_graduating() {
         assert!(should_close_curve(1_000, 1_000_000, 6_000_000, 5_868_940));
         assert!(!should_close_curve(1_000, 1_000_000, 5_000_000, 5_868_940));

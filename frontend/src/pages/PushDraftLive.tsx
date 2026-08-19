@@ -346,6 +346,12 @@ export default function PushDraftLive() {
 
       const created = await submitSolanaV4CreateFromAuthorization(authorization, {
         creatorAddress: solanaWallet.solanaAccount,
+        onPreflightReady: (preview) => {
+          toast.success(
+            `Solana deployment ready · Security checks passed ✓ · Transaction simulation passed ✓ · Estimated deployment cost: ≈ ${(preview.estimatedDeploymentLamports / 1_000_000_000).toFixed(4)} SOL`,
+            { duration: 8_000 },
+          );
+        },
       });
       if (created.recovered) {
         toast.message("Existing Solana campaign found for this draft — finalizing without a new create.");

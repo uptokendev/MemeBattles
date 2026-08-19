@@ -18,6 +18,10 @@ const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const MAX_SOLANA_TRANSACTION_BYTES = 1_232;
+const LAMPORTS_PER_SOL = 1_000_000_000;
+const MIN_CREATE_LAMPORTS = 30_000_000; // conservative balance guard / fallback only
+const CREATE_RENT_ACCOUNT_SIZES = [720, 82, 165, 81, 155] as const;
+const CREATOR_PROFILE_ACCOUNT_BYTES = 84;
 
 /** Anchor 0.30: first 8 bytes of sha256("global:create_campaign") */
 const CREATE_CAMPAIGN_DISCRIMINATOR = new Uint8Array([
@@ -167,12 +171,28 @@ export type SolanaV4CreateSubmitResult = {
   recovered?: boolean;
 };
 
+export type SolanaV4CreatePreflightPreview = {
+  walletBalanceLamports: number;
+  serializedBytes: number;
+  instructionCount: number;
+  unitsConsumed: number | null;
+  estimatedFeeLamports: number | null;
+  estimatedRentLamports: number | null;
+  estimatedDeploymentLamports: number;
+  estimateSource: "rpc-fee+rent" | "conservative-fallback";
+};
+
+export type SolanaV4CreateSubmitOptions = {
+  creatorAddress?: string;
+  onPreflightReady?: (preview: SolanaV4CreatePreflightPreview) => void | Promise<void>;
+};
+
 /**
  * Authorize response → wallet-signed V4 create transaction.
  */
 export async function submitSolanaV4CreateFromAuthorization(
   authorization: SolanaV4CreateAuthorizationResponse,
-  opts?: { creatorAddress?: string },
+  opts?: SolanaV4CreateSubmitOptions,
 ): Promise<SolanaV4CreateSubmitResult> {
   // Recovery: campaign PDA already exists for this draft (create succeeded earlier).
   if (authorization.alreadyOnChain || authorization.existingDeployment) {
@@ -195,7 +215,7 @@ export async function submitSolanaV4CreateFromAuthorization(
 
 export async function submitSolanaV4CreatePlan(
   plan: SolanaV4GeneratedIdlInvocationPlan,
-  opts?: { creatorAddress?: string },
+  opts?: SolanaV4CreateSubmitOptions,
 ): Promise<SolanaV4CreateSubmitResult> {
   const provider = getSolanaProvider();
   if (!provider?.publicKey || typeof provider.signTransaction !== "function") {
@@ -250,7 +270,6 @@ export async function submitSolanaV4CreatePlan(
   const createIx = buildCreateCampaignIx(web3, plan);
 
   const balance = await connection.getBalance(new PublicKey(creatorPk), "confirmed");
-  const MIN_CREATE_LAMPORTS = 30_000_000; // ~0.03 SOL covers mint/vault/campaign/auth rent
   if (balance < MIN_CREATE_LAMPORTS) {
     throw new Error(
       `Not enough SOL to deploy this campaign. Need about 0.03 SOL for rent; this wallet has ${(balance / 1_000_000_000).toFixed(4)} SOL.`,
@@ -309,20 +328,71 @@ export async function submitSolanaV4CreatePlan(
       );
     }
 
+    const unitsConsumed = simulation.value.unitsConsumed ?? null;
+    const instructionCount = unsigned.instructions.length;
     console.info("[solanaV4CreateSubmit] unsigned create simulation passed", {
       serializedBytes,
-      unitsConsumed: simulation.value.unitsConsumed ?? null,
-      instructionCount: unsigned.instructions.length,
+      unitsConsumed,
+      instructionCount,
       requiredWalletSigners: 1,
     });
+    return { serializedBytes, unitsConsumed, instructionCount };
   };
 
+  const estimateDeploymentCost = async (
+    unsigned: InstanceType<typeof Transaction>,
+    simulation: { serializedBytes: number; unitsConsumed: number | null; instructionCount: number },
+  ): Promise<SolanaV4CreatePreflightPreview> => {
+    let estimatedFeeLamports: number | null = null;
+    try {
+      const fee = await connection.getFeeForMessage(unsigned.compileMessage(), "confirmed");
+      estimatedFeeLamports = typeof fee.value === "number" ? fee.value : null;
+    } catch (error) {
+      console.warn("[solanaV4CreateSubmit] fee estimate unavailable", error);
+    }
+
+    let estimatedRentLamports: number | null = null;
+    try {
+      const sizes: number[] = [...CREATE_RENT_ACCOUNT_SIZES];
+      const creatorProfilePk = new PublicKey(plan.createCampaign.accounts.creatorProfile);
+      const creatorProfileInfo = await connection.getAccountInfo(creatorProfilePk, "confirmed");
+      if (!creatorProfileInfo) sizes.push(CREATOR_PROFILE_ACCOUNT_BYTES);
+      const rents = await Promise.all(sizes.map((size) => connection.getMinimumBalanceForRentExemption(size, "confirmed")));
+      estimatedRentLamports = rents.reduce((sum, lamports) => sum + lamports, 0);
+    } catch (error) {
+      console.warn("[solanaV4CreateSubmit] rent estimate unavailable", error);
+    }
+
+    const precise = estimatedFeeLamports != null && estimatedRentLamports != null;
+    const preview: SolanaV4CreatePreflightPreview = {
+      walletBalanceLamports: balance,
+      serializedBytes: simulation.serializedBytes,
+      instructionCount: simulation.instructionCount,
+      unitsConsumed: simulation.unitsConsumed,
+      estimatedFeeLamports,
+      estimatedRentLamports,
+      estimatedDeploymentLamports: precise ? estimatedFeeLamports + estimatedRentLamports : MIN_CREATE_LAMPORTS,
+      estimateSource: precise ? "rpc-fee+rent" : "conservative-fallback",
+    };
+    console.info("[solanaV4CreateSubmit] deployment preflight ready", {
+      ...preview,
+      estimatedDeploymentSol: preview.estimatedDeploymentLamports / LAMPORTS_PER_SOL,
+    });
+    return preview;
+  };
+
+  let preflightPreviewShown = false;
   const signAndSend = async () => {
     // Simulate first with a temporary blockhash. Only a clean simulation is allowed
     // to reach Phantom; then rebuild the identical instruction set with a fresh hash.
     const simulationLatest = await connection.getLatestBlockhash("confirmed");
     const simulationTx = buildUnsigned(simulationLatest.blockhash);
-    await simulateUnsignedCreate(simulationTx);
+    const simulation = await simulateUnsignedCreate(simulationTx);
+    const preview = await estimateDeploymentCost(simulationTx, simulation);
+    if (!preflightPreviewShown && opts?.onPreflightReady) {
+      await opts.onPreflightReady(preview);
+      preflightPreviewShown = true;
+    }
 
     const latest = await connection.getLatestBlockhash("confirmed");
     const unsigned = buildUnsigned(latest.blockhash);

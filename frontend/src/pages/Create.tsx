@@ -590,9 +590,15 @@ const Create = () => {
           throw new Error("Railway did not return a Direct finalization token.");
         }
 
-        toast.message("Confirm createCampaign in your Solana wallet…");
+        toast.message("Running Solana security simulation…");
         const created = await submitSolanaV4CreateFromAuthorization(authorization, {
           creatorAddress: creatorWallet,
+          onPreflightReady: (preview) => {
+            toast.success(
+              `Solana deployment ready · Security checks passed ✓ · Transaction simulation passed ✓ · Estimated deployment cost: ≈ ${(preview.estimatedDeploymentLamports / 1_000_000_000).toFixed(4)} SOL`,
+              { duration: 8_000 },
+            );
+          },
         });
 
         toast.message("Finalizing Direct campaign registry…");

@@ -13,9 +13,6 @@ function before(left, right) {
 
 test("trade authorization is fail-closed before route signing", () => {
   for (const marker of [
-    "SOLANA_WALLET_RESTRICTED",
-    "SOLANA_WALLET_MANUAL_REVIEW",
-    "SOLANA_CLUSTER_RESTRICTED",
     "SOLANA_LAUNCHPAD_PAUSED",
     "SOLANA_BUYS_PAUSED",
     "SOLANA_SELLS_PAUSED",
@@ -24,9 +21,27 @@ test("trade authorization is fail-closed before route signing", () => {
     "SOLANA_REWARD_VAULTS_NOT_READY",
   ]) assert.match(auth, new RegExp(marker));
 
-  before("await assertTradeGlobalPreflight", "const signature = signer.sign(digest)");
-  before("await assertRewardVaultPreflight", "const signature = signer.sign(digest)");
-  before("await resolveTraderClusterProfile", "const signature = signer.sign(digest)");
+  for (const code of [
+    "SOLANA_WALLET_RESTRICTED",
+    "SOLANA_WALLET_MANUAL_REVIEW",
+    "SOLANA_CLUSTER_RESTRICTED",
+  ]) {
+    const codeIndex = auth.indexOf(`code: "${code}"`);
+    assert.ok(codeIndex >= 0, `missing ${code}`);
+    const statusIndex = auth.indexOf("httpStatus: 403", codeIndex);
+    assert.ok(
+      statusIndex > codeIndex && statusIndex - codeIndex < 180,
+      `${code} must remain an HTTP 403 preflight rejection`,
+    );
+  }
+
+  const sign = "const signature = signer.sign(digest)";
+  before("await assertTradeGlobalPreflight", sign);
+  before("await assertRewardVaultPreflight", sign);
+  before("await resolveTraderClusterProfile", sign);
+  before("assertCurveOpen", sign);
+  before("await resolveRouteProfile", sign);
+  assert.equal(auth.indexOf(sign), auth.lastIndexOf(sign), "authorization digest must be signed in exactly one place");
 });
 
 test("BPF trade path keeps signed authorization but drops risk/cluster deserialization", () => {
