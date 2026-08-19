@@ -244,6 +244,10 @@ async function sendWalletTransaction(connection: Connection, transaction: Transa
 
   const simulation = await connection.simulateTransaction(transaction, { sigVerify: false });
   if (simulation.value.err) {
+    console.error("Transaction simulation failed with error:", simulation.value.err);
+    if (simulation.value.logs) {
+      console.error("Simulation logs:", simulation.value.logs.join("\n"));
+    }
     throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
   }
 
