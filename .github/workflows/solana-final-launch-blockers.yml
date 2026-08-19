@@ -54,7 +54,7 @@ jobs:
         run: |
           set -o pipefail
           node --check scripts/solana/upgrade-mainnet-launchpad.cjs
-          npm ci --prefix frontend
+          npm install --prefix frontend --no-audit --no-fund
           npm --prefix frontend run build
 
       - name: Install Rust toolchains
