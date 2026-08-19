@@ -241,6 +241,7 @@ async function fetchOnChainTradeSnapshot(
   limit: number,
   signal?: AbortSignal,
   lookbackBlocks = 50_000,
+  fromBlock?: number,
 ): Promise<CurveTradePoint[]> {
   // Solana history comes from the dedicated program indexer; never send base58
   // addresses through EVM getLogs recovery.
@@ -257,6 +258,7 @@ async function fetchOnChainTradeSnapshot(
     address,
     topics: [buys],
     lookbackBlocks,
+    fromBlock,
     chunkSize: 2_500,
     signal,
   });
@@ -265,6 +267,7 @@ async function fetchOnChainTradeSnapshot(
     address,
     topics: [sells],
     lookbackBlocks,
+    fromBlock,
     chunkSize: 2_500,
     signal,
   });
@@ -314,6 +317,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const inFlightRef = useRef(false);
   const tipInFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
+  const highestBlockScannedRef = useRef(0);
   const reconcileMs = opts?.reconcileMs ?? 4_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
   const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
@@ -369,10 +373,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           applySnapshot(apiRows);
           setLoading(false);
           initialLoadedRef.current = true;
-          if (isSolanaChainId(chainId) && mode === "tip") {
-            setError(null);
-            return;
-          }
+          
+          // If the indexer API successfully returned data, skip the aggressive 
+          // on-chain fallback entirely.
+          setError(null);
+          return;
         }
       } catch (apiError: any) {
         if (isAbortError(apiError)) return;
@@ -381,15 +386,23 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
       if (isEvmChainId(chainId) && ENABLE_ONCHAIN_TRADE_FALLBACK) {
         try {
+          const isDelta = highestBlockScannedRef.current > 0;
           const fallbackRows = await fetchOnChainTradeSnapshot(
             campaignAddress,
             chainId,
             limit,
             signal,
-            mode === "tip" ? 8_000 : 200_000,
+            mode === "tip" && isDelta ? 10_000 : 200_000,
+            isDelta ? highestBlockScannedRef.current + 1 : undefined,
           );
           if (signal?.aborted) return;
-          if (fallbackRows.length) applySnapshot(fallbackRows);
+          if (fallbackRows.length) {
+            applySnapshot(fallbackRows);
+            const maxBlock = Math.max(...fallbackRows.map(r => r.blockNumber));
+            if (maxBlock > highestBlockScannedRef.current) {
+              highestBlockScannedRef.current = maxBlock;
+            }
+          }
         } catch (fallbackError) {
           if (!isAbortError(fallbackError)) console.warn("[useCurveTrades] on-chain trade recovery skipped/failed", fallbackError);
         }
