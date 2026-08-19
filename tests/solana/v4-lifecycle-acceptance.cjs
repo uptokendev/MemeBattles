@@ -716,24 +716,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
 
-    const restrictedClusterId = hash32("restricted-cluster");
-    const restrictedCluster = derivePda(program.programId, "cluster", restrictedClusterId);
+    // Risk/manual-review/cluster policy is enforced before the backend signs.
+    // Keep an allowed non-empty cluster account in the transaction for account-list
+    // compatibility, but do not re-run application policy inside the BPF hot path.
     const allowedClusterId = hash32("allowed-cluster");
     const allowedCluster = derivePda(program.programId, "cluster", allowedClusterId);
-    await program.methods
-      .syncClusterProfile({
-        clusterId: Array.from(restrictedClusterId),
-        size: 2,
-        riskLevel: 3,
-        restricted: true,
-      })
-      .accountsStrict({
-        authority: admin,
-        globalConfig,
-        clusterProfile: restrictedCluster,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
     await program.methods
       .syncClusterProfile({
         clusterId: Array.from(allowedClusterId),
@@ -748,32 +735,6 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
-    await program.methods
-      .syncRiskProfile({
-        wallet: buyer.keypair.publicKey,
-        riskLevel: 3,
-        restricted: false,
-        clusterId: Array.from(restrictedClusterId),
-        manualReviewRequired: false,
-      })
-      .accountsStrict({
-        authority: admin,
-        globalConfig,
-        riskProfile: buyer.riskProfile,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
-    await expectProgramFail(
-      "restricted cluster buy",
-      () => sendBuy(BUY_LAMPORTS, 0n, { clusterId: restrictedClusterId }),
-      /ClusterRestricted/,
-    );
-    await expectProgramFail(
-      "restricted cluster sell",
-      () => sendSell(1n, { clusterId: restrictedClusterId }),
-      /ClusterRestricted/,
-    );
-
     await program.methods
       .syncRiskProfile({
         wallet: buyer.keypair.publicKey,

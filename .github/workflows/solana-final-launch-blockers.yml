@@ -1,0 +1,311 @@
+name: Solana Final Launch Blocker Gate
+
+on:
+  push:
+    branches:
+      - agent/solana-final-launch-blockers
+  pull_request:
+    branches:
+      - main
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - programs/memewarzone_solana/**
+      - tests/solana/**
+      - frontend/src/lib/solanaV4CreateSubmit.ts
+      - frontend/src/lib/solanaTradeV1.ts
+      - frontend/api/dev-fix/solana-trade-authorization-v1.js
+      - frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
+      - scripts/solana/upgrade-mainnet-launchpad.cjs
+      - .github/workflows/solana-final-launch-blockers.yml
+  workflow_dispatch:
+
+concurrency:
+  group: solana-final-launch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  IDL_RUST_TOOLCHAIN: nightly-2024-05-09
+  CARGO_NET_RETRY: 10
+  ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+  MAINNET_RPC: https://api.mainnet-beta.solana.com
+  PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
+
+jobs:
+  exact-sbf-gate:
+    name: Exact launchpad SBF create + buy/sell gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-final-launch-blockers
+          fetch-depth: 2
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate committed preflight and frontend surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check HEAD^ HEAD
+          node --check scripts/solana/upgrade-mainnet-launchpad.cjs
+          node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
+          node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
+          npm install --prefix frontend --no-audit --no-fund
+          npm --prefix frontend run build
+
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+
+      - name: Record release environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "git_sha=$(git rev-parse HEAD)"
+          anchor --version
+          solana --version
+          rustc --version
+          cargo --version
+          node --version
+          npm --version
+          rustfmt --edition 2021 --check programs/memewarzone_solana/src/authorized_trade.rs
+
+      - name: Create ephemeral test payer
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
+          echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
+
+      - name: Build exact launchpad SBF artifact once
+        shell: bash
+        run: |
+          set -o pipefail
+          anchor build --program-name memewarzone_solana --no-idl \
+            2>&1 | tee /tmp/mwz-anchor-build.log | tail -n 180
+          if grep -Eqi 'Stack offset .*exceeded max offset|exceeded max offset.*4096|stack frame.*exceed' /tmp/mwz-anchor-build.log; then
+            echo 'FATAL: launchpad SBF stack-frame diagnostic found in build output' >&2
+            grep -Ein 'Stack offset|exceeded max offset|stack frame' /tmp/mwz-anchor-build.log >&2 || true
+            exit 1
+          fi
+          test -s target/deploy/memewarzone_solana.so
+          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-sha256.txt
+          wc -c target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-bytes.txt
+
+      - name: Compare candidate with live mainnet program
+        shell: bash
+        run: |
+          set +e
+          rm -f /tmp/mwz-mainnet-live.so /tmp/mwz-mainnet-program.json /tmp/mwz-mainnet-audit.err
+          solana program show "$PROGRAM_ID" --url "$MAINNET_RPC" --output json \
+            > /tmp/mwz-mainnet-program.json 2> /tmp/mwz-mainnet-audit.err
+          show_status=$?
+          if [ "$show_status" -eq 0 ]; then
+            cat /tmp/mwz-mainnet-program.json
+            solana program dump "$PROGRAM_ID" /tmp/mwz-mainnet-live.so --url "$MAINNET_RPC" \
+              2>> /tmp/mwz-mainnet-audit.err
+            dump_status=$?
+          else
+            dump_status=1
+          fi
+          if [ "$show_status" -eq 0 ] && [ "$dump_status" -eq 0 ] && [ -s /tmp/mwz-mainnet-live.so ]; then
+            sha256sum /tmp/mwz-mainnet-live.so | tee /tmp/mwz-mainnet-sha256.txt
+            wc -c /tmp/mwz-mainnet-live.so | tee /tmp/mwz-mainnet-bytes.txt
+            if cmp -s target/deploy/memewarzone_solana.so /tmp/mwz-mainnet-live.so; then
+              echo 'LIVE_BINARY_MATCH=true' | tee /tmp/mwz-mainnet-compare.txt
+            else
+              echo 'LIVE_BINARY_MATCH=false' | tee /tmp/mwz-mainnet-compare.txt
+            fi
+          else
+            echo 'MAINNET_BINARY_AUDIT=UNAVAILABLE' | tee /tmp/mwz-mainnet-compare.txt
+            cat /tmp/mwz-mainnet-audit.err >&2 || true
+          fi
+          exit 0
+
+      - name: Generate matching launchpad IDL without rebuilding SBF
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/idl
+          (
+            cd programs/memewarzone_solana
+            RUSTUP_TOOLCHAIN="$IDL_RUST_TOOLCHAIN" anchor idl build \
+              --out ../../target/idl/memewarzone_solana.json
+          ) 2>&1 | tee /tmp/mwz-idl-build.log | tail -n 220
+          test -s target/idl/memewarzone_solana.json
+          sha256sum -c /tmp/mwz-so-sha256.txt
+
+      - name: Install acceptance dependencies
+        run: npm install --prefix tests/solana --no-audit --no-fund
+
+      - name: Run CREATE acceptance against exact .so
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mwz-create-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-create-ledger \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-create-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 90 ]; then tail -n 200 /tmp/mwz-create-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          solana airdrop 100 >/dev/null
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-create-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-create-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-create-acceptance.log; then
+            echo 'FATAL: CREATE acceptance contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Run BUY/SELL lifecycle against same exact .so
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mwz-lifecycle-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-lifecycle-ledger \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-lifecycle-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 90 ]; then tail -n 200 /tmp/mwz-lifecycle-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          solana airdrop 100 >/dev/null
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-lifecycle-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-lifecycle-acceptance.log; then
+            echo 'FATAL: lifecycle acceptance contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Emit frozen candidate manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MWZ_GIT_SHA="$(git rev-parse HEAD)"
+          export MWZ_PROGRAM_SHA256="$(awk '{print $1}' /tmp/mwz-so-sha256.txt)"
+          export MWZ_PROGRAM_BYTES="$(awk '{print $1}' /tmp/mwz-so-bytes.txt)"
+          export MWZ_LIVE_COMPARE="$(cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true)"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "programId": os.environ["PROGRAM_ID"],
+              "gitSha": os.environ["MWZ_GIT_SHA"],
+              "sha256": os.environ["MWZ_PROGRAM_SHA256"],
+              "bytes": int(os.environ["MWZ_PROGRAM_BYTES"]),
+              "createGate": "PASS",
+              "tradeGate": "PASS",
+              "backendPreflightGate": "PASS",
+              "bpfAccessViolations": 0,
+              "stackFrameErrors": 0,
+              "programFailedToComplete": 0,
+              "liveBinaryComparisonBeforeUpgrade": os.environ.get("MWZ_LIVE_COMPARE", ""),
+          }
+          path = Path("target/deploy/memewarzone_solana.release.json")
+          path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(path.read_text(encoding="utf-8"))
+          PY
+          sha256sum -c /tmp/mwz-so-sha256.txt
+          printf '%s\n' '========================================'
+          printf '%s\n' 'MEMEWARZONE SOLANA FINAL RELEASE GATE'
+          printf '%s\n' '========================================'
+          echo "git_sha=$MWZ_GIT_SHA"
+          echo "program_id=$PROGRAM_ID"
+          cat /tmp/mwz-so-bytes.txt
+          cat /tmp/mwz-so-sha256.txt
+          cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true
+          echo 'CREATE_ACCEPTANCE=PASS'
+          echo 'BONDING_LIFECYCLE=PASS'
+          echo 'BACKEND_PREFLIGHT_GATE=PASS'
+          echo 'BPF_ACCESS_VIOLATIONS=0'
+          echo 'PROGRAM_FAILED_TO_COMPLETE=0'
+          echo 'STACK_FRAME_ERRORS=0'
+          echo 'FINAL_GATE=PASS'
+          printf '%s\n' '========================================'
+
+      - name: Upload frozen launch candidate and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-final-launch-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            /tmp/mwz-anchor-build.log
+            /tmp/mwz-idl-build.log
+            /tmp/mwz-so-sha256.txt
+            /tmp/mwz-so-bytes.txt
+            /tmp/mwz-mainnet-program.json
+            /tmp/mwz-mainnet-audit.err
+            /tmp/mwz-mainnet-compare.txt
+            /tmp/mwz-mainnet-sha256.txt
+            /tmp/mwz-mainnet-bytes.txt
+            /tmp/mwz-create-validator.log
+            /tmp/mwz-create-acceptance.log
+            /tmp/mwz-lifecycle-validator.log
+            /tmp/mwz-lifecycle-acceptance.log
+            target/deploy/memewarzone_solana.so
+            target/deploy/memewarzone_solana.release.json
+            target/idl/memewarzone_solana.json
