@@ -360,6 +360,19 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
       `create transaction is ${rawTransaction.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
     );
 
+    const simulated = await connection.simulateTransaction(transaction, {
+      sigVerify: true,
+      commitment: "confirmed",
+    });
+    if (simulated.value.err) {
+      throw new Error(
+        `create simulation failed: ${JSON.stringify(simulated.value.err)}\n${(simulated.value.logs || []).join("\n")}`,
+      );
+    }
+    if ((simulated.value.logs || []).some((line) => /Access violation/i.test(line))) {
+      throw new Error(`create simulation hit BPF stack overflow:\n${(simulated.value.logs || []).join("\n")}`);
+    }
+
     const signature = await connection.sendRawTransaction(rawTransaction, {
       preflightCommitment: "confirmed",
       skipPreflight: false,
