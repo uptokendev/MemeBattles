@@ -208,6 +208,11 @@ async function ensureRecentBlockhash(runtime: SolanaRuntime, tx: any) {
 async function sendTransaction(runtime: SolanaRuntime, tx: any, signers: any[] = [], kind = "solana"): Promise<LaunchpadTxReceipt> {
   await ensureRecentBlockhash(runtime, tx);
 
+  const simulation = await runtime.connection.simulateTransaction(tx, { sigVerify: false });
+  if (simulation.value.err) {
+    throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  }
+
   let signature = "";
   const walletProvider = runtime.provider as any;
   

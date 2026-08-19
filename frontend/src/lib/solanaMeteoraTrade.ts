@@ -242,6 +242,11 @@ async function sendWalletTransaction(connection: Connection, transaction: Transa
   transaction.feePayer = walletAddress;
   transaction.recentBlockhash = latest.blockhash;
 
+  const simulation = await connection.simulateTransaction(transaction, { sigVerify: false });
+  if (simulation.value.err) {
+    throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  }
+
   if (typeof provider.signTransaction === "function") {
     const signed = await provider.signTransaction(transaction);
     const signature = await connection.sendRawTransaction(signed.serialize(), {
