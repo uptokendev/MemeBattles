@@ -14,6 +14,7 @@ on:
       - programs/memewarzone_solana/**
       - tests/solana/**
       - frontend/src/lib/solanaV4CreateSubmit.ts
+      - scripts/solana/upgrade-mainnet-launchpad.cjs
       - .github/workflows/solana-final-launch-blockers.yml
   workflow_dispatch:
 
@@ -31,13 +32,14 @@ env:
   IDL_RUST_TOOLCHAIN: nightly-2024-05-09
   CARGO_NET_RETRY: 10
   ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+  MAINNET_RPC: https://api.mainnet-beta.solana.com
   PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
 
 jobs:
   exact-sbf-gate:
     name: Exact SBF create + buy/sell gate
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +48,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Validate modified release surfaces
+        shell: bash
+        run: |
+          set -o pipefail
+          node --check scripts/solana/upgrade-mainnet-launchpad.cjs
+          npm ci --prefix frontend
+          npm --prefix frontend run build
 
       - name: Install Rust toolchains
         shell: bash
@@ -103,6 +113,36 @@ jobs:
           sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-sha256.txt
           wc -c target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-bytes.txt
 
+      - name: Compare candidate with live mainnet program
+        shell: bash
+        run: |
+          set +e
+          rm -f /tmp/mwz-mainnet-live.so /tmp/mwz-mainnet-program.json /tmp/mwz-mainnet-audit.err
+          solana program show "$PROGRAM_ID" --url "$MAINNET_RPC" --output json \
+            > /tmp/mwz-mainnet-program.json 2> /tmp/mwz-mainnet-audit.err
+          show_status=$?
+          if [ "$show_status" -eq 0 ]; then
+            cat /tmp/mwz-mainnet-program.json
+            solana program dump "$PROGRAM_ID" /tmp/mwz-mainnet-live.so --url "$MAINNET_RPC" \
+              2>> /tmp/mwz-mainnet-audit.err
+            dump_status=$?
+          else
+            dump_status=1
+          fi
+          if [ "$show_status" -eq 0 ] && [ "$dump_status" -eq 0 ] && [ -s /tmp/mwz-mainnet-live.so ]; then
+            sha256sum /tmp/mwz-mainnet-live.so | tee /tmp/mwz-mainnet-sha256.txt
+            wc -c /tmp/mwz-mainnet-live.so | tee /tmp/mwz-mainnet-bytes.txt
+            if cmp -s target/deploy/memewarzone_solana.so /tmp/mwz-mainnet-live.so; then
+              echo 'LIVE_BINARY_MATCH=true' | tee /tmp/mwz-mainnet-compare.txt
+            else
+              echo 'LIVE_BINARY_MATCH=false' | tee /tmp/mwz-mainnet-compare.txt
+            fi
+          else
+            echo 'MAINNET_BINARY_AUDIT=UNAVAILABLE' | tee /tmp/mwz-mainnet-compare.txt
+            cat /tmp/mwz-mainnet-audit.err >&2 || true
+          fi
+          exit 0
+
       - name: Generate matching IDL
         shell: bash
         run: |
@@ -138,9 +178,11 @@ jobs:
           done
           solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
           solana airdrop 100 >/dev/null
-          ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-            npx --prefix tests/solana mocha --timeout 1000000 tests/solana/v4-create-acceptance.cjs \
-            2>&1 | tee /tmp/mwz-create-acceptance.log
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-create-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-create-acceptance.log
           if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-create-acceptance.log; then
             echo 'FATAL: CREATE acceptance contains a BPF crash signature' >&2
             exit 1
@@ -169,9 +211,11 @@ jobs:
           done
           solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
           solana airdrop 100 >/dev/null
-          ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-            npx --prefix tests/solana mocha --timeout 1000000 tests/solana/v4-lifecycle-acceptance.cjs \
-            2>&1 | tee /tmp/mwz-lifecycle-acceptance.log
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-lifecycle-acceptance.log
           if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-lifecycle-acceptance.log; then
             echo 'FATAL: lifecycle acceptance contains a BPF crash signature' >&2
             exit 1
@@ -190,6 +234,9 @@ jobs:
           echo "program_id=$PROGRAM_ID"
           cat /tmp/mwz-so-bytes.txt
           cat /tmp/mwz-so-sha256.txt
+          cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true
+          cat /tmp/mwz-mainnet-bytes.txt 2>/dev/null || true
+          cat /tmp/mwz-mainnet-sha256.txt 2>/dev/null || true
           echo 'CREATE_ACCEPTANCE=PASS'
           echo 'BONDING_LIFECYCLE=PASS'
           echo 'BPF_ACCESS_VIOLATIONS=0'
@@ -210,6 +257,11 @@ jobs:
             /tmp/mwz-idl-build.log
             /tmp/mwz-so-sha256.txt
             /tmp/mwz-so-bytes.txt
+            /tmp/mwz-mainnet-program.json
+            /tmp/mwz-mainnet-audit.err
+            /tmp/mwz-mainnet-compare.txt
+            /tmp/mwz-mainnet-sha256.txt
+            /tmp/mwz-mainnet-bytes.txt
             /tmp/mwz-create-validator.log
             /tmp/mwz-create-acceptance.log
             /tmp/mwz-lifecycle-validator.log
