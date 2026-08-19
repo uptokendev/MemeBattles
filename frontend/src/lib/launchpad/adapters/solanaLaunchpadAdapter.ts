@@ -207,16 +207,18 @@ async function ensureRecentBlockhash(runtime: SolanaRuntime, tx: any) {
 
 async function sendTransaction(runtime: SolanaRuntime, tx: any, signers: any[] = [], kind = "solana"): Promise<LaunchpadTxReceipt> {
   await ensureRecentBlockhash(runtime, tx);
-  if (signers.length) tx.partialSign(...signers);
 
   let signature = "";
   const walletProvider = runtime.provider as any;
-  if (typeof walletProvider.signAndSendTransaction === "function") {
+  
+  if (typeof walletProvider.signTransaction === "function") {
+    const signed = await walletProvider.signTransaction(tx);
+    if (signers.length) signed.partialSign(...signers);
+    signature = await runtime.connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
+  } else if (typeof walletProvider.signAndSendTransaction === "function") {
+    if (signers.length) tx.partialSign(...signers);
     const result = await walletProvider.signAndSendTransaction(tx);
     signature = typeof result === "string" ? result : String(result?.signature || "");
-  } else if (typeof walletProvider.signTransaction === "function") {
-    const signed = await walletProvider.signTransaction(tx);
-    signature = await runtime.connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
   } else {
     throw createSolanaWalletPendingError();
   }
