@@ -272,18 +272,46 @@ export async function submitSolanaV4CreatePlan(
     // ignore estimate failures
   }
 
+  const balance = await connection.getBalance(new PublicKey(creatorPk), "confirmed");
+  const MIN_CREATE_LAMPORTS = 30_000_000; // ~0.03 SOL covers mint/vault/campaign/auth rent
+  if (balance < MIN_CREATE_LAMPORTS) {
+    throw new Error(
+      `Not enough SOL to deploy this campaign. Need about 0.03 SOL for rent; this wallet has ${(balance / 1_000_000_000).toFixed(4)} SOL.`,
+    );
+  }
+
   const signed = await provider.signTransaction(tx);
+  const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
   let signature: string;
   try {
-    signature = await connection.sendRawTransaction(signed.serialize(), {
+    // Simulate ourselves so we keep the full log list. sendRawTransaction often
+    // only surfaces Anchor's first "Instruction: CreateCampaign" line.
+    try {
+      const simulated = await connection.simulateTransaction(signed, {
+        sigVerify: false,
+        commitment: "confirmed",
+      });
+      if (simulated?.value?.err) {
+        throw Object.assign(new Error("Solana create simulation failed."), {
+          logs: simulated.value.logs || [],
+          simulationErr: simulated.value.err,
+        });
+      }
+    } catch (simError: unknown) {
+      if ((simError as { logs?: string[] })?.logs || /simulation failed|custom program error|AnchorError/i.test(String((simError as Error)?.message || simError))) {
+        throw simError;
+      }
+      // If the RPC cannot simulate (some public endpoints), fall through to send.
+    }
+
+    signature = await connection.sendRawTransaction(raw, {
       skipPreflight: false,
       preflightCommitment: "confirmed",
     });
     await connection.confirmTransaction({ signature, ...latest }, "confirmed");
   } catch (error: unknown) {
-    // Race: another tab/create landed between preflight and send.
-    const msg = formatSolanaSendError(error);
-    if (/InvalidCampaign|already in use|account.*exist/i.test(msg)) {
+    const msg = await formatSolanaSendError(error);
+    if (/already in use|account.*exist/i.test(msg) || /InvalidCampaign/.test(msg)) {
       const again = await connection.getAccountInfo(campaignPk, "confirmed");
       if (again && again.owner.equals(programPk)) {
         return {
@@ -308,57 +336,116 @@ export async function submitSolanaV4CreatePlan(
   };
 }
 
-/** Collapse wallet/RPC simulation dumps into a short operator-readable message. */
-function formatSolanaSendError(error: unknown): string {
+const LAUNCHPAD_ERROR_BY_CODE: Record<number, { name: string; hint: string }> = {
+  6000: { name: "Unauthorized", hint: "The signer is not authorized for this launchpad action." },
+  6015: { name: "InvalidCreatorProfile", hint: "Creator profile data is invalid or the PDA is leftover from a failed create." },
+  6021: { name: "LaunchpadPaused", hint: "The Solana launchpad is paused on-chain." },
+  6022: { name: "CreatePaused", hint: "Solana campaign creation is paused on-chain." },
+  6023: { name: "InvalidCreateAuthorization", hint: "Route digest mismatch, expired auth, or Ed25519 verify is not immediately before CreateCampaign." },
+  6024: { name: "CreateAuthorizationExpired", hint: "The create authorization deadline expired. Retry Push Live to get a fresh signature." },
+  6025: { name: "InvalidCampaign", hint: "Campaign/mint/vault data is invalid — often a partial prior create or a bad launch time." },
+  6026: { name: "InvalidMetadata", hint: "Campaign metadata hash is missing or invalid." },
+  6027: { name: "GraduationTargetNotAllowed", hint: "This graduation target is not allowed by the active mainnet generation." },
+  6029: { name: "InvalidNonce", hint: "Create authorization nonce is invalid. Retry Push Live." },
+  6030: { name: "CampaignGenerationInactive", hint: "The selected generation is not active for campaign creation." },
+  6031: { name: "CreatorLaunchLimitExceeded", hint: "This wallet already has the maximum live bonding campaigns." },
+  6032: { name: "CreatorCooldownActive", hint: "Creator launch cooldown is still active. If a prior create landed, retry Push Live for recovery." },
+  6033: { name: "CreatorRestricted", hint: "This creator is restricted from launching campaigns." },
+  6037: { name: "MathOverflow", hint: "Arithmetic overflow while creating the campaign." },
+  2006: { name: "ConstraintSeeds", hint: "A PDA address does not match the program seeds (wrong campaign id, nonce, or account order)." },
+  2003: { name: "ConstraintMut", hint: "An account that must be writable was passed read-only." },
+  3007: { name: "AccountOwnedByWrongProgram", hint: "An account is owned by the wrong program — leftover mint/vault from a partial create." },
+};
+
+function collectEmbeddedLogs(message: string): string[] {
+  const logs: string[] = [];
+  const quoted = message.matchAll(/"(Program[^"]+)"/g);
+  for (const match of quoted) logs.push(match[1]);
+  const raw = message.matchAll(/Program log: [^\n]+/g);
+  for (const match of raw) logs.push(match[0]);
+  return logs;
+}
+
+async function collectSolanaLogs(error: unknown): Promise<{ message: string; logs: string[] }> {
   const anyErr = error as {
     message?: string;
     logs?: string[];
     getLogs?: () => string[] | Promise<string[]>;
   };
   const message = String(anyErr?.message || error || "Solana transaction failed.");
-  const logs = Array.isArray(anyErr?.logs) ? anyErr.logs : [];
-  // Some wallets only embed logs in the message string.
+  const logs = [...(Array.isArray(anyErr?.logs) ? anyErr.logs : []), ...collectEmbeddedLogs(message)];
+  if (typeof anyErr?.getLogs === "function") {
+    try {
+      const extra = await anyErr.getLogs();
+      if (Array.isArray(extra)) logs.push(...extra.map(String));
+    } catch {
+      // Keep whatever we already parsed from the message.
+    }
+  }
+  return { message, logs: Array.from(new Set(logs)) };
+}
+
+function explainCustomProgramError(source: string): string | null {
+  const hex = source.match(/custom program error:\s*(0x[0-9a-f]+)/i)?.[1];
+  const dec = source.match(/Error Number:\s*(\d+)/i)?.[1];
+  const code = hex ? Number.parseInt(hex, 16) : dec ? Number(dec) : NaN;
+  if (!Number.isFinite(code)) return null;
+  const mapped = LAUNCHPAD_ERROR_BY_CODE[code];
+  if (!mapped) return `custom program error ${hex || code}`;
+  return `${mapped.name} (${hex || code}): ${mapped.hint}`;
+}
+
+/** Collapse wallet/RPC simulation dumps into a short operator-readable message. */
+async function formatSolanaSendError(error: unknown): Promise<string> {
+  const { message, logs } = await collectSolanaLogs(error);
   const combined = `${logs.join("\n")}\n${message}`;
-
-  if (/InvalidCampaign|Campaign data is invalid/i.test(combined)) {
-    return (
-      "Solana create failed (InvalidCampaign): campaign/mint PDAs already exist from a prior create. " +
-      "Hard-refresh and retry Push Live — authorize recovery will link the existing campaign (no re-create)."
-    );
-  }
-  if (/InvalidCreateAuthorization/i.test(combined)) {
-    return (
-      "Solana create failed (InvalidCreateAuthorization): route digest mismatch or wallet/tx instruction order. " +
-      "Ensure Ed25519 verify is immediately before createCampaign and retry."
-    );
-  }
-  if (/CreatorCooldownActive/i.test(combined)) {
-    return (
-      "Solana create failed: creator launch cooldown is active on-chain. " +
-      "If a prior create already landed, retry Push Live for recovery instead of a fresh create."
-    );
+  try {
+    console.error("[solanaV4CreateSubmit] create failed", { message, logs });
+  } catch {
+    // ignore console failures
   }
 
-  const anchorLine =
-    logs.find((line) => /AnchorError|Error Code:|Error Message:/i.test(line)) ||
-    message.match(/Error Code:\s*[A-Za-z0-9_]+[^\n]*/i)?.[0];
-  if (anchorLine) {
-    const code = anchorLine.match(/Error Code:\s*([A-Za-z0-9_]+)/i)?.[1];
-    const msg = anchorLine.match(/Error Message:\s*([^.]+)/i)?.[1];
-    const account = anchorLine.match(/account:\s*([A-Za-z0-9_]+)/i)?.[1];
-    const parts = ["Solana create simulation failed"];
+  const explained = explainCustomProgramError(combined);
+  if (/InvalidCreateAuthorization/i.test(combined) || explained?.startsWith("InvalidCreateAuthorization")) {
+    return "Solana create failed (InvalidCreateAuthorization): route digest mismatch, expired auth, or Ed25519 is not immediately before CreateCampaign. Retry Push Live.";
+  }
+  if (/CreatorCooldownActive/i.test(combined) || explained?.startsWith("CreatorCooldownActive")) {
+    return "Solana create failed: creator launch cooldown is active on-chain. If a prior create already landed, retry Push Live for recovery.";
+  }
+  if (/CreatePaused|LaunchpadPaused/i.test(combined) || explained?.startsWith("CreatePaused") || explained?.startsWith("LaunchpadPaused")) {
+    return "Solana create failed: creation is paused on-chain.";
+  }
+  if (/GraduationTargetNotAllowed/i.test(combined) || explained?.startsWith("GraduationTargetNotAllowed")) {
+    return "Solana create failed: that graduation target is not allowed on this mainnet generation.";
+  }
+  if (/ConstraintSeeds/i.test(combined) || explained?.startsWith("ConstraintSeeds")) {
+    return "Solana create failed (ConstraintSeeds): a PDA does not match the program seeds. Retry Push Live; if it persists the authorize payload and wallet accounts are out of sync.";
+  }
+  if (/insufficient lamports/i.test(combined)) {
+    return "Solana create failed: wallet does not have enough SOL to rent the campaign / mint / vault accounts.";
+  }
+
+  const usefulLog = logs.find((line) =>
+    /AnchorError|Error Code:|Error Message:|custom program error|failed:|insufficient lamports/i.test(line)
+    && !/Instruction:\s*CreateCampaign/i.test(line),
+  );
+  if (usefulLog) {
+    const code = usefulLog.match(/Error Code:\s*([A-Za-z0-9_]+)/i)?.[1];
+    const msg = usefulLog.match(/Error Message:\s*([^.]+)/i)?.[1];
+    const account = usefulLog.match(/account:\s*([A-Za-z0-9_]+)/i)?.[1];
+    const parts = ["Solana create failed"];
     if (code) parts.push(code);
     if (account) parts.push(`account ${account}`);
     if (msg) parts.push(msg.trim());
+    else if (explained) parts.push(explained);
+    else parts.push(usefulLog.replace(/^Program log:\s*/i, "").trim());
     return parts.join(" — ");
   }
 
-  // Prefer the first Program log line over the full “Catch SendTransactionError…” dump.
-  const programLog = logs.find((line) => line.startsWith("Program log:"));
-  if (programLog) return programLog.replace(/^Program log:\s*/i, "Solana program: ");
+  if (explained) return `Solana create failed — ${explained}`;
 
-  if (/AccountDiscriminatorMismatch/i.test(message)) {
-    return "Solana create failed: on-chain account layout does not match the deployed program (AccountDiscriminatorMismatch). Operator must upgrade/redeploy the program binary.";
+  if (/AccountDiscriminatorMismatch/i.test(combined)) {
+    return "Solana create failed: on-chain account layout does not match the deployed program (AccountDiscriminatorMismatch).";
   }
   if (/Simulation failed/i.test(message)) {
     const short = message.split(/Logs:/i)[0]?.trim() || message;
