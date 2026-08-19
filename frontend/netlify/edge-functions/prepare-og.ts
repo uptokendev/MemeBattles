@@ -17,14 +17,14 @@ const BOT_RE =
 const API_BASE =
   Deno.env.get("PREPARE_OG_API_BASE") ||
   Deno.env.get("VITE_FRONTEND_API_BASE") ||
-  "https://memebattles-frontend-7dcf.up.railway.app";
+  "";
 
 async function fetchOgHtml(origin: string, slug: string, ua: string): Promise<string> {
   const encoded = encodeURIComponent(slug);
   const apiBase = String(API_BASE).replace(/\/+$/, "");
   const sameOriginOg = `${origin}/api/prepare-og/${encoded}`;
-  const railwayOg = `${apiBase}/api/prepare-og/${encoded}`;
-  const candidates = sameOriginOg === railwayOg ? [sameOriginOg] : [sameOriginOg, railwayOg];
+  const configuredOg = apiBase ? `${apiBase}/api/prepare-og/${encoded}` : "";
+  const candidates = configuredOg && configuredOg !== sameOriginOg ? [sameOriginOg, configuredOg] : [sameOriginOg];
 
   for (const ogUrl of candidates) {
     try {

@@ -92,7 +92,7 @@ function itemFromDraft(row) {
   };
 }
 
-async function loadLifecycleRows(chainId, campaignAddresses) {
+async function loadLifecycleRows(chainId, campaignAddresses, { includeUnindexedSolanaDrafts = false } = {}) {
   const chain = Number(chainId);
   const isSolana = chain === 101 || chain === 102;
   const addresses = Array.from(
@@ -103,7 +103,8 @@ async function loadLifecycleRows(chainId, campaignAddresses) {
         .map((value) => (isSolana ? value : value.toLowerCase())),
     ),
   );
-  // Also surface deployed Solana drafts that are not yet in the campaigns indexer.
+  // Only attach draft metadata for campaigns already in the indexer, unless
+  // includeTestnet is on (legacy Solana path that promoted public deployed drafts).
   const result = await pool.query(
     isSolana
       ? `select *
@@ -113,7 +114,8 @@ async function loadLifecycleRows(chainId, campaignAddresses) {
             and (
               campaign_address = any($2::text[])
               or (
-                status = 'deployed'
+                $3::bool
+                and status = 'deployed'
                 and visibility = 'public'
               )
             )
@@ -132,7 +134,7 @@ async function loadLifecycleRows(chainId, campaignAddresses) {
               )
             )
           order by updated_at desc`,
-    [chain, addresses],
+    [chain, addresses, includeUnindexedSolanaDrafts],
   );
 
   const byCampaign = new Map();
@@ -150,6 +152,7 @@ export default async function handler(req, res) {
   const tab = String(query.tab || "trending").toLowerCase();
   const status = String(query.status || "all").toLowerCase();
   const sort = String(query.sort || "default").toLowerCase();
+  const includeTestnet = ["1", "true", "yes", "on"].includes(String(query.includeTestnet || query.testnet || "").toLowerCase());
 
   return runJsonTransform(baseHandler, req, res, async (payload) => {
     if (!payload || !Array.isArray(payload.items)) return payload;
@@ -157,6 +160,7 @@ export default async function handler(req, res) {
     const { rows, byCampaign } = await loadLifecycleRows(
       chainId,
       payload.items.map((item) => item?.campaignAddress),
+      { includeUnindexedSolanaDrafts: includeTestnet },
     );
     const now = Date.now();
     const seen = new Set();
@@ -181,6 +185,7 @@ export default async function handler(req, res) {
         // BNB: only past-schedule draft arms (pre-existing behavior — indexer owns live rows).
         // Solana: also include immediately deployed public drafts (no full indexer yet).
         const isDeployedLiveSolana =
+          includeTestnet &&
           solanaFeed &&
           String(row.status) === "deployed" &&
           String(row.visibility) === "public" &&

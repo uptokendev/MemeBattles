@@ -32,7 +32,7 @@ function resolveRealtimeApiBase(): string {
     if (/^\/\//.test(raw)) return `https:${raw}`;
     return `https://${raw}`;
   }
-  return "https://memebattles-production-dca0.up.railway.app";
+  return "";
 }
 
 const API_BASE = resolveRealtimeApiBase();

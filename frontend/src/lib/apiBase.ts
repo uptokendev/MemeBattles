@@ -2,6 +2,7 @@ import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { getReadProvider } from "@/lib/readProvider";
+import { getDefaultChainId } from "@/lib/chainConfig";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -15,9 +16,18 @@ function normalizeApiBase(value: unknown): string {
 }
 
 /** Indexer hosts must never receive frontend-api routes (league/summary, featured, upload, …). */
+function looksLikeRetiredRailwayHost(url: string): boolean {
+  const host = String(url || "").toLowerCase();
+  return (
+    host.includes("memebattles-frontend-7dcf.up.railway.app") ||
+    host.includes("memebattles-production-dca0.up.railway.app")
+  );
+}
+
 function looksLikeIndexerBase(url: string): boolean {
   const host = String(url || "").toLowerCase();
   return (
+    looksLikeRetiredRailwayHost(host) ||
     host.includes("memebattles-production") ||
     host.includes("memewarzone-production") ||
     host.includes("-dca0") ||
@@ -29,7 +39,9 @@ function looksLikeIndexerBase(url: string): boolean {
 function firstNonIndexerBase(candidates: unknown[]): string {
   for (const candidate of candidates) {
     const normalized = normalizeApiBase(candidate);
-    if (normalized && !looksLikeIndexerBase(normalized)) return normalized;
+    if (normalized && !looksLikeIndexerBase(normalized) && !looksLikeRetiredRailwayHost(normalized)) {
+      return normalized;
+    }
   }
   return "";
 }
@@ -37,7 +49,7 @@ function firstNonIndexerBase(candidates: unknown[]): string {
 function firstAnyBase(candidates: unknown[]): string {
   for (const candidate of candidates) {
     const normalized = normalizeApiBase(candidate);
-    if (normalized) return normalized;
+    if (normalized && !looksLikeRetiredRailwayHost(normalized)) return normalized;
   }
   return "";
 }
@@ -161,10 +173,10 @@ function getTokenPageCampaignAddress(): string {
 function getChainIdFromApiPath(path: string): number {
   try {
     const url = new URL(path, "http://local");
-    const raw = Number(url.searchParams.get("chainId") || 97);
-    return Number.isFinite(raw) ? raw : 97;
+    const raw = Number(url.searchParams.get("chainId") || getDefaultChainId());
+    return Number.isFinite(raw) ? raw : getDefaultChainId();
   } catch {
-    return 97;
+    return getDefaultChainId();
   }
 }
 

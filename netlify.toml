@@ -16,9 +16,7 @@
   VITE_ENABLE_POSTGRAD_TOURNAMENT = "false"
   VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
   VITE_LAUNCHPAD_WRITES_ENABLED = "true"
-  # Product REST + Ably auth on frontend-api (not the indexer). UI env can override.
-  VITE_FRONTEND_API_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
-  VITE_ABLY_AUTH_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
+  # Product REST + Ably auth on frontend-api (not the indexer). Set in the Netlify UI.
 
 [[headers]]
   for = "/*"
@@ -65,12 +63,12 @@
     Cross-Origin-Resource-Policy = "cross-origin"
     Cache-Control = "public, max-age=60, s-maxage=120"
 
-# Proxy /api/* to the Railway API gateway. Must come before the SPA fallback so
+# Proxy /api/* to the Coolify frontend API. Must come before the SPA fallback so
 # relative API URLs in rendered HTML (e.g. share-card <img> src) don't fall
 # through to /index.html.
 [[redirects]]
   from = "/api/*"
-  to = "https://memebattles-frontend-7dcf.up.railway.app/api/:splat"
+  to = "http://bkhii7mo239putkb3h8xert9.178.104.232.231.sslip.io/api/:splat"
   status = 200
   force = true
 

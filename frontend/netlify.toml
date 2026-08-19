@@ -22,10 +22,7 @@
   VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
   VITE_LAUNCHPAD_WRITES_ENABLED = "true"
   # League/summary, featured, upload, ably auth live on frontend-api — NOT the indexer.
-  # VITE_API_BASE in the Netlify UI historically points at memebattles-production (indexer);
-  # never use that for product REST. Prefer explicit frontend-api base (UI env overrides this).
-  VITE_FRONTEND_API_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
-  VITE_ABLY_AUTH_BASE = "https://memebattles-frontend-7dcf.up.railway.app"
+  # Set VITE_FRONTEND_API_BASE / VITE_ABLY_AUTH_BASE in the host UI.
 
 [[headers]]
   for = "/*"
@@ -73,14 +70,10 @@
     Cross-Origin-Resource-Policy = "cross-origin"
     Cache-Control = "public, max-age=60, s-maxage=120"
 
-# Proxy /api/* to the Railway API gateway. Netlify should stay static-only;
-# backend runtime, database writes, OpenAI, Ably, uploads, and private envs live
-# on Railway. The empty functions directory above prevents Netlify from trying
-# to package legacy netlify/functions as AWS Lambda functions, which can fail
-# when the site environment exceeds Lambda's 4KB env limit.
+# Proxy /api/* to the Coolify frontend API. Netlify stays static-only.
 [[redirects]]
   from = "/api/*"
-  to = "https://memebattles-frontend-7dcf.up.railway.app/api/:splat"
+  to = "http://bkhii7mo239putkb3h8xert9.178.104.232.231.sslip.io/api/:splat"
   status = 200
   force = true
 
