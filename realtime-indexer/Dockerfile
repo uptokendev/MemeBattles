@@ -12,7 +12,7 @@ WORKDIR /app
 # Coolify injects NODE_ENV=production as a build ARG, which makes npm skip
 # devDependencies. tsc and @types/* must still be present for this step.
 COPY package*.json ./
-RUN npm install --include=dev
+RUN npm install --include=dev --no-audit --no-fund
 
 # Copy the rest of the service code (context is realtime-indexer/)
 COPY . .
