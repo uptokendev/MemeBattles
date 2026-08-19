@@ -5,7 +5,8 @@
  *
  * Digest layout matches programs/memewarzone_solana/src/authorized_trade.rs:
  *   TRADE_AUTH_DOMAIN | u16 schema | program_id | campaign | mint | trader |
- *   u8 side | u64 amount_in | u64 min_out | i64 deadline | nonce[32]
+ *   u8 side | u64 amount_in | u64 min_out | i64 deadline | nonce[32] |
+ *   u64 native_target | u8 route_profile
  *
  * Vault resolution order:
  *   1. Client-provided tokenVault / solVault / campaignId
@@ -28,6 +29,8 @@ import {
   createEd25519Signer,
   decodeCampaignAccount,
   decodeCampaignCurveFields,
+  decodeClusterProfile,
+  decodeRiskProfile,
   findProgramAddressSync,
   nativeTargetLamportsFromUsd,
   publicKeyBytes,
@@ -41,7 +44,7 @@ import {
 } from "./solana-v4-primitives.js";
 
 const TRADE_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_TRADE_V1", "utf8");
-const TRADE_AUTH_SCHEMA_VERSION = 2;
+const TRADE_AUTH_SCHEMA_VERSION = 3;
 const ROUTE_PROFILE_LINKED = 0;
 const ROUTE_PROFILE_UNLINKED = 1;
 const ROUTE_PROFILE_OG = 2;
@@ -71,6 +74,55 @@ function deriveRewardsVaults() {
     squadVault: findProgramAddressSync([Buffer.from("squad_vault")], pid).publicKey,
     protocolVault: findProgramAddressSync([Buffer.from("protocol_vault")], pid).publicKey,
   };
+}
+
+async function resolveTraderClusterProfile(rpcUrl, programId, traderAddress) {
+  const emptyClusterId = Buffer.alloc(32);
+  const riskPda = findProgramAddressSync(
+    [Buffer.from("risk", "utf8"), publicKeyBytes(traderAddress)],
+    programId,
+  );
+  const riskInfo = await rpcCall(rpcUrl, "getAccountInfo", [
+    riskPda.publicKey,
+    { encoding: "base64", commitment: "confirmed" },
+  ]);
+  let clusterId = emptyClusterId;
+  const riskB64 = riskInfo?.value?.data?.[0];
+  if (riskB64) {
+    const risk = decodeRiskProfile(Buffer.from(riskB64, "base64"));
+    if (risk.restricted || risk.manualReviewRequired) {
+      throw new SolanaTradeAuthorizationError("Trader wallet is restricted from bonding trades.", {
+        code: "SOLANA_WALLET_RESTRICTED",
+        httpStatus: 403,
+      });
+    }
+    clusterId = Buffer.from(risk.clusterId);
+  }
+  const clusterPda = findProgramAddressSync(
+    [Buffer.from("cluster", "utf8"), clusterId],
+    programId,
+  );
+  if (!clusterId.equals(emptyClusterId)) {
+    const clusterInfo = await rpcCall(rpcUrl, "getAccountInfo", [
+      clusterPda.publicKey,
+      { encoding: "base64", commitment: "confirmed" },
+    ]);
+    const clusterB64 = clusterInfo?.value?.data?.[0];
+    if (!clusterB64) {
+      throw new SolanaTradeAuthorizationError("Trader cluster profile is missing on-chain.", {
+        code: "SOLANA_CLUSTER_PROFILE_MISSING",
+        httpStatus: 409,
+      });
+    }
+    const cluster = decodeClusterProfile(Buffer.from(clusterB64, "base64"));
+    if (cluster.restricted) {
+      throw new SolanaTradeAuthorizationError("Trader cluster is restricted from bonding trades.", {
+        code: "SOLANA_CLUSTER_RESTRICTED",
+        httpStatus: 403,
+      });
+    }
+  }
+  return clusterPda.publicKey;
 }
 
 async function resolveRouteProfile(walletAddress) {
@@ -309,6 +361,7 @@ function buildTradeAuthorizationDigest({
   deadline,
   nonce,
   nativeTargetLamports,
+  routeProfile,
 }) {
   return sha256(
     TRADE_AUTH_DOMAIN,
@@ -323,6 +376,7 @@ function buildTradeAuthorizationDigest({
     i64(deadline, "deadline"),
     Buffer.from(nonce),
     u64(nativeTargetLamports, "nativeTargetLamports"),
+    u8(routeProfile, "routeProfile"),
   );
 }
 
@@ -650,6 +704,12 @@ export async function solanaTradeAuthorizationV1(req, res) {
       : findAssociatedTokenAddress(traderAddress, mintAddress).publicKey;
 
     const curve = await loadCampaignCurve(rpcUrl, resolvedCampaign);
+    if (curve.paused) {
+      throw new SolanaTradeAuthorizationError("This campaign is paused.", {
+        code: "SOLANA_CAMPAIGN_PAUSED",
+        httpStatus: 409,
+      });
+    }
     let eligibilityTargetLamports = 0n;
     try {
       const oraclePriceUsdMicros = await fetchSolUsdMicros();
@@ -669,6 +729,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
     assertCurveOpen(curve, eligibilityTargetLamports);
     const signedNativeTargetLamports = side === TRADE_SIDE_BUY ? eligibilityTargetLamports : 0n;
     const routeProfile = await resolveRouteProfile(traderAddress);
+    const clusterProfile = await resolveTraderClusterProfile(rpcUrl, programId, traderAddress);
 
     const digest = buildTradeAuthorizationDigest({
       programId,
@@ -718,6 +779,7 @@ export async function solanaTradeAuthorizationV1(req, res) {
           [Buffer.from("risk", "utf8"), publicKeyBytes(traderAddress)],
           programId,
         ).publicKey,
+        clusterProfile,
         tradeAuthorization: tradeAuth.publicKey,
         instructions: SYSVAR_INSTRUCTIONS_ID,
         tokenProgram: TOKEN_PROGRAM_ID,

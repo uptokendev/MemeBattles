@@ -14,11 +14,13 @@ import {
   sha256,
   u16,
   u64,
+  u8,
   i64,
 } from "./solana-v4-primitives.js";
 
 const GRADUATION_AUTH_DOMAIN = Buffer.from("MEMEWARZONE_SOLANA_GRADUATION_V1", "utf8");
-const GRADUATION_AUTH_SCHEMA_VERSION = 1;
+const GRADUATION_AUTH_SCHEMA_VERSION = 2;
+const ROUTE_PROFILE_UNLINKED = 1;
 const METEORA_CP_AMM_PROGRAM_ID = "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG";
 const NATIVE_MINT = "So11111111111111111111111111111111111111112";
 const ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
@@ -156,6 +158,7 @@ function decodeCampaignGraduationFields(data) {
     netRaisedLamports: buf.readBigUInt64LE(670),
     graduated: buf.readUInt8(713) === 1,
     curveClosed: buf.length >= 719 ? buf.readUInt8(714) === 1 : false,
+    paused: buf.length >= 720 ? buf.readUInt8(715) === 1 : false,
   };
 }
 
@@ -263,6 +266,7 @@ function buildGraduationDigest({
   positionNftMint,
   deadline,
   nonce,
+  finalizeRouteProfile,
 }) {
   return sha256(
     GRADUATION_AUTH_DOMAIN,
@@ -279,6 +283,7 @@ function buildGraduationDigest({
     publicKeyBytes(positionNftMint, "positionNftMint"),
     i64(deadline, "deadline"),
     Buffer.from(nonce),
+    u8(finalizeRouteProfile, "finalizeRouteProfile"),
   );
 }
 
@@ -334,6 +339,12 @@ export async function solanaGraduationAuthorizationV1(req, res) {
         httpStatus: 409,
       });
     }
+    if (campaign.paused) {
+      throw new SolanaGraduationAuthorizationError("Campaign is paused.", {
+        code: "SOLANA_CAMPAIGN_PAUSED",
+        httpStatus: 409,
+      });
+    }
     if (campaign.economicsVersion < 3 || campaign.dexAdapter !== 1) {
       throw new SolanaGraduationAuthorizationError("Campaign is not an Economics V3 / Meteora-only campaign.", {
         code: "SOLANA_GRADUATION_CAMPAIGN_UNSUPPORTED",
@@ -365,6 +376,7 @@ export async function solanaGraduationAuthorizationV1(req, res) {
     );
     const deadline = BigInt(chainNow + ttlSeconds);
     const nonce = crypto.randomBytes(32);
+    const finalizeRouteProfile = ROUTE_PROFILE_UNLINKED;
     const digest = buildGraduationDigest({
       programId,
       campaign: campaignAddress,
@@ -378,6 +390,7 @@ export async function solanaGraduationAuthorizationV1(req, res) {
       positionNftMint,
       deadline,
       nonce,
+      finalizeRouteProfile,
     });
     const signature = signer.sign(digest);
 
@@ -407,6 +420,7 @@ export async function solanaGraduationAuthorizationV1(req, res) {
         deadline: deadline.toString(),
         nonce: Array.from(nonce),
         positionNftMint,
+        finalizeRouteProfile,
       },
       accounts: {
         authority: authorityAddress,
@@ -436,6 +450,12 @@ export async function solanaGraduationAuthorizationV1(req, res) {
         instructions: SYSVAR_INSTRUCTIONS_ID,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SYSTEM_PROGRAM_ID,
+        leagueVault: findProgramAddressSync([Buffer.from("league_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
+        airdropVault: findProgramAddressSync([Buffer.from("airdrop_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
+        monthlyLeagueVault: findProgramAddressSync([Buffer.from("monthly_league_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
+        recruiterVault: findProgramAddressSync([Buffer.from("recruiter_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
+        squadVault: findProgramAddressSync([Buffer.from("squad_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
+        protocolVault: findProgramAddressSync([Buffer.from("protocol_vault")], "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX").publicKey,
       },
       authorization: {
         digestHex: digest.toString("hex"),

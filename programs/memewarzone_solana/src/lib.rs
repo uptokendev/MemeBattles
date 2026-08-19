@@ -52,7 +52,10 @@ pub const RECRUITER_VAULT_SEED: &[u8] = b"recruiter_vault";
 pub const SQUAD_VAULT_SEED: &[u8] = b"squad_vault";
 pub const PROTOCOL_VAULT_SEED: &[u8] = b"protocol_vault";
 pub const ROUTE_KIND_TRADE: u8 = 0;
+pub const ROUTE_KIND_FINALIZE: u8 = 1;
+pub const ROUTE_PROFILE_LINKED: u8 = 0;
 pub const ROUTE_PROFILE_UNLINKED: u8 = 1;
+pub const ROUTE_PROFILE_OG: u8 = 2;
 
 pub fn rewards_treasury_program_id() -> Pubkey {
     pubkey!("2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX")
@@ -144,6 +147,40 @@ pub mod memewarzone_solana {
             sell_paused: global.sell_paused,
             graduation_paused: global.graduation_paused,
             claims_paused: global.claims_paused,
+        });
+        Ok(())
+    }
+
+    pub fn set_campaign_pause(ctx: Context<SetCampaignPause>, paused: bool) -> Result<()> {
+        authorized_trade::set_campaign_pause_handler(ctx, paused)
+    }
+
+    pub fn update_global_authorities(
+        ctx: Context<UpdateGlobalAuthorities>,
+        authorities: GlobalAuthorities,
+    ) -> Result<()> {
+        let global = &mut ctx.accounts.global_config;
+        require_admin(global, ctx.accounts.admin.key())?;
+        validate_authorities(&authorities)?;
+
+        global.admin = authorities.admin;
+        global.pauser = authorities.pauser;
+        global.tier_admin = authorities.tier_admin;
+        global.risk_admin = authorities.risk_admin;
+        global.route_signer = authorities.route_signer;
+        global.reward_operator = authorities.reward_operator;
+        global.treasury_operator = authorities.treasury_operator;
+        global.generation_operator = authorities.generation_operator;
+
+        emit!(GlobalAuthoritiesUpdated {
+            admin: global.admin,
+            pauser: global.pauser,
+            tier_admin: global.tier_admin,
+            risk_admin: global.risk_admin,
+            route_signer: global.route_signer,
+            reward_operator: global.reward_operator,
+            treasury_operator: global.treasury_operator,
+            generation_operator: global.generation_operator,
         });
         Ok(())
     }
@@ -403,6 +440,23 @@ pub struct SetPauseFlags<'info> {
     #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetCampaignPause<'info> {
+    pub authority: Signer<'info>,
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
+    pub global_config: Account<'info, GlobalConfig>,
+    /// CHECK: campaign PDA; deserialized and pause-bit written in the handler.
+    #[account(mut)]
+    pub campaign: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateGlobalAuthorities<'info> {
+    pub admin: Signer<'info>,
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
+    pub global_config: Account<'info, GlobalConfig>,
 }
 
 #[derive(Accounts)]
@@ -705,6 +759,25 @@ pub struct PauseFlagsUpdated {
     pub sell_paused: bool,
     pub graduation_paused: bool,
     pub claims_paused: bool,
+}
+
+#[event]
+pub struct CampaignPauseUpdated {
+    pub campaign: Pubkey,
+    pub authority: Pubkey,
+    pub paused: bool,
+}
+
+#[event]
+pub struct GlobalAuthoritiesUpdated {
+    pub admin: Pubkey,
+    pub pauser: Pubkey,
+    pub tier_admin: Pubkey,
+    pub risk_admin: Pubkey,
+    pub route_signer: Pubkey,
+    pub reward_operator: Pubkey,
+    pub treasury_operator: Pubkey,
+    pub generation_operator: Pubkey,
 }
 
 #[event]
@@ -1590,4 +1663,6 @@ pub enum LaunchpadError {
     CurveClosed,
     #[msg("League or airdrop vault PDA is missing or does not match the rewards treasury.")]
     InvalidRewardsVault,
+    #[msg("This campaign is paused.")]
+    CampaignPaused,
 }

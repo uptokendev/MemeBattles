@@ -102,7 +102,7 @@ npm --prefix tests/solana test -- --grep "authorization V4 local-validator accep
 start_validator
 fund_payer
 
-echo "==> bonding lifecycle (simulate then send)"
+echo "==> bonding lifecycle (simulate then send; includes cluster/routing/pause negatives)"
 npm --prefix tests/solana run test:lifecycle
 
 echo "==> GATE PASS"

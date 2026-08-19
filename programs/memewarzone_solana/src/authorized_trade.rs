@@ -25,18 +25,21 @@ use crate::{
         load_risk_profile_or_default, Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED,
         TOKEN_VAULT_SEED,
     },
-    GlobalConfig, LaunchpadError, RiskProfile, BPS_DENOMINATOR, CURVE_KIND_LINEAR_V1,
-    ECONOMICS_VERSION_V2, ECONOMICS_VERSION_V3, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
+    ClusterProfile, GlobalConfig, LaunchpadError, RiskProfile, SetCampaignPause, BPS_DENOMINATOR,
+    CLUSTER_PROFILE_SEED, CURVE_KIND_LINEAR_V1, ECONOMICS_VERSION_V2, ECONOMICS_VERSION_V3,
+    EMPTY_CLUSTER_ID, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED, ROUTE_PROFILE_OG,
+    ROUTE_PROFILE_LINKED, ROUTE_PROFILE_UNLINKED,
 };
 
 #[cfg(test)]
 use crate::ECONOMICS_VERSION_V1;
 
 pub const TRADE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_TRADE_V1";
-pub const TRADE_AUTH_SCHEMA_VERSION: u16 = 2;
+pub const TRADE_AUTH_SCHEMA_VERSION: u16 = 3;
 pub const TRADE_AUTH_SEED: &[u8] = b"trade-auth";
 pub const TRADE_SIDE_BUY: u8 = 1;
 pub const TRADE_SIDE_SELL: u8 = 2;
+pub const TRADE_SIDE_FINALIZE: u8 = 3;
 
 const ED25519_HEADER_SIZE: usize = 16;
 const ED25519_SIGNATURE_SIZE: usize = 64;
@@ -54,6 +57,8 @@ pub struct BuyTokensArgs {
     pub nonce: [u8; 32],
     /// Route-signed native graduation target. 0 = sold-out close only.
     pub native_target_lamports: u64,
+    /// Linked / unlinked / OG split. Bound into the trade digest.
+    pub route_profile: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
@@ -64,6 +69,8 @@ pub struct SellTokensArgs {
     pub min_lamports_out: u64,
     pub deadline: i64,
     pub nonce: [u8; 32],
+    /// Linked / unlinked / OG split. Bound into the trade digest.
+    pub route_profile: u8,
 }
 
 #[account]
@@ -519,6 +526,8 @@ pub struct BuyTokens<'info> {
     /// CHECK: optional risk profile for trader. Missing means unrestricted/no cluster, matching BNB RiskRegistry.
     #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]
     pub risk_profile: UncheckedAccount<'info>,
+    /// CHECK: cluster PDA for risk.cluster_id. Empty-cluster PDA may be missing.
+    pub cluster_profile: UncheckedAccount<'info>,
     /// CHECK: trade-auth PDA (created when trading requires route auth).
     #[account(
         mut,
@@ -559,6 +568,8 @@ pub struct SellTokens<'info> {
     /// CHECK: optional risk profile. Missing means unrestricted/no cluster, matching BNB RiskRegistry.
     #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]
     pub risk_profile: UncheckedAccount<'info>,
+    /// CHECK: cluster PDA for risk.cluster_id. Empty-cluster PDA may be missing.
+    pub cluster_profile: UncheckedAccount<'info>,
     /// CHECK: trade-auth PDA.
     #[account(
         mut,
@@ -625,11 +636,13 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
         )?;
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
         require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
+        require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
         require!(
             campaign.curve_kind == CURVE_KIND_LINEAR_V1,
             LaunchpadError::InvalidCampaign
         );
+        validate_route_profile_id(args.route_profile)?;
 
         let risk = load_risk_profile_or_default(
             &ctx.accounts.risk_profile.to_account_info(),
@@ -637,6 +650,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             ctx.bumps.risk_profile,
         )?;
         validate_trade_risk_profile(&risk, trader)?;
+        validate_trade_cluster_profile(&ctx.accounts.cluster_profile.to_account_info(), &risk)?;
 
         if auth_required {
             let digest = build_trade_authorization_digest(
@@ -650,6 +664,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
                 args.deadline,
                 &args.nonce,
                 args.native_target_lamports,
+                args.route_profile,
             );
             verify_detached_trade_authorization(
                 &ctx.accounts.instructions.to_account_info(),
@@ -742,6 +757,7 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             args.deadline,
             &args.nonce,
             args.native_target_lamports,
+            args.route_profile,
         );
         create_trade_auth_account(
             &ctx.accounts.trader.to_account_info(),
@@ -767,14 +783,14 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
             ctx.accounts.system_program.to_account_info(),
         ],
     )?;
-    maybe_route_fee_slices(
+    route_fee_slices(
         ctx.remaining_accounts,
         &ctx.accounts.sol_vault.to_account_info(),
         campaign_key,
         trader,
         TRADE_SIDE_BUY,
         net,
-        crate::ROUTE_PROFILE_UNLINKED,
+        args.route_profile,
     )?;
 
     let bump_seed = [campaign_bump];
@@ -879,11 +895,13 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
         )?;
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
         require!(!campaign.curve_closed, LaunchpadError::CurveClosed);
+        require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(now >= campaign.launch_at, LaunchpadError::TradingNotOpen);
         require!(
             campaign.curve_kind == CURVE_KIND_LINEAR_V1,
             LaunchpadError::InvalidCampaign
         );
+        validate_route_profile_id(args.route_profile)?;
 
         let risk = load_risk_profile_or_default(
             &ctx.accounts.risk_profile.to_account_info(),
@@ -891,6 +909,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             ctx.bumps.risk_profile,
         )?;
         validate_trade_risk_profile(&risk, trader)?;
+        validate_trade_cluster_profile(&ctx.accounts.cluster_profile.to_account_info(), &risk)?;
 
         if auth_required {
             let digest = build_trade_authorization_digest(
@@ -904,6 +923,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
                 args.deadline,
                 &args.nonce,
                 0,
+                args.route_profile,
             );
             verify_detached_trade_authorization(
                 &ctx.accounts.instructions.to_account_info(),
@@ -947,6 +967,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             args.deadline,
             &args.nonce,
             0,
+            args.route_profile,
         );
         create_trade_auth_account(
             &ctx.accounts.trader.to_account_info(),
@@ -988,14 +1009,14 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
             .checked_add(lamports_out)
             .ok_or(LaunchpadError::MathOverflow)?;
     }
-    maybe_route_fee_slices(
+    route_fee_slices(
         ctx.remaining_accounts,
         &ctx.accounts.sol_vault.to_account_info(),
         campaign_key,
         trader,
         TRADE_SIDE_SELL,
         gross,
-        crate::ROUTE_PROFILE_UNLINKED,
+        args.route_profile,
     )?;
 
     let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
@@ -1033,7 +1054,7 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn maybe_route_fee_slices(
+pub(crate) fn route_fee_slices(
     remaining: &[AccountInfo],
     sol_vault: &AccountInfo,
     campaign: Pubkey,
@@ -1042,24 +1063,26 @@ fn maybe_route_fee_slices(
     gross_lamports: u64,
     route_profile: u8,
 ) -> Result<()> {
-    // Full BNB table needs weekly, airdrop, monthly, recruiter, squad, protocol.
-    if remaining.len() < 6 {
-        return Ok(());
-    }
-    let fee_lamports = calculate_fee(gross_lamports, crate::LOCKED_BUY_FEE_BPS)?;
+    require!(remaining.len() >= 6, LaunchpadError::InvalidRewardsVault);
+    validate_route_profile_id(route_profile)?;
+    let kind = if side == TRADE_SIDE_FINALIZE {
+        crate::ROUTE_KIND_FINALIZE
+    } else {
+        crate::ROUTE_KIND_TRADE
+    };
+    // Trades pass the taxable curve amount and take 200 bps here.
+    // Finalize already computed the protocol fee and must split that exact amount.
+    let fee_lamports = if side == TRADE_SIDE_FINALIZE {
+        gross_lamports
+    } else {
+        calculate_fee(gross_lamports, crate::LOCKED_BUY_FEE_BPS)?
+    };
+    let amounts = preview_bnb_route(kind, route_profile, fee_lamports)?;
     if fee_lamports == 0 {
+        validate_reward_vaults(remaining)?;
         return Ok(());
     }
-    let amounts = preview_bnb_route(crate::ROUTE_KIND_TRADE, route_profile, fee_lamports)?;
-    let treasury = crate::rewards_treasury_program_id();
-    let expected = [
-        Pubkey::find_program_address(&[crate::LEAGUE_VAULT_SEED], &treasury).0,
-        Pubkey::find_program_address(&[crate::AIRDROP_VAULT_SEED], &treasury).0,
-        Pubkey::find_program_address(&[crate::MONTHLY_LEAGUE_VAULT_SEED], &treasury).0,
-        Pubkey::find_program_address(&[crate::RECRUITER_VAULT_SEED], &treasury).0,
-        Pubkey::find_program_address(&[crate::SQUAD_VAULT_SEED], &treasury).0,
-        Pubkey::find_program_address(&[crate::PROTOCOL_VAULT_SEED], &treasury).0,
-    ];
+    let expected = expected_reward_vaults();
     let slices = [
         amounts.weekly_league,
         amounts.airdrop,
@@ -1113,7 +1136,7 @@ fn maybe_route_fee_slices(
     Ok(())
 }
 
-struct BnbRouteAmounts {
+pub(crate) struct BnbRouteAmounts {
     weekly_league: u64,
     monthly_league: u64,
     recruiter: u64,
@@ -1122,7 +1145,7 @@ struct BnbRouteAmounts {
     protocol: u64,
 }
 
-fn preview_bnb_route(kind: u8, profile: u8, fee_amount: u64) -> Result<BnbRouteAmounts> {
+pub(crate) fn preview_bnb_route(kind: u8, profile: u8, fee_amount: u64) -> Result<BnbRouteAmounts> {
     let (league_bps, recruiter_bps, airdrop_bps, squad_bps) = if kind == crate::ROUTE_KIND_TRADE {
         match profile {
             0 => (3750u16, 1250u16, 0u16, 250u16),
@@ -1166,6 +1189,94 @@ fn validate_trade_risk_profile(risk: &RiskProfile, trader: Pubkey) -> Result<()>
         !risk.manual_review_required,
         LaunchpadError::WalletRestricted
     );
+    Ok(())
+}
+
+pub(crate) fn validate_route_profile_id(profile: u8) -> Result<()> {
+    require!(
+        profile == ROUTE_PROFILE_LINKED
+            || profile == ROUTE_PROFILE_UNLINKED
+            || profile == ROUTE_PROFILE_OG,
+        LaunchpadError::InvalidRouteProfile
+    );
+    Ok(())
+}
+
+fn expected_reward_vaults() -> [Pubkey; 6] {
+    let treasury = crate::rewards_treasury_program_id();
+    [
+        Pubkey::find_program_address(&[crate::LEAGUE_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::AIRDROP_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::MONTHLY_LEAGUE_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::RECRUITER_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::SQUAD_VAULT_SEED], &treasury).0,
+        Pubkey::find_program_address(&[crate::PROTOCOL_VAULT_SEED], &treasury).0,
+    ]
+}
+
+fn validate_reward_vaults(remaining: &[AccountInfo]) -> Result<()> {
+    let expected = expected_reward_vaults();
+    for i in 0..6 {
+        require_keys_eq!(*remaining[i].key, expected[i], LaunchpadError::InvalidRewardsVault);
+        require!(remaining[i].is_writable, LaunchpadError::InvalidRewardsVault);
+        require!(remaining[i].lamports() > 0, LaunchpadError::InvalidRewardsVault);
+    }
+    Ok(())
+}
+
+fn validate_trade_cluster_profile(cluster_info: &AccountInfo, risk: &RiskProfile) -> Result<()> {
+    let (expected_cluster, _) = Pubkey::find_program_address(
+        &[CLUSTER_PROFILE_SEED, risk.cluster_id.as_ref()],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        *cluster_info.key,
+        expected_cluster,
+        LaunchpadError::InvalidCluster
+    );
+    if risk.cluster_id == EMPTY_CLUSTER_ID {
+        return Ok(());
+    }
+    require!(
+        cluster_info.owner == &crate::ID && !cluster_info.data_is_empty(),
+        LaunchpadError::InvalidCluster
+    );
+    let data = cluster_info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let cluster = ClusterProfile::try_deserialize(&mut slice)?;
+    require!(
+        cluster.cluster_id == risk.cluster_id,
+        LaunchpadError::InvalidCluster
+    );
+    require!(!cluster.restricted, LaunchpadError::ClusterRestricted);
+    Ok(())
+}
+
+pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) -> Result<()> {
+    let global = &ctx.accounts.global_config;
+    if ctx.accounts.authority.key() != global.admin && ctx.accounts.authority.key() != global.pauser
+    {
+        return err!(LaunchpadError::Unauthorized);
+    }
+    let campaign_key = ctx.accounts.campaign.key();
+    let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
+    let mut slice: &[u8] = &data;
+    let mut campaign = Campaign::try_deserialize(&mut slice)?;
+    let (expected_campaign, _) =
+        Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign.campaign_id.as_ref()], &crate::ID);
+    require_keys_eq!(
+        campaign_key,
+        expected_campaign,
+        LaunchpadError::InvalidCampaign
+    );
+    campaign.paused = paused;
+    let mut cursor = std::io::Cursor::new(&mut data[..]);
+    campaign.try_serialize(&mut cursor)?;
+    emit!(crate::CampaignPauseUpdated {
+        campaign: campaign_key,
+        authority: ctx.accounts.authority.key(),
+        paused,
+    });
     Ok(())
 }
 
@@ -1233,8 +1344,9 @@ fn build_trade_authorization_digest(
     deadline: i64,
     nonce: &[u8; 32],
     native_target_lamports: u64,
+    route_profile: u8,
 ) -> [u8; 32] {
-    let mut message = Vec::with_capacity(264);
+    let mut message = Vec::with_capacity(265);
     message.extend_from_slice(TRADE_AUTH_DOMAIN);
     message.extend_from_slice(&TRADE_AUTH_SCHEMA_VERSION.to_le_bytes());
     message.extend_from_slice(program_id.as_ref());
@@ -1247,6 +1359,7 @@ fn build_trade_authorization_digest(
     message.extend_from_slice(&deadline.to_le_bytes());
     message.extend_from_slice(nonce.as_ref());
     message.extend_from_slice(&native_target_lamports.to_le_bytes());
+    message.push(route_profile);
     hash(&message).to_bytes()
 }
 
@@ -1538,7 +1651,31 @@ mod tests {
     }
 
     #[test]
-    fn new_campaign_account_is_719_bytes() {
-        assert_eq!(8 + Campaign::INIT_SPACE, 719);
+    fn new_campaign_account_is_720_bytes() {
+        assert_eq!(8 + Campaign::INIT_SPACE, 720);
+    }
+
+    #[test]
+    fn unlinked_trade_route_sends_recruiter_slice_to_airdrop() {
+        let fee = 10_000u64;
+        let unlinked = preview_bnb_route(crate::ROUTE_KIND_TRADE, ROUTE_PROFILE_UNLINKED, fee).unwrap();
+        let linked = preview_bnb_route(crate::ROUTE_KIND_TRADE, ROUTE_PROFILE_LINKED, fee).unwrap();
+        assert_eq!(unlinked.recruiter, 0);
+        assert_eq!(unlinked.squad, 0);
+        assert!(unlinked.airdrop > 0);
+        assert!(linked.recruiter > 0);
+        assert_eq!(linked.airdrop, 0);
+        assert_eq!(
+            unlinked.weekly_league + unlinked.monthly_league + unlinked.airdrop + unlinked.protocol,
+            fee
+        );
+    }
+
+    #[test]
+    fn invalid_route_profile_is_rejected() {
+        assert!(validate_route_profile_id(3).is_err());
+        assert!(validate_route_profile_id(ROUTE_PROFILE_LINKED).is_ok());
+        assert!(validate_route_profile_id(ROUTE_PROFILE_UNLINKED).is_ok());
+        assert!(validate_route_profile_id(ROUTE_PROFILE_OG).is_ok());
     }
 }
