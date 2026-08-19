@@ -221,6 +221,13 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       `admin ${admin.toBase58()} has no SOL on the local validator`,
     );
 
+    const existingGlobal = await connection.getAccountInfo(globalConfig, "confirmed");
+    if (existingGlobal) {
+      throw new Error(
+        "GlobalConfig already exists. Restart solana-test-validator --reset so lifecycle can init its own route signer (the gate script does this between suites).",
+      );
+    }
+
     await program.methods
       .initializeGlobalConfig({
         admin,

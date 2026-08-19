@@ -37,36 +37,44 @@ echo "    bytes=$BYTES"
 echo "    sha256=$HASH"
 echo "$HASH" > "$ROOT/target/deploy/memewarzone_solana.sha256"
 
-echo "==> starting solana-test-validator with this exact .so"
-# Ledger must live on a Linux filesystem. /mnt/e (NTFS) stalls slot production
-# and every confirmTransaction hits the 30s timeout.
+# Ledger must live on a Linux filesystem. /mnt/e (NTFS) stalls slot production.
 LEDGER="${MWZ_LOCAL_LEDGER:-/tmp/mwz-sbf-ledger}"
-solana-test-validator \
-  --reset \
-  --ledger "$LEDGER" \
-  --limit-ledger-size 50000000 \
-  --bind-address 127.0.0.1 \
-  --rpc-port 8899 \
-  --bpf-program "$PROGRAM_ID" "$SO" \
-  --quiet \
-  >/tmp/mwz-local-validator.log 2>&1 &
-VALIDATOR_PID=$!
+VALIDATOR_PID=""
+
 cleanup() {
-  kill "$VALIDATOR_PID" >/dev/null 2>&1 || true
+  if [[ -n "${VALIDATOR_PID}" ]]; then
+    kill "$VALIDATOR_PID" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 60); do
-  if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
-    break
+start_validator() {
+  if [[ -n "${VALIDATOR_PID}" ]]; then
+    kill "$VALIDATOR_PID" >/dev/null 2>&1 || true
+    wait "$VALIDATOR_PID" >/dev/null 2>&1 || true
+    VALIDATOR_PID=""
   fi
-  sleep 0.5
-done
-if ! solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+  echo "==> starting solana-test-validator with this exact .so"
+  solana-test-validator \
+    --reset \
+    --ledger "$LEDGER" \
+    --limit-ledger-size 50000000 \
+    --bind-address 127.0.0.1 \
+    --rpc-port 8899 \
+    --bpf-program "$PROGRAM_ID" "$SO" \
+    --quiet \
+    >/tmp/mwz-local-validator.log 2>&1 &
+  VALIDATOR_PID=$!
+  for _ in $(seq 1 60); do
+    if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
   echo "validator did not become ready; last log:" >&2
   tail -n 40 /tmp/mwz-local-validator.log >&2 || true
   exit 1
-fi
+}
 
 export ANCHOR_PROVIDER_URL="http://127.0.0.1:8899"
 export ANCHOR_WALLET="$WALLET"
@@ -76,12 +84,23 @@ if [[ ! -f "$WALLET" ]]; then
   exit 1
 fi
 PAYER="$(solana-keygen pubkey "$WALLET")"
-echo "==> funding test payer $PAYER"
-solana airdrop 100 "$PAYER" --url http://127.0.0.1:8899
-solana balance "$PAYER" --url http://127.0.0.1:8899
+
+fund_payer() {
+  echo "==> funding test payer $PAYER"
+  solana airdrop 100 "$PAYER" --url http://127.0.0.1:8899
+  solana balance "$PAYER" --url http://127.0.0.1:8899
+}
+
+start_validator
+fund_payer
 
 echo "==> create acceptance"
 npm --prefix tests/solana test -- --grep "authorization V4 local-validator acceptance"
+
+# Create suite owns GlobalConfig. Lifecycle generates its own route signer, so
+# it needs a fresh validator (same .so, empty accounts).
+start_validator
+fund_payer
 
 echo "==> bonding lifecycle (simulate then send)"
 npm --prefix tests/solana run test:lifecycle
