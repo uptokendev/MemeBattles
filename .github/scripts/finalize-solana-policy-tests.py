@@ -67,9 +67,11 @@ replace_once(
     "SOLANA_WALLET_MANUAL_REVIEW",
     "SOLANA_CLUSTER_RESTRICTED",
   ]) {
-    assert.match(
-      auth,
-      new RegExp(`${code}[\\s\\S]{0,220}httpStatus: 403`),
+    const codeIndex = auth.indexOf(`code: "${code}"`);
+    assert.ok(codeIndex >= 0, `missing ${code}`);
+    const statusIndex = auth.indexOf("httpStatus: 403", codeIndex);
+    assert.ok(
+      statusIndex > codeIndex && statusIndex - codeIndex < 180,
       `${code} must remain an HTTP 403 preflight rejection`,
     );
   }
