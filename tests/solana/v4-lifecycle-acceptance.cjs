@@ -192,6 +192,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
   let buyer;
   let campaignAccounts;
   let createArgs;
+  let buyerClusterId = emptyClusterId;
 
   async function simulateThenSend(tx, label, signers) {
     const latest = await connection.getLatestBlockhash("confirmed");
@@ -201,6 +202,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
 
     const simulated = await connection.simulateTransaction(tx);
     const logs = simulated.value.logs || [];
+    assert.equal(
+      logs.some((line) => /Access violation|stack frame|Program failed to complete/i.test(line)),
+      false,
+      `${label} hit BPF stack overflow:\n${logs.join("\n")}`,
+    );
     if (simulated.value.err) {
       throw new Error(
         `${label} simulation failed: ${JSON.stringify(simulated.value.err)}\n${logs.join("\n")}`,
@@ -471,7 +477,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
   }
 
   async function sendBuy(lamportsIn, nativeTargetLamports = 0n, opts = {}) {
-    const clusterId = opts.clusterId || emptyClusterId;
+    const clusterId = opts.clusterId || buyerClusterId;
     const routeProfile = opts.routeProfile ?? ROUTE_PROFILE_UNLINKED;
     const includeVaults = opts.includeVaults !== false;
     const now = await chainUnixTimestamp(connection);
@@ -540,7 +546,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
   }
 
   async function sendSell(tokensIn, opts = {}) {
-    const clusterId = opts.clusterId || emptyClusterId;
+    const clusterId = opts.clusterId || buyerClusterId;
     const routeProfile = opts.routeProfile ?? ROUTE_PROFILE_UNLINKED;
     const includeVaults = opts.includeVaults !== false;
     const now = await chainUnixTimestamp(connection);
@@ -631,16 +637,24 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       return { campaign, tokenAmount: token ? BigInt(token.amount.toString()) : 0n, vault };
     }
 
-    async function expectBuyFail(label, lamportsIn, nativeTarget, opts) {
-      let failed = false;
+    function assertNoStackCrash(label, text) {
+      assert.equal(
+        /Access violation|stack frame|Program failed to complete/i.test(text),
+        false,
+        `${label} crashed the BPF stack:\n${text}`,
+      );
+    }
+
+    async function expectProgramFail(label, fn, expected) {
+      let text = "";
       try {
-        await sendBuy(lamportsIn, nativeTarget, opts);
+        await fn();
       } catch (error) {
-        failed = /simulation failed|custom program error|ClusterRestricted|CampaignPaused|InvalidRewardsVault/i.test(
-          String(error),
-        );
+        text = String(error);
       }
-      assert.equal(failed, true, label);
+      assert.notEqual(text, "", `${label}: expected a program failure`);
+      assertNoStackCrash(label, text);
+      assert.ok(expected.test(text), `${label} failed for the wrong reason:\n${text}`);
     }
 
     const rewardsBefore = {};
@@ -668,7 +682,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     assert.ok(airdropNow > rewardsBefore.airdrop, "unlinked profile must fund the airdrop vault");
     assert.equal(after.campaign.paused, false);
 
-    await expectBuyFail("buy without reward vaults must fail", BUY_LAMPORTS, 0n, { includeVaults: false });
+    await expectProgramFail(
+      "buy without reward vaults",
+      () => sendBuy(BUY_LAMPORTS, 0n, { includeVaults: false }),
+      /InvalidRewardsVault/,
+    );
 
     await program.methods
       .setCampaignPause(true)
@@ -678,7 +696,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         campaign: campaignAccounts.campaign,
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
-    await expectBuyFail("paused campaign buy must fail", BUY_LAMPORTS, 0n);
+    await expectProgramFail("paused campaign buy", () => sendBuy(BUY_LAMPORTS), /CampaignPaused/);
     await program.methods
       .setCampaignPause(false)
       .accountsStrict({
@@ -690,6 +708,8 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
 
     const restrictedClusterId = hash32("restricted-cluster");
     const restrictedCluster = derivePda(program.programId, "cluster", restrictedClusterId);
+    const allowedClusterId = hash32("allowed-cluster");
+    const allowedCluster = derivePda(program.programId, "cluster", allowedClusterId);
     await program.methods
       .syncClusterProfile({
         clusterId: Array.from(restrictedClusterId),
@@ -705,6 +725,20 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
     await program.methods
+      .syncClusterProfile({
+        clusterId: Array.from(allowedClusterId),
+        size: 2,
+        riskLevel: 1,
+        restricted: false,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        clusterProfile: allowedCluster,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    await program.methods
       .syncRiskProfile({
         wallet: buyer.keypair.publicKey,
         riskLevel: 3,
@@ -719,15 +753,23 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
-    await expectBuyFail("restricted cluster buy must fail", BUY_LAMPORTS, 0n, {
-      clusterId: restrictedClusterId,
-    });
+    await expectProgramFail(
+      "restricted cluster buy",
+      () => sendBuy(BUY_LAMPORTS, 0n, { clusterId: restrictedClusterId }),
+      /ClusterRestricted/,
+    );
+    await expectProgramFail(
+      "restricted cluster sell",
+      () => sendSell(1n, { clusterId: restrictedClusterId }),
+      /ClusterRestricted/,
+    );
+
     await program.methods
       .syncRiskProfile({
         wallet: buyer.keypair.publicKey,
         riskLevel: 0,
         restricted: false,
-        clusterId: Array.from(emptyClusterId),
+        clusterId: Array.from(allowedClusterId),
         manualReviewRequired: false,
       })
       .accountsStrict({
@@ -737,6 +779,17 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         systemProgram: SystemProgram.programId,
       })
       .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    buyerClusterId = allowedClusterId;
+
+    const recruiterBefore = BigInt(await connection.getBalance(rewardVaultKeys().recruiter, "confirmed"));
+    const airdropBeforeLinked = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
+    await sendBuy(BUY_LAMPORTS, 0n, { routeProfile: 0 });
+    const recruiterAfter = BigInt(await connection.getBalance(rewardVaultKeys().recruiter, "confirmed"));
+    const airdropAfterLinked = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
+    assert.ok(recruiterAfter > recruiterBefore, "linked route must fund recruiter vault");
+    assert.equal(airdropAfterLinked, airdropBeforeLinked, "linked route must not fund airdrop");
+
+    await sendBuy(BUY_LAMPORTS, 0n, { routeProfile: 2 });
 
     before = after;
     await sendBuy(BUY_LAMPORTS);
