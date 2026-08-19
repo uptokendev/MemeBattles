@@ -41,21 +41,38 @@ export function useTokenTransferHolders(args: {
     );
 
     let cancelled = false;
+    let ac = new AbortController();
+    
+    // Track the highest block we've scanned to avoid redundant fetching
+    let highestBlockScanned = 0;
+    
     const load = async () => {
       setLoading(true);
       try {
+        const isDelta = highestBlockScanned > 0;
+        const lookback = isDelta ? 10_000 : 200_000;
+        
         const logs = await scanContractLogs({
           chainId,
           address: token,
           topics: [TRANSFER_TOPIC],
-          lookbackBlocks: 200_000,
+          lookbackBlocks: lookback,
+          fromBlock: isDelta ? highestBlockScanned + 1 : undefined,
           chunkSize: 2_500,
+          signal: ac.signal,
         });
         const balances = new Map<string, bigint>();
         const iface = new ethers.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
         let sawMint = false;
+        
+        // Track the highest block in this batch
+        let maxBlockInBatch = highestBlockScanned;
+        
         for (const log of logs) {
           try {
+            if (log.blockNumber && log.blockNumber > maxBlockInBatch) {
+              maxBlockInBatch = log.blockNumber;
+            }
             const parsed = iface.parseLog(log);
             if (!parsed) continue;
             const from = String(parsed.args.from || "").toLowerCase();
@@ -73,17 +90,32 @@ export function useTokenTransferHolders(args: {
           }
         }
         if (cancelled) return;
+        
+        if (maxBlockInBatch > highestBlockScanned) {
+          highestBlockScanned = maxBlockInBatch;
+        }
+
         setComplete(sawMint);
-        setHolders(
-          [...balances.entries()]
+        setHolders((prev) => {
+          // If doing a delta scan, we need to merge with existing balances
+          const mergedBalances = new Map(balances);
+          if (isDelta) {
+            for (const { address, bal } of prev) {
+              mergedBalances.set(address, (mergedBalances.get(address) ?? 0n) + bal);
+            }
+          }
+          
+          return [...mergedBalances.entries()]
             .filter(([address, bal]) => bal > 0n && !excluded.has(address))
             .map(([address, bal]) => ({ address, bal }))
-            .sort((a, b) => (a.bal === b.bal ? 0 : a.bal > b.bal ? -1 : 1)),
-        );
-      } catch {
-        if (!cancelled) {
-          setHolders([]);
-          setComplete(false);
+            .sort((a, b) => (a.bal === b.bal ? 0 : a.bal > b.bal ? -1 : 1));
+        });
+      } catch (err: any) {
+        if (!cancelled && err.name !== 'AbortError') {
+          if (!highestBlockScanned) {
+            setHolders([]);
+            setComplete(false);
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -91,9 +123,17 @@ export function useTokenTransferHolders(args: {
     };
 
     void load();
-    const timer = window.setInterval(() => void load(), 20_000);
+    const timer = window.setInterval(() => {
+      // Re-initialize AbortController if it was aborted
+      if (ac.signal.aborted) {
+        ac = new AbortController();
+      }
+      void load();
+    }, 20_000);
+    
     return () => {
       cancelled = true;
+      ac.abort();
       window.clearInterval(timer);
     };
   }, [args.chainId, args.enabled, args.tokenAddress, excludeKey]);

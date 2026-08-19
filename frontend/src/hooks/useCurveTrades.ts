@@ -380,7 +380,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         console.warn("[useCurveTrades] indexer trade API failed", apiError);
       }
 
-      if (isEvmChainId(chainId)) {
+      if (isEvmChainId(chainId) && ENABLE_ONCHAIN_TRADE_FALLBACK) {
         try {
           const fallbackRows = await fetchOnChainTradeSnapshot(
             campaignAddress,
