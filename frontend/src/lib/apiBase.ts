@@ -10,6 +10,7 @@ const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 function normalizeApiBase(value: unknown): string {
   const raw = String(value || "").trim().replace(/\/+$/, "");
   if (!raw) return "";
+  if (/\{\{/.test(raw) || /%7B%7B/i.test(raw)) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
   if (/^\/\//.test(raw)) return `https:${raw}`;
   return `https://${raw}`;

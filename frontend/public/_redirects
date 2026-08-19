@@ -1,0 +1,3 @@
+# Coolify/Netlify static hosts look for a real file on hard refresh.
+# /create and /token/:id are React routes, not files. Serve the SPA.
+/*    /index.html   200
