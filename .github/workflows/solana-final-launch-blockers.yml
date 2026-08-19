@@ -1,6 +1,9 @@
 name: Solana Final Launch Blocker Gate
 
 on:
+  push:
+    branches:
+      - agent/solana-final-launch-blockers
   pull_request:
     branches:
       - main
