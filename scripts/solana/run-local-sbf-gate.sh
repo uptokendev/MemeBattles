@@ -58,7 +58,15 @@ done
 
 export ANCHOR_PROVIDER_URL="http://127.0.0.1:8899"
 export ANCHOR_WALLET="$WALLET"
-solana airdrop 100 --url http://127.0.0.1:8899 >/dev/null
+if [[ ! -f "$WALLET" ]]; then
+  echo "ANCHOR_WALLET not found: $WALLET" >&2
+  echo "Create one with: solana-keygen new -o $WALLET" >&2
+  exit 1
+fi
+PAYER="$(solana-keygen pubkey "$WALLET")"
+echo "==> funding test payer $PAYER"
+solana airdrop 100 "$PAYER" --url http://127.0.0.1:8899
+solana balance "$PAYER" --url http://127.0.0.1:8899
 
 echo "==> create acceptance"
 npm --prefix tests/solana test -- --grep "authorization V4 local-validator acceptance"

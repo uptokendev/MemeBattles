@@ -217,6 +217,17 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       console.warn(`[sbf-gate] ${SO_PATH} missing — hash the binary you actually deploy`);
     }
 
+    const min = 50 * LAMPORTS_PER_SOL;
+    if ((await connection.getBalance(admin, "confirmed")) < min) {
+      const sig = await connection.requestAirdrop(admin, 100 * LAMPORTS_PER_SOL);
+      const latest = await connection.getLatestBlockhash("confirmed");
+      await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+    }
+    assert.ok(
+      (await connection.getBalance(admin, "confirmed")) >= min,
+      `admin ${admin.toBase58()} has no SOL on the local validator`,
+    );
+
     await program.methods
       .initializeGlobalConfig({
         admin,

@@ -508,8 +508,20 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     assert.equal(accountInfo, null, `failed campaign ${campaign} must not exist`);
   }
 
+  async function ensureAdminSol() {
+    const min = 50 * LAMPORTS_PER_SOL;
+    const balance = await connection.getBalance(admin, "confirmed");
+    if (balance >= min) return;
+    const sig = await connection.requestAirdrop(admin, 100 * LAMPORTS_PER_SOL);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+    const after = await connection.getBalance(admin, "confirmed");
+    assert.ok(after >= min, `admin ${admin.toBase58()} has ${after} lamports; local airdrop failed`);
+  }
+
   before(async function () {
     assert.equal(CREATE_AUTH_SCHEMA_VERSION, 4);
+    await ensureAdminSol();
 
     await program.methods
       .initializeGlobalConfig({
