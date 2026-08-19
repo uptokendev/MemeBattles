@@ -24,6 +24,7 @@ import {
 } from "@/lib/graduationTiers";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
+import { isCreatorArmCooldownActive } from "@/lib/creatorArmCooldown";
 import {
   deployScheduledDraftCampaignV2,
   readScheduledCreatorLaunchEligibility,
@@ -453,7 +454,7 @@ export default function PushDraftLive() {
           message =
             `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). ` +
             "Graduate an existing live campaign before another deploy/arm. Tier 1 max is 3 concurrent live campaigns (including timed arms).";
-        } else if (eligibility.cooldownEndsAt > now) {
+        } else if (isCreatorArmCooldownActive({ ...eligibility, nowSeconds: now })) {
           message =
             `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. ` +
             "Immediate and timed arms both require 24h between on-chain deploys. A later trading-open time does not bypass this.";
@@ -553,10 +554,9 @@ export default function PushDraftLive() {
         lower.includes("cannot arm another") ||
         code.includes("ELIGIB") ||
         code.includes("COOLDOWN") ||
-        code === "CALL_EXCEPTION" ||
         (latestEligibility != null && latestEligibility.allowed === false);
 
-      if (looksLikeArmBlock || (latestEligibility && Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000))) {
+      if (looksLikeArmBlock || (latestEligibility != null && isCreatorArmCooldownActive(latestEligibility))) {
         showArmBlock(resolveCreatorArmBlock({ mode, eligibility: latestEligibility, errorMessage: message, errorCode: code }));
       } else if (message.startsWith("Choose a trading-open time") || message.startsWith("Scheduled launches cannot")) {
         toast.error(message);
@@ -620,7 +620,7 @@ export default function PushDraftLive() {
             </div>
           ) : creatorEligibility ? (
             <div className="mt-2 space-y-2 text-sm text-orange-300">
-              {creatorEligibility.cooldownEndsAt > Math.floor(Date.now() / 1000) ? (
+              {isCreatorArmCooldownActive(creatorEligibility) ? (
                 <p>Creator cooldown active. Another campaign may be deployed or armed after {formatLocalLaunch(creatorEligibility.cooldownEndsAt)} ({creatorTimeZone}).</p>
               ) : creatorEligibility.currentLiveCount >= creatorEligibility.maxLiveBonding ? (
                 <p>Live campaign limit reached ({creatorEligibility.currentLiveCount} / {creatorEligibility.maxLiveBonding}).</p>

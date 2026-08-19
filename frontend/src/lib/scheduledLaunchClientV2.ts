@@ -1,5 +1,6 @@
 import { Contract, ethers, type JsonRpcSigner } from "ethers";
 import { apiFetch } from "@/lib/apiBase";
+import { normalizeCreatorArmCooldownEndsAt } from "@/lib/creatorArmCooldown";
 import type { DraftActionAuth } from "@/lib/draftAuth";
 
 const SCHEDULED_FACTORY_ABI = [
@@ -184,17 +185,23 @@ export async function readScheduledCreatorLaunchEligibility(input: {
         registry.getCreatorProfile(creator),
         registry.getCreatorRules(creator),
       ]);
-      lastRecordedLaunchAt = Number(profile.lastLaunchTimestamp ?? profile[3] ?? 0);
-      restricted = Boolean(profile.restricted ?? profile[4]);
-      manualReviewRequired = Boolean(profile.manualReviewRequired ?? profile[5]);
-      cooldownSeconds = Number(rules.cooldownSeconds ?? rules[1] ?? 0);
+      lastRecordedLaunchAt = Number(profile[3] ?? profile.lastLaunchTimestamp ?? 0);
+      restricted = Boolean(profile[4] ?? profile.restricted);
+      manualReviewRequired = Boolean(profile[5] ?? profile.manualReviewRequired);
+      cooldownSeconds = Number(rules[1] ?? rules.cooldownSeconds ?? 0);
     }
 
-    const allowed = Boolean(result.allowed ?? result[0]);
+    const allowed = result[0] === true || result.allowed === true;
+    const cooldownEndsAt = normalizeCreatorArmCooldownEndsAt({
+      allowed,
+      lastRecordedLaunchAt,
+      cooldownSeconds,
+      cooldownEndsAt: Number(result.cooldownEndsAt ?? result[1] ?? 0),
+    });
     return {
       allowed,
       canArmNow: allowed,
-      cooldownEndsAt: Number(result.cooldownEndsAt ?? result[1] ?? 0),
+      cooldownEndsAt,
       currentLiveCount: Number(result.currentLiveCount ?? result[2] ?? 0),
       maxLiveBonding: Number(result.maxLiveBonding ?? result[3] ?? 0),
       cooldownSeconds,
@@ -260,7 +267,7 @@ async function assertScheduledFactoryReady(input: {
           "Graduate an existing live campaign before arming another. Tier 1 max is 3 concurrent live campaigns (including timed arms not yet trading).",
       );
     }
-    if (eligibility.cooldownEndsAt > now) {
+    if (eligibility.lastRecordedLaunchAt > 0 && eligibility.cooldownEndsAt > now) {
       throw new Error(
         `Creator arm cooldown active until ${formatLocalTimestamp(eligibility.cooldownEndsAt)}. ` +
           "Immediate and timed arms both require 24 hours between on-chain deploys. " +

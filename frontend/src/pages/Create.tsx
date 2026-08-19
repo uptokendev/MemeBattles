@@ -44,6 +44,7 @@ import {
   graduationTargetToUsdMicros,
   type GraduationTier,
 } from "@/lib/graduationTiers";
+import { isCreatorArmCooldownActive } from "@/lib/creatorArmCooldown";
 import {
   readScheduledCreatorLaunchEligibility,
   type ScheduledCreatorLaunchEligibility,
@@ -276,20 +277,23 @@ const Create = () => {
           if (cancelled) return;
           setCreatorEligibility(result);
           setCreatorEligibilityError(null);
-          if (!result.allowed) {
-            const walletKey = `${wallet.account}:${chainId}:${result.cooldownEndsAt}:${result.currentLiveCount}`;
+          const liveCap =
+            Number(result.maxLiveBonding || 0) > 0 &&
+            Number(result.currentLiveCount || 0) >= Number(result.maxLiveBonding || 0);
+          const cooldownActive = isCreatorArmCooldownActive(result);
+          if (result.allowed) {
+            armDialogShownForWallet.current = null;
+          } else if (cooldownActive || liveCap) {
+            const walletKey = `${wallet.account}:${chainId}:${result.lastRecordedLaunchAt}:${result.cooldownEndsAt}:${result.currentLiveCount}`;
             if (armDialogShownForWallet.current !== walletKey) {
               armDialogShownForWallet.current = walletKey;
               emitCreatorArmBlocked(
                 resolveCreatorArmBlock({
                   mode: "now",
                   eligibility: result,
-                  errorMessage:
-                    result.cooldownEndsAt > Math.floor(Date.now() / 1000)
-                      ? `Creator arm cooldown active until ${new Date(result.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
-                      : result.currentLiveCount >= result.maxLiveBonding
-                        ? `Live campaign limit reached (${result.currentLiveCount}/${result.maxLiveBonding}).`
-                        : "This creator wallet cannot deploy or arm another campaign right now.",
+                  errorMessage: cooldownActive
+                    ? `Creator arm cooldown active until ${new Date(result.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
+                    : `Live campaign limit reached (${result.currentLiveCount}/${result.maxLiveBonding}).`,
                 }),
               );
             }
@@ -660,7 +664,7 @@ const Create = () => {
           const message =
             eligibility.currentLiveCount >= eligibility.maxLiveBonding
               ? `Live campaign limit reached (${eligibility.currentLiveCount}/${eligibility.maxLiveBonding}). Graduate an existing live campaign before another deploy.`
-              : eligibility.cooldownEndsAt > now
+              : isCreatorArmCooldownActive({ ...eligibility, nowSeconds: now })
                 ? `Creator arm cooldown active until ${new Date(eligibility.cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys.`
                 : "This creator wallet cannot deploy or arm another campaign right now.";
           emitCreatorArmBlocked(resolveCreatorArmBlock({ mode: "now", eligibility, errorMessage: message }));
@@ -699,9 +703,8 @@ const Create = () => {
         lower.includes("cannot arm another") ||
         code.includes("ELIGIB") ||
         code.includes("COOLDOWN") ||
-        code === "CALL_EXCEPTION" ||
         (latestEligibility != null && latestEligibility.allowed === false) ||
-        (latestEligibility != null && Number(latestEligibility.cooldownEndsAt) > Math.floor(Date.now() / 1000));
+        (latestEligibility != null && isCreatorArmCooldownActive(latestEligibility));
 
       if (looksLikeArmBlock) {
         emitCreatorArmBlocked(
