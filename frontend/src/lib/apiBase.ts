@@ -117,6 +117,7 @@ const FRONTEND_API_PREFIXES = [
   "/api/auth",
   "/api/ably",
   "/api/launchpad",
+  "/api/price",
   "/api/follows",
 ];
 

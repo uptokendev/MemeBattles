@@ -27,10 +27,9 @@ function resolveRealtimeApiBase(): string {
   ];
   for (const value of candidates) {
     const raw = String(value || "").trim().replace(/\/+$/, "");
-    if (!raw) continue;
+    if (!raw || /\{\{/.test(raw) || /%7B%7B/i.test(raw)) continue;
     if (/^https?:\/\//i.test(raw)) return raw;
     if (/^\/\//.test(raw)) return `https:${raw}`;
-    return `https://${raw}`;
   }
   return "";
 }

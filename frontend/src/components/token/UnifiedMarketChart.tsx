@@ -580,8 +580,10 @@ export function UnifiedMarketChart({
   }, [curvePoints, graduationMarker?.time, solanaGraduated]);
 
   const seriesPoints = useMemo(() => {
-    if (!nativeUsd && denomination === "USD") return [] as ChartPoint[];
-    return tradeSeriesPoints(curvePoints, metric, denomination, nativeUsd || 1, marketState, graduationTimeSec, chainId, currentBondingSoldRaw, solanaCurvePricing, solanaGraduated, liveSupplyWhole);
+    const usdRate = nativeUsd > 0 ? nativeUsd : 0;
+    const chartDenomination = denomination === "USD" && usdRate <= 0 ? "BNB" : denomination;
+    const chartUsd = usdRate > 0 ? usdRate : 1;
+    return tradeSeriesPoints(curvePoints, metric, chartDenomination, chartUsd, marketState, graduationTimeSec, chainId, currentBondingSoldRaw, solanaCurvePricing, solanaGraduated, liveSupplyWhole);
   }, [chainId, currentBondingSoldRaw, solanaCurvePricing, solanaGraduated, liveSupplyWhole, curvePoints, denomination, graduationTimeSec, marketState, metric, nativeUsd]);
 
   const data = useMemo(() => {
@@ -600,8 +602,7 @@ export function UnifiedMarketChart({
       !isGraduatedStage(marketState) &&
       Number.isFinite(livePrice) &&
       livePrice > 0 &&
-      (metric === "price" || (Number.isFinite(liveSupply) && liveSupply > 0)) &&
-      (denomination !== "USD" || nativeUsd > 0);
+      (metric === "price" || (Number.isFinite(liveSupply) && liveSupply > 0));
     const hasLiveSpotOverlay = hasGraduatedSolanaSpot || hasLiveBnbBondingSpot;
 
     if (!hasHistoricalData && !hasLiveSpotOverlay) return [] as CandleRow[];
@@ -621,7 +622,7 @@ export function UnifiedMarketChart({
     if (!hasLiveSpotOverlay) return authoritative;
 
     const liveNativeValue = metric === "marketcap" ? livePrice * liveSupply : livePrice;
-    const liveValue = denomination === "USD" ? liveNativeValue * nativeUsd : liveNativeValue;
+    const liveValue = denomination === "USD" && nativeUsd > 0 ? liveNativeValue * nativeUsd : liveNativeValue;
     if (!Number.isFinite(liveValue) || liveValue <= 0) return authoritative;
 
     const nowSec = Math.floor(Date.now() / 1000);
@@ -856,13 +857,17 @@ export function UnifiedMarketChart({
     const polarityFlipped = candlePolarity(previous[previous.length - 1]) !== candlePolarity(data[data.length - 1]);
     const incremental = canUpdateIncrementally(previous, data) && !polarityFlipped;
 
-    if (incremental) {
-      series.update(data[data.length - 1] as any);
-    } else {
-      series.setData(data as any);
-      if (initialRangeSetRef.current && visibleBefore && data.length > 0) {
-        try { chart.timeScale().setVisibleLogicalRange(visibleBefore); } catch { /* invalidated by snapshot/timeframe */ }
+    try {
+      if (incremental) {
+        series.update(data[data.length - 1] as any);
+      } else {
+        series.setData(data as any);
+        if (initialRangeSetRef.current && visibleBefore && data.length > 0) {
+          try { chart.timeScale().setVisibleLogicalRange(visibleBefore); } catch { /* invalidated by snapshot/timeframe */ }
+        }
       }
+    } catch {
+      try { series.setData(data as any); } catch { /* keep last painted snapshot */ }
     }
     previousDataRef.current = data;
 
