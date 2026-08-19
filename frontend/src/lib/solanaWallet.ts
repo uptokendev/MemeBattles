@@ -22,7 +22,11 @@ export type SolanaProvider = {
 };
 
 const CONNECT_TIMEOUT_MS = 25_000;
-const OTHER_WALLET_DISCONNECT_MS = 1_200;
+const OTHER_WALLET_DISCONNECT_MS = 200;
+
+function debugLog(step: string, data?: any) {
+  console.log(`[Phantom Debug] ${step}`, data ? data : "");
+}
 
 async function withTimeout<T>(promise: Promise<T> | undefined | null, ms: number, message: string): Promise<T> {
   if (!promise) throw new Error(message);
@@ -229,15 +233,20 @@ export function ensureSolanaListeners(options: { readExistingAccount?: boolean }
 }
 
 export async function connectSolanaWallet(walletId?: string): Promise<{ publicKey: string; walletId: string; walletName: string }> {
+  debugLog("connectSolanaWallet started", { walletId });
   setSolanaDisconnected(false);
   const wallets = detectSolanaWallets();
   const wallet = wallets.find((item) => item.id === walletId || item.name === walletId) || wallets[0];
 
+  debugLog("Wallet resolved", { id: wallet?.id, name: wallet?.name });
+
   if (!wallet?.provider?.connect) {
+    debugLog("Error: No supported Solana wallet detected");
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
   }
 
   const previousId = getStoredSolanaWalletId();
+  debugLog("previousId from storage", { previousId });
 
   // Persist the chosen provider before connect so its accountChanged is not ignored.
   try {
@@ -251,38 +260,50 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
   // Bypassing connect() with cached keys leads to silently failing connections.
 
   if (previousId && previousId !== wallet.id) {
+    debugLog("Disconnecting previous wallet", { previousId });
     try {
       await withTimeout(
         Promise.resolve(getSolanaProvider(previousId)?.disconnect?.()),
         OTHER_WALLET_DISCONNECT_MS,
         "Previous wallet disconnect timed out",
       );
-    } catch {
+      debugLog("Previous wallet disconnected successfully");
+    } catch (e) {
+      debugLog("Previous wallet disconnect failed or timed out", e);
       // previous wallet may already be disconnected or unresponsive
     }
   }
 
   // Force disconnect the current wallet to clear any stale session.
   // This guarantees Phantom will show the connect/unlock popup.
-  // Wrapped in withTimeout because Phantom's disconnect() sometimes hangs.
+  // We use a very short timeout (200ms) because if this hangs longer than 1000ms,
+  // the browser destroys the transient user gesture and the subsequent connect() popup will be blocked.
+  debugLog("Disconnecting current wallet to force fresh session", { walletId: wallet.id });
   try {
+    const start = performance.now();
     await withTimeout(
       Promise.resolve(wallet.provider.disconnect?.()),
-      OTHER_WALLET_DISCONNECT_MS,
+      200,
       "Current wallet disconnect timed out",
     );
-  } catch {
+    debugLog(`Current wallet disconnected successfully in ${Math.round(performance.now() - start)}ms`);
+  } catch (e) {
+    debugLog("Current wallet disconnect failed or timed out (expected if stale)", e);
     // Ignore disconnect failures
   }
 
   let result: { publicKey?: { toString: () => string } } | undefined;
   try {
+    debugLog("Calling wallet.provider.connect() ...");
+    const connectStart = performance.now();
     result = await withTimeout(
       wallet.provider.connect({ onlyIfTrusted: false }),
       CONNECT_TIMEOUT_MS,
       `${wallet.name} did not respond. Unlock it, click the extension icon to approve the popup, then try again.`,
     );
+    debugLog(`wallet.provider.connect() resolved in ${Math.round(performance.now() - connectStart)}ms`, { publicKey: result?.publicKey?.toString() });
   } catch (error) {
+    debugLog("wallet.provider.connect() THREW AN ERROR", error);
     const message = error instanceof Error ? error.message : String(error || "");
     if (/user.*reject|denied|cancel/i.test(message)) {
       throw new Error(`${wallet.name} request was rejected.`);
