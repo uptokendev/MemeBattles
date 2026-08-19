@@ -158,13 +158,11 @@ pub struct CampaignGraduated {
 pub struct BeginGraduation<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
-    pub global_config: Account<'info, GlobalConfig>,
-    #[account(
-        seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
-        bump = generation_config.bump
-    )]
-    pub generation_config: Account<'info, GenerationConfig>,
+    /// CHECK: typed load is isolated off the BPF stack.
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump)]
+    pub global_config: UncheckedAccount<'info>,
+    /// CHECK: generation PDA; seed-checked after Campaign is loaded.
+    pub generation_config: UncheckedAccount<'info>,
     /// CHECK: Campaign is deserialized and PDA-validated in the handler.
     #[account(mut)]
     pub campaign: UncheckedAccount<'info>,
@@ -204,8 +202,9 @@ pub struct BeginGraduation<'info> {
 pub struct ConfirmGraduation<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
-    pub global_config: Account<'info, GlobalConfig>,
+    /// CHECK: typed load is isolated off the BPF stack.
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump)]
+    pub global_config: UncheckedAccount<'info>,
     /// CHECK: Campaign is deserialized and PDA-validated in the handler.
     #[account(mut)]
     pub campaign: UncheckedAccount<'info>,
@@ -266,11 +265,10 @@ pub fn begin_graduation_handler(
         LaunchpadError::InvalidMeteoraPosition
     );
 
-    let global = &ctx.accounts.global_config;
-    require!(!global.paused, LaunchpadError::LaunchpadPaused);
-    require!(!global.graduation_paused, LaunchpadError::GraduationPaused);
+    let (route_signer, treasury_operator) =
+        read_graduation_global(&ctx.accounts.global_config.to_account_info())?;
     require_keys_eq!(
-        global.treasury_operator,
+        treasury_operator,
         ctx.accounts.authority.key(),
         LaunchpadError::Unauthorized
     );
@@ -302,7 +300,10 @@ pub fn begin_graduation_handler(
         campaign.dex_adapter == DEX_ADAPTER_METEORA_DAMM_V2,
         LaunchpadError::InvalidDexAdapter
     );
-    validate_generation_binding(&campaign, &ctx.accounts.generation_config)?;
+    validate_generation_binding(
+        &campaign,
+        &ctx.accounts.generation_config.to_account_info(),
+    )?;
 
     let eligible = campaign.sold_tokens >= campaign.curve_token_supply
         || campaign.net_raised_lamports >= args.native_target_lamports;
@@ -357,7 +358,7 @@ pub fn begin_graduation_handler(
     );
     verify_detached_graduation_authorization(
         &ctx.accounts.instructions.to_account_info(),
-        global.route_signer,
+        route_signer,
         &digest,
     )?;
     require_atomic_meteora_then_confirm(&ctx.accounts.instructions.to_account_info())?;
@@ -431,11 +432,10 @@ pub fn begin_graduation_handler(
 
 pub fn confirm_graduation_handler(ctx: Context<ConfirmGraduation>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let global = &ctx.accounts.global_config;
-    require!(!global.paused, LaunchpadError::LaunchpadPaused);
-    require!(!global.graduation_paused, LaunchpadError::GraduationPaused);
+    let (_route_signer, treasury_operator) =
+        read_graduation_global(&ctx.accounts.global_config.to_account_info())?;
     require_keys_eq!(
-        global.treasury_operator,
+        treasury_operator,
         ctx.accounts.authority.key(),
         LaunchpadError::Unauthorized
     );
@@ -767,15 +767,41 @@ fn validate_price_tolerance(
     Ok(())
 }
 
-fn validate_generation_binding(
-    campaign: &Campaign,
-    generation: &Account<'_, GenerationConfig>,
-) -> Result<()> {
+#[inline(never)]
+fn read_graduation_global(info: &AccountInfo) -> Result<(Pubkey, Pubkey)> {
+    require_keys_eq!(*info.owner, crate::ID, LaunchpadError::Unauthorized);
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let global = Box::new(GlobalConfig::try_deserialize(&mut slice)?);
+    require!(!global.paused, LaunchpadError::LaunchpadPaused);
+    require!(!global.graduation_paused, LaunchpadError::GraduationPaused);
+    Ok((global.route_signer, global.treasury_operator))
+}
+
+#[inline(never)]
+fn validate_generation_binding(campaign: &Campaign, generation_info: &AccountInfo) -> Result<()> {
     require_keys_eq!(
         campaign.generation_config,
-        generation.key(),
+        *generation_info.key,
         LaunchpadError::InvalidGeneration
     );
+    let (expected, _) = Pubkey::find_program_address(
+        &[GENERATION_CONFIG_SEED, campaign.generation_id.as_ref()],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        *generation_info.key,
+        expected,
+        LaunchpadError::InvalidGeneration
+    );
+    require_keys_eq!(
+        *generation_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidGeneration
+    );
+    let data = generation_info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let generation = Box::new(GenerationConfig::try_deserialize(&mut slice)?);
     require!(
         campaign.generation_id == generation.generation_id,
         LaunchpadError::InvalidGeneration
