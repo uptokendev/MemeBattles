@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   connectSolanaWallet as connectSolanaFn,
   disconnectSolanaWallet as disconnectSolanaFn,
@@ -47,6 +47,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [solanaWalletName, setSolanaWalletName] = useState(() => getStoredSolanaWalletName());
   const [connectingSolana, setConnectingSolana] = useState(false);
   const [availableSolanaWallets, setAvailableSolanaWallets] = useState<DetectedSolanaWallet[]>([]);
+  const connectGenerationRef = useRef(0);
 
   const refreshAvailableWallets = useCallback(() => {
     ensureSolanaListeners({ readExistingAccount: true });
@@ -54,6 +55,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const connectSolana = useCallback(async (walletId?: string) => {
+    const generation = ++connectGenerationRef.current;
     setConnectingSolana(true);
 
     try {
@@ -63,7 +65,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       refreshAvailableWallets();
       return result;
     } finally {
-      setConnectingSolana(false);
+      if (connectGenerationRef.current === generation) setConnectingSolana(false);
     }
   }, [refreshAvailableWallets]);
 
@@ -84,7 +86,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
 
     const restoreTrusted = window.setTimeout(() => {
       const provider = getSolanaProvider();
-      if (!provider?.connect || getStoredSolanaWallet()) return;
+      if (!provider?.connect || getStoredSolanaWallet() || connectGenerationRef.current > 0) return;
       void provider.connect({ onlyIfTrusted: true } as { onlyIfTrusted?: boolean }).then((result) => {
         const key = String(result?.publicKey?.toString?.() || provider.publicKey?.toString?.() || "").trim();
         if (key) {

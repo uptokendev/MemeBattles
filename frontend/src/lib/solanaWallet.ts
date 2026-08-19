@@ -9,6 +9,7 @@ export const SOLANA_WALLET_EVENT = "memewarzone:solana-wallet-changed";
 
 export type SolanaProvider = {
   isPhantom?: boolean;
+  isConnected?: boolean;
   publicKey?: { toString: () => string } | null;
   connect?: (args?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey?: { toString: () => string } }>;
   disconnect?: () => Promise<void>;
@@ -19,6 +20,36 @@ export type SolanaProvider = {
   removeListener?: (eventName: string, listener: (...args: unknown[]) => void) => void;
   [key: string]: unknown;
 };
+
+const CONNECT_TIMEOUT_MS = 25_000;
+const OTHER_WALLET_DISCONNECT_MS = 1_200;
+
+async function withTimeout<T>(promise: Promise<T> | undefined | null, ms: number, message: string): Promise<T> {
+  if (!promise) throw new Error(message);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function providerPublicKey(provider?: SolanaProvider | null): string {
+  return normalizePublicKey(provider?.publicKey?.toString?.() || "");
+}
+
+function alreadyConnectedKey(provider?: SolanaProvider | null): string {
+  const key = providerPublicKey(provider);
+  if (!key) return "";
+  if (provider?.isConnected === false) return "";
+  return key;
+}
 
 export type DetectedSolanaWallet = {
   id: string;
@@ -67,8 +98,10 @@ export function detectSolanaWallets(): DetectedSolanaWallet[] {
   const wallets: DetectedSolanaWallet[] = [];
   const seen = new Set<SolanaProvider>();
 
-  addWallet(wallets, seen, w.solana?.isPhantom ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.solana } : null);
+  // Official Phantom inject is window.phantom.solana. window.solana is a
+  // compatibility shim that other wallets overwrite — using it first hangs connect().
   addWallet(wallets, seen, w.phantom?.solana ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.phantom.solana } : null);
+  addWallet(wallets, seen, w.solana?.isPhantom ? { id: "phantom", name: "Phantom", icon: "👻", provider: w.solana } : null);
   addWallet(wallets, seen, w.solflare ? { id: "solflare", name: "Solflare", icon: "☀️", provider: w.solflare } : null);
   addWallet(wallets, seen, w.solana?.isSolflare ? { id: "solflare", name: "Solflare", icon: "SOL", provider: w.solana } : null);
   addWallet(wallets, seen, w.backpack?.solana ? { id: "backpack", name: "Backpack", icon: "🎒", provider: w.backpack.solana } : null);
@@ -154,7 +187,7 @@ export function refreshSolanaWalletFromProvider(walletId?: string | null): strin
     (walletId ? wallets.find((wallet) => wallet.id === walletId || wallet.name === walletId) : null) ||
     wallets.find((wallet) => wallet.id === getStoredSolanaWalletId());
 
-  const publicKey = normalizePublicKey(selected?.provider?.publicKey?.toString?.() || "");
+  const publicKey = providerPublicKey(selected?.provider);
   if (publicKey) notifySolanaWalletChanged(publicKey, selected);
   return publicKey;
 }
@@ -177,7 +210,7 @@ export function ensureSolanaListeners(options: { readExistingAccount?: boolean }
       // Backpack/Phantom/Solflare all fire connect/accountChanged and steal focus.
       const storedId = getStoredSolanaWalletId();
       if (storedId && storedId !== wallet.id) return;
-      const key = normalizePublicKey(provider.publicKey?.toString?.() || "");
+      const key = providerPublicKey(provider);
       if (key || clearIfEmpty) notifySolanaWalletChanged(key, wallet);
     };
 
@@ -205,13 +238,6 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
   }
 
   const previousId = getStoredSolanaWalletId();
-  if (previousId && previousId !== wallet.id) {
-    try {
-      await getSolanaProvider(previousId)?.disconnect?.();
-    } catch {
-      // previous wallet may already be disconnected
-    }
-  }
 
   // Persist the chosen provider before connect so its accountChanged is not ignored.
   try {
@@ -221,16 +247,56 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
     // ignore
   }
 
-  let result: { publicKey?: { toString: () => string } } | undefined;
-
-  try {
-    await wallet.provider.disconnect?.();
-  } catch {
-    // ignore
+  // Reuse an already-approved session. disconnect()+connect() on Phantom often
+  // never resolves and leaves the modal spinner stuck.
+  const existing = alreadyConnectedKey(wallet.provider);
+  if (existing) {
+    notifySolanaWalletChanged(existing, wallet);
+    return {
+      publicKey: existing,
+      walletId: wallet.id,
+      walletName: wallet.name,
+    };
   }
-  result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
 
-  const publicKey = normalizePublicKey(result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "");
+  if (previousId && previousId !== wallet.id) {
+    try {
+      await withTimeout(
+        Promise.resolve(getSolanaProvider(previousId)?.disconnect?.()),
+        OTHER_WALLET_DISCONNECT_MS,
+        "Previous wallet disconnect timed out",
+      );
+    } catch {
+      // previous wallet may already be disconnected or unresponsive
+    }
+  }
+
+  let result: { publicKey?: { toString: () => string } } | undefined;
+  try {
+    result = await withTimeout(
+      wallet.provider.connect({ onlyIfTrusted: false }),
+      CONNECT_TIMEOUT_MS,
+      `${wallet.name} did not respond. Unlock it, click the extension icon to approve the popup, then try again.`,
+    );
+  } catch (error) {
+    const lateKey = alreadyConnectedKey(wallet.provider) || providerPublicKey(wallet.provider);
+    if (lateKey) {
+      notifySolanaWalletChanged(lateKey, wallet);
+      return {
+        publicKey: lateKey,
+        walletId: wallet.id,
+        walletName: wallet.name,
+      };
+    }
+
+    const message = error instanceof Error ? error.message : String(error || "");
+    if (/user.*reject|denied|cancel/i.test(message)) {
+      throw new Error(`${wallet.name} request was rejected.`);
+    }
+    throw error instanceof Error ? error : new Error(message || `Failed to connect ${wallet.name}.`);
+  }
+
+  const publicKey = normalizePublicKey(result?.publicKey?.toString() || providerPublicKey(wallet.provider));
   if (!publicKey) throw new Error("No Solana public key returned.");
 
   notifySolanaWalletChanged(publicKey, wallet);
@@ -246,7 +312,9 @@ export async function disconnectSolanaWallet(): Promise<void> {
   const provider = getSolanaProvider();
   setSolanaDisconnected(true);
   try {
-    await provider?.disconnect?.();
+    await withTimeout(Promise.resolve(provider?.disconnect?.()), OTHER_WALLET_DISCONNECT_MS, "Wallet disconnect timed out");
+  } catch {
+    // Local session is cleared even if the extension never answers.
   } finally {
     notifySolanaWalletChanged("");
   }

@@ -258,6 +258,8 @@ function detectedSnapshot(): DetectedWallet[] {
     .sort((a, b) => b.sortScore - a.sortScore || Number(Boolean(b.icon)) - Number(Boolean(a.icon)) || a.name.localeCompare(b.name))
     .filter((wallet) => {
       if ((wallet.provider as any)?.isPhantom) return false;
+      if (String(wallet.id || "").toLowerCase().includes("phantom")) return false;
+      if (String(wallet.rdns || wallet.name || "").toLowerCase().includes("phantom")) return false;
       if (seenProviders.has(wallet.provider)) return false;
 
       const rawKey = String(wallet.rdns || wallet.name || wallet.id).toLowerCase();

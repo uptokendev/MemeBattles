@@ -189,6 +189,9 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   const [moreWalletsOpen, setMoreWalletsOpen] = useState(false);
 
   const isBusy = connecting || Boolean(selectedWalletId) || Boolean(selectedSolanaWalletId) || connectingSolana;
+  const rowsLocked = Boolean(selectedWalletId) || Boolean(selectedSolanaWalletId);
+  const connectingSolanaName =
+    availableSolanaWallets.find((wallet) => wallet.id === selectedSolanaWalletId)?.name || "Phantom";
 
   const walletOptions = useMemo<UnifiedWalletOption[]>(() => {
     const evmOptions: UnifiedWalletOption[] = (!filter || filter === "evm")
@@ -233,8 +236,10 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   const hiddenWalletCount = Math.max(0, walletOptions.length - visibleWallets.length);
 
   const handleClose = useCallback(() => {
-    if (!isBusy) onOpenChange(false);
-  }, [isBusy, onOpenChange]);
+    setSelectedWalletId(null);
+    setSelectedSolanaWalletId(null);
+    onOpenChange(false);
+  }, [onOpenChange]);
 
   const handleRefresh = useCallback(() => {
     detectWallets();
@@ -348,7 +353,6 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
             aria-label="Close wallet modal"
             className="absolute inset-0 cursor-default"
             onClick={handleClose}
-            disabled={isBusy}
           />
 
           <motion.section
@@ -380,8 +384,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                 <button
                   type="button"
                   onClick={handleClose}
-                  disabled={isBusy}
-                  className="border border-border/70 bg-background/50 p-2 text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="border border-border/70 bg-background/50 p-2 text-muted-foreground transition hover:border-accent/40 hover:text-foreground"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -411,6 +414,12 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                 </div>
               )}
 
+              {connectingSolana && (
+                <div className="mb-4 rounded-2xl border border-purple-400/25 bg-purple-500/10 px-3 py-2 text-xs leading-relaxed text-purple-200">
+                  Approve the request in {connectingSolanaName}. If nothing pops up, click the extension icon, unlock the wallet, then try again.
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-3">
                 <p className="font-retro text-sm text-foreground">Detected wallets</p>
                 <button
@@ -430,7 +439,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                     <WalletRow
                       key={option.key}
                       option={option}
-                      disabled={isBusy}
+                      disabled={rowsLocked}
                       connecting={
                         option.kind === "evm"
                           ? selectedWalletId === option.id || connectingWalletId === option.id
