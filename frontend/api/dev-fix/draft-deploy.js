@@ -4,6 +4,7 @@ import { getRpcUrls, getServerReadProvider } from "../lib/getServerReadProvider.
 import { draftDeploy as baseDraftDeploy } from "./draft-deploy-base.js";
 import { solanaCreateAuthorizationV4 } from "./solana-create-authorization-v4.js";
 
+import { isCreatorArmCooldownActive, normalizeCreatorArmCooldownEndsAt } from "../lib/creatorArmCooldown.js";
 import { runJsonTransform } from "./json-transform.js";
 import {
   augmentDraftLifecycle,
@@ -22,6 +23,11 @@ const CREATION_PREFLIGHT_ABI = [
   "function FACTORY_GENERATION() view returns (uint32)",
   "function CAMPAIGN_GENERATION() view returns (uint32)",
   "function creatorLaunchEligibility(address creator) view returns (bool allowed,uint256 cooldownEndsAt,uint256 currentLiveCount,uint256 maxLiveBonding)",
+  "function creatorRegistry() view returns (address)",
+];
+const CREATOR_REGISTRY_PREFLIGHT_ABI = [
+  "function getCreatorProfile(address) view returns (uint8 tier,uint256 trustScore,uint256 liveBondingCount,uint256 lastLaunchTimestamp,bool restricted,bool manualReviewRequired)",
+  "function getCreatorRules(address) view returns (uint256 maxLiveBonding,uint256 cooldownSeconds,uint256 creatorBuyLockSeconds,uint256 creatorBuyCapWei,uint256 maxClusterWallets)",
 ];
 
 function configuredScheduledFactory(chainId) {
@@ -111,10 +117,31 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
       };
     }
 
-    const allowed = Boolean(eligibility.allowed ?? eligibility[0]);
-    const cooldownEndsAt = Number(eligibility.cooldownEndsAt ?? eligibility[1] ?? 0);
-    const onChainLiveCampaignCount = Number(eligibility.currentLiveCount ?? eligibility[2] ?? 0);
-    const onChainLiveCampaignLimit = Number(eligibility.maxLiveBonding ?? eligibility[3] ?? 0);
+    const allowed = eligibility[0] === true || eligibility.allowed === true;
+    let lastRecordedLaunchAt = 0;
+    let cooldownSeconds = 0;
+    try {
+      const registryAddress = await factory.creatorRegistry();
+      if (registryAddress && registryAddress !== ethers.ZeroAddress) {
+        const registry = new ethers.Contract(registryAddress, CREATOR_REGISTRY_PREFLIGHT_ABI, provider);
+        const [profile, rules] = await Promise.all([
+          registry.getCreatorProfile(ethers.getAddress(walletAddress)),
+          registry.getCreatorRules(ethers.getAddress(walletAddress)),
+        ]);
+        lastRecordedLaunchAt = Number(profile[3] ?? profile.lastLaunchTimestamp ?? 0);
+        cooldownSeconds = Number(rules[1] ?? rules.cooldownSeconds ?? 0);
+      }
+    } catch {
+      lastRecordedLaunchAt = 0;
+    }
+    const cooldownEndsAt = normalizeCreatorArmCooldownEndsAt({
+      allowed,
+      lastRecordedLaunchAt,
+      cooldownSeconds,
+      cooldownEndsAt: Number(eligibility[1] ?? eligibility.cooldownEndsAt ?? 0),
+    });
+    const onChainLiveCampaignCount = Number(eligibility[2] ?? eligibility.currentLiveCount ?? 0);
+    const onChainLiveCampaignLimit = Number(eligibility[3] ?? eligibility.maxLiveBonding ?? 0);
     if (!allowed) {
       return {
         ok: false,
@@ -122,12 +149,13 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
         code: "SCHEDULED_CREATE_ONCHAIN_ELIGIBILITY_BLOCKED",
         error: onChainLiveCampaignCount >= onChainLiveCampaignLimit
           ? `Live campaign limit reached (${onChainLiveCampaignCount}/${onChainLiveCampaignLimit}). Graduate an existing live campaign before arming another. Tier caps (e.g. Tier 1 = 3) block mass multi-deploy.`
-          : cooldownEndsAt > Math.floor(Date.now() / 1000)
+          : isCreatorArmCooldownActive({ allowed, lastRecordedLaunchAt, cooldownEndsAt })
             ? `Creator arm cooldown active until ${new Date(cooldownEndsAt * 1000).toISOString()}. Immediate and timed arms both require 24h between on-chain deploys. Choosing a later trading-open time does not bypass this.`
             : "This creator wallet cannot deploy or arm another campaign right now.",
         preflight: {
           allowed,
           cooldownEndsAt,
+          lastRecordedLaunchAt,
           onChainLiveCampaignCount,
           onChainLiveCampaignLimit,
           factoryGeneration,
@@ -142,6 +170,7 @@ async function verifyCurrentScheduledArmEligibility({ chainId, factoryAddress, w
         allowed,
         canArmNow: true,
         cooldownEndsAt,
+        lastRecordedLaunchAt,
         onChainLiveCampaignCount,
         onChainLiveCampaignLimit,
         factoryGeneration,
