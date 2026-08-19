@@ -17,8 +17,6 @@ function isTruthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 
-const DEFAULT_SOLANA_VOTE_TREASURY = "HuKfoFUuWxC5qFZXzr5dbaX4S7w4vJUW8AHV9LD4C2J9";
-
 function solanaVoteTreasuries() {
   const out = [];
   const seen = new Set();
@@ -27,7 +25,6 @@ function solanaVoteTreasuries() {
     process.env.VITE_SOLANA_VOTE_TREASURY_ADDRESS,
     process.env.VITE_VOTE_TREASURY_ADDRESS_101,
     process.env.VOTE_TREASURY_ADDRESS_101,
-    DEFAULT_SOLANA_VOTE_TREASURY,
   ]) {
     const v = String(c || "").trim();
     if (!v || !isSolanaAddress(v) || seen.has(v)) continue;
@@ -269,6 +266,20 @@ function extractSolTransfer(tx, voter, treasuries) {
   return null;
 }
 
+function describeVoterTransfers(tx, voter) {
+  const keys = flattenAccountKeys(tx);
+  const feePayer = keys[0] || "";
+  const found = [];
+  for (const ix of collectInstructions(tx)) {
+    const parsed = parseSystemTransferFromIx(ix, keys);
+    if (!parsed) continue;
+    if (samePubkey(parsed.from, voter) || samePubkey(parsed.from, feePayer)) {
+      found.push({ from: parsed.from, to: parsed.to, lamports: parsed.lamports.toString() });
+    }
+  }
+  return found;
+}
+
 function solanaRpcUrls() {
   const urls = [
     process.env.SOLANA_RPC_URL,
@@ -448,10 +459,15 @@ export async function solanaVoteIngest(req, res) {
 
     const transfer = extractSolTransfer(tx, voterAddress, treasuries);
     if (!transfer) {
+      const paid = describeVoterTransfers(tx, voterAddress);
       return json(res, 400, {
-        error: "Transaction is not a confirmed SOL transfer from voter to vote treasury.",
+        error: paid.length
+          ? `Vote SOL went to ${paid.map((p) => p.to).join(", ")}, but ingest only accepts ${treasuries.join(", ")}. Set Railway SOLANA_VOTE_TREASURY_ADDRESS to the same wallet as VITE_SOLANA_VOTE_TREASURY_ADDRESS.`
+          : "Transaction is not a confirmed SOL transfer from voter to vote treasury.",
         code: "SOLANA_VOTE_TRANSFER_INVALID",
         treasury,
+        expectedTreasuries: treasuries,
+        paidTransfers: paid,
         voterAddress,
       });
     }
