@@ -194,42 +194,52 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
   let createArgs;
   let buyerClusterId = emptyClusterId;
 
-  async function simulateThenSend(tx, label, signers) {
-    const latest = await connection.getLatestBlockhash("confirmed");
-    tx.feePayer = signers[0].publicKey;
-    tx.recentBlockhash = latest.blockhash;
-    tx.sign(...signers);
+  function assertNoSimCrash(label, err, logs) {
+    const source = `${err == null ? "" : JSON.stringify(err)}\n${logs.join("\n")}`;
+    assert.equal(
+      /Access violation|stack frame|Program failed to complete/i.test(source),
+      false,
+      `${label} hit BPF stack overflow:\n${source}`,
+    );
+    return source;
+  }
 
+  async function simulateUnsigned(tx, label, feePayer) {
+    const latest = await connection.getLatestBlockhash("confirmed");
+    tx.feePayer = feePayer;
+    tx.recentBlockhash = latest.blockhash;
+    // web3 1.95: legacy Transaction second arg must be Signer[] or omitted.
+    // A config object throws "Invalid arguments" and never RPCs.
+    // No signers ⇒ library does not set sigVerify (production trade path).
     const simulated = await connection.simulateTransaction(tx);
     const logs = simulated.value.logs || [];
-    assert.equal(
-      logs.some((line) => /Access violation|stack frame|Program failed to complete/i.test(line)),
-      false,
-      `${label} hit BPF stack overflow:\n${logs.join("\n")}`,
-    );
-    if (simulated.value.err) {
-      throw new Error(
-        `${label} simulation failed: ${JSON.stringify(simulated.value.err)}\n${logs.join("\n")}`,
-      );
-    }
-    assert.equal(
-      logs.some((line) => /Access violation/i.test(line)),
-      false,
-      `${label} hit BPF stack overflow:\n${logs.join("\n")}`,
-    );
+    const source = assertNoSimCrash(label, simulated.value.err, logs);
+    return { err: simulated.value.err, logs, latest, source };
+  }
 
+  async function simulateThenSend(tx, label, signers) {
+    const simulated = await simulateUnsigned(tx, label, signers[0].publicKey);
+    if (simulated.err) {
+      throw new Error(`${label} simulation failed: ${simulated.source}`);
+    }
+
+    tx.sign(...signers);
     const signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
+      skipPreflight: true,
+      maxRetries: 3,
     });
     const confirmation = await connection.confirmTransaction(
-      { signature, ...latest },
+      {
+        signature,
+        blockhash: simulated.latest.blockhash,
+        lastValidBlockHeight: simulated.latest.lastValidBlockHeight,
+      },
       "confirmed",
     );
     if (confirmation.value.err) {
       throw new Error(`${label} landed with error: ${JSON.stringify(confirmation.value.err)}`);
     }
-    return { signature, logs };
+    return { signature, logs: simulated.logs };
   }
 
   async function fund(pubkey, sol) {
@@ -934,20 +944,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       .digest();
   }
 
-  async function simulateUnsigned(tx, label, signers) {
-    const latest = await connection.getLatestBlockhash("confirmed");
-    tx.feePayer = signers[0].publicKey;
-    tx.recentBlockhash = latest.blockhash;
-    tx.partialSign(...signers);
-    const simulated = await connection.simulateTransaction(tx);
-    const logs = simulated.value.logs || [];
-    assert.equal(
-      logs.some((line) => /Access violation/i.test(line)),
-      false,
-      `${label} hit BPF stack overflow:\n${logs.join("\n")}`,
-    );
-    return { err: simulated.value.err, logs };
-  }
+
 
   it("begin_graduation our-side simulates without stack overflow (no Meteora LP)", async function () {
     assert.ok(campaignAccounts, "bonding lifecycle must create+close a campaign first");
@@ -1087,10 +1084,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       badEd25519,
       badBeginIx,
     );
-    const badSim = await simulateUnsigned(badTx, "begin_graduation mismatched USD native target", [
-      adminKeypair,
-      nftMint,
-    ]);
+    const badSim = await simulateUnsigned(
+      badTx,
+      "begin_graduation mismatched USD native target",
+      adminKeypair.publicKey,
+    );
     assert.ok(badSim.err, "mismatched native_target × SOL/USD must fail");
     assert.ok(
       badSim.logs.some((line) => /InvalidGraduationTarget|custom program error/i.test(line)),
@@ -1102,10 +1100,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       ed25519,
       beginIx,
     );
-    const atomic = await simulateUnsigned(beginOnly, "begin_graduation without Meteora follow-up", [
-      adminKeypair,
-      nftMint,
-    ]);
+    const atomic = await simulateUnsigned(
+      beginOnly,
+      "begin_graduation without Meteora follow-up",
+      adminKeypair.publicKey,
+    );
     assert.ok(atomic.err, "begin_graduation must refuse to run without atomic Meteora+confirm");
     assert.ok(
       atomic.logs.some((line) => /BeginGraduation|GraduationAtomicity|custom program error/i.test(line)),

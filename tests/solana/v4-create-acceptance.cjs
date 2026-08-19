@@ -352,29 +352,33 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     const latestBlockhash = await connection.getLatestBlockhash("confirmed");
     transaction.feePayer = creatorState.creator.publicKey;
     transaction.recentBlockhash = latestBlockhash.blockhash;
-    transaction.sign(creatorState.creator);
 
-    const rawTransaction = transaction.serialize();
+    const unsignedBytes = transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    });
     assert.ok(
-      rawTransaction.length <= MAX_TRANSACTION_BYTES,
-      `create transaction is ${rawTransaction.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
+      unsignedBytes.length <= MAX_TRANSACTION_BYTES,
+      `create transaction is ${unsignedBytes.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
     );
 
-    // web3 1.95: legacy Transaction.simulateTransaction() only accepts signers[]
-    // as the second arg. A config object throws "Invalid arguments".
+    // web3 1.95: legacy Transaction second arg must be Signer[] or omitted.
+    // Simulate unsigned before sign — same order as production trade/create.
     const simulated = await connection.simulateTransaction(transaction);
-    if (simulated.value.err) {
-      throw new Error(
-        `create simulation failed: ${JSON.stringify(simulated.value.err)}\n${(simulated.value.logs || []).join("\n")}`,
-      );
+    const simLogs = simulated.value.logs || [];
+    const simSource = `${JSON.stringify(simulated.value.err)}\n${simLogs.join("\n")}`;
+    if (/Access violation|stack frame|Program failed to complete/i.test(simSource)) {
+      throw new Error(`create simulation hit BPF stack overflow:\n${simSource}`);
     }
-    if ((simulated.value.logs || []).some((line) => /Access violation/i.test(line))) {
-      throw new Error(`create simulation hit BPF stack overflow:\n${(simulated.value.logs || []).join("\n")}`);
+    if (simulated.value.err) {
+      throw new Error(`create simulation failed: ${simSource}`);
     }
 
+    transaction.sign(creatorState.creator);
+    const rawTransaction = transaction.serialize();
     const signature = await connection.sendRawTransaction(rawTransaction, {
-      preflightCommitment: "confirmed",
-      skipPreflight: false,
+      skipPreflight: true,
+      maxRetries: 3,
     });
     const confirmation = await connection.confirmTransaction(
       {
