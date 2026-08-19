@@ -247,17 +247,8 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
     // ignore
   }
 
-  // Reuse an already-approved session. disconnect()+connect() on Phantom often
-  // never resolves and leaves the modal spinner stuck.
-  const existing = alreadyConnectedKey(wallet.provider);
-  if (existing) {
-    notifySolanaWalletChanged(existing, wallet);
-    return {
-      publicKey: existing,
-      walletId: wallet.id,
-      walletName: wallet.name,
-    };
-  }
+  // We must always call connect() to ensure the wallet is unlocked and active.
+  // Bypassing connect() with cached keys leads to silently failing connections.
 
   if (previousId && previousId !== wallet.id) {
     try {
@@ -271,6 +262,19 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
     }
   }
 
+  // Force disconnect the current wallet to clear any stale session.
+  // This guarantees Phantom will show the connect/unlock popup.
+  // Wrapped in withTimeout because Phantom's disconnect() sometimes hangs.
+  try {
+    await withTimeout(
+      Promise.resolve(wallet.provider.disconnect?.()),
+      OTHER_WALLET_DISCONNECT_MS,
+      "Current wallet disconnect timed out",
+    );
+  } catch {
+    // Ignore disconnect failures
+  }
+
   let result: { publicKey?: { toString: () => string } } | undefined;
   try {
     result = await withTimeout(
@@ -279,16 +283,6 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
       `${wallet.name} did not respond. Unlock it, click the extension icon to approve the popup, then try again.`,
     );
   } catch (error) {
-    const lateKey = alreadyConnectedKey(wallet.provider) || providerPublicKey(wallet.provider);
-    if (lateKey) {
-      notifySolanaWalletChanged(lateKey, wallet);
-      return {
-        publicKey: lateKey,
-        walletId: wallet.id,
-        walletName: wallet.name,
-      };
-    }
-
     const message = error instanceof Error ? error.message : String(error || "");
     if (/user.*reject|denied|cancel/i.test(message)) {
       throw new Error(`${wallet.name} request was rejected.`);

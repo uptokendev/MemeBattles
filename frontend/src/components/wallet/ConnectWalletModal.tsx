@@ -29,26 +29,26 @@ type ConnectWalletModalProps = {
 
 type UnifiedWalletOption =
   | {
-      kind: "evm";
-      key: string;
-      id: WalletType;
-      name: string;
-      description: string;
-      icon?: string;
-      detected: boolean;
-      sortScore: number;
-      wallet: DetectedWallet;
-    }
+    kind: "evm";
+    key: string;
+    id: WalletType;
+    name: string;
+    description: string;
+    icon?: string;
+    detected: boolean;
+    sortScore: number;
+    wallet: DetectedWallet;
+  }
   | {
-      kind: "solana";
-      key: string;
-      id: string;
-      name: string;
-      description: string;
-      icon: string;
-      detected: boolean;
-      sortScore: number;
-    };
+    kind: "solana";
+    key: string;
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    detected: boolean;
+    sortScore: number;
+  };
 
 const INITIAL_VISIBLE_WALLETS = 4;
 
@@ -196,29 +196,29 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   const walletOptions = useMemo<UnifiedWalletOption[]>(() => {
     const evmOptions: UnifiedWalletOption[] = (!filter || filter === "evm")
       ? detectedWallets.map((wallet) => ({
-          kind: "evm" as const,
-          key: `evm:${wallet.id}:${wallet.rdns || wallet.name}`,
-          id: wallet.id,
-          name: wallet.name,
-          description: wallet.description || "Injected EVM browser wallet.",
-          icon: wallet.icon,
-          detected: wallet.source === "eip6963",
-          sortScore: wallet.sortScore,
-          wallet,
-        }))
+        kind: "evm" as const,
+        key: `evm:${wallet.id}:${wallet.rdns || wallet.name}`,
+        id: wallet.id,
+        name: wallet.name,
+        description: wallet.description || "Injected EVM browser wallet.",
+        icon: wallet.icon,
+        detected: wallet.source === "eip6963",
+        sortScore: wallet.sortScore,
+        wallet,
+      }))
       : [];
 
     const solanaOptions: UnifiedWalletOption[] = (!filter || filter === "solana")
       ? availableSolanaWallets.map((wallet, index) => ({
-          kind: "solana" as const,
-          key: `solana:${wallet.id}:${wallet.name}`,
-          id: wallet.id,
-          name: wallet.name,
-          description: "Solana mainnet wallet.",
-          icon: wallet.icon,
-          detected: true,
-          sortScore: 90 - index,
-        }))
+        kind: "solana" as const,
+        key: `solana:${wallet.id}:${wallet.name}`,
+        id: wallet.id,
+        name: wallet.name,
+        description: "Solana mainnet wallet.",
+        icon: wallet.icon,
+        detected: true,
+        sortScore: 90 - index,
+      }))
       : [];
 
     const seen = new Set<string>();
@@ -236,10 +236,11 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   const hiddenWalletCount = Math.max(0, walletOptions.length - visibleWallets.length);
 
   const handleClose = useCallback(() => {
+    if (isBusy) return;
     setSelectedWalletId(null);
     setSelectedSolanaWalletId(null);
     onOpenChange(false);
-  }, [onOpenChange]);
+  }, [isBusy, onOpenChange]);
 
   const handleRefresh = useCallback(() => {
     detectWallets();
