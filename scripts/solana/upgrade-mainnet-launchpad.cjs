@@ -3,17 +3,19 @@
  * Upgrade the EXISTING mainnet launchpad in place (same program id).
  * Does not migrate accounts or change PDAs.
  *
- * Dry-run:
+ * Binary comparison only (no private key required):
  *   SOLANA_RPC="https://mainnet.helius-rpc.com/?api-key=..." \
- *   SOLANA_PROTOCOL_AUTHORITY_KEYPAIR=/home/patrick/.config/memewarzone/solana-mainnet-deployer.json \
  *   node scripts/solana/upgrade-mainnet-launchpad.cjs
  *
- * Execute (fail-closed candidate pin):
+ * Execute (fail-closed candidate pin + live authority verification):
+ *   SOLANA_RPC="https://mainnet.helius-rpc.com/?api-key=..." \
+ *   SOLANA_PROTOCOL_AUTHORITY_KEYPAIR=/secure/path/upgrade-authority.json \
  *   SOLANA_RELEASE_CANDIDATE_SHA256=<sha256 printed by the passing final gate> \
- *   ... node scripts/solana/upgrade-mainnet-launchpad.cjs --execute
+ *   node scripts/solana/upgrade-mainnet-launchpad.cjs --execute
  *
- * The execute path dumps the deployed program back from mainnet and requires an
- * exact byte-for-byte match with the candidate .so before reporting success.
+ * The execute path reads the current on-chain upgrade authority, requires the
+ * supplied keypair to match it, deploys, dumps the deployed program back from
+ * mainnet, and requires an exact byte-for-byte match with the candidate .so.
  */
 const { execFileSync } = require("node:child_process");
 const crypto = require("node:crypto");
@@ -25,7 +27,6 @@ const { Connection, Keypair, PublicKey } = require(path.resolve(__dirname, "../.
 const ROOT = path.resolve(__dirname, "../..");
 const SO_PATH = path.join(ROOT, "target/deploy/memewarzone_solana.so");
 const EXPECTED_PROGRAM = "3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt";
-const EXPECTED_PAYER = "9YN7WY8svWoeNgegS2oq7uNDyrdcfg9UDUQR7tWpeF8H";
 const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 
 function required(name) {
@@ -36,6 +37,31 @@ function required(name) {
 
 function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function showProgram(rpc) {
+  const stdout = execFileSync(
+    "solana",
+    ["program", "show", EXPECTED_PROGRAM, "--url", rpc, "--output", "json"],
+    { encoding: "utf8" },
+  );
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new Error(`Could not parse solana program show JSON: ${stdout.slice(0, 500)}`);
+  }
+  const authority = String(parsed.authority || "").trim();
+  if (!authority) {
+    throw new Error("Launchpad program has no upgrade authority (immutable or malformed program-show response)");
+  }
+  return {
+    authority,
+    programId: String(parsed.programId || EXPECTED_PROGRAM),
+    programdataAddress: String(parsed.programdataAddress || ""),
+    lastDeployedInSlot: parsed.lastDeployedInSlot ?? null,
+    dataLen: parsed.dataLen ?? null,
+  };
 }
 
 function dumpProgram(rpc, destination) {
@@ -56,12 +82,6 @@ async function main() {
   if (/devnet|testnet|explorer\.solana/i.test(rpc)) {
     throw new Error("SOLANA_RPC must be a mainnet-beta HTTP endpoint");
   }
-
-  const keypairPath = required("SOLANA_PROTOCOL_AUTHORITY_KEYPAIR");
-  const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(keypairPath, "utf8"))));
-  if (payer.publicKey.toBase58() !== EXPECTED_PAYER) {
-    throw new Error(`Refusing unexpected payer ${payer.publicKey.toBase58()}`);
-  }
   if (!fs.existsSync(SO_PATH)) {
     throw new Error(`Missing ${SO_PATH}. Run the final SBF gate; do not rebuild after it passes.`);
   }
@@ -75,6 +95,11 @@ async function main() {
   if (!info || !info.executable) throw new Error("Launchpad program account missing or not executable");
   if (info.owner.toBase58() !== "BPFLoaderUpgradeab1e11111111111111111111111") {
     throw new Error(`Program is not upgradeable (owner ${info.owner.toBase58()})`);
+  }
+
+  const liveProgram = showProgram(rpc);
+  if (liveProgram.programId && liveProgram.programId !== EXPECTED_PROGRAM) {
+    throw new Error(`Program-show returned unexpected program ${liveProgram.programId}`);
   }
 
   const candidate = fs.readFileSync(SO_PATH);
@@ -94,10 +119,31 @@ async function main() {
     );
   }
 
+  let keypairPath = null;
+  let payer = null;
+  const configuredKeypair = String(process.env.SOLANA_PROTOCOL_AUTHORITY_KEYPAIR || "").trim();
+  if (execute) {
+    keypairPath = required("SOLANA_PROTOCOL_AUTHORITY_KEYPAIR");
+  } else if (configuredKeypair) {
+    keypairPath = configuredKeypair;
+  }
+  if (keypairPath) {
+    payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(keypairPath, "utf8"))));
+    if (payer.publicKey.toBase58() !== liveProgram.authority) {
+      throw new Error(
+        `Refusing upgrade key ${payer.publicKey.toBase58()}; current on-chain upgrade authority is ${liveProgram.authority}`,
+      );
+    }
+  }
+
   console.log(JSON.stringify({
     execute,
     programId: EXPECTED_PROGRAM,
-    upgradeAuthority: payer.publicKey.toBase58(),
+    onChainUpgradeAuthority: liveProgram.authority,
+    suppliedAuthority: payer?.publicKey.toBase58() || null,
+    programdataAddress: liveProgram.programdataAddress || null,
+    lastDeployedInSlot: liveProgram.lastDeployedInSlot,
+    deployedDataLen: liveProgram.dataLen,
     candidateBytes: candidate.length,
     candidateSha256,
     candidatePinned: Boolean(pinnedCandidateSha256),
