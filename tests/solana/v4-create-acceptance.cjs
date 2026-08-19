@@ -678,9 +678,12 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
     );
     assert.ok(balanceAfter > balanceBefore, "raw SOL-vault balance must increase");
 
-    const campaignAfterTransfer = await program.account.campaign.fetch(
+    const campaignAfterInfo = await connection.getAccountInfo(
       result.accounts.campaign,
+      "confirmed",
     );
+    assert.ok(campaignAfterInfo, "campaign missing after unsolicited SOL transfer");
+    const campaignAfterTransfer = decodeCampaign(campaignAfterInfo.data);
     assertBigIntEqual(
       campaignAfterTransfer.netRaisedLamports,
       0n,
