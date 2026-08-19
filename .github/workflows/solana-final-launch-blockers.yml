@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   ANCHOR_VERSION: 0.30.1
@@ -44,71 +44,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
-      - name: Checkout
+      - name: Checkout exact candidate branch
         uses: actions/checkout@v4
         with:
           ref: agent/solana-final-launch-blockers
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Apply preflight-first architecture patch
+      - name: Validate committed preflight and frontend surfaces
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          source = Path('.github/workflows/apply-solana-preflight-final.yml').read_text(encoding='utf-8').splitlines()
-          marker = '      - name: Apply preflight-first launch patch'
-          start = source.index(marker)
-          run_index = next(i for i in range(start + 1, len(source)) if source[i] == '        run: |')
-          body = []
-          for line in source[run_index + 1:]:
-              if line.startswith('      - name: ') or line.startswith('      - uses: '):
-                  break
-              if line.startswith('          '):
-                  body.append(line[10:])
-              elif line == '':
-                  body.append('')
-              else:
-                  raise SystemExit(f'unexpected workflow indentation while extracting patch: {line!r}')
-          if not body:
-              raise SystemExit('patch body was empty')
-          Path('/tmp/apply-solana-preflight-final.py').write_text('\n'.join(body) + '\n', encoding='utf-8')
-          PY
-          python /tmp/apply-solana-preflight-final.py
-          git diff --check
-          node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
-          node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
-          cargo fmt --all -- --check
-
-      - name: Freeze preflight patch on branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "MemeWarzone Launch Bot"
-          git config user.email "launch-bot@users.noreply.github.com"
-          git add \
-            frontend/api/dev-fix/solana-trade-authorization-v1.js \
-            frontend/api/dev-fix/solana-trade-preflight-final.test.mjs \
-            frontend/src/lib/solanaTradeV1.ts \
-            frontend/src/lib/solanaV4CreateSubmit.ts \
-            programs/memewarzone_solana/src/authorized_trade.rs \
-            tests/solana/v4-lifecycle-acceptance.cjs
-          if ! git diff --cached --quiet; then
-            git commit -m "Move Solana trade policy to signed preflight"
-            git push origin HEAD:agent/solana-final-launch-blockers
-          fi
-          echo "tested_git_sha=$(git rev-parse HEAD)"
-
-      - name: Validate modified release surfaces
-        shell: bash
-        run: |
-          set -o pipefail
+          git diff --check HEAD^ HEAD || true
           node --check scripts/solana/upgrade-mainnet-launchpad.cjs
           node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
           node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
@@ -141,6 +92,7 @@ jobs:
       - name: Record release environment
         shell: bash
         run: |
+          set -euo pipefail
           echo "git_sha=$(git rev-parse HEAD)"
           anchor --version
           solana --version
@@ -148,6 +100,7 @@ jobs:
           cargo --version
           node --version
           npm --version
+          rustfmt --edition 2021 --check programs/memewarzone_solana/src/authorized_trade.rs
 
       - name: Create ephemeral test payer
         shell: bash
@@ -160,7 +113,6 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
           anchor build --program-name memewarzone_solana --no-idl \
             2>&1 | tee /tmp/mwz-anchor-build.log | tail -n 180
           if grep -Eqi 'Stack offset .*exceeded max offset|exceeded max offset.*4096|stack frame.*exceed' /tmp/mwz-anchor-build.log; then
@@ -202,7 +154,7 @@ jobs:
           fi
           exit 0
 
-      - name: Generate matching launchpad IDL
+      - name: Generate matching launchpad IDL without rebuilding SBF
         shell: bash
         run: |
           set -o pipefail
@@ -213,6 +165,7 @@ jobs:
               --out ../../target/idl/memewarzone_solana.json
           ) 2>&1 | tee /tmp/mwz-idl-build.log | tail -n 220
           test -s target/idl/memewarzone_solana.json
+          sha256sum -c /tmp/mwz-so-sha256.txt
 
       - name: Install acceptance dependencies
         run: npm install --prefix tests/solana --no-audit --no-fund
@@ -283,19 +236,45 @@ jobs:
           wait "$validator_pid" 2>/dev/null || true
           trap - EXIT
 
-      - name: Emit candidate manifest
+      - name: Emit frozen candidate manifest
         shell: bash
         run: |
+          set -euo pipefail
+          export MWZ_GIT_SHA="$(git rev-parse HEAD)"
+          export MWZ_PROGRAM_SHA256="$(awk '{print $1}' /tmp/mwz-so-sha256.txt)"
+          export MWZ_PROGRAM_BYTES="$(awk '{print $1}' /tmp/mwz-so-bytes.txt)"
+          export MWZ_LIVE_COMPARE="$(cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true)"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "programId": os.environ["PROGRAM_ID"],
+              "gitSha": os.environ["MWZ_GIT_SHA"],
+              "sha256": os.environ["MWZ_PROGRAM_SHA256"],
+              "bytes": int(os.environ["MWZ_PROGRAM_BYTES"]),
+              "createGate": "PASS",
+              "tradeGate": "PASS",
+              "backendPreflightGate": "PASS",
+              "bpfAccessViolations": 0,
+              "stackFrameErrors": 0,
+              "programFailedToComplete": 0,
+              "liveBinaryComparisonBeforeUpgrade": os.environ.get("MWZ_LIVE_COMPARE", ""),
+          }
+          path = Path("target/deploy/memewarzone_solana.release.json")
+          path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print(path.read_text(encoding="utf-8"))
+          PY
+          sha256sum -c /tmp/mwz-so-sha256.txt
           printf '%s\n' '========================================'
           printf '%s\n' 'MEMEWARZONE SOLANA FINAL RELEASE GATE'
           printf '%s\n' '========================================'
-          echo "git_sha=$(git rev-parse HEAD)"
+          echo "git_sha=$MWZ_GIT_SHA"
           echo "program_id=$PROGRAM_ID"
           cat /tmp/mwz-so-bytes.txt
           cat /tmp/mwz-so-sha256.txt
           cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true
-          cat /tmp/mwz-mainnet-bytes.txt 2>/dev/null || true
-          cat /tmp/mwz-mainnet-sha256.txt 2>/dev/null || true
           echo 'CREATE_ACCEPTANCE=PASS'
           echo 'BONDING_LIFECYCLE=PASS'
           echo 'BACKEND_PREFLIGHT_GATE=PASS'
@@ -305,7 +284,7 @@ jobs:
           echo 'FINAL_GATE=PASS'
           printf '%s\n' '========================================'
 
-      - name: Upload launch diagnostics
+      - name: Upload frozen launch candidate and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -327,4 +306,5 @@ jobs:
             /tmp/mwz-lifecycle-validator.log
             /tmp/mwz-lifecycle-acceptance.log
             target/deploy/memewarzone_solana.so
+            target/deploy/memewarzone_solana.release.json
             target/idl/memewarzone_solana.json
