@@ -15,4 +15,4 @@ jobs:
         shell: python
         run: |
           import runpy
-          runpy.run_path(".github/scripts/apply-solana-preflight-final.py", run_name="__main__")
+          runpy.run_path(".github/scripts/run-solana-preflight-final.py", run_name="__main__")
