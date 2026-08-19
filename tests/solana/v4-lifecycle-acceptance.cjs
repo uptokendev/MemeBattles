@@ -167,10 +167,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     tx.recentBlockhash = latest.blockhash;
     tx.sign(...signers);
 
-    const simulated = await connection.simulateTransaction(tx, {
-      sigVerify: true,
-      commitment: "confirmed",
-    });
+    const simulated = await connection.simulateTransaction(tx);
     const logs = simulated.value.logs || [];
     if (simulated.value.err) {
       throw new Error(
@@ -198,14 +195,9 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
   }
 
   async function fund(pubkey, sol) {
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: admin,
-        toPubkey: pubkey,
-        lamports: sol * LAMPORTS_PER_SOL,
-      }),
-    );
-    await provider.sendAndConfirm(tx, []);
+    const sig = await connection.requestAirdrop(pubkey, sol * LAMPORTS_PER_SOL);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   }
 
   before(async function () {

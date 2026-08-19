@@ -38,8 +38,15 @@ echo "    sha256=$HASH"
 echo "$HASH" > "$ROOT/target/deploy/memewarzone_solana.sha256"
 
 echo "==> starting solana-test-validator with this exact .so"
+# Ledger must live on a Linux filesystem. /mnt/e (NTFS) stalls slot production
+# and every confirmTransaction hits the 30s timeout.
+LEDGER="${MWZ_LOCAL_LEDGER:-/tmp/mwz-sbf-ledger}"
 solana-test-validator \
   --reset \
+  --ledger "$LEDGER" \
+  --limit-ledger-size 50000000 \
+  --bind-address 127.0.0.1 \
+  --rpc-port 8899 \
   --bpf-program "$PROGRAM_ID" "$SO" \
   --quiet \
   >/tmp/mwz-local-validator.log 2>&1 &
@@ -49,12 +56,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
     break
   fi
   sleep 0.5
 done
+if ! solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+  echo "validator did not become ready; last log:" >&2
+  tail -n 40 /tmp/mwz-local-validator.log >&2 || true
+  exit 1
+fi
 
 export ANCHOR_PROVIDER_URL="http://127.0.0.1:8899"
 export ANCHOR_WALLET="$WALLET"

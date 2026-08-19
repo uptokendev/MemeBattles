@@ -174,14 +174,9 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
   }
 
   async function fundCreator(creator) {
-    const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: admin,
-        toPubkey: creator.publicKey,
-        lamports: 3 * LAMPORTS_PER_SOL,
-      }),
-    );
-    await provider.sendAndConfirm(transaction, []);
+    const sig = await connection.requestAirdrop(creator.publicKey, 3 * LAMPORTS_PER_SOL);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
   }
 
   async function setupCreator(label) {
@@ -360,10 +355,9 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
       `create transaction is ${rawTransaction.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
     );
 
-    const simulated = await connection.simulateTransaction(transaction, {
-      sigVerify: true,
-      commitment: "confirmed",
-    });
+    // web3 1.95: legacy Transaction.simulateTransaction() only accepts signers[]
+    // as the second arg. A config object throws "Invalid arguments".
+    const simulated = await connection.simulateTransaction(transaction);
     if (simulated.value.err) {
       throw new Error(
         `create simulation failed: ${JSON.stringify(simulated.value.err)}\n${(simulated.value.logs || []).join("\n")}`,
