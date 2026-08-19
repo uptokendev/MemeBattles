@@ -1,0 +1,10 @@
+:80 {
+	root * /usr/share/nginx/html
+	encode gzip
+	@assets path /assets/*
+	handle @assets {
+		file_server
+	}
+	try_files {path} /index.html
+	file_server
+}

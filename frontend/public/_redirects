@@ -1,3 +1,4 @@
-# Coolify/Netlify static hosts look for a real file on hard refresh.
-# /create and /token/:id are React routes, not files. Serve the SPA.
+# Netlify (and hosts that honor _redirects): SPA fallback.
+# Coolify/nginx ignores this file — use frontend/nginx.conf try_files instead.
+# /create /token/:id /war-room /league /profile/* are React routes, not files.
 /*    /index.html   200
