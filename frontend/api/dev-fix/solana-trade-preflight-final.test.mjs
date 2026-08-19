@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
+// Final release contract: backend policy must fail closed before any trade digest is signed.
 const auth = fs.readFileSync(new URL("./solana-trade-authorization-v1.js", import.meta.url), "utf8");
 const rust = fs.readFileSync(new URL("../../../programs/memewarzone_solana/src/authorized_trade.rs", import.meta.url), "utf8");
 
