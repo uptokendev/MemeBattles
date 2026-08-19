@@ -22,13 +22,11 @@ use anchor_spl::token::{self, Transfer};
 
 use crate::{
     authorized_create::{
-        load_risk_profile_or_default, Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED,
-        TOKEN_VAULT_SEED,
+        Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
     },
-    ClusterProfile, GlobalConfig, LaunchpadError, RiskProfile, SetCampaignPause, BPS_DENOMINATOR,
-    CLUSTER_PROFILE_SEED, CURVE_KIND_LINEAR_V1, ECONOMICS_VERSION_V2, ECONOMICS_VERSION_V3,
-    EMPTY_CLUSTER_ID, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED, ROUTE_PROFILE_OG,
-    ROUTE_PROFILE_LINKED, ROUTE_PROFILE_UNLINKED,
+    GlobalConfig, LaunchpadError, SetCampaignPause, BPS_DENOMINATOR, CURVE_KIND_LINEAR_V1,
+    ECONOMICS_VERSION_V2, ECONOMICS_VERSION_V3, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
+    ROUTE_PROFILE_LINKED, ROUTE_PROFILE_OG, ROUTE_PROFILE_UNLINKED,
 };
 
 #[cfg(test)]
@@ -226,7 +224,9 @@ pub fn checked_linear_curve_cost_v2(
         .ok_or(LaunchpadError::MathOverflow)?;
     let a2 = a.checked_mul(a).ok_or(LaunchpadError::MathOverflow)?;
     let numer = two_sa.checked_add(a2).ok_or(LaunchpadError::MathOverflow)?;
-    let scale2 = scale.checked_mul(scale).ok_or(LaunchpadError::MathOverflow)?;
+    let scale2 = scale
+        .checked_mul(scale)
+        .ok_or(LaunchpadError::MathOverflow)?;
     let denom = scale2.checked_mul(2).ok_or(LaunchpadError::MathOverflow)?;
     let slope_term = slope
         .checked_mul(numer)
@@ -272,7 +272,9 @@ pub fn checked_linear_curve_cost_v3(
         .ok_or(LaunchpadError::MathOverflow)?;
     let a2 = a.checked_mul(a).ok_or(LaunchpadError::MathOverflow)?;
     let numer = two_sa.checked_add(a2).ok_or(LaunchpadError::MathOverflow)?;
-    let scale2 = scale.checked_mul(scale).ok_or(LaunchpadError::MathOverflow)?;
+    let scale2 = scale
+        .checked_mul(scale)
+        .ok_or(LaunchpadError::MathOverflow)?;
     let denom = scale2
         .checked_mul(2)
         .ok_or(LaunchpadError::MathOverflow)?
@@ -407,7 +409,10 @@ pub fn quote_buy_tokens_v3_gross(
 ) -> Result<(u64, u64, u64, u64)> {
     require!(gross_lamports > 0, LaunchpadError::InvalidTradeAmount);
     require!(base_price_lamports > 0, LaunchpadError::InvalidTradeAmount);
-    require!(sold_tokens < curve_token_supply, LaunchpadError::CurveSupplyExhausted);
+    require!(
+        sold_tokens < curve_token_supply,
+        LaunchpadError::CurveSupplyExhausted
+    );
 
     let scale = token_scale(token_decimals)?;
     let remaining = curve_token_supply
@@ -611,7 +616,10 @@ struct PreparedSell {
 pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(args.lamports_in > 0, LaunchpadError::InvalidTradeAmount);
-    require!(args.deadline >= now, LaunchpadError::TradeAuthorizationExpired);
+    require!(
+        args.deadline >= now,
+        LaunchpadError::TradeAuthorizationExpired
+    );
     require_keys_eq!(
         *ctx.accounts.token_program.key,
         token::ID,
@@ -624,21 +632,17 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
     let token_vault_key = ctx.accounts.token_vault.key();
     let sol_vault_key = ctx.accounts.sol_vault.key();
     let trade_auth_bump = ctx.bumps.trade_authorization;
-    let risk_bump = ctx.bumps.risk_profile;
     let (route_signer, auth_required) =
         read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;
 
     let prepared = prepare_buy(
         &ctx.accounts.campaign.to_account_info(),
-        &ctx.accounts.risk_profile.to_account_info(),
-        &ctx.accounts.cluster_profile.to_account_info(),
         &ctx.accounts.instructions.to_account_info(),
         trader,
         campaign_key,
         mint_key,
         token_vault_key,
         sol_vault_key,
-        risk_bump,
         now,
         route_signer,
         auth_required,
@@ -743,7 +747,10 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
 pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(args.tokens_in > 0, LaunchpadError::InvalidTradeAmount);
-    require!(args.deadline >= now, LaunchpadError::TradeAuthorizationExpired);
+    require!(
+        args.deadline >= now,
+        LaunchpadError::TradeAuthorizationExpired
+    );
     require_keys_eq!(
         *ctx.accounts.token_program.key,
         token::ID,
@@ -756,21 +763,17 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
     let token_vault_key = ctx.accounts.token_vault.key();
     let sol_vault_key = ctx.accounts.sol_vault.key();
     let trade_auth_bump = ctx.bumps.trade_authorization;
-    let risk_bump = ctx.bumps.risk_profile;
     let (route_signer, auth_required) =
         read_trade_global(&ctx.accounts.global_config.to_account_info(), false)?;
 
     let prepared = prepare_sell(
         &ctx.accounts.campaign.to_account_info(),
-        &ctx.accounts.risk_profile.to_account_info(),
-        &ctx.accounts.cluster_profile.to_account_info(),
         &ctx.accounts.instructions.to_account_info(),
         trader,
         campaign_key,
         mint_key,
         token_vault_key,
         sol_vault_key,
-        risk_bump,
         now,
         route_signer,
         auth_required,
@@ -872,6 +875,16 @@ fn read_trade_global(info: &AccountInfo, is_buy: bool) -> Result<(Pubkey, bool)>
     let mut slice: &[u8] = &data;
     let global = Box::new(GlobalConfig::try_deserialize(&mut slice)?);
     require!(!global.paused, LaunchpadError::LaunchpadPaused);
+    // Backend policy is authoritative only because every executable trade must
+    // still carry the locked MemeWarzone route authorization on-chain.
+    require!(
+        global.security_defaults_locked,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(
+        global.authorized_trading_required,
+        LaunchpadError::InvalidTradeAuthorization
+    );
     if is_buy {
         require!(!global.buy_paused, LaunchpadError::BuysPaused);
     } else {
@@ -890,15 +903,12 @@ fn load_campaign_box(info: &AccountInfo) -> Result<Box<Campaign>> {
 #[inline(never)]
 fn prepare_buy(
     campaign_info: &AccountInfo,
-    risk_info: &AccountInfo,
-    cluster_info: &AccountInfo,
     instructions: &AccountInfo,
     trader: Pubkey,
     campaign_key: Pubkey,
     mint_key: Pubkey,
     token_vault_key: Pubkey,
     sol_vault_key: Pubkey,
-    risk_bump: u8,
     now: i64,
     route_signer: Pubkey,
     auth_required: bool,
@@ -938,7 +948,6 @@ fn prepare_buy(
     let campaign_mint = campaign.mint;
     drop(campaign);
 
-    enforce_trade_risk(risk_info, cluster_info, trader, risk_bump)?;
     if auth_required {
         verify_buy_authorization(
             instructions,
@@ -1002,15 +1011,12 @@ fn prepare_buy(
 #[inline(never)]
 fn prepare_sell(
     campaign_info: &AccountInfo,
-    risk_info: &AccountInfo,
-    cluster_info: &AccountInfo,
     instructions: &AccountInfo,
     trader: Pubkey,
     campaign_key: Pubkey,
     mint_key: Pubkey,
     token_vault_key: Pubkey,
     sol_vault_key: Pubkey,
-    risk_bump: u8,
     now: i64,
     route_signer: Pubkey,
     auth_required: bool,
@@ -1044,7 +1050,6 @@ fn prepare_sell(
     let campaign_mint = campaign.mint;
     drop(campaign);
 
-    enforce_trade_risk(risk_info, cluster_info, trader, risk_bump)?;
     if auth_required {
         verify_sell_authorization(
             instructions,
@@ -1065,9 +1070,7 @@ fn prepare_sell(
         decimals,
     )?;
     let fee = calculate_fee(gross, sell_fee_bps)?;
-    let lamports_out = gross
-        .checked_sub(fee)
-        .ok_or(LaunchpadError::MathOverflow)?;
+    let lamports_out = gross.checked_sub(fee).ok_or(LaunchpadError::MathOverflow)?;
     require!(
         lamports_out >= args.min_lamports_out,
         LaunchpadError::SlippageExceeded
@@ -1133,11 +1136,7 @@ fn apply_buy_state(
 }
 
 #[inline(never)]
-fn apply_sell_state(
-    campaign_info: &AccountInfo,
-    tokens_in: u64,
-    gross: u64,
-) -> Result<(u64, u64)> {
+fn apply_sell_state(campaign_info: &AccountInfo, tokens_in: u64, gross: u64) -> Result<(u64, u64)> {
     let mut data = campaign_info.try_borrow_mut_data()?;
     let mut slice: &[u8] = &data;
     let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
@@ -1160,6 +1159,7 @@ fn apply_sell_state(
     Ok((sold_after, net_after))
 }
 
+#[inline(never)]
 pub(crate) fn route_fee_slices(
     remaining: &[AccountInfo],
     sol_vault: &AccountInfo,
@@ -1199,9 +1199,19 @@ pub(crate) fn route_fee_slices(
     ];
     let mut need = 0u64;
     for i in 0..6 {
-        require_keys_eq!(*remaining[i].key, expected[i], LaunchpadError::InvalidRewardsVault);
-        require!(remaining[i].is_writable, LaunchpadError::InvalidRewardsVault);
-        require!(remaining[i].lamports() > 0, LaunchpadError::InvalidRewardsVault);
+        require_keys_eq!(
+            *remaining[i].key,
+            expected[i],
+            LaunchpadError::InvalidRewardsVault
+        );
+        require!(
+            remaining[i].is_writable,
+            LaunchpadError::InvalidRewardsVault
+        );
+        require!(
+            remaining[i].lamports() > 0,
+            LaunchpadError::InvalidRewardsVault
+        );
         need = need
             .checked_add(slices[i])
             .ok_or(LaunchpadError::MathOverflow)?;
@@ -1286,18 +1296,6 @@ pub(crate) fn preview_bnb_route(kind: u8, profile: u8, fee_amount: u64) -> Resul
     })
 }
 
-fn validate_trade_risk_profile(risk: &RiskProfile, trader: Pubkey) -> Result<()> {
-    require_keys_eq!(risk.wallet, trader, LaunchpadError::InvalidRiskProfile);
-    require!(!risk.restricted, LaunchpadError::WalletRestricted);
-    // Solana carries an explicit manual-review bit in addition to BNB's restricted flag.
-    // Preserve that stronger explicit enforcement while keeping an absent profile permissive.
-    require!(
-        !risk.manual_review_required,
-        LaunchpadError::WalletRestricted
-    );
-    Ok(())
-}
-
 pub(crate) fn validate_route_profile_id(profile: u8) -> Result<()> {
     require!(
         profile == ROUTE_PROFILE_LINKED
@@ -1323,23 +1321,21 @@ fn expected_reward_vaults() -> [Pubkey; 6] {
 fn validate_reward_vaults(remaining: &[AccountInfo]) -> Result<()> {
     let expected = expected_reward_vaults();
     for i in 0..6 {
-        require_keys_eq!(*remaining[i].key, expected[i], LaunchpadError::InvalidRewardsVault);
-        require!(remaining[i].is_writable, LaunchpadError::InvalidRewardsVault);
-        require!(remaining[i].lamports() > 0, LaunchpadError::InvalidRewardsVault);
+        require_keys_eq!(
+            *remaining[i].key,
+            expected[i],
+            LaunchpadError::InvalidRewardsVault
+        );
+        require!(
+            remaining[i].is_writable,
+            LaunchpadError::InvalidRewardsVault
+        );
+        require!(
+            remaining[i].lamports() > 0,
+            LaunchpadError::InvalidRewardsVault
+        );
     }
     Ok(())
-}
-
-#[inline(never)]
-fn enforce_trade_risk(
-    risk_info: &AccountInfo,
-    cluster_info: &AccountInfo,
-    trader: Pubkey,
-    risk_bump: u8,
-) -> Result<()> {
-    let risk = load_risk_profile_or_default(risk_info, trader, risk_bump)?;
-    validate_trade_risk_profile(&risk, trader)?;
-    validate_trade_cluster_profile(cluster_info, &risk)
 }
 
 #[inline(never)]
@@ -1433,35 +1429,6 @@ fn quote_buy_prepared(
     }
 }
 
-#[inline(never)]
-fn validate_trade_cluster_profile(cluster_info: &AccountInfo, risk: &RiskProfile) -> Result<()> {
-    let (expected_cluster, _) = Pubkey::find_program_address(
-        &[CLUSTER_PROFILE_SEED, risk.cluster_id.as_ref()],
-        &crate::ID,
-    );
-    require_keys_eq!(
-        *cluster_info.key,
-        expected_cluster,
-        LaunchpadError::InvalidCluster
-    );
-    if risk.cluster_id == EMPTY_CLUSTER_ID {
-        return Ok(());
-    }
-    require!(
-        cluster_info.owner == &crate::ID && !cluster_info.data_is_empty(),
-        LaunchpadError::InvalidCluster
-    );
-    let data = cluster_info.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    let cluster = Box::new(ClusterProfile::try_deserialize(&mut slice)?);
-    require!(
-        cluster.cluster_id == risk.cluster_id,
-        LaunchpadError::InvalidCluster
-    );
-    require!(!cluster.restricted, LaunchpadError::ClusterRestricted);
-    Ok(())
-}
-
 pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) -> Result<()> {
     let global = &ctx.accounts.global_config;
     if ctx.accounts.authority.key() != global.admin && ctx.accounts.authority.key() != global.pauser
@@ -1524,10 +1491,8 @@ fn validate_trade_accounts(
         expected_vault,
         LaunchpadError::InvalidCampaign
     );
-    let (expected_sol, _) = Pubkey::find_program_address(
-        &[SOL_VAULT_SEED, campaign.campaign_id.as_ref()],
-        &crate::ID,
-    );
+    let (expected_sol, _) =
+        Pubkey::find_program_address(&[SOL_VAULT_SEED, campaign.campaign_id.as_ref()], &crate::ID);
     require_keys_eq!(sol_vault_key, expected_sol, LaunchpadError::InvalidCampaign);
     let _ = CampaignSolVault::INIT_SPACE; // keep type linked
     Ok(())
@@ -1580,10 +1545,7 @@ fn verify_detached_trade_authorization(
 ) -> Result<()> {
     let current_index = load_current_index_checked(instructions_sysvar)
         .map_err(|_| error!(LaunchpadError::InvalidTradeAuthorization))?;
-    require!(
-        current_index > 0,
-        LaunchpadError::InvalidTradeAuthorization
-    );
+    require!(current_index > 0, LaunchpadError::InvalidTradeAuthorization);
     let ed25519_index = current_index
         .checked_sub(1)
         .ok_or(LaunchpadError::InvalidTradeAuthorization)?;
@@ -1655,20 +1617,14 @@ fn parse_single_ed25519_instruction(data: &[u8]) -> Result<ParsedEd25519Instruct
 
 fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
     let end = offset.checked_add(2).ok_or(LaunchpadError::MathOverflow)?;
-    require!(
-        end <= data.len(),
-        LaunchpadError::InvalidTradeAuthorization
-    );
+    require!(end <= data.len(), LaunchpadError::InvalidTradeAuthorization);
     Ok(u16::from_le_bytes([data[offset], data[offset + 1]]))
 }
 
 fn checked_slice(data: &[u8], offset: u16, len: usize) -> Result<&[u8]> {
     let start = usize::from(offset);
     let end = start.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
-    require!(
-        end <= data.len(),
-        LaunchpadError::InvalidTradeAuthorization
-    );
+    require!(end <= data.len(), LaunchpadError::InvalidTradeAuthorization);
     Ok(&data[start..end])
 }
 
@@ -1686,8 +1642,14 @@ fn create_trade_auth_account<'info>(
     message_hash: [u8; 32],
     bump: u8,
 ) -> Result<()> {
-    require!(account.lamports() == 0, LaunchpadError::InvalidTradeAuthorization);
-    require!(account.data_is_empty(), LaunchpadError::InvalidTradeAuthorization);
+    require!(
+        account.lamports() == 0,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(
+        account.data_is_empty(),
+        LaunchpadError::InvalidTradeAuthorization
+    );
     let space = 8 + TradeAuthorization::INIT_SPACE;
     let rent = Rent::get()?;
     let lamports = rent.minimum_balance(space);
@@ -1757,14 +1719,10 @@ mod tests {
     fn quote_buy_v3_same_size_buy_gets_fewer_tokens() {
         let gross = 1_000_000u64; // 0.001 SOL
         let supply = 840_000_000_000_000u64;
-        let (first_tokens, first_cost, first_fee, first_total) = quote_buy_tokens_v3_gross(
-            1, 850, 0, supply, gross, 200, 6,
-        )
-        .unwrap();
-        let (second_tokens, _, _, second_total) = quote_buy_tokens_v3_gross(
-            1, 850, first_tokens, supply, gross, 200, 6,
-        )
-        .unwrap();
+        let (first_tokens, first_cost, first_fee, first_total) =
+            quote_buy_tokens_v3_gross(1, 850, 0, supply, gross, 200, 6).unwrap();
+        let (second_tokens, _, _, second_total) =
+            quote_buy_tokens_v3_gross(1, 850, first_tokens, supply, gross, 200, 6).unwrap();
 
         assert!(first_tokens > 0);
         assert!(second_tokens > 0);
@@ -1773,15 +1731,8 @@ mod tests {
         assert!(first_total <= gross);
         assert!(second_total <= gross);
 
-        let refund = quote_sell_refund(
-            ECONOMICS_VERSION_V3,
-            1,
-            850,
-            first_tokens,
-            first_tokens,
-            6,
-        )
-        .unwrap();
+        let refund =
+            quote_sell_refund(ECONOMICS_VERSION_V3, 1, 850, first_tokens, first_tokens, 6).unwrap();
         assert_eq!(refund, first_cost);
     }
 
@@ -1797,15 +1748,9 @@ mod tests {
             checked_linear_curve_cost(ECONOMICS_VERSION_V1, base, slope, sold, tokens, 6).unwrap();
         assert!(cost <= net);
         if tokens + 1 <= 1_000_000 {
-            let over = checked_linear_curve_cost(
-                ECONOMICS_VERSION_V1,
-                base,
-                slope,
-                sold,
-                tokens + 1,
-                6,
-            )
-            .unwrap();
+            let over =
+                checked_linear_curve_cost(ECONOMICS_VERSION_V1, base, slope, sold, tokens + 1, 6)
+                    .unwrap();
             assert!(over > net);
         }
     }
@@ -1817,15 +1762,9 @@ mod tests {
         let buy_tokens = 100u64;
         let cost =
             checked_linear_curve_cost(ECONOMICS_VERSION_V1, base, slope, 0, buy_tokens, 6).unwrap();
-        let refund = quote_sell_refund(
-            ECONOMICS_VERSION_V1,
-            base,
-            slope,
-            buy_tokens,
-            buy_tokens,
-            6,
-        )
-        .unwrap();
+        let refund =
+            quote_sell_refund(ECONOMICS_VERSION_V1, base, slope, buy_tokens, buy_tokens, 6)
+                .unwrap();
         assert_eq!(cost, refund);
     }
 
@@ -1868,7 +1807,8 @@ mod tests {
     #[test]
     fn unlinked_trade_route_sends_recruiter_slice_to_airdrop() {
         let fee = 10_000u64;
-        let unlinked = preview_bnb_route(crate::ROUTE_KIND_TRADE, ROUTE_PROFILE_UNLINKED, fee).unwrap();
+        let unlinked =
+            preview_bnb_route(crate::ROUTE_KIND_TRADE, ROUTE_PROFILE_UNLINKED, fee).unwrap();
         let linked = preview_bnb_route(crate::ROUTE_KIND_TRADE, ROUTE_PROFILE_LINKED, fee).unwrap();
         assert_eq!(unlinked.recruiter, 0);
         assert_eq!(unlinked.squad, 0);

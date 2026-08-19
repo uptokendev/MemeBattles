@@ -505,27 +505,31 @@ export async function submitSolanaTradeV1(
     data,
   });
 
-  const tx = new Transaction();
-  try {
-    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
-  } catch {
-    /* optional */
-  }
-  tx.add(ed25519Ix);
-  tx.add(tradeIx);
+  const buildUnsignedTrade = (blockhash: string) => {
+    const next = new Transaction();
+    try {
+      next.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+    } catch {
+      /* optional */
+    }
+    next.add(ed25519Ix);
+    next.add(tradeIx);
+    next.feePayer = new PublicKey(traderPk);
+    next.recentBlockhash = blockhash;
+    return next;
+  };
 
-  const latest = await connection.getLatestBlockhash("confirmed");
-  tx.feePayer = new PublicKey(traderPk);
-  tx.recentBlockhash = latest.blockhash;
-
-  // web3 1.95: legacy Transaction.simulateTransaction() only accepts signers[]
-  // as the second arg. A config object throws "Invalid arguments" and never RPCs.
-  // No signers ⇒ library does not set sigVerify, so this simulates unsigned.
-  // skipPreflight after a passing sim is intentional: Phantom delay burns blockhashes.
-  const simulation = await connection.simulateTransaction(tx);
+  // Simulate with a temporary blockhash. Phantom is never called unless the
+  // exact instruction set is clean on MemeWarzone's RPC.
+  const simulationLatest = await connection.getLatestBlockhash("confirmed");
+  const simulationTx = buildUnsignedTrade(simulationLatest.blockhash);
+  const simulation = await connection.simulateTransaction(simulationTx);
   const simLogs = Array.isArray(simulation.value?.logs) ? simulation.value.logs.map(String) : [];
+  const source = collectSimSource(simulation.value?.err, simLogs);
+  if (/Access violation|stack frame|Program failed to complete/i.test(source)) {
+    throw new Error(source);
+  }
   if (simulation.value?.err) {
-    const source = collectSimSource(simulation.value.err, simLogs);
     try {
       console.error("[solanaTradeV1] trade simulation failed", {
         err: simulation.value.err,
@@ -537,6 +541,10 @@ export async function submitSolanaTradeV1(
     throw new Error(source);
   }
 
+  // Simulation and wallet-signing blockhashes are deliberately separated.
+  // Rebuild the same instruction set with a fresh blockhash immediately before Phantom.
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const tx = buildUnsignedTrade(latest.blockhash);
   const signed = await provider.signTransaction(tx);
   const sig = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: true,

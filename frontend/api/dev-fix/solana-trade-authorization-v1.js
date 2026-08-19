@@ -30,6 +30,7 @@ import {
   decodeCampaignAccount,
   decodeCampaignCurveFields,
   decodeClusterProfile,
+  decodeGlobalConfig,
   decodeRiskProfile,
   findProgramAddressSync,
   nativeTargetLamportsFromUsd,
@@ -76,6 +77,100 @@ function deriveRewardsVaults() {
   };
 }
 
+function rewardVaultAddressList(vaults) {
+  return [
+    vaults.leagueVault,
+    vaults.airdropVault,
+    vaults.monthlyLeagueVault,
+    vaults.recruiterVault,
+    vaults.squadVault,
+    vaults.protocolVault,
+  ];
+}
+
+async function assertTradeGlobalPreflight({ rpcUrl, programId, expectedRouteSigner, signerPublicKey, side }) {
+  const globalConfig = findProgramAddressSync([Buffer.from("global", "utf8")], programId).publicKey;
+  const info = await rpcCall(rpcUrl, "getAccountInfo", [
+    globalConfig,
+    { encoding: "base64", commitment: "confirmed" },
+  ]);
+  const b64 = info?.value?.data?.[0];
+  if (!b64) {
+    throw new SolanaTradeAuthorizationError("GlobalConfig account is missing on-chain.", {
+      code: "SOLANA_GLOBAL_CONFIG_MISSING",
+      httpStatus: 503,
+    });
+  }
+
+  const global = decodeGlobalConfig(Buffer.from(b64, "base64"));
+  if (global.paused) {
+    throw new SolanaTradeAuthorizationError("Solana launchpad is globally paused.", {
+      code: "SOLANA_LAUNCHPAD_PAUSED",
+      httpStatus: 503,
+    });
+  }
+  if (side === TRADE_SIDE_BUY && global.buyPaused) {
+    throw new SolanaTradeAuthorizationError("Solana bonding buys are paused.", {
+      code: "SOLANA_BUYS_PAUSED",
+      httpStatus: 503,
+    });
+  }
+  if (side === TRADE_SIDE_SELL && global.sellPaused) {
+    throw new SolanaTradeAuthorizationError("Solana bonding sells are paused.", {
+      code: "SOLANA_SELLS_PAUSED",
+      httpStatus: 503,
+    });
+  }
+  if (!global.securityDefaultsLocked || !global.routeAuthorizationRequired || !global.authorizedTradingRequired) {
+    throw new SolanaTradeAuthorizationError("Solana trade security defaults are not locked to signed authorization.", {
+      code: "SOLANA_TRADE_SECURITY_NOT_LOCKED",
+      httpStatus: 503,
+    });
+  }
+
+  const onChainRouteSigner = publicKeyString(global.routeSigner, "GlobalConfig.routeSigner");
+  if (!samePublicKey(onChainRouteSigner, expectedRouteSigner) || !samePublicKey(onChainRouteSigner, signerPublicKey)) {
+    throw new SolanaTradeAuthorizationError("Configured trade signer does not match GlobalConfig.route_signer.", {
+      code: "SOLANA_ROUTE_SIGNER_ONCHAIN_MISMATCH",
+      httpStatus: 503,
+    });
+  }
+
+  return { globalConfig, onChainRouteSigner };
+}
+
+async function assertRewardVaultPreflight(rpcUrl, rewardsVaults) {
+  const addresses = rewardVaultAddressList(rewardsVaults);
+  if (addresses.some((address) => !address)) {
+    throw new SolanaTradeAuthorizationError("The six Solana reward vault addresses could not be resolved.", {
+      code: "SOLANA_REWARD_VAULT_CONFIGURATION_INCOMPLETE",
+      httpStatus: 503,
+    });
+  }
+
+  const result = await rpcCall(rpcUrl, "getMultipleAccounts", [
+    addresses,
+    { encoding: "base64", commitment: "confirmed" },
+  ]);
+  const accounts = result?.value;
+  if (!Array.isArray(accounts) || accounts.length !== addresses.length) {
+    throw new SolanaTradeAuthorizationError("Solana RPC did not return all six reward vault accounts.", {
+      code: "SOLANA_REWARD_VAULTS_UNAVAILABLE",
+      httpStatus: 503,
+    });
+  }
+
+  const missing = accounts
+    .map((account, index) => (!account || Number(account.lamports || 0) <= 0 ? addresses[index] : null))
+    .filter(Boolean);
+  if (missing.length > 0) {
+    throw new SolanaTradeAuthorizationError(`Solana reward vaults are not initialized: ${missing.join(", ")}`, {
+      code: "SOLANA_REWARD_VAULTS_NOT_READY",
+      httpStatus: 503,
+    });
+  }
+}
+
 async function resolveTraderClusterProfile(rpcUrl, programId, traderAddress) {
   const emptyClusterId = Buffer.alloc(32);
   const riskPda = findProgramAddressSync(
@@ -90,9 +185,15 @@ async function resolveTraderClusterProfile(rpcUrl, programId, traderAddress) {
   const riskB64 = riskInfo?.value?.data?.[0];
   if (riskB64) {
     const risk = decodeRiskProfile(Buffer.from(riskB64, "base64"));
-    if (risk.restricted || risk.manualReviewRequired) {
+    if (risk.restricted) {
       throw new SolanaTradeAuthorizationError("Trader wallet is restricted from bonding trades.", {
         code: "SOLANA_WALLET_RESTRICTED",
+        httpStatus: 403,
+      });
+    }
+    if (risk.manualReviewRequired) {
+      throw new SolanaTradeAuthorizationError("Trader wallet requires manual review before bonding trades.", {
+        code: "SOLANA_WALLET_MANUAL_REVIEW",
         httpStatus: 403,
       });
     }
@@ -665,6 +766,19 @@ export async function solanaTradeAuthorizationV1(req, res) {
       });
     }
 
+    // This endpoint is the application-policy preflight gate. Never issue an
+    // Ed25519 authorization unless protocol security, side pause state and all
+    // mandatory fee destinations are ready on-chain.
+    const rewardsVaults = deriveRewardsVaults();
+    const globalPreflight = await assertTradeGlobalPreflight({
+      rpcUrl,
+      programId,
+      expectedRouteSigner,
+      signerPublicKey: signer.publicKeyBase58,
+      side,
+    });
+    await assertRewardVaultPreflight(rpcUrl, rewardsVaults);
+
     const chainNow = await getChainUnixTime(rpcUrl);
     const ttlSeconds = parsePositiveInteger(
       process.env.SOLANA_TRADE_AUTH_TTL_SECONDS,
@@ -745,7 +859,6 @@ export async function solanaTradeAuthorizationV1(req, res) {
       routeProfile,
     });
     const signature = signer.sign(digest);
-    const rewardsVaults = deriveRewardsVaults();
 
     return json(res, 200, {
       schemaVersion: TRADE_AUTH_SCHEMA_VERSION,
@@ -791,6 +904,12 @@ export async function solanaTradeAuthorizationV1(req, res) {
         squadVault: rewardsVaults.squadVault,
         protocolVault: rewardsVaults.protocolVault,
         rewardsTreasuryProgramId: rewardsVaults.programId,
+      },
+      preflight: {
+        policyPassed: true,
+        globalConfig: globalPreflight.globalConfig,
+        routeSigner: globalPreflight.onChainRouteSigner,
+        rewardVaultsReady: true,
       },
       authorization: {
         signedMessageMode: "sha256_canonical_payload",

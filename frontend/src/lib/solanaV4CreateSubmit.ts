@@ -318,12 +318,14 @@ export async function submitSolanaV4CreatePlan(
   };
 
   const signAndSend = async () => {
-    // Build and independently simulate the exact transaction before opening the wallet.
-    // A fresh blockhash is taken on every retry, so a slow wallet popup can safely retry.
+    // Simulate first with a temporary blockhash. Only a clean simulation is allowed
+    // to reach Phantom; then rebuild the identical instruction set with a fresh hash.
+    const simulationLatest = await connection.getLatestBlockhash("confirmed");
+    const simulationTx = buildUnsigned(simulationLatest.blockhash);
+    await simulateUnsignedCreate(simulationTx);
+
     const latest = await connection.getLatestBlockhash("confirmed");
     const unsigned = buildUnsigned(latest.blockhash);
-    await simulateUnsignedCreate(unsigned);
-
     const signed = await provider.signTransaction(unsigned);
     const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
     // Do not perform another RPC preflight after the user signs: a long wallet delay can
