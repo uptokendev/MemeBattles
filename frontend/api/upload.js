@@ -182,7 +182,17 @@ export default async function handler(req, res) {
     const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
     const supabaseKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     if (!supabaseUrl || !supabaseKey) {
-      console.warn("[api/upload] Supabase storage envs missing - using in-memory data URL (local dev only). Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for real uploads.");
+      const allowDataUrl = ["1", "true", "yes", "on"].includes(
+        String(process.env.ENABLE_DATA_URL_UPLOADS || "").trim().toLowerCase(),
+      );
+      if (!allowDataUrl) {
+        return bad(
+          res,
+          503,
+          "Logo storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the API.",
+        );
+      }
+      console.warn("[api/upload] ENABLE_DATA_URL_UPLOADS is on — returning an in-memory data URL. Do not use this in production.");
       const dataUrl = `data:${mimetype};base64,${buf.toString("base64")}`;
       return res.status(200).json({ url: dataUrl, persistedDraftLogo: false });
     }

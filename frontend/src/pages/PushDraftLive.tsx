@@ -433,6 +433,12 @@ export default function PushDraftLive() {
     if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
     if (!logoURI) return toast.error("Draft needs a saved logo before deployment.");
+    try {
+      const { assertOnchainLogoUri } = await import("@/lib/onchainLogoUri");
+      assertOnchainLogoUri(logoURI);
+    } catch (error: any) {
+      return toast.error(String(error?.message || "Draft logo must be an uploaded https URL."));
+    }
     if (!eligibilityFactoryAddress || (mode === "scheduled" && !scheduledFactoryAddress) || (mode === "now" && !launchpad.factoryAddress)) {
       return toast.error(`Launching is temporarily unavailable on ${chainLabel}. Your draft remains saved. Please try again later.`);
     }

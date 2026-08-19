@@ -418,7 +418,8 @@ const Create = () => {
     }
     const json = (await res.json()) as { url?: string };
     if (!json?.url) throw new Error("Logo upload failed (missing url)");
-    return json.url;
+    const { assertOnchainLogoUri } = await import("@/lib/onchainLogoUri");
+    return assertOnchainLogoUri(json.url);
   };
 
   const createDraftAuth = async (draftId?: string) => {
