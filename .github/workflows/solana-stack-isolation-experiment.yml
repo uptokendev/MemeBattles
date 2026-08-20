@@ -179,7 +179,7 @@ jobs:
           fn trade_assert_campaign_data(data: &[u8]) -> Result<()> {
               require!(data.len() >= CAMPAIGN_ACCOUNT_BYTES, LaunchpadError::InvalidCampaign);
               require!(
-                  data.get(..8) == Some(Campaign::DISCRIMINATOR.as_ref()),
+                  data.get(..8) == Some(<Campaign as anchor_lang::Discriminator>::DISCRIMINATOR.as_ref()),
                   LaunchpadError::InvalidCampaign
               );
               Ok(())
