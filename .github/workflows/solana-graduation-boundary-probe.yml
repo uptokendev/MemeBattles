@@ -6,6 +6,7 @@ on:
       - hotfix/solana-mainnet-transaction-normalization
     paths:
       - .github/workflows/solana-graduation-boundary-probe.yml
+      - programs/memewarzone_solana/src/graduation.rs
   pull_request:
     branches:
       - main
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: solana-graduation-boundary-${{ github.event.pull_request.number || github.ref }}
@@ -33,7 +34,7 @@ env:
 
 jobs:
   snapshot:
-    name: Test raw graduation Campaign snapshot
+    name: Prove raw graduation Campaign snapshot
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -78,7 +79,7 @@ jobs:
           "$agave_dir/bin/solana-test-validator" --version
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
-      - name: Apply runner-only graduation snapshot candidate
+      - name: Apply graduation snapshot candidate when needed
         shell: bash
         run: |
           set -euo pipefail
@@ -87,11 +88,18 @@ jobs:
 
           path = Path('programs/memewarzone_solana/src/graduation.rs')
           source = path.read_text(encoding='utf-8')
+          if 'struct GraduationCampaignSnapshot {' in source:
+              print('graduation snapshot already committed; testing exact source')
+              raise SystemExit(0)
+
           anchor = 'const MAX_ATOMIC_SCAN_INSTRUCTIONS: usize = 48;\n'
           if source.count(anchor) != 1:
               raise SystemExit('snapshot insertion anchor not unique')
           snapshot = r'''
 
+// Full Campaign deserialization exceeds the effective Mainnet Agave SBF stack
+// even though the old local validator accepts it. Graduation only needs this
+// bounded subset, so read the fixed Borsh fields directly from the 720-byte account.
 #[derive(Clone, Copy)]
 struct GraduationCampaignSnapshot {
     campaign_id: [u8; 32],
@@ -315,6 +323,23 @@ fn graduation_quote_snapshot(campaign: &GraduationCampaignSnapshot) -> Result<Gr
           "$AGAVE_BIN/solana" airdrop 100 >/dev/null
           ( cd tests/solana && ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs ) \
             2>&1 | tee /tmp/mwz-grad-snapshot-acceptance.log
+      - name: Persist proven graduation source
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- programs/memewarzone_solana/src/graduation.rs; then
+            echo 'Graduation snapshot already committed; no source write needed.'
+            exit 0
+          fi
+          git diff --check
+          git config user.name 'MemeWarzone Launch Bot'
+          git config user.email 'launch-bot@users.noreply.github.com'
+          git add -- programs/memewarzone_solana/src/graduation.rs
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'Fix Solana graduation Campaign stack overflow'
+          git push origin HEAD:hotfix/solana-mainnet-transaction-normalization
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
