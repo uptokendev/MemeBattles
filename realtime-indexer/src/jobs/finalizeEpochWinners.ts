@@ -483,9 +483,9 @@ async function finalizeEpochFor(
       
       if ((res.rowCount ?? 0) > 0) {
         await emitNotification(pool, {
-          eventType: \`league.\${period}_winners_confirmed\`,
+          eventType: `league.${period}_winners_confirmed`,
           chain: isSolanaChain(chainId) ? "solana" : "bnb",
-          dedupKey: \`winner:\${chainId}:\${period}:\${epochStartIso}:\${category}:\${rank}\`,
+          dedupKey: `winner:${chainId}:${period}:${epochStartIso}:${category}:${rank}`,
           payload: {
             chain: isSolanaChain(chainId) ? "solana" : "bnb",
             period,
