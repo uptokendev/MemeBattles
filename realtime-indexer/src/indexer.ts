@@ -8,6 +8,7 @@ import { createLeagueFeedPublisher } from "./leagueFeed.js";
 import { recordCampaignCreatedActivity, recordTradeActivity } from "./rewards/attribution.js";
 import { upsertRewardEvent } from "./rewards/ingest.js";
 import { createStaticJsonRpcProvider, parseRpcList } from "./rpcProvider.js";
+import { checkMilestones } from "./milestones.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
