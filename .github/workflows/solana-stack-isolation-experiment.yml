@@ -89,7 +89,7 @@ jobs:
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
-      - name: Apply raw Campaign read hot path in runner only
+      - name: Apply raw Campaign read/write hot path in runner only
         shell: bash
         run: |
           set -euo pipefail
@@ -129,9 +129,14 @@ jobs:
           }
 
           const CAMPAIGN_ACCOUNT_BYTES: usize = 720;
+          const CAMPAIGN_CURVE_SUPPLY_OFFSET: usize = 428;
           const CAMPAIGN_SOLD_TOKENS_OFFSET: usize = 662;
           const CAMPAIGN_NET_RAISED_OFFSET: usize = 670;
+          const CAMPAIGN_BUY_VOLUME_OFFSET: usize = 678;
+          const CAMPAIGN_SELL_VOLUME_OFFSET: usize = 686;
+          const CAMPAIGN_BUYER_COUNT_OFFSET: usize = 694;
           const CAMPAIGN_CREATOR_BOUGHT_OFFSET: usize = 702;
+          const CAMPAIGN_CURVE_CLOSED_OFFSET: usize = 714;
 
           fn trade_data_range<'a>(data: &'a [u8], offset: usize, len: usize) -> Result<&'a [u8]> {
               let end = offset.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
@@ -185,6 +190,19 @@ jobs:
               Ok(())
           }
 
+          fn trade_write_u64(data: &mut [u8], offset: usize, value: u64) -> Result<()> {
+              let end = offset.checked_add(8).ok_or(LaunchpadError::MathOverflow)?;
+              require!(end <= data.len(), LaunchpadError::InvalidCampaign);
+              data[offset..end].copy_from_slice(&value.to_le_bytes());
+              Ok(())
+          }
+
+          fn trade_write_u8(data: &mut [u8], offset: usize, value: u8) -> Result<()> {
+              require!(offset < data.len(), LaunchpadError::InvalidCampaign);
+              data[offset] = value;
+              Ok(())
+          }
+
           #[inline(never)]
           fn load_trade_campaign_snapshot(info: &AccountInfo) -> Result<TradeCampaignSnapshot> {
               require_keys_eq!(*info.owner, crate::ID, LaunchpadError::InvalidCampaign);
@@ -199,7 +217,7 @@ jobs:
                   launch_at: trade_read_i64(&data, 400)?,
                   economics_version: trade_read_u16(&data, 417)?,
                   curve_kind: trade_read_u8(&data, 419)?,
-                  curve_token_supply: trade_read_u64(&data, 428)?,
+                  curve_token_supply: trade_read_u64(&data, CAMPAIGN_CURVE_SUPPLY_OFFSET)?,
                   token_decimals: trade_read_u8(&data, 452)?,
                   base_price_lamports: trade_read_u64(&data, 457)?,
                   price_slope_lamports: trade_read_u64(&data, 465)?,
@@ -211,7 +229,7 @@ jobs:
                   net_raised_lamports: trade_read_u64(&data, CAMPAIGN_NET_RAISED_OFFSET)?,
                   creator_bought_tokens: trade_read_u64(&data, CAMPAIGN_CREATOR_BOUGHT_OFFSET)?,
                   graduated: trade_read_bool(&data, 713)?,
-                  curve_closed: trade_read_bool(&data, 714)?,
+                  curve_closed: trade_read_bool(&data, CAMPAIGN_CURVE_CLOSED_OFFSET)?,
                   paused: trade_read_bool(&data, 715)?,
                   bump: trade_read_u8(&data, 716)?,
               })
@@ -260,6 +278,77 @@ jobs:
           )
           region = region.replace("validate_trade_accounts(", "validate_trade_snapshot_accounts(")
           source = source[:prepare_start] + region + source[apply_start:]
+
+          apply_buy_start = source.index("#[inline(never)]\nfn apply_buy_state(")
+          route_start = source.index("#[inline(never)]\npub(crate) fn route_fee_slices(", apply_buy_start)
+          raw_apply = dedent(r'''
+          #[inline(never)]
+          fn apply_buy_state(
+              campaign_info: &AccountInfo,
+              tokens_out: u64,
+              net: u64,
+              buy_volume_increment: u64,
+              was_zero_sold: bool,
+              creator_bought_update: Option<u64>,
+              native_target_lamports: u64,
+          ) -> Result<(u64, u64)> {
+              require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+              let mut data = campaign_info.try_borrow_mut_data()?;
+              trade_assert_campaign_data(&data)?;
+              let sold_after = trade_read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
+                  .checked_add(tokens_out)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              let net_after = trade_read_u64(&data, CAMPAIGN_NET_RAISED_OFFSET)?
+                  .checked_add(net)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              let buy_volume = trade_read_u64(&data, CAMPAIGN_BUY_VOLUME_OFFSET)?
+                  .checked_add(buy_volume_increment)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              trade_write_u64(&mut data, CAMPAIGN_SOLD_TOKENS_OFFSET, sold_after)?;
+              trade_write_u64(&mut data, CAMPAIGN_NET_RAISED_OFFSET, net_after)?;
+              trade_write_u64(&mut data, CAMPAIGN_BUY_VOLUME_OFFSET, buy_volume)?;
+              if was_zero_sold {
+                  let buyers = trade_read_u64(&data, CAMPAIGN_BUYER_COUNT_OFFSET)?
+                      .checked_add(1)
+                      .ok_or(LaunchpadError::MathOverflow)?;
+                  trade_write_u64(&mut data, CAMPAIGN_BUYER_COUNT_OFFSET, buyers)?;
+              }
+              if let Some(value) = creator_bought_update {
+                  trade_write_u64(&mut data, CAMPAIGN_CREATOR_BOUGHT_OFFSET, value)?;
+              }
+              let curve_supply = trade_read_u64(&data, CAMPAIGN_CURVE_SUPPLY_OFFSET)?;
+              if should_close_curve(sold_after, curve_supply, net_after, native_target_lamports) {
+                  trade_write_u8(&mut data, CAMPAIGN_CURVE_CLOSED_OFFSET, 1)?;
+              }
+              Ok((sold_after, net_after))
+          }
+
+          #[inline(never)]
+          fn apply_sell_state(
+              campaign_info: &AccountInfo,
+              tokens_in: u64,
+              gross: u64,
+          ) -> Result<(u64, u64)> {
+              require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+              let mut data = campaign_info.try_borrow_mut_data()?;
+              trade_assert_campaign_data(&data)?;
+              let sold_after = trade_read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
+                  .checked_sub(tokens_in)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              let net_after = trade_read_u64(&data, CAMPAIGN_NET_RAISED_OFFSET)?
+                  .checked_sub(gross)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              let sell_volume = trade_read_u64(&data, CAMPAIGN_SELL_VOLUME_OFFSET)?
+                  .checked_add(gross)
+                  .ok_or(LaunchpadError::MathOverflow)?;
+              trade_write_u64(&mut data, CAMPAIGN_SOLD_TOKENS_OFFSET, sold_after)?;
+              trade_write_u64(&mut data, CAMPAIGN_NET_RAISED_OFFSET, net_after)?;
+              trade_write_u64(&mut data, CAMPAIGN_SELL_VOLUME_OFFSET, sell_volume)?;
+              Ok((sold_after, net_after))
+          }
+
+          ''')
+          source = source[:apply_buy_start] + raw_apply + source[route_start:]
           path.write_text(source, encoding="utf-8")
           PY
           git diff --check
