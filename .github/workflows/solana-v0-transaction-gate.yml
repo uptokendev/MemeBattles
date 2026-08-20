@@ -1,0 +1,122 @@
+name: Solana V0 Transaction Gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'hotfix/solana-*'
+      - 'agent/solana-*'
+    paths:
+      - frontend/package.json
+      - frontend/package-lock.json
+      - frontend/src/lib/solanaV0Transaction.ts
+      - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaV4CreateSubmit.ts
+      - frontend/src/lib/solanaTradeV1.ts
+      - frontend/src/lib/solanaWallet.ts
+      - frontend/scripts/solana-launchpad-alt-plan.mjs
+      - .github/workflows/solana-v0-transaction-gate.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - frontend/package.json
+      - frontend/package-lock.json
+      - frontend/src/lib/solanaV0Transaction.ts
+      - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaV4CreateSubmit.ts
+      - frontend/src/lib/solanaTradeV1.ts
+      - frontend/src/lib/solanaWallet.ts
+      - frontend/scripts/solana-launchpad-alt-plan.mjs
+      - .github/workflows/solana-v0-transaction-gate.yml
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-v0-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  v0-envelope:
+    name: V0 envelope + ALT safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: npm install --prefix frontend --no-audit --no-fund
+
+      - name: Run V0 transaction invariants
+        run: npm --prefix frontend run test:solana-v0
+
+      - name: Emit deterministic launchpad ALT plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix frontend run check:solana-launchpad-alt > /tmp/mwz-solana-v0-alt-plan.json
+          cat /tmp/mwz-solana-v0-alt-plan.json
+
+      - name: Build production frontend
+        run: npm --prefix frontend run build
+
+      - name: Upload V0 gate manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-v0-gate-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: /tmp/mwz-solana-v0-alt-plan.json
+
+  mainnet-alt-readonly:
+    name: Verify configured Mainnet ALT
+    if: ${{ vars.SOLANA_LAUNCHPAD_ALT_ADDRESS != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: npm install --prefix frontend --no-audit --no-fund
+
+      - name: Verify ALT exists, is active, and contains every required static address
+        env:
+          SOLANA_LAUNCHPAD_ALT_ADDRESS: ${{ vars.SOLANA_LAUNCHPAD_ALT_ADDRESS }}
+          SOLANA_RPC_URL: ${{ vars.SOLANA_MAINNET_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node frontend/scripts/solana-launchpad-alt-plan.mjs --require-alt --json \
+            > /tmp/mwz-solana-mainnet-alt-verification.json
+          cat /tmp/mwz-solana-mainnet-alt-verification.json
+
+      - name: Upload Mainnet ALT verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-mainnet-alt-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: /tmp/mwz-solana-mainnet-alt-verification.json
