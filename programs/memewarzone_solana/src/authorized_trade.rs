@@ -24,6 +24,12 @@ use crate::{
     authorized_create::{
         Campaign, CampaignSolVault, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
     },
+    campaign_view::{
+        self, assert_campaign_data, load_campaign_view, CampaignView, CAMPAIGN_BUYER_COUNT_OFFSET,
+        CAMPAIGN_BUY_VOLUME_OFFSET, CAMPAIGN_CREATOR_BOUGHT_OFFSET, CAMPAIGN_CURVE_CLOSED_OFFSET,
+        CAMPAIGN_CURVE_SUPPLY_OFFSET, CAMPAIGN_ID_OFFSET, CAMPAIGN_NET_RAISED_OFFSET,
+        CAMPAIGN_PAUSED_OFFSET, CAMPAIGN_SELL_VOLUME_OFFSET, CAMPAIGN_SOLD_TOKENS_OFFSET,
+    },
     GlobalConfig, LaunchpadError, SetCampaignPause, BPS_DENOMINATOR, CURVE_KIND_LINEAR_V1,
     ECONOMICS_VERSION_V2, ECONOMICS_VERSION_V3, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
     ROUTE_PROFILE_LINKED, ROUTE_PROFILE_OG, ROUTE_PROFILE_UNLINKED,
@@ -893,11 +899,52 @@ fn read_trade_global(info: &AccountInfo, is_buy: bool) -> Result<(Pubkey, bool)>
     Ok((global.route_signer, global.authorized_trading_required))
 }
 
+type TradeCampaignSnapshot = CampaignView;
+
 #[inline(never)]
-fn load_campaign_box(info: &AccountInfo) -> Result<Box<Campaign>> {
-    let data = info.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    Ok(Box::new(Campaign::try_deserialize(&mut slice)?))
+fn load_trade_campaign_snapshot(info: &AccountInfo) -> Result<TradeCampaignSnapshot> {
+    load_campaign_view(info)
+}
+
+#[inline(never)]
+fn validate_trade_snapshot_accounts(
+    campaign: &TradeCampaignSnapshot,
+    campaign_key: Pubkey,
+    mint_key: Pubkey,
+    token_vault_key: Pubkey,
+    sol_vault_key: Pubkey,
+) -> Result<()> {
+    require_keys_eq!(campaign.mint, mint_key, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        campaign.token_vault,
+        token_vault_key,
+        LaunchpadError::InvalidCampaign
+    );
+    require_keys_eq!(
+        campaign.sol_vault,
+        sol_vault_key,
+        LaunchpadError::InvalidCampaign
+    );
+    let (expected_campaign, _) =
+        Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign.campaign_id.as_ref()], &crate::ID);
+    require_keys_eq!(
+        campaign_key,
+        expected_campaign,
+        LaunchpadError::InvalidCampaign
+    );
+    let (expected_vault, _) = Pubkey::find_program_address(
+        &[TOKEN_VAULT_SEED, campaign.campaign_id.as_ref()],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        token_vault_key,
+        expected_vault,
+        LaunchpadError::InvalidCampaign
+    );
+    let (expected_sol, _) =
+        Pubkey::find_program_address(&[SOL_VAULT_SEED, campaign.campaign_id.as_ref()], &crate::ID);
+    require_keys_eq!(sol_vault_key, expected_sol, LaunchpadError::InvalidCampaign);
+    Ok(())
 }
 
 #[inline(never)]
@@ -914,8 +961,8 @@ fn prepare_buy(
     auth_required: bool,
     args: &BuyTokensArgs,
 ) -> Result<PreparedBuy> {
-    let campaign = load_campaign_box(campaign_info)?;
-    validate_trade_accounts(
+    let campaign = load_trade_campaign_snapshot(campaign_info)?;
+    validate_trade_snapshot_accounts(
         &campaign,
         campaign_key,
         mint_key,
@@ -1022,8 +1069,8 @@ fn prepare_sell(
     auth_required: bool,
     args: &SellTokensArgs,
 ) -> Result<PreparedSell> {
-    let campaign = load_campaign_box(campaign_info)?;
-    validate_trade_accounts(
+    let campaign = load_trade_campaign_snapshot(campaign_info)?;
+    validate_trade_snapshot_accounts(
         &campaign,
         campaign_key,
         mint_key,
@@ -1096,66 +1143,62 @@ fn apply_buy_state(
     creator_bought_update: Option<u64>,
     native_target_lamports: u64,
 ) -> Result<(u64, u64)> {
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
     let mut data = campaign_info.try_borrow_mut_data()?;
-    let mut slice: &[u8] = &data;
-    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
-    if let Some(v) = creator_bought_update {
-        campaign.creator_bought_tokens = v;
-    }
-    campaign.sold_tokens = campaign
-        .sold_tokens
+    assert_campaign_data(&data)?;
+    let sold_after = campaign_view::read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
         .checked_add(tokens_out)
         .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.net_raised_lamports = campaign
-        .net_raised_lamports
+    let net_after = campaign_view::read_u64(&data, CAMPAIGN_NET_RAISED_OFFSET)?
         .checked_add(net)
         .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.total_buy_volume_lamports = campaign
-        .total_buy_volume_lamports
+    let buy_volume = campaign_view::read_u64(&data, CAMPAIGN_BUY_VOLUME_OFFSET)?
         .checked_add(buy_volume_increment)
         .ok_or(LaunchpadError::MathOverflow)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_SOLD_TOKENS_OFFSET, sold_after)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_NET_RAISED_OFFSET, net_after)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_BUY_VOLUME_OFFSET, buy_volume)?;
     if was_zero_sold {
-        campaign.buyer_count = campaign
-            .buyer_count
+        let buyers = campaign_view::read_u64(&data, CAMPAIGN_BUYER_COUNT_OFFSET)?
             .checked_add(1)
             .ok_or(LaunchpadError::MathOverflow)?;
+        campaign_view::write_u64(&mut data, CAMPAIGN_BUYER_COUNT_OFFSET, buyers)?;
     }
-    if should_close_curve(
-        campaign.sold_tokens,
-        campaign.curve_token_supply,
-        campaign.net_raised_lamports,
-        native_target_lamports,
-    ) {
-        campaign.curve_closed = true;
+    if let Some(value) = creator_bought_update {
+        campaign_view::write_u64(&mut data, CAMPAIGN_CREATOR_BOUGHT_OFFSET, value)?;
     }
-    let sold_after = campaign.sold_tokens;
-    let net_after = campaign.net_raised_lamports;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)?;
+    let curve_supply = campaign_view::read_u64(&data, CAMPAIGN_CURVE_SUPPLY_OFFSET)?;
+    if should_close_curve(sold_after, curve_supply, net_after, native_target_lamports) {
+        campaign_view::write_u8(&mut data, CAMPAIGN_CURVE_CLOSED_OFFSET, 1)?;
+    }
     Ok((sold_after, net_after))
 }
 
 #[inline(never)]
 fn apply_sell_state(campaign_info: &AccountInfo, tokens_in: u64, gross: u64) -> Result<(u64, u64)> {
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
     let mut data = campaign_info.try_borrow_mut_data()?;
-    let mut slice: &[u8] = &data;
-    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
-    campaign.sold_tokens = campaign
-        .sold_tokens
+    assert_campaign_data(&data)?;
+    let sold_after = campaign_view::read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
         .checked_sub(tokens_in)
         .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.net_raised_lamports = campaign
-        .net_raised_lamports
+    let net_after = campaign_view::read_u64(&data, CAMPAIGN_NET_RAISED_OFFSET)?
         .checked_sub(gross)
         .ok_or(LaunchpadError::MathOverflow)?;
-    campaign.total_sell_volume_lamports = campaign
-        .total_sell_volume_lamports
+    let sell_volume = campaign_view::read_u64(&data, CAMPAIGN_SELL_VOLUME_OFFSET)?
         .checked_add(gross)
         .ok_or(LaunchpadError::MathOverflow)?;
-    let sold_after = campaign.sold_tokens;
-    let net_after = campaign.net_raised_lamports;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_SOLD_TOKENS_OFFSET, sold_after)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_NET_RAISED_OFFSET, net_after)?;
+    campaign_view::write_u64(&mut data, CAMPAIGN_SELL_VOLUME_OFFSET, sell_volume)?;
     Ok((sold_after, net_after))
 }
 
@@ -1436,19 +1479,23 @@ pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) 
         return err!(LaunchpadError::Unauthorized);
     }
     let campaign_key = ctx.accounts.campaign.key();
-    let mut data = ctx.accounts.campaign.try_borrow_mut_data()?;
-    let mut slice: &[u8] = &data;
-    let mut campaign = Box::new(Campaign::try_deserialize(&mut slice)?);
+    let campaign_info = ctx.accounts.campaign.to_account_info();
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
+    let mut data = campaign_info.try_borrow_mut_data()?;
+    assert_campaign_data(&data)?;
+    let campaign_id = campaign_view::read_32(&data, CAMPAIGN_ID_OFFSET)?;
     let (expected_campaign, _) =
-        Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign.campaign_id.as_ref()], &crate::ID);
+        Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign_id.as_ref()], &crate::ID);
     require_keys_eq!(
         campaign_key,
         expected_campaign,
         LaunchpadError::InvalidCampaign
     );
-    campaign.paused = paused;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)?;
+    campaign_view::write_u8(&mut data, CAMPAIGN_PAUSED_OFFSET, u8::from(paused))?;
     emit!(crate::CampaignPauseUpdated {
         campaign: campaign_key,
         authority: ctx.accounts.authority.key(),

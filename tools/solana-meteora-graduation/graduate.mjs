@@ -12,9 +12,9 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
-  TransactionMessage,
-  VersionedTransaction,
 } from "@solana/web3.js";
+import * as solanaWeb3 from "@solana/web3.js";
+import { loadSolanaV0Module } from "../../frontend/scripts/load-solana-v0-module.mjs";
 import {
   getAccount,
   getOrCreateAssociatedTokenAccount,
@@ -438,26 +438,30 @@ async function main() {
   ];
   const latest = await connection.getLatestBlockhash("confirmed");
   const lookupTables = await loadLookupTables(connection, operator, instructions);
-  const message = new TransactionMessage({
-    payerKey: operator.publicKey,
+  const v0 = await loadSolanaV0Module();
+  const tx = v0.buildLaunchpadV0Transaction(solanaWeb3, {
+    payer: operator.publicKey,
     recentBlockhash: latest.blockhash,
     instructions,
-  }).compileToV0Message(lookupTables);
-  const tx = new VersionedTransaction(message);
+    lookupTableAccounts: lookupTables,
+  });
+  const stats = v0.assertLaunchpadV0Intent(solanaWeb3, tx, {
+    payer: operator.publicKey,
+    ed25519Instruction: ed25519Ix,
+    programInstruction: beginIx,
+    lookupTableAccounts: lookupTables,
+    hardMaxBytes: MAX_TRANSACTION_BYTES,
+    releaseMaxBytes: null,
+    maxRequiredSigners: 2,
+    allowAdditionalProgramInstructions: true,
+  });
   tx.sign([operator, positionNft]);
   const serialized = tx.serialize();
   console.log("transactionBytes", serialized.length);
   console.log("lookupTables", lookupTables.map((t) => t.key.toBase58()).join(",") || "none");
-  if (serialized.length > MAX_TRANSACTION_BYTES) {
-    fail(
-      `atomic graduation transaction is ${serialized.length} bytes (> ${MAX_TRANSACTION_BYTES}); configure SOLANA_GRADUATION_ALT_ADDRESS with a pre-created lookup table`,
-    );
-  }
+  console.log("v0Stats", stats);
 
-  const simulation = await connection.simulateTransaction(tx, {
-    commitment: "confirmed",
-    sigVerify: false,
-  });
+  const simulation = await v0.simulateLaunchpadV0Transaction(connection, tx);
   if (simulation.value.err) {
     console.error("simulation logs:\n" + (simulation.value.logs || []).join("\n"));
     fail(`simulation failed: ${JSON.stringify(simulation.value.err)}`);

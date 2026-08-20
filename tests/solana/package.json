@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "test": "mocha --timeout 1000000 v4-create-acceptance.cjs railway-v4-onchain-decoders.cjs",
-    "test:lifecycle": "mocha --timeout 1000000 v4-lifecycle-acceptance.cjs",
-    "test:sbf-gate": "mocha --timeout 1000000 v4-create-acceptance.cjs v4-lifecycle-acceptance.cjs",
+    "test:lifecycle": "mocha --timeout 1000000 v4-lifecycle-acceptance.cjs v0-launchpad-onchain.cjs",
+    "test:sbf-gate": "mocha --timeout 1000000 v4-create-acceptance.cjs v4-lifecycle-acceptance.cjs v0-launchpad-onchain.cjs",
     "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs",
     "bootstrap-solana-devnet": "node -r ./web3-loader-compat.cjs devnet-protocol-state.cjs bootstrap",
     "bootstrap-solana-devnet:allow-pause-reset": "node -r ./web3-loader-compat.cjs devnet-protocol-state.cjs bootstrap --allow-pause-reset",
