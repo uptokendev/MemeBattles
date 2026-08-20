@@ -420,6 +420,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         Buffer.from(createArgs.nonce),
       ),
     };
+    campaignAccounts.feeEscrow = derivePda(
+      program.programId,
+      "fee-escrow",
+      campaignAccounts.campaign.toBuffer(),
+    );
 
     const generation = await program.account.generationConfig.fetch(generationConfig);
     const profile = await program.account.creatorProfile.fetch(creator.creatorProfile);
@@ -542,10 +547,8 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
+        feeEscrow: campaignAccounts.feeEscrow,
       });
-    if (includeVaults) {
-      builder = builder.remainingAccounts(remainingRewardAccounts());
-    }
     const buyIx = await builder.instruction();
     const tx = new Transaction().add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
@@ -610,10 +613,8 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
+        feeEscrow: campaignAccounts.feeEscrow,
       });
-    if (includeVaults) {
-      builder = builder.remainingAccounts(remainingRewardAccounts());
-    }
     const sellIx = await builder.instruction();
     const tx = new Transaction().add(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
@@ -636,6 +637,8 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     assert.equal(afterCreate.curveClosed, false);
     assert.equal(afterCreate.soldTokens.toString(), "0");
     assert.ok(created.logs.some((line) => /Instruction: CreateCampaign/i.test(line)));
+    const escrowAfterCreate = await connection.getAccountInfo(campaignAccounts.feeEscrow, "confirmed");
+    assert.equal(escrowAfterCreate, null, "CREATE must not initialize FeeEscrow");
 
     async function snapshot() {
       const info = await connection.getAccountInfo(campaignAccounts.campaign, "confirmed");
@@ -644,7 +647,13 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       const ata = getAssociatedTokenAddressSync(campaignAccounts.mint, buyer.keypair.publicKey);
       const token = await getAccount(connection, ata, "confirmed").catch(() => null);
       const vault = await connection.getBalance(campaignAccounts.solVault, "confirmed");
-      return { campaign, tokenAmount: token ? BigInt(token.amount.toString()) : 0n, vault };
+      const escrow = await connection.getBalance(campaignAccounts.feeEscrow, "confirmed");
+      return {
+        campaign,
+        tokenAmount: token ? BigInt(token.amount.toString()) : 0n,
+        vault,
+        escrow,
+      };
     }
 
     function assertNoStackCrash(label, text) {
@@ -667,6 +676,22 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       assert.ok(expected.test(text), `${label} failed for the wrong reason:\n${text}`);
     }
 
+    await expectProgramFail(
+      "buy before fee escrow init",
+      () => sendBuy(BUY_LAMPORTS),
+      /FeeEscrowNotInitialized|AccountNotInitialized|account is not initialized/i,
+    );
+
+    await program.methods
+      .initializeFeeEscrow()
+      .accountsStrict({
+        payer: admin,
+        campaign: campaignAccounts.campaign,
+        feeEscrow: campaignAccounts.feeEscrow,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+
     const rewardsBefore = {};
     for (const [name, pubkey] of Object.entries(rewardVaultKeys())) {
       rewardsBefore[name] = BigInt(await connection.getBalance(pubkey, "confirmed"));
@@ -680,23 +705,16 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     assert.ok(after.tokenAmount > before.tokenAmount);
     const net1 = BigInt(after.campaign.netRaisedLamports.toString()) - BigInt(before.campaign.netRaisedLamports.toString());
     const spent1 = BigInt(after.vault) - BigInt(before.vault);
-    assert.equal(spent1, net1, "buy fee must leave the campaign vault via mandatory routing");
+    assert.equal(spent1, net1, "buy net must stay in the campaign SOL vault");
     const expectedFee = (net1 * BigInt(BUY_FEE_BPS)) / 10000n;
+    assert.equal(BigInt(after.escrow) - BigInt(before.escrow), expectedFee, "buy fee must land in FeeEscrow");
     let routed = 0n;
     for (const [name, pubkey] of Object.entries(rewardVaultKeys())) {
       const nowBal = BigInt(await connection.getBalance(pubkey, "confirmed"));
       routed += nowBal - rewardsBefore[name];
     }
-    assert.equal(routed, expectedFee, "unlinked trade fee must land in the six reward vaults");
-    const airdropNow = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
-    assert.ok(airdropNow > rewardsBefore.airdrop, "unlinked profile must fund the airdrop vault");
+    assert.equal(routed, 0n, "reward vaults must not move until flush");
     assert.equal(after.campaign.paused, false);
-
-    await expectProgramFail(
-      "buy without reward vaults",
-      () => sendBuy(BUY_LAMPORTS, 0n, { includeVaults: false }),
-      /InvalidRewardsVault/,
-    );
 
     await program.methods
       .setCampaignPause(true)
@@ -754,10 +772,13 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
 
     const recruiterBefore = BigInt(await connection.getBalance(rewardVaultKeys().recruiter, "confirmed"));
     const airdropBeforeLinked = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
+    const escrowBeforeLinked = BigInt(await connection.getBalance(campaignAccounts.feeEscrow, "confirmed"));
     await sendBuy(BUY_LAMPORTS, 0n, { routeProfile: 0 });
     const recruiterAfter = BigInt(await connection.getBalance(rewardVaultKeys().recruiter, "confirmed"));
     const airdropAfterLinked = BigInt(await connection.getBalance(rewardVaultKeys().airdrop, "confirmed"));
-    assert.ok(recruiterAfter > recruiterBefore, "linked route must fund recruiter vault");
+    const escrowAfterLinked = BigInt(await connection.getBalance(campaignAccounts.feeEscrow, "confirmed"));
+    assert.ok(escrowAfterLinked > escrowBeforeLinked, "linked trade fee must accrue in FeeEscrow");
+    assert.equal(recruiterAfter, recruiterBefore, "linked recruiter slice stays pending until flush");
     assert.equal(airdropAfterLinked, airdropBeforeLinked, "linked route must not fund airdrop");
 
     await sendBuy(BUY_LAMPORTS, 0n, { routeProfile: 2 });
@@ -787,6 +808,48 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     await sendBuy(CLOSE_BUY_LAMPORTS, CLOSE_TARGET_LAMPORTS);
     after = await snapshot();
     assert.equal(after.campaign.curveClosed, true);
+
+    const vaults = rewardVaultKeys();
+    const vaultBeforeFlush = {};
+    for (const [name, pubkey] of Object.entries(vaults)) {
+      vaultBeforeFlush[name] = BigInt(await connection.getBalance(pubkey, "confirmed"));
+    }
+    const escrowBeforeFlush = BigInt(await connection.getBalance(campaignAccounts.feeEscrow, "confirmed"));
+    await program.methods
+      .flushCampaignFees()
+      .accountsStrict({
+        caller: admin,
+        campaign: campaignAccounts.campaign,
+        feeEscrow: campaignAccounts.feeEscrow,
+        weeklyLeagueVault: vaults.league,
+        airdropVault: vaults.airdrop,
+        monthlyLeagueVault: vaults.monthly,
+        recruiterVault: vaults.recruiter,
+        squadVault: vaults.squad,
+        protocolVault: vaults.protocol,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    let flushed = 0n;
+    for (const [name, pubkey] of Object.entries(vaults)) {
+      flushed += BigInt(await connection.getBalance(pubkey, "confirmed")) - vaultBeforeFlush[name];
+    }
+    const escrowAfterFlush = BigInt(await connection.getBalance(campaignAccounts.feeEscrow, "confirmed"));
+    assert.ok(flushed > 0n, "flush must move pending fees into reward vaults");
+    assert.equal(escrowBeforeFlush - escrowAfterFlush, flushed, "escrow drop must equal vault credits");
+    await program.methods
+      .flushCampaignFees()
+      .accountsStrict({
+        caller: admin,
+        campaign: campaignAccounts.campaign,
+        feeEscrow: campaignAccounts.feeEscrow,
+        weeklyLeagueVault: vaults.league,
+        airdropVault: vaults.airdrop,
+        monthlyLeagueVault: vaults.monthly,
+        recruiterVault: vaults.recruiter,
+        squadVault: vaults.squad,
+        protocolVault: vaults.protocol,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
 
     const vaultTokens = await getAccount(connection, campaignAccounts.tokenVault, "confirmed");
     const remainingCurve =
@@ -982,6 +1045,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         mint: campaignAccounts.mint,
         tokenVault: campaignAccounts.tokenVault,
         solVault: campaignAccounts.solVault,
+        feeEscrow: campaignAccounts.feeEscrow,
         authorityTokenAccount: authorityAta,
         meteoraPool: pool,
         meteoraPosition: position,
@@ -1030,6 +1094,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         mint: campaignAccounts.mint,
         tokenVault: campaignAccounts.tokenVault,
         solVault: campaignAccounts.solVault,
+        feeEscrow: campaignAccounts.feeEscrow,
         authorityTokenAccount: authorityAta,
         meteoraPool: pool,
         meteoraPosition: position,

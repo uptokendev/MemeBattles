@@ -128,7 +128,10 @@ jobs:
           cargo --version
           node --version
           npm --version
-          rustfmt --edition 2021 --check programs/memewarzone_solana/src/authorized_trade.rs
+          rustfmt --edition 2021 --check \
+            programs/memewarzone_solana/src/authorized_trade.rs \
+            programs/memewarzone_solana/src/fee_escrow.rs \
+            programs/memewarzone_solana/src/graduation.rs
 
       - name: Create ephemeral test payer
         shell: bash

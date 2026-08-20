@@ -11,7 +11,7 @@ use anchor_lang::{
     solana_program::{
         ed25519_program,
         hash::hash,
-        program::{invoke, invoke_signed},
+        program::invoke_signed,
         system_instruction,
         sysvar::instructions::{
             load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
@@ -554,6 +554,13 @@ pub struct BuyTokens<'info> {
     pub token_program: UncheckedAccount<'info>,
     /// CHECK: System program.
     pub system_program: UncheckedAccount<'info>,
+    /// CHECK: PDA + owner + campaign match in an isolated frame.
+    #[account(
+        mut,
+        seeds = [crate::FEE_ESCROW_SEED, campaign.key().as_ref()],
+        bump
+    )]
+    pub fee_escrow: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -597,6 +604,13 @@ pub struct SellTokens<'info> {
     pub token_program: UncheckedAccount<'info>,
     /// CHECK: System program.
     pub system_program: UncheckedAccount<'info>,
+    /// CHECK: PDA + owner + campaign match in an isolated frame.
+    #[account(
+        mut,
+        seeds = [crate::FEE_ESCROW_SEED, campaign.key().as_ref()],
+        bump
+    )]
+    pub fee_escrow: UncheckedAccount<'info>,
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
@@ -694,21 +708,26 @@ pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Resul
         )?;
     }
 
-    invoke(
-        &system_instruction::transfer(&trader, &sol_vault_key, lamports_spent),
-        &[
-            ctx.accounts.trader.to_account_info(),
-            ctx.accounts.sol_vault.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
+    crate::fee_escrow::require_fee_escrow(
+        &ctx.accounts.fee_escrow.to_account_info(),
+        campaign_key,
+        ctx.bumps.fee_escrow,
     )?;
-    route_fee_slices(
-        ctx.remaining_accounts,
+    crate::fee_escrow::transfer_buy_net_and_fee(
+        &ctx.accounts.trader.to_account_info(),
         &ctx.accounts.sol_vault.to_account_info(),
+        &ctx.accounts.fee_escrow.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        net,
+        fee,
+        lamports_spent,
+    )?;
+    crate::fee_escrow::accrue_fee_escrow(
+        &ctx.accounts.fee_escrow.to_account_info(),
         campaign_key,
         trader,
         TRADE_SIDE_BUY,
-        net,
+        fee,
         args.route_profile,
     )?;
 
@@ -831,25 +850,25 @@ pub fn sell_tokens_handler(ctx: Context<SellTokens>, args: SellTokensArgs) -> Re
         args.tokens_in,
     )?;
 
-    {
-        let vault_info = ctx.accounts.sol_vault.to_account_info();
-        let trader_info = ctx.accounts.trader.to_account_info();
-        **vault_info.try_borrow_mut_lamports()? = vault_info
-            .lamports()
-            .checked_sub(lamports_out)
-            .ok_or(LaunchpadError::MathOverflow)?;
-        **trader_info.try_borrow_mut_lamports()? = trader_info
-            .lamports()
-            .checked_add(lamports_out)
-            .ok_or(LaunchpadError::MathOverflow)?;
-    }
-    route_fee_slices(
-        ctx.remaining_accounts,
+    crate::fee_escrow::require_fee_escrow(
+        &ctx.accounts.fee_escrow.to_account_info(),
+        campaign_key,
+        ctx.bumps.fee_escrow,
+    )?;
+    crate::fee_escrow::credit_sell_net_and_fee(
         &ctx.accounts.sol_vault.to_account_info(),
+        &ctx.accounts.trader.to_account_info(),
+        &ctx.accounts.fee_escrow.to_account_info(),
+        lamports_out,
+        fee,
+        gross,
+    )?;
+    crate::fee_escrow::accrue_fee_escrow(
+        &ctx.accounts.fee_escrow.to_account_info(),
         campaign_key,
         trader,
         TRADE_SIDE_SELL,
-        gross,
+        fee,
         args.route_profile,
     )?;
 
@@ -1296,12 +1315,12 @@ pub(crate) fn route_fee_slices(
 }
 
 pub(crate) struct BnbRouteAmounts {
-    weekly_league: u64,
-    monthly_league: u64,
-    recruiter: u64,
-    airdrop: u64,
-    squad: u64,
-    protocol: u64,
+    pub(crate) weekly_league: u64,
+    pub(crate) monthly_league: u64,
+    pub(crate) recruiter: u64,
+    pub(crate) airdrop: u64,
+    pub(crate) squad: u64,
+    pub(crate) protocol: u64,
 }
 
 pub(crate) fn preview_bnb_route(kind: u8, profile: u8, fee_amount: u64) -> Result<BnbRouteAmounts> {
@@ -1349,7 +1368,7 @@ pub(crate) fn validate_route_profile_id(profile: u8) -> Result<()> {
     Ok(())
 }
 
-fn expected_reward_vaults() -> [Pubkey; 6] {
+pub(crate) fn expected_reward_vaults() -> [Pubkey; 6] {
     let treasury = crate::rewards_treasury_program_id();
     [
         Pubkey::find_program_address(&[crate::LEAGUE_VAULT_SEED], &treasury).0,
