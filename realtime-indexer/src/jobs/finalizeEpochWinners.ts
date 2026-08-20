@@ -9,6 +9,7 @@ try {
 
 import { pool } from "../db.js";
 import { ENV } from "../env.js";
+import { emitNotification } from "../notifications.js";
 
 // Finalizes the most recently completed epoch (weekly/monthly), inserts winners,
 // and rolls the pot forward when there is no clear winner (ties/no rows).
@@ -453,7 +454,7 @@ async function finalizeEpochFor(
       if (!row) break;
 
       const amount = payouts[rank - 1] ?? 0n;
-      await pool.query(
+      const res = await pool.query(
         `
         insert into public.league_epoch_winners (
           chain_id, period, epoch_start, epoch_end, category, rank,
@@ -464,6 +465,7 @@ async function finalizeEpochFor(
         )
         on conflict (chain_id, period, epoch_start, category, rank)
         do nothing
+        returning *
         `,
         [
           chainId,
@@ -478,6 +480,22 @@ async function finalizeEpochFor(
           JSON.stringify({ score: row.score.toString(), ...row.meta }),
         ]
       );
+      
+      if ((res.rowCount ?? 0) > 0) {
+        await emitNotification(pool, {
+          eventType: \`league.\${period}_winners_confirmed\`,
+          chain: isSolanaChain(chainId) ? "solana" : "bnb",
+          dedupKey: \`winner:\${chainId}:\${period}:\${epochStartIso}:\${category}:\${rank}\`,
+          payload: {
+            chain: isSolanaChain(chainId) ? "solana" : "bnb",
+            period,
+            category,
+            rank,
+            recipient: row.recipient,
+            amountRaw: amount.toString()
+          }
+        });
+      }
     }
   }
 }

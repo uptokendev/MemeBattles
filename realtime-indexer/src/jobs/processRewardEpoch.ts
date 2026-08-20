@@ -1,5 +1,7 @@
 import { processEndedWeeklyRewardEpochs } from "../rewards/ledger.js";
 import { ENV } from "../env.js";
+import { emitNotification } from "../notifications.js";
+import { pool } from "../db.js";
 
 function parseChainIds(): number[] {
   return String(process.env.REWARD_CHAINS || process.env.LEAGUE_CHAINS || "97")
@@ -15,6 +17,18 @@ async function main() {
   console.log(`[processRewardEpoch] chains=${chainIds.join(",")} processed=${results.length}`);
   for (const item of results) {
     console.log(`[processRewardEpoch] chainId=${item.chainId} epochId=${item.epochId} status=${item.status} materialized=${item.materializedCount} claimable=${item.claimableCount}`);
+    if (item.status === "claimable") {
+      await emitNotification(pool, {
+        eventType: "airdrop.claims_open",
+        chain: (item.chainId === 101 || item.chainId === 102) ? "solana" : "bnb",
+        dedupKey: `airdrop-claims-open:${item.chainId}:${item.epochId}`,
+        payload: {
+          chain: (item.chainId === 101 || item.chainId === 102) ? "solana" : "bnb",
+          epochId: item.epochId,
+          claimableCount: item.claimableCount,
+        }
+      });
+    }
   }
 }
 
