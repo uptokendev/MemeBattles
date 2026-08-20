@@ -32,8 +32,8 @@ env:
   PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
 
 jobs:
-  graduation-box:
-    name: Box GraduationState and run full Mainnet-like lifecycle
+  graduation-boundary:
+    name: Locate BeginGraduation frame-11 boundary on Mainnet Agave
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -78,23 +78,63 @@ jobs:
           "$agave_dir/bin/solana-test-validator" --version
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
-      - name: Apply runner-only graduation stack candidate
+      - name: Inject runner-only BeginGraduation stage markers
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+
           path = Path('programs/memewarzone_solana/src/graduation.rs')
           source = path.read_text(encoding='utf-8')
-          account = "    pub graduation_state: Account<'info, GraduationState>,"
-          if source.count(account) != 2:
-              raise SystemExit(f'expected two GraduationState Account wrappers, found {source.count(account)}')
-          source = source.replace(account, "    pub graduation_state: Box<Account<'info, GraduationState>>,")
-          marker = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
-          if source.count(marker) != 1:
-              raise SystemExit('begin handler marker target not unique')
-          source = source.replace(marker, "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    msg!(\"BEGIN_GRAD_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;", 1)
-          path.write_text(source, encoding='utf-8')
+          start = source.index('pub fn begin_graduation_handler(')
+          end = source.index('pub fn confirm_graduation_handler(', start)
+          prefix = source[:start]
+          handler = source[start:end]
+          suffix = source[end:]
+
+          replacements = [
+              (
+                  ') -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;',
+                  ') -> Result<()> {\n    msg!("GRAD_STAGE_0_ENTER");\n    let now = Clock::get()?.unix_timestamp;',
+              ),
+              (
+                  '        LaunchpadError::InvalidMeteoraPosition\n    );\n\n    let (route_signer, treasury_operator) =',
+                  '        LaunchpadError::InvalidMeteoraPosition\n    );\n    msg!("GRAD_STAGE_1_ARGS");\n\n    let (route_signer, treasury_operator) =',
+              ),
+              (
+                  '        LaunchpadError::Unauthorized\n    );\n\n    let campaign_key = ctx.accounts.campaign.key();',
+                  '        LaunchpadError::Unauthorized\n    );\n    msg!("GRAD_STAGE_2_GLOBAL");\n\n    let campaign_key = ctx.accounts.campaign.key();',
+              ),
+              (
+                  '    let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;\n    validate_campaign_accounts(',
+                  '    let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;\n    msg!("GRAD_STAGE_3_CAMPAIGN_LOADED");\n    validate_campaign_accounts(',
+              ),
+              (
+                  '        ctx.accounts.sol_vault.key(),\n    )?;\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);',
+                  '        ctx.accounts.sol_vault.key(),\n    )?;\n    msg!("GRAD_STAGE_4_ACCOUNTS_VALIDATED");\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);',
+              ),
+              (
+                  '        LaunchpadError::InvalidGraduationTarget\n    );\n    require!(\n        campaign.economics_version >= ECONOMICS_VERSION_V3,',
+                  '        LaunchpadError::InvalidGraduationTarget\n    );\n    msg!("GRAD_STAGE_5_TARGET_VALIDATED");\n    require!(\n        campaign.economics_version >= ECONOMICS_VERSION_V3,',
+              ),
+              (
+                  '        &ctx.accounts.generation_config.to_account_info(),\n    )?;\n\n    let eligible =',
+                  '        &ctx.accounts.generation_config.to_account_info(),\n    )?;\n    msg!("GRAD_STAGE_6_GENERATION_VALIDATED");\n\n    let eligible =',
+              ),
+              (
+                  '    require!(eligible, LaunchpadError::GraduationThresholdNotMet);\n\n    require!(',
+                  '    require!(eligible, LaunchpadError::GraduationThresholdNotMet);\n    msg!("GRAD_STAGE_7_ELIGIBLE");\n\n    require!(',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = handler.count(old)
+              if count != 1:
+                  raise SystemExit(f'graduation marker target not unique: found {count} for {old[:100]!r}')
+              handler = handler.replace(old, new, 1)
+
+          path.write_text(prefix + handler + suffix, encoding='utf-8')
           PY
           git diff -- programs/memewarzone_solana/src/graduation.rs
       - name: Create ephemeral payer
