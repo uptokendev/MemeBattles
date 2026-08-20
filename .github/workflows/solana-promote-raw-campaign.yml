@@ -1,0 +1,67 @@
+name: Promote Proven Solana Raw Campaign Hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/solana-mainnet-transaction-normalization
+    paths:
+      - .github/workflows/solana-promote-raw-campaign.yml
+      - programs/memewarzone_solana/src/authorized_trade.rs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: solana-promote-raw-campaign-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote proven raw Campaign trade hot path
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Apply exact transformation proven by Mainnet Agave probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="programs/memewarzone_solana/src/authorized_trade.rs"
+          if grep -q 'struct TradeCampaignSnapshot' "$target"; then
+            echo 'Raw Campaign hot path is already committed; nothing to promote.'
+            exit 0
+          fi
+
+          awk '
+            /^[[:space:]]*python - <<'\''PY'\''$/ { capture=1; next }
+            capture && /^[[:space:]]*PY$/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' .github/workflows/solana-stack-isolation-experiment.yml > /tmp/apply_raw_campaign.py
+
+          test -s /tmp/apply_raw_campaign.py
+          python /tmp/apply_raw_campaign.py
+          git diff --check
+          grep -q 'struct TradeCampaignSnapshot' "$target"
+          git diff -- "$target"
+
+      - name: Commit proven source hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="programs/memewarzone_solana/src/authorized_trade.rs"
+          if git diff --quiet -- "$target"; then
+            echo 'No source diff to commit.'
+            exit 0
+          fi
+          git config user.name 'MemeWarzone Launch Bot'
+          git config user.email 'launch-bot@users.noreply.github.com'
+          git add -- "$target"
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'Fix Solana trade Campaign stack hot path'
+          git push origin HEAD:hotfix/solana-mainnet-transaction-normalization
