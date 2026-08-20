@@ -232,6 +232,7 @@ export async function submitSolanaV4CreatePlan(
   };
 
   let preflightPreviewShown = false;
+  let sentSignature: string | null = null;
   const signAndSend = async () => {
     const preflight = await compileUnsignedCreate();
     const simulation = await simulateUnsignedCreate(preflight);
@@ -249,6 +250,7 @@ export async function submitSolanaV4CreatePlan(
       skipPreflight: false,
       maxRetries: 3,
     });
+    sentSignature = signature;
     const confirmed = await confirmCreateSignature(connection, signature, unsigned.latest);
     if (confirmed.err) {
       const logs = await fetchTransactionLogs(connection, signature);
@@ -260,11 +262,28 @@ export async function submitSolanaV4CreatePlan(
     return signature;
   };
 
-  const recoverIfLanded = async () => {
+  const recoverIfLanded = async (knownSignature?: string | null) => {
+    if (knownSignature) {
+      try {
+        const landed = await waitForCreateSignature(connection, knownSignature);
+        if (!landed.err) {
+          return {
+            signature: knownSignature,
+            campaignAddress: plan.createCampaign.accounts.campaign,
+            mintAddress: plan.createCampaign.accounts.mint,
+            programId: plan.programId,
+            plan,
+            recovered: true as const,
+          };
+        }
+      } catch {
+        // Fall through to campaign PDA ownership.
+      }
+    }
     const again = await connection.getAccountInfo(campaignPk, "confirmed");
     if (again && again.owner.equals(programPk)) {
       return {
-        signature: "already-on-chain" as const,
+        signature: knownSignature || ("already-on-chain" as const),
         campaignAddress: plan.createCampaign.accounts.campaign,
         mintAddress: plan.createCampaign.accounts.mint,
         programId: plan.programId,
@@ -279,19 +298,19 @@ export async function submitSolanaV4CreatePlan(
   try {
     signature = await signAndSend();
   } catch (error: unknown) {
-    const recovered = await recoverIfLanded();
+    const recovered = await recoverIfLanded(sentSignature);
     if (recovered) return recovered;
     const msg = await formatSolanaSendError(error);
-    if (isBlockhashError(error) || isBlockhashError(msg)) {
-      try {
-        signature = await signAndSend();
-      } catch (retryError: unknown) {
-        const recoveredRetry = await recoverIfLanded();
-        if (recoveredRetry) return recoveredRetry;
-        throw new Error(await formatSolanaSendError(retryError));
-      }
-    } else {
+    // A signature that left the wallet must not be rebuilt — that would prompt Phantom twice.
+    if (sentSignature || !(isBlockhashError(error) || isBlockhashError(msg))) {
       throw new Error(msg);
+    }
+    try {
+      signature = await signAndSend();
+    } catch (retryError: unknown) {
+      const recoveredRetry = await recoverIfLanded(sentSignature);
+      if (recoveredRetry) return recoveredRetry;
+      throw new Error(await formatSolanaSendError(retryError));
     }
   }
 
@@ -308,8 +327,46 @@ function isBlockhashError(value: unknown): boolean {
   return /blockhash not found|block height exceeded|expired blockhash/i.test(String((value as Error)?.message || value || ""));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForCreateSignature(
+  connection: {
+    getSignatureStatuses: Function;
+    getTransaction?: Function;
+  },
+  signature: string,
+  timeoutMs = 45_000,
+): Promise<{ err: unknown }> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const status = await connection.getSignatureStatuses([signature], {
+      searchTransactionHistory: true,
+    });
+    const value = status?.value?.[0];
+    if (value?.err) return { err: value.err };
+    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
+      return { err: null };
+    }
+    await sleep(1_500);
+  }
+  if (typeof connection.getTransaction === "function") {
+    const tx = await connection.getTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (tx) return { err: tx?.meta?.err || null };
+  }
+  throw new Error(`Signature ${signature} has expired: block height exceeded.`);
+}
+
 async function confirmCreateSignature(
-  connection: { confirmTransaction: Function; getSignatureStatuses: Function },
+  connection: {
+    confirmTransaction: Function;
+    getSignatureStatuses: Function;
+    getTransaction?: Function;
+  },
   signature: string,
   latest: { blockhash: string; lastValidBlockHeight: number },
 ): Promise<{ err: unknown }> {
@@ -325,13 +382,7 @@ async function confirmCreateSignature(
     return { err: result?.value?.err || null };
   } catch (error) {
     if (!isBlockhashError(error)) throw error;
-    const status = await connection.getSignatureStatuses([signature]);
-    const value = status?.value?.[0];
-    if (value?.err) return { err: value.err };
-    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
-      return { err: null };
-    }
-    throw error;
+    return waitForCreateSignature(connection, signature);
   }
 }
 
