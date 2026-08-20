@@ -32,8 +32,8 @@ env:
   PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
 
 jobs:
-  boundary:
-    name: Locate BeginGraduation frame-11 boundary
+  snapshot:
+    name: Test raw graduation Campaign snapshot
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -78,63 +78,194 @@ jobs:
           "$agave_dir/bin/solana-test-validator" --version
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
-      - name: Inject BeginGraduation stage markers
+      - name: Apply runner-only graduation snapshot candidate
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+
           path = Path('programs/memewarzone_solana/src/graduation.rs')
           source = path.read_text(encoding='utf-8')
-          account = "    pub graduation_state: Account<'info, GraduationState>,"
-          if source.count(account) != 2:
-              raise SystemExit(f'expected two GraduationState Account wrappers, found {source.count(account)}')
-          source = source.replace(account, "    pub graduation_state: Box<Account<'info, GraduationState>>,")
+          anchor = 'const MAX_ATOMIC_SCAN_INSTRUCTIONS: usize = 48;\n'
+          if source.count(anchor) != 1:
+              raise SystemExit('snapshot insertion anchor not unique')
+          snapshot = r'''
 
-          start = source.index('pub fn begin_graduation_handler(')
-          end = source.index('pub fn confirm_graduation_handler(', start)
-          prefix, body, suffix = source[:start], source[start:end], source[end:]
+#[derive(Clone, Copy)]
+struct GraduationCampaignSnapshot {
+    campaign_id: [u8; 32],
+    generation_id: [u8; 32],
+    generation_config: Pubkey,
+    creator: Pubkey,
+    mint: Pubkey,
+    token_vault: Pubkey,
+    sol_vault: Pubkey,
+    graduation_target_usd_micros: u64,
+    economics_version: u16,
+    curve_token_supply: u64,
+    liquidity_token_supply: u64,
+    reserve_token_supply: u64,
+    token_decimals: u8,
+    base_price_lamports: u64,
+    price_slope_lamports: u64,
+    finalize_fee_bps: u16,
+    liquidity_post_finalize_bps: u16,
+    dex_adapter: u8,
+    sold_tokens: u64,
+    net_raised_lamports: u64,
+    graduated: bool,
+    paused: bool,
+    bump: u8,
+}
+
+const GRAD_CAMPAIGN_ACCOUNT_BYTES: usize = 720;
+const GRAD_CAMPAIGN_GRADUATED_OFFSET: usize = 713;
+
+fn grad_campaign_range<'a>(data: &'a [u8], offset: usize, len: usize) -> Result<&'a [u8]> {
+    let end = offset.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
+    require!(end <= data.len(), LaunchpadError::InvalidCampaign);
+    Ok(&data[offset..end])
+}
+fn grad_campaign_u8(data: &[u8], offset: usize) -> Result<u8> {
+    Ok(*grad_campaign_range(data, offset, 1)?.first().ok_or(LaunchpadError::InvalidCampaign)?)
+}
+fn grad_campaign_bool(data: &[u8], offset: usize) -> Result<bool> {
+    let value = grad_campaign_u8(data, offset)?;
+    require!(value <= 1, LaunchpadError::InvalidCampaign);
+    Ok(value == 1)
+}
+fn grad_campaign_u16(data: &[u8], offset: usize) -> Result<u16> {
+    let raw = grad_campaign_range(data, offset, 2)?;
+    Ok(u16::from_le_bytes([raw[0], raw[1]]))
+}
+fn grad_campaign_u64(data: &[u8], offset: usize) -> Result<u64> {
+    let raw = grad_campaign_range(data, offset, 8)?;
+    Ok(u64::from_le_bytes(raw.try_into().map_err(|_| error!(LaunchpadError::InvalidCampaign))?))
+}
+fn grad_campaign_32(data: &[u8], offset: usize) -> Result<[u8; 32]> {
+    grad_campaign_range(data, offset, 32)?.try_into().map_err(|_| error!(LaunchpadError::InvalidCampaign))
+}
+fn grad_campaign_pubkey(data: &[u8], offset: usize) -> Result<Pubkey> {
+    Ok(Pubkey::new_from_array(grad_campaign_32(data, offset)?))
+}
+fn grad_assert_campaign_data(data: &[u8]) -> Result<()> {
+    require!(data.len() >= GRAD_CAMPAIGN_ACCOUNT_BYTES, LaunchpadError::InvalidCampaign);
+    require!(
+        data.get(..8) == Some(<Campaign as anchor_lang::Discriminator>::DISCRIMINATOR.as_ref()),
+        LaunchpadError::InvalidCampaign
+    );
+    Ok(())
+}
+#[inline(never)]
+fn load_graduation_campaign_snapshot(info: &AccountInfo) -> Result<GraduationCampaignSnapshot> {
+    require_keys_eq!(*info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+    let data = info.try_borrow_data()?;
+    grad_assert_campaign_data(&data)?;
+    Ok(GraduationCampaignSnapshot {
+        campaign_id: grad_campaign_32(&data, 8)?,
+        generation_id: grad_campaign_32(&data, 40)?,
+        generation_config: grad_campaign_pubkey(&data, 72)?,
+        creator: grad_campaign_pubkey(&data, 136)?,
+        mint: grad_campaign_pubkey(&data, 168)?,
+        token_vault: grad_campaign_pubkey(&data, 200)?,
+        sol_vault: grad_campaign_pubkey(&data, 232)?,
+        graduation_target_usd_micros: grad_campaign_u64(&data, 408)?,
+        economics_version: grad_campaign_u16(&data, 417)?,
+        curve_token_supply: grad_campaign_u64(&data, 428)?,
+        liquidity_token_supply: grad_campaign_u64(&data, 436)?,
+        reserve_token_supply: grad_campaign_u64(&data, 444)?,
+        token_decimals: grad_campaign_u8(&data, 452)?,
+        base_price_lamports: grad_campaign_u64(&data, 457)?,
+        price_slope_lamports: grad_campaign_u64(&data, 465)?,
+        finalize_fee_bps: grad_campaign_u16(&data, 477)?,
+        liquidity_post_finalize_bps: grad_campaign_u16(&data, 481)?,
+        dex_adapter: grad_campaign_u8(&data, 483)?,
+        sold_tokens: grad_campaign_u64(&data, 662)?,
+        net_raised_lamports: grad_campaign_u64(&data, 670)?,
+        graduated: grad_campaign_bool(&data, GRAD_CAMPAIGN_GRADUATED_OFFSET)?,
+        paused: grad_campaign_bool(&data, 715)?,
+        bump: grad_campaign_u8(&data, 716)?,
+    })
+}
+#[inline(never)]
+fn mark_campaign_graduated(info: &AccountInfo) -> Result<()> {
+    require_keys_eq!(*info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+    let mut data = info.try_borrow_mut_data()?;
+    grad_assert_campaign_data(&data)?;
+    require!(GRAD_CAMPAIGN_GRADUATED_OFFSET < data.len(), LaunchpadError::InvalidCampaign);
+    data[GRAD_CAMPAIGN_GRADUATED_OFFSET] = 1;
+    Ok(())
+}
+'''
+          source = source.replace(anchor, anchor + snapshot, 1)
           replacements = [
-              (
-                  ") -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;",
-                  ") -> Result<()> {\n    msg!(\"GRAD_STAGE_0_ENTER\");\n    let now = Clock::get()?.unix_timestamp;",
-              ),
-              (
-                  "        LaunchpadError::InvalidMeteoraPosition\n    );\n\n    let (route_signer, treasury_operator) =",
-                  "        LaunchpadError::InvalidMeteoraPosition\n    );\n    msg!(\"GRAD_STAGE_1_ARGS_OK\");\n\n    let (route_signer, treasury_operator) =",
-              ),
-              (
-                  "        read_graduation_global(&ctx.accounts.global_config.to_account_info())?;\n    require_keys_eq!(",
-                  "        read_graduation_global(&ctx.accounts.global_config.to_account_info())?;\n    msg!(\"GRAD_STAGE_2_GLOBAL\");\n    require_keys_eq!(",
-              ),
-              (
-                  "        LaunchpadError::Unauthorized\n    );\n\n    let campaign_key = ctx.accounts.campaign.key();",
-                  "        LaunchpadError::Unauthorized\n    );\n    msg!(\"GRAD_STAGE_3_OPERATOR\");\n\n    let campaign_key = ctx.accounts.campaign.key();",
-              ),
-              (
-                  "    let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;\n    validate_campaign_accounts(",
-                  "    let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;\n    msg!(\"GRAD_STAGE_4_CAMPAIGN_LOADED\");\n    validate_campaign_accounts(",
-              ),
-              (
-                  "        ctx.accounts.sol_vault.key(),\n    )?;\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);",
-                  "        ctx.accounts.sol_vault.key(),\n    )?;\n    msg!(\"GRAD_STAGE_5_CAMPAIGN_VALIDATED\");\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);",
-              ),
-              (
-                  "    require!(!campaign.paused, LaunchpadError::CampaignPaused);\n    require!(\n        args.native_target_lamports",
-                  "    require!(!campaign.paused, LaunchpadError::CampaignPaused);\n    msg!(\"GRAD_STAGE_6_BEFORE_TARGET\");\n    require!(\n        args.native_target_lamports",
-              ),
-              (
-                  "        LaunchpadError::InvalidGraduationTarget\n    );\n    require!(\n        campaign.economics_version",
-                  "        LaunchpadError::InvalidGraduationTarget\n    );\n    msg!(\"GRAD_STAGE_7_TARGET_OK\");\n    require!(\n        campaign.economics_version",
-              ),
+              ('let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;', 'let campaign = load_graduation_campaign_snapshot(&ctx.accounts.campaign.to_account_info())?;', 1),
+              ('let mut campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;', 'let campaign = load_graduation_campaign_snapshot(&ctx.accounts.campaign.to_account_info())?;', 1),
+              ('fn validate_generation_binding(campaign: &Campaign, generation_info: &AccountInfo) -> Result<()> {', 'fn validate_generation_binding(campaign: &GraduationCampaignSnapshot, generation_info: &AccountInfo) -> Result<()> {', 1),
+              ('fn validate_campaign_accounts(\n    campaign: &Campaign,', 'fn validate_campaign_accounts(\n    campaign: &GraduationCampaignSnapshot,', 1),
+              ('    let quote = graduation_quote(&campaign)?;', '    let quote = graduation_quote_snapshot(&campaign)?;', 1),
+              ('    campaign.graduated = true;\n    store_campaign(&ctx.accounts.campaign.to_account_info(), &campaign)?;', '    mark_campaign_graduated(&ctx.accounts.campaign.to_account_info())?;', 1),
           ]
-          for old, new in replacements:
-              count = body.count(old)
-              if count != 1:
-                  raise SystemExit(f'graduation marker target not unique: {count} for {old[:80]!r}')
-              body = body.replace(old, new, 1)
-          path.write_text(prefix + body + suffix, encoding='utf-8')
+          for old, new, expected in replacements:
+              count = source.count(old)
+              if count != expected:
+                  raise SystemExit(f'candidate target mismatch: expected {expected}, found {count}: {old[:100]!r}')
+              source = source.replace(old, new, expected)
+
+          quote_anchor = 'pub fn final_spot_nano_lamports(campaign: &Campaign) -> Result<u128> {'
+          if source.count(quote_anchor) != 1:
+              raise SystemExit('quote insertion anchor not unique')
+          quote_code = r'''
+fn final_spot_nano_lamports_snapshot(campaign: &GraduationCampaignSnapshot) -> Result<u128> {
+    require!(campaign.economics_version >= ECONOMICS_VERSION_V3, LaunchpadError::InvalidGenerationEconomics);
+    let scale = token_scale(campaign.token_decimals)?;
+    let base = u128::from(campaign.base_price_lamports)
+        .checked_mul(SLOPE_NANO_LAMPORT_SCALE).ok_or(LaunchpadError::MathOverflow)?;
+    let slope = u128::from(campaign.price_slope_lamports)
+        .checked_mul(u128::from(campaign.sold_tokens)).ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(scale).ok_or(LaunchpadError::MathOverflow)?;
+    base.checked_add(slope).ok_or_else(|| error!(LaunchpadError::MathOverflow))
+}
+fn graduation_quote_snapshot(campaign: &GraduationCampaignSnapshot) -> Result<GraduationQuote> {
+    let spot = final_spot_nano_lamports_snapshot(campaign)?;
+    require!(spot > 0, LaunchpadError::GraduationLiquidityZero);
+    let finalize_fee = bps_amount(campaign.net_raised_lamports, campaign.finalize_fee_bps)?;
+    let remaining = campaign.net_raised_lamports.checked_sub(finalize_fee).ok_or(LaunchpadError::MathOverflow)?;
+    let target_liquidity = bps_amount(remaining, campaign.liquidity_post_finalize_bps)?;
+    require!(target_liquidity > 0, LaunchpadError::GraduationLiquidityZero);
+    let scale = token_scale(campaign.token_decimals)?;
+    let desired_tokens = u128::from(target_liquidity)
+        .checked_mul(scale).ok_or(LaunchpadError::MathOverflow)?
+        .checked_mul(SLOPE_NANO_LAMPORT_SCALE).ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(spot).ok_or(LaunchpadError::MathOverflow)?;
+    let max_tokens = desired_tokens.min(u128::from(campaign.liquidity_token_supply));
+    require!(max_tokens > 0, LaunchpadError::GraduationLiquidityZero);
+    let max_tokens_u64 = u64::try_from(max_tokens).map_err(|_| error!(LaunchpadError::MathOverflow))?;
+    let liquidity_lamports = if desired_tokens <= u128::from(campaign.liquidity_token_supply) {
+        target_liquidity
+    } else {
+        let used = max_tokens.checked_mul(spot).ok_or(LaunchpadError::MathOverflow)?
+            .checked_div(scale.checked_mul(SLOPE_NANO_LAMPORT_SCALE).ok_or(LaunchpadError::MathOverflow)?)
+            .ok_or(LaunchpadError::MathOverflow)?;
+        u64::try_from(used).map_err(|_| error!(LaunchpadError::MathOverflow))?
+    };
+    require!(liquidity_lamports > 0, LaunchpadError::GraduationLiquidityZero);
+    let creator_payout = remaining.checked_sub(liquidity_lamports).ok_or(LaunchpadError::MathOverflow)?;
+    Ok(GraduationQuote {
+        finalize_fee_lamports: finalize_fee,
+        max_liquidity_lamports: liquidity_lamports,
+        max_liquidity_tokens: max_tokens_u64,
+        creator_payout_lamports: creator_payout,
+        final_spot_nano_lamports: spot,
+    })
+}
+
+'''
+          source = source.replace(quote_anchor, quote_code + quote_anchor, 1)
+          path.write_text(source, encoding='utf-8')
           PY
+          git diff --check
           git diff -- programs/memewarzone_solana/src/graduation.rs
       - name: Create ephemeral payer
         shell: bash
@@ -143,14 +274,15 @@ jobs:
           mkdir -p "$HOME/.config/solana"
           solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
           echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
-      - name: Build marked SBF
+      - name: Build snapshot candidate
         shell: bash
         run: |
           set -o pipefail
           anchor build --program-name memewarzone_solana --no-idl \
-            2>&1 | tee /tmp/mwz-grad-boundary-build.log | tail -n 180
+            2>&1 | tee /tmp/mwz-grad-snapshot-build.log | tail -n 180
           test -s target/deploy/memewarzone_solana.so
-          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-grad-boundary-sha.txt
+          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-grad-snapshot-sha.txt
+          wc -c target/deploy/memewarzone_solana.so | tee /tmp/mwz-grad-snapshot-bytes.txt
       - name: Generate matching IDL
         shell: bash
         run: |
@@ -163,36 +295,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/mwz-grad-boundary-ledger
+          rm -rf /tmp/mwz-grad-snapshot-ledger
           "$AGAVE_BIN/solana-test-validator" \
             --reset \
             --quiet \
-            --ledger /tmp/mwz-grad-boundary-ledger \
+            --ledger /tmp/mwz-grad-snapshot-ledger \
             --url "$MAINNET_RPC" \
             --clone-feature-set \
             --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
-            > /tmp/mwz-grad-boundary-validator.log 2>&1 &
+            > /tmp/mwz-grad-snapshot-validator.log 2>&1 &
           validator_pid=$!
           trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 120); do
             if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
-            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-grad-boundary-validator.log >&2; exit 1; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-grad-snapshot-validator.log >&2; exit 1; fi
             sleep 2
           done
           "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
           "$AGAVE_BIN/solana" airdrop 100 >/dev/null
           ( cd tests/solana && ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs ) \
-            2>&1 | tee /tmp/mwz-grad-boundary-acceptance.log
+            2>&1 | tee /tmp/mwz-grad-snapshot-acceptance.log
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: solana-graduation-boundary-${{ github.sha }}
+          name: solana-graduation-snapshot-${{ github.sha }}
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            /tmp/mwz-grad-boundary-build.log
-            /tmp/mwz-grad-boundary-sha.txt
-            /tmp/mwz-grad-boundary-validator.log
-            /tmp/mwz-grad-boundary-acceptance.log
+            /tmp/mwz-grad-snapshot-build.log
+            /tmp/mwz-grad-snapshot-sha.txt
+            /tmp/mwz-grad-snapshot-bytes.txt
+            /tmp/mwz-grad-snapshot-validator.log
+            /tmp/mwz-grad-snapshot-acceptance.log
             target/deploy/memewarzone_solana.so
