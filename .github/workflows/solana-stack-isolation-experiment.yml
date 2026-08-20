@@ -98,6 +98,12 @@ jobs:
 
           path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
           source = path.read_text(encoding="utf-8")
+          buy_start = source.index("pub fn buy_tokens_handler(")
+          sell_start = source.index("pub fn sell_tokens_handler(", buy_start)
+          prefix = source[:buy_start]
+          buy = source[buy_start:sell_start]
+          suffix = source[sell_start:]
+
           replacements = [
               (
                   "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;",
@@ -125,11 +131,12 @@ jobs:
               ),
           ]
           for old, new in replacements:
-              count = source.count(old)
+              count = buy.count(old)
               if count != 1:
-                  raise SystemExit(f"marker target not unique: found {count} for {old[:80]!r}")
-              source = source.replace(old, new, 1)
-          path.write_text(source, encoding="utf-8")
+                  raise SystemExit(f"BUY marker target not unique: found {count} for {old[:80]!r}")
+              buy = buy.replace(old, new, 1)
+
+          path.write_text(prefix + buy + suffix, encoding="utf-8")
           PY
           git diff -- programs/memewarzone_solana/src/authorized_trade.rs
 
