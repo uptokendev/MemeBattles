@@ -12,7 +12,15 @@ static Address Lookup Table. Graduation keeps its own operator table
 | GitHub Actions variable | `SOLANA_LAUNCHPAD_ALT_ADDRESS` | Readonly CI verification. |
 | Operator scripts | `SOLANA_LAUNCHPAD_ALT_ADDRESS` | Same address as Coolify. |
 
-CREATE / BUY / SELL fail closed until the frontend build contains the Vite value.
+Production Mainnet table, verified 2026-08-20:
+
+`AoX2EzL4i2Zb62LjsGU9xWKXbjG9CU5DGH58vxFEYJev`
+
+It contains exactly the 15 static plan addresses, is active, and is not frozen. Authority is `9YN7WY8svWoeNgegS2oq7uNDyrdcfg9UDUQR7tWpeF8H`. Do not freeze until CREATE size work is done.
+
+CREATE / BUY / SELL fail closed until the frontend Coolify build contains:
+
+`VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS=AoX2EzL4i2Zb62LjsGU9xWKXbjG9CU5DGH58vxFEYJev`
 
 ## Create or attach
 
@@ -24,7 +32,10 @@ npm --prefix frontend run create:solana-launchpad-alt
 SOLANA_LAUNCHPAD_ALT_ADDRESS=<addr> npm --prefix frontend run create:solana-launchpad-alt
 
 # Verify only:
-node frontend/scripts/solana-launchpad-alt-plan.mjs --require-alt --alt <addr>
+node frontend/scripts/solana-launchpad-alt-plan.mjs --require-alt --alt AoX2EzL4i2Zb62LjsGU9xWKXbjG9CU5DGH58vxFEYJev
+
+# Compile production CREATE/BUY/SELL envelopes against the live table:
+node frontend/scripts/verify-live-launchpad-alt.mjs AoX2EzL4i2Zb62LjsGU9xWKXbjG9CU5DGH58vxFEYJev
 ```
 
 The table holds stable non-signer infrastructure: program IDs, global config,

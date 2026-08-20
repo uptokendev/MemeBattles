@@ -18,6 +18,7 @@ on:
       - frontend/scripts/solana-launchpad-alt-plan.mjs
       - frontend/scripts/load-solana-v0-module.mjs
       - frontend/scripts/create-launchpad-alt.mjs
+      - frontend/scripts/verify-live-launchpad-alt.mjs
       - docs/solana/launchpad-alt.md
       - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
@@ -36,6 +37,7 @@ on:
       - frontend/scripts/solana-launchpad-alt-plan.mjs
       - frontend/scripts/load-solana-v0-module.mjs
       - frontend/scripts/create-launchpad-alt.mjs
+      - frontend/scripts/verify-live-launchpad-alt.mjs
       - docs/solana/launchpad-alt.md
       - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
@@ -121,6 +123,9 @@ jobs:
           node frontend/scripts/solana-launchpad-alt-plan.mjs --require-alt --json \
             > /tmp/mwz-solana-mainnet-alt-verification.json
           cat /tmp/mwz-solana-mainnet-alt-verification.json
+          node frontend/scripts/verify-live-launchpad-alt.mjs \
+            > /tmp/mwz-solana-mainnet-alt-envelopes.json
+          cat /tmp/mwz-solana-mainnet-alt-envelopes.json
 
       - name: Upload Mainnet ALT verification
         if: always()
@@ -129,4 +134,6 @@ jobs:
           name: solana-mainnet-alt-${{ github.sha }}
           retention-days: 7
           if-no-files-found: ignore
-          path: /tmp/mwz-solana-mainnet-alt-verification.json
+          path: |
+            /tmp/mwz-solana-mainnet-alt-verification.json
+            /tmp/mwz-solana-mainnet-alt-envelopes.json
