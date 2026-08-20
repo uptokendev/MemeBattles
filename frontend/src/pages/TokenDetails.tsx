@@ -2628,7 +2628,7 @@ const toSeconds = (ts: number): number => {
   // Build transactions table rows from continuous market trade stream.
   useEffect(() => {
     if (!campaign) {
-      setTxs([]);
+      setTxs((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const mcap = tokenData.marketCap ?? "—";
@@ -2677,8 +2677,8 @@ const toSeconds = (ts: number): number => {
         };
       });
 
-    setTxs(next);
-  }, [campaign, marketTradePoints, tokenData.marketCap, metrics, isSolanaPage, tokenDecimals]);
+    setTxs((prev) => (prev.length === 0 && next.length === 0 ? prev : next));
+  }, [campaign?.campaign, campaign?.token, marketTradePoints, tokenData.marketCap, isSolanaPage, tokenDecimals]);
 
   // Graduation is a market-stage transition inside MemeWarzone, not a redirect.
   // Solana DEX stage is only the on-chain graduated flag — never progress, indexer
