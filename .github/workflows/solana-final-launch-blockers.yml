@@ -3,7 +3,8 @@ name: Solana Final Launch Blocker Gate
 on:
   push:
     branches:
-      - agent/solana-final-launch-blockers
+      - 'hotfix/solana-*'
+      - 'agent/solana-*'
   pull_request:
     branches:
       - main
@@ -31,6 +32,7 @@ permissions:
 env:
   ANCHOR_VERSION: 0.30.1
   SOLANA_VERSION: 1.18.26
+  AGAVE_VERSION: 4.2.0
   RUST_TOOLCHAIN: 1.79.0
   IDL_RUST_TOOLCHAIN: nightly-2024-05-09
   CARGO_NET_RETRY: 10
@@ -44,10 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
-      - name: Checkout exact candidate branch
+      - name: Checkout exact candidate SHA
         uses: actions/checkout@v4
         with:
-          ref: agent/solana-final-launch-blockers
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
 
       - name: Use Node.js
@@ -74,7 +76,7 @@ jobs:
           rustup default "$RUST_TOOLCHAIN"
           rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN"
 
-      - name: Install Solana CLI
+      - name: Install frozen Solana build CLI
         shell: bash
         run: |
           release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
@@ -87,6 +89,22 @@ jobs:
           ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
+      - name: Install current Mainnet Agave runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          agave_dir="$RUNNER_TEMP/agave-v${AGAVE_VERSION}"
+          mkdir -p "$agave_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/agave-release.tar.bz2 \
+            "https://github.com/anza-xyz/agave/releases/download/v${AGAVE_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/agave-release.tar.bz2 -C "$agave_dir" --strip-components=1
+          test -x "$agave_dir/bin/solana-test-validator"
+          test -x "$agave_dir/bin/solana"
+          echo "AGAVE_BIN=$agave_dir/bin" >> "$GITHUB_ENV"
+          "$agave_dir/bin/solana-test-validator" --version
+          "$agave_dir/bin/solana" --version
+
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
@@ -97,6 +115,7 @@ jobs:
           echo "git_sha=$(git rev-parse HEAD)"
           anchor --version
           solana --version
+          "$AGAVE_BIN/solana-test-validator" --version
           rustc --version
           cargo --version
           node --version
@@ -171,7 +190,7 @@ jobs:
       - name: Install acceptance dependencies
         run: npm install --prefix tests/solana --no-audit --no-fund
 
-      - name: Run CREATE acceptance against exact .so
+      - name: Run CREATE acceptance against exact .so on frozen 1.18 runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -203,8 +222,9 @@ jobs:
           kill "$validator_pid" 2>/dev/null || true
           wait "$validator_pid" 2>/dev/null || true
           trap - EXIT
+          sha256sum -c /tmp/mwz-so-sha256.txt
 
-      - name: Run BUY/SELL lifecycle against same exact .so
+      - name: Run BUY/SELL lifecycle against exact .so on frozen 1.18 runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -236,6 +256,81 @@ jobs:
           kill "$validator_pid" 2>/dev/null || true
           wait "$validator_pid" 2>/dev/null || true
           trap - EXIT
+          sha256sum -c /tmp/mwz-so-sha256.txt
+
+      - name: Run CREATE acceptance on Agave with Mainnet feature set
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c /tmp/mwz-so-sha256.txt
+          rm -rf /tmp/mwz-agave-create-ledger
+          "$AGAVE_BIN/solana-test-validator" \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-agave-create-ledger \
+            --url "$MAINNET_RPC" \
+            --clone-feature-set \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-agave-create-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-agave-create-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          "$AGAVE_BIN/solana" airdrop 100 >/dev/null
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-create-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-agave-create-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-agave-create-acceptance.log; then
+            echo 'FATAL: Agave/Mainnet-feature CREATE acceptance contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+          sha256sum -c /tmp/mwz-so-sha256.txt
+
+      - name: Run BUY/SELL lifecycle on Agave with Mainnet feature set
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c /tmp/mwz-so-sha256.txt
+          rm -rf /tmp/mwz-agave-lifecycle-ledger
+          "$AGAVE_BIN/solana-test-validator" \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-agave-lifecycle-ledger \
+            --url "$MAINNET_RPC" \
+            --clone-feature-set \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-agave-lifecycle-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-agave-lifecycle-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          "$AGAVE_BIN/solana" airdrop 100 >/dev/null
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
+          ) 2>&1 | tee /tmp/mwz-agave-lifecycle-acceptance.log
+          if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-agave-lifecycle-acceptance.log; then
+            echo 'FATAL: Agave/Mainnet-feature lifecycle contains a BPF crash signature' >&2
+            exit 1
+          fi
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+          sha256sum -c /tmp/mwz-so-sha256.txt
 
       - name: Emit frozen candidate manifest
         shell: bash
@@ -257,6 +352,9 @@ jobs:
               "bytes": int(os.environ["MWZ_PROGRAM_BYTES"]),
               "createGate": "PASS",
               "tradeGate": "PASS",
+              "mainnetRuntimeGate": "PASS",
+              "mainnetRuntimeAgaveVersion": os.environ["AGAVE_VERSION"],
+              "mainnetFeatureSet": "cloned-from-mainnet-beta",
               "backendPreflightGate": "PASS",
               "bpfAccessViolations": 0,
               "stackFrameErrors": 0,
@@ -273,11 +371,14 @@ jobs:
           printf '%s\n' '========================================'
           echo "git_sha=$MWZ_GIT_SHA"
           echo "program_id=$PROGRAM_ID"
+          echo "mainnet_runtime_agave=$AGAVE_VERSION"
           cat /tmp/mwz-so-bytes.txt
           cat /tmp/mwz-so-sha256.txt
           cat /tmp/mwz-mainnet-compare.txt 2>/dev/null || true
           echo 'CREATE_ACCEPTANCE=PASS'
           echo 'BONDING_LIFECYCLE=PASS'
+          echo 'MAINNET_RUNTIME_CREATE=PASS'
+          echo 'MAINNET_RUNTIME_BONDING_LIFECYCLE=PASS'
           echo 'BACKEND_PREFLIGHT_GATE=PASS'
           echo 'BPF_ACCESS_VIOLATIONS=0'
           echo 'PROGRAM_FAILED_TO_COMPLETE=0'
@@ -306,6 +407,10 @@ jobs:
             /tmp/mwz-create-acceptance.log
             /tmp/mwz-lifecycle-validator.log
             /tmp/mwz-lifecycle-acceptance.log
+            /tmp/mwz-agave-create-validator.log
+            /tmp/mwz-agave-create-acceptance.log
+            /tmp/mwz-agave-lifecycle-validator.log
+            /tmp/mwz-agave-lifecycle-acceptance.log
             target/deploy/memewarzone_solana.so
             target/deploy/memewarzone_solana.release.json
             target/idl/memewarzone_solana.json
