@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: solana-graduation-stack-probe-${{ github.event.pull_request.number || github.ref }}
@@ -385,6 +385,21 @@ fn graduation_quote_snapshot(campaign: &GraduationCampaignSnapshot) -> Result<Gr
           "$AGAVE_BIN/solana" airdrop 100 >/dev/null
           ( cd tests/solana && ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs ) \
             2>&1 | tee /tmp/mwz-grad-snapshot-acceptance.log
+      - name: Promote proven graduation snapshot source
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MemeWarzone Launch Bot"
+          git config user.email "launch-bot@users.noreply.github.com"
+          git add -- programs/memewarzone_solana/src/graduation.rs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No source change to promote.'
+            exit 0
+          fi
+          git commit -m "Fix Solana graduation Campaign stack hot path"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
