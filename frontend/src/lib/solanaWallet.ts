@@ -273,18 +273,9 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
     }
   }
 
-  // Force disconnect the current wallet to clear any stale session.
-  // This guarantees Phantom will show the connect/unlock popup.
-  // We DO NOT await this! Awaiting this yields execution to the microtask queue,
-  // allowing React to flush DOM updates (like disabling the clicked button),
-  // which can instantly invalidate the user gesture in production browsers.
-  debugLog("Disconnecting current wallet to force fresh session (fire-and-forget)", { walletId: wallet.id });
-  try {
-    wallet.provider.disconnect?.().catch(() => {});
-  } catch (e) {
-    debugLog("Current wallet disconnect failed synchronously", e);
-  }
-
+  // Do not disconnect the selected provider before connect. A late disconnect
+  // event can wipe the just-connected public key. connect({ onlyIfTrusted: false })
+  // is enough to unlock/re-prompt the same wallet.
   let result: { publicKey?: { toString: () => string } } | undefined;
   try {
     debugLog("Calling wallet.provider.connect() ...");
