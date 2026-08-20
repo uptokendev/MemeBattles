@@ -1,0 +1,153 @@
+name: Solana Graduation Stack Probe
+
+on:
+  push:
+    branches:
+      - hotfix/solana-mainnet-transaction-normalization
+    paths:
+      - .github/workflows/solana-graduation-stack-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-graduation-stack-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  AGAVE_VERSION: 4.2.0
+  RUST_TOOLCHAIN: 1.79.0
+  IDL_RUST_TOOLCHAIN: nightly-2024-05-09
+  ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+  MAINNET_RPC: https://api.mainnet-beta.solana.com
+  PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
+
+jobs:
+  graduation-box:
+    name: Box GraduationState and run full Mainnet-like lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+      - name: Install frozen Solana build CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install Agave runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          agave_dir="$RUNNER_TEMP/agave-v${AGAVE_VERSION}"
+          mkdir -p "$agave_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/agave-release.tar.bz2 \
+            "https://github.com/anza-xyz/agave/releases/download/v${AGAVE_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/agave-release.tar.bz2 -C "$agave_dir" --strip-components=1
+          echo "AGAVE_BIN=$agave_dir/bin" >> "$GITHUB_ENV"
+          "$agave_dir/bin/solana-test-validator" --version
+      - name: Install Anchor CLI
+        run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+      - name: Apply runner-only graduation stack candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('programs/memewarzone_solana/src/graduation.rs')
+          source = path.read_text(encoding='utf-8')
+          account = "    pub graduation_state: Account<'info, GraduationState>,"
+          if source.count(account) != 2:
+              raise SystemExit(f'expected two GraduationState Account wrappers, found {source.count(account)}')
+          source = source.replace(account, "    pub graduation_state: Box<Account<'info, GraduationState>>,")
+          marker = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
+          if source.count(marker) != 1:
+              raise SystemExit('begin handler marker target not unique')
+          source = source.replace(marker, "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    msg!(\"BEGIN_GRAD_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;", 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+          git diff -- programs/memewarzone_solana/src/graduation.rs
+      - name: Create ephemeral payer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase --silent --force --outfile "$HOME/.config/solana/id.json"
+          echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
+      - name: Build probe SBF
+        shell: bash
+        run: |
+          set -o pipefail
+          anchor build --program-name memewarzone_solana --no-idl \
+            2>&1 | tee /tmp/mwz-grad-probe-build.log | tail -n 180
+          test -s target/deploy/memewarzone_solana.so
+          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-grad-probe-sha.txt
+      - name: Generate matching IDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/idl
+          ( cd programs/memewarzone_solana && RUSTUP_TOOLCHAIN="$IDL_RUST_TOOLCHAIN" anchor idl build --out ../../target/idl/memewarzone_solana.json )
+      - name: Install acceptance dependencies
+        run: npm install --prefix tests/solana --no-audit --no-fund
+      - name: Run full lifecycle on Mainnet Agave
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/mwz-grad-probe-ledger
+          "$AGAVE_BIN/solana-test-validator" \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-grad-probe-ledger \
+            --url "$MAINNET_RPC" \
+            --clone-feature-set \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            > /tmp/mwz-grad-probe-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 120); do
+            if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-grad-probe-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          "$AGAVE_BIN/solana" airdrop 100 >/dev/null
+          ( cd tests/solana && ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs ) \
+            2>&1 | tee /tmp/mwz-grad-probe-acceptance.log
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-graduation-stack-probe-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            /tmp/mwz-grad-probe-build.log
+            /tmp/mwz-grad-probe-sha.txt
+            /tmp/mwz-grad-probe-validator.log
+            /tmp/mwz-grad-probe-acceptance.log
+            target/deploy/memewarzone_solana.so
