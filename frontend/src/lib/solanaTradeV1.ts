@@ -58,6 +58,7 @@ export type SolanaTradeAuthResponse = {
     instructions: string;
     tokenProgram: string;
     systemProgram: string;
+    feeEscrow?: string | null;
     leagueVault?: string | null;
     airdropVault?: string | null;
     monthlyLeagueVault?: string | null;
@@ -281,6 +282,9 @@ export function mapSolanaTradeError(err: unknown): string {
   if (/CampaignPaused|campaign is paused/i.test(msg)) {
     return "This campaign is paused. Trading will reopen after the operator unpauses it.";
   }
+  if (/SOLANA_MARKET_INITIALIZING|FeeEscrowNotInitialized|market initializing/i.test(msg)) {
+    return "market initializing";
+  }
   if (/InvalidRewardsVault|reward vault/i.test(msg)) {
     return "Reward vaults are missing from the trade. Retry after the latest frontend/API deploy.";
   }
@@ -421,8 +425,8 @@ export async function submitSolanaTradeV1(
   if (!a.tokenVault || !a.solVault) {
     throw new Error("Trade authorization is missing tokenVault/solVault.");
   }
-  if (!a.leagueVault || !a.airdropVault || !a.monthlyLeagueVault || !a.recruiterVault || !a.squadVault || !a.protocolVault) {
-    throw new Error("Trade authorization is missing the six reward vaults.");
+  if (!a.feeEscrow) {
+    throw new Error("market initializing");
   }
   const tradeIx = buildTradeTokensInstruction(web3, {
     programId: auth.programId,
@@ -447,12 +451,7 @@ export async function submitSolanaTradeV1(
       instructions: a.instructions,
       tokenProgram: a.tokenProgram,
       systemProgram: a.systemProgram,
-      leagueVault: a.leagueVault,
-      airdropVault: a.airdropVault,
-      monthlyLeagueVault: a.monthlyLeagueVault,
-      recruiterVault: a.recruiterVault,
-      squadVault: a.squadVault,
-      protocolVault: a.protocolVault,
+      feeEscrow: a.feeEscrow,
     },
   });
   const lookupTable = await fetchAndVerifyLaunchpadLookupTable(web3, connection, {

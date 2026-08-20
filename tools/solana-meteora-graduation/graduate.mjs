@@ -334,6 +334,10 @@ async function main() {
       mint: campaign.mint,
       tokenVault: campaign.tokenVault,
       solVault: campaign.solVault,
+      feeEscrow: PublicKey.findProgramAddressSync(
+        [Buffer.from("fee-escrow"), campaignPk.toBuffer()],
+        program.programId,
+      )[0],
       authorityTokenAccount: stagingAta.address,
       meteoraPool: asPk(auth.accounts.meteoraPool, "meteoraPool"),
       meteoraPosition: asPk(auth.accounts.meteoraPosition, "meteoraPosition"),
@@ -414,6 +418,10 @@ async function main() {
       mint: campaign.mint,
       tokenVault: campaign.tokenVault,
       solVault: campaign.solVault,
+      feeEscrow: PublicKey.findProgramAddressSync(
+        [Buffer.from("fee-escrow"), campaignPk.toBuffer()],
+        program.programId,
+      )[0],
       authorityTokenAccount: stagingAta.address,
       creator: campaign.creator,
       creatorTokenAccount: creatorAta.address,

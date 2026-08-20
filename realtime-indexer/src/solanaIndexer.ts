@@ -60,6 +60,42 @@ type TokensSoldEvent = {
   netRaisedAfter: bigint;
 };
 
+type FeeSlicesAccruedEvent = {
+  kind: "FeeSlicesAccrued";
+  campaign: string;
+  trader: string;
+  side: number;
+  routeProfile: number;
+  feeLamports: bigint;
+  weekly: bigint;
+  monthly: bigint;
+  recruiter: bigint;
+  airdrop: bigint;
+  squad: bigint;
+  protocol: bigint;
+};
+
+type FeeEscrowInitializedEvent = {
+  kind: "FeeEscrowInitialized";
+  campaign: string;
+  escrow: string;
+  payer: string;
+};
+
+type FeeEscrowFlushedEvent = {
+  kind: "FeeEscrowFlushed";
+  campaign: string;
+  escrow: string;
+  weekly: bigint;
+  monthly: bigint;
+  recruiter: bigint;
+  airdrop: bigint;
+  squad: bigint;
+  protocol: bigint;
+  total: bigint;
+  caller: string;
+};
+
 type CampaignGraduatedEvent = {
   kind: "CampaignGraduated";
   campaign: string;
@@ -78,7 +114,14 @@ type CampaignGraduatedEvent = {
   graduatedAt: bigint;
 };
 
-type AnchorEvent = CampaignCreatedEvent | TokensBoughtEvent | TokensSoldEvent | CampaignGraduatedEvent;
+type AnchorEvent =
+  | CampaignCreatedEvent
+  | TokensBoughtEvent
+  | TokensSoldEvent
+  | CampaignGraduatedEvent
+  | FeeSlicesAccruedEvent
+  | FeeEscrowInitializedEvent
+  | FeeEscrowFlushedEvent;
 type Decoder = (reader: EventReader) => AnchorEvent;
 
 class EventReader {
@@ -96,6 +139,13 @@ class EventReader {
     if (end > this.data.length) throw new Error("Anchor event pubkey out of bounds");
     const value = base58Encode(this.data.subarray(this.offset, end));
     this.offset = end;
+    return value;
+  }
+
+  u8(): number {
+    if (this.offset + 1 > this.data.length) throw new Error("Anchor event u8 out of bounds");
+    const value = this.data.readUInt8(this.offset);
+    this.offset += 1;
     return value;
   }
 
@@ -180,6 +230,39 @@ const EVENT_DECODERS = new Map<string, Decoder>([
     creatorReserveTokens: r.u64(),
     finalSpotNanoLamports: r.u128(),
     graduatedAt: r.i64(),
+  })],
+  [eventDiscriminator("FeeSlicesAccrued"), (r) => ({
+    kind: "FeeSlicesAccrued",
+    campaign: r.pubkey(),
+    trader: r.pubkey(),
+    side: r.u8(),
+    routeProfile: r.u8(),
+    feeLamports: r.u64(),
+    weekly: r.u64(),
+    monthly: r.u64(),
+    recruiter: r.u64(),
+    airdrop: r.u64(),
+    squad: r.u64(),
+    protocol: r.u64(),
+  })],
+  [eventDiscriminator("FeeEscrowInitialized"), (r) => ({
+    kind: "FeeEscrowInitialized",
+    campaign: r.pubkey(),
+    escrow: r.pubkey(),
+    payer: r.pubkey(),
+  })],
+  [eventDiscriminator("FeeEscrowFlushed"), (r) => ({
+    kind: "FeeEscrowFlushed",
+    campaign: r.pubkey(),
+    escrow: r.pubkey(),
+    weekly: r.u64(),
+    monthly: r.u64(),
+    recruiter: r.u64(),
+    airdrop: r.u64(),
+    squad: r.u64(),
+    protocol: r.u64(),
+    total: r.u64(),
+    caller: r.pubkey(),
   })],
 ]);
 
@@ -810,9 +893,113 @@ async function persistGraduation(
   });
 }
 
+async function enqueueFeeEscrowInit(campaign: string) {
+  await pool.query(
+    `insert into public.solana_fee_escrow_accruals(chain_id, campaign_address, escrow_address, init_status)
+     values ($1, $2, $2, 'pending')
+     on conflict (chain_id, campaign_address) do nothing`,
+    [SOLANA_CHAIN_ID, campaign],
+  ).catch((error) => {
+    console.warn("[solana-indexer] fee escrow enqueue failed", error instanceof Error ? error.message : String(error));
+  });
+}
+
+async function persistFeeAccrual(event: FeeSlicesAccruedEvent, signature: string, blockTime: Date) {
+  await pool.query(
+    `insert into public.solana_fee_escrow_accruals(
+       chain_id, campaign_address, escrow_address, init_status,
+       weekly_accrued, monthly_accrued, recruiter_accrued, airdrop_accrued, squad_accrued, protocol_accrued,
+       first_accrued_at, last_accrued_at, flush_status, updated_at
+     ) values ($1,$2,$2,'initialized',$3,$4,$5,$6,$7,$8,$9,$9,'queued', now())
+     on conflict (chain_id, campaign_address) do update set
+       weekly_accrued = public.solana_fee_escrow_accruals.weekly_accrued + excluded.weekly_accrued,
+       monthly_accrued = public.solana_fee_escrow_accruals.monthly_accrued + excluded.monthly_accrued,
+       recruiter_accrued = public.solana_fee_escrow_accruals.recruiter_accrued + excluded.recruiter_accrued,
+       airdrop_accrued = public.solana_fee_escrow_accruals.airdrop_accrued + excluded.airdrop_accrued,
+       squad_accrued = public.solana_fee_escrow_accruals.squad_accrued + excluded.squad_accrued,
+       protocol_accrued = public.solana_fee_escrow_accruals.protocol_accrued + excluded.protocol_accrued,
+       first_accrued_at = coalesce(public.solana_fee_escrow_accruals.first_accrued_at, excluded.first_accrued_at),
+       last_accrued_at = excluded.last_accrued_at,
+       flush_status = 'queued',
+       updated_at = now()`,
+    [
+      SOLANA_CHAIN_ID,
+      event.campaign,
+      event.weekly.toString(),
+      event.monthly.toString(),
+      event.recruiter.toString(),
+      event.airdrop.toString(),
+      event.squad.toString(),
+      event.protocol.toString(),
+      blockTime,
+    ],
+  );
+  void signature;
+}
+
+async function persistFeeEscrowInitialized(event: FeeEscrowInitializedEvent) {
+  await pool.query(
+    `insert into public.solana_fee_escrow_accruals(
+       chain_id, campaign_address, escrow_address, init_status, updated_at
+     ) values ($1,$2,$3,'initialized', now())
+     on conflict (chain_id, campaign_address) do update set
+       escrow_address = excluded.escrow_address,
+       init_status = 'initialized',
+       updated_at = now()`,
+    [SOLANA_CHAIN_ID, event.campaign, event.escrow],
+  );
+}
+
+async function persistFeeEscrowFlushed(event: FeeEscrowFlushedEvent, signature: string, blockTime: Date) {
+  await pool.query(
+    `insert into public.solana_fee_escrow_accruals(
+       chain_id, campaign_address, escrow_address, init_status,
+       weekly_flushed, monthly_flushed, recruiter_flushed, airdrop_flushed, squad_flushed, protocol_flushed,
+       last_flush_at, last_flush_signature, flush_status, updated_at
+     ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$11,'confirmed', now())
+     on conflict (chain_id, campaign_address) do update set
+       weekly_flushed = public.solana_fee_escrow_accruals.weekly_flushed + excluded.weekly_flushed,
+       monthly_flushed = public.solana_fee_escrow_accruals.monthly_flushed + excluded.monthly_flushed,
+       recruiter_flushed = public.solana_fee_escrow_accruals.recruiter_flushed + excluded.recruiter_flushed,
+       airdrop_flushed = public.solana_fee_escrow_accruals.airdrop_flushed + excluded.airdrop_flushed,
+       squad_flushed = public.solana_fee_escrow_accruals.squad_flushed + excluded.squad_flushed,
+       protocol_flushed = public.solana_fee_escrow_accruals.protocol_flushed + excluded.protocol_flushed,
+       last_flush_at = excluded.last_flush_at,
+       last_flush_signature = excluded.last_flush_signature,
+       flush_status = 'confirmed',
+       updated_at = now()`,
+    [
+      SOLANA_CHAIN_ID,
+      event.campaign,
+      event.escrow,
+      event.weekly.toString(),
+      event.monthly.toString(),
+      event.recruiter.toString(),
+      event.airdrop.toString(),
+      event.squad.toString(),
+      event.protocol.toString(),
+      blockTime,
+      signature,
+    ],
+  );
+}
+
 async function handleEvent(event: AnchorEvent, signature: string, logIndex: number, slot: number, blockTime: Date) {
   if (event.kind === "CampaignCreated") {
     await upsertCampaign(event, slot, blockTime, signature, logIndex);
+    await enqueueFeeEscrowInit(event.campaign);
+    return;
+  }
+  if (event.kind === "FeeEscrowInitialized") {
+    await persistFeeEscrowInitialized(event);
+    return;
+  }
+  if (event.kind === "FeeSlicesAccrued") {
+    await persistFeeAccrual(event, signature, blockTime);
+    return;
+  }
+  if (event.kind === "FeeEscrowFlushed") {
+    await persistFeeEscrowFlushed(event, signature, blockTime);
     return;
   }
   if (event.kind === "CampaignGraduated") {
