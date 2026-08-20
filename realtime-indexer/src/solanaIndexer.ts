@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { PublicKey } from "@solana/web3.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { checkMilestones } from "./milestones.js";
@@ -297,6 +298,13 @@ function parseRpcList(value: string): string[] {
 
 function programId() {
   return String(ENV.SOLANA_LAUNCHPAD_PROGRAM_ID || process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || DEFAULT_PROGRAM_ID).trim();
+}
+
+export function deriveFeeEscrowAddress(campaign: string, launchpadProgramId = programId()): string {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("fee-escrow"), new PublicKey(campaign).toBuffer()],
+    new PublicKey(launchpadProgramId),
+  )[0].toBase58();
 }
 
 function solanaRpcUrls(): string[] {
@@ -893,25 +901,91 @@ async function persistGraduation(
   });
 }
 
+async function insertFeeEscrowEvent(input: {
+  signature: string;
+  logIndex: number;
+  eventKind: string;
+  campaign: string;
+  escrow: string;
+  weekly: string;
+  monthly: string;
+  recruiter: string;
+  airdrop: string;
+  squad: string;
+  protocol: string;
+  total: string;
+}): Promise<boolean> {
+  const inserted = await pool.query(
+    `insert into public.solana_fee_escrow_events(
+       chain_id, tx_hash, log_index, event_kind, campaign_address, escrow_address,
+       weekly_lamports, monthly_lamports, recruiter_lamports, airdrop_lamports,
+       squad_lamports, protocol_lamports, total_lamports
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     on conflict (chain_id, tx_hash, log_index, event_kind) do nothing
+     returning id`,
+    [
+      SOLANA_CHAIN_ID,
+      input.signature,
+      input.logIndex,
+      input.eventKind,
+      input.campaign,
+      input.escrow,
+      input.weekly,
+      input.monthly,
+      input.recruiter,
+      input.airdrop,
+      input.squad,
+      input.protocol,
+      input.total,
+    ],
+  );
+  return (inserted.rowCount ?? 0) > 0;
+}
+
 async function enqueueFeeEscrowInit(campaign: string) {
+  const escrow = deriveFeeEscrowAddress(campaign);
   await pool.query(
     `insert into public.solana_fee_escrow_accruals(chain_id, campaign_address, escrow_address, init_status)
-     values ($1, $2, $2, 'pending')
-     on conflict (chain_id, campaign_address) do nothing`,
-    [SOLANA_CHAIN_ID, campaign],
+     values ($1, $2, $3, 'pending')
+     on conflict (chain_id, campaign_address) do update set
+       escrow_address = excluded.escrow_address,
+       updated_at = now()`,
+    [SOLANA_CHAIN_ID, campaign, escrow],
   ).catch((error) => {
     console.warn("[solana-indexer] fee escrow enqueue failed", error instanceof Error ? error.message : String(error));
   });
 }
 
-async function persistFeeAccrual(event: FeeSlicesAccruedEvent, signature: string, blockTime: Date) {
+async function persistFeeAccrual(
+  event: FeeSlicesAccruedEvent,
+  signature: string,
+  logIndex: number,
+  blockTime: Date,
+) {
+  const escrow = deriveFeeEscrowAddress(event.campaign);
+  const isNew = await insertFeeEscrowEvent({
+    signature,
+    logIndex,
+    eventKind: "FeeSlicesAccrued",
+    campaign: event.campaign,
+    escrow,
+    weekly: event.weekly.toString(),
+    monthly: event.monthly.toString(),
+    recruiter: event.recruiter.toString(),
+    airdrop: event.airdrop.toString(),
+    squad: event.squad.toString(),
+    protocol: event.protocol.toString(),
+    total: event.feeLamports.toString(),
+  });
+  if (!isNew) return;
   await pool.query(
     `insert into public.solana_fee_escrow_accruals(
        chain_id, campaign_address, escrow_address, init_status,
        weekly_accrued, monthly_accrued, recruiter_accrued, airdrop_accrued, squad_accrued, protocol_accrued,
        first_accrued_at, last_accrued_at, flush_status, updated_at
-     ) values ($1,$2,$2,'initialized',$3,$4,$5,$6,$7,$8,$9,$9,'queued', now())
+     ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$10,'queued', now())
      on conflict (chain_id, campaign_address) do update set
+       escrow_address = excluded.escrow_address,
        weekly_accrued = public.solana_fee_escrow_accruals.weekly_accrued + excluded.weekly_accrued,
        monthly_accrued = public.solana_fee_escrow_accruals.monthly_accrued + excluded.monthly_accrued,
        recruiter_accrued = public.solana_fee_escrow_accruals.recruiter_accrued + excluded.recruiter_accrued,
@@ -925,6 +999,7 @@ async function persistFeeAccrual(event: FeeSlicesAccruedEvent, signature: string
     [
       SOLANA_CHAIN_ID,
       event.campaign,
+      escrow,
       event.weekly.toString(),
       event.monthly.toString(),
       event.recruiter.toString(),
@@ -934,23 +1009,58 @@ async function persistFeeAccrual(event: FeeSlicesAccruedEvent, signature: string
       blockTime,
     ],
   );
-  void signature;
 }
 
-async function persistFeeEscrowInitialized(event: FeeEscrowInitializedEvent) {
+async function persistFeeEscrowInitialized(event: FeeEscrowInitializedEvent, signature: string, logIndex: number) {
+  const isNew = await insertFeeEscrowEvent({
+    signature,
+    logIndex,
+    eventKind: "FeeEscrowInitialized",
+    campaign: event.campaign,
+    escrow: event.escrow,
+    weekly: "0",
+    monthly: "0",
+    recruiter: "0",
+    airdrop: "0",
+    squad: "0",
+    protocol: "0",
+    total: "0",
+  });
+  if (!isNew) return;
   await pool.query(
     `insert into public.solana_fee_escrow_accruals(
-       chain_id, campaign_address, escrow_address, init_status, updated_at
-     ) values ($1,$2,$3,'initialized', now())
+       chain_id, campaign_address, escrow_address, init_status, init_signature, updated_at
+     ) values ($1,$2,$3,'initialized',$4, now())
      on conflict (chain_id, campaign_address) do update set
        escrow_address = excluded.escrow_address,
        init_status = 'initialized',
+       init_signature = coalesce(public.solana_fee_escrow_accruals.init_signature, excluded.init_signature),
        updated_at = now()`,
-    [SOLANA_CHAIN_ID, event.campaign, event.escrow],
+    [SOLANA_CHAIN_ID, event.campaign, event.escrow, signature],
   );
 }
 
-async function persistFeeEscrowFlushed(event: FeeEscrowFlushedEvent, signature: string, blockTime: Date) {
+async function persistFeeEscrowFlushed(
+  event: FeeEscrowFlushedEvent,
+  signature: string,
+  logIndex: number,
+  blockTime: Date,
+) {
+  const isNew = await insertFeeEscrowEvent({
+    signature,
+    logIndex,
+    eventKind: "FeeEscrowFlushed",
+    campaign: event.campaign,
+    escrow: event.escrow,
+    weekly: event.weekly.toString(),
+    monthly: event.monthly.toString(),
+    recruiter: event.recruiter.toString(),
+    airdrop: event.airdrop.toString(),
+    squad: event.squad.toString(),
+    protocol: event.protocol.toString(),
+    total: event.total.toString(),
+  });
+  if (!isNew) return;
   await pool.query(
     `insert into public.solana_fee_escrow_accruals(
        chain_id, campaign_address, escrow_address, init_status,
@@ -958,6 +1068,7 @@ async function persistFeeEscrowFlushed(event: FeeEscrowFlushedEvent, signature: 
        last_flush_at, last_flush_signature, flush_status, updated_at
      ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$11,'confirmed', now())
      on conflict (chain_id, campaign_address) do update set
+       escrow_address = excluded.escrow_address,
        weekly_flushed = public.solana_fee_escrow_accruals.weekly_flushed + excluded.weekly_flushed,
        monthly_flushed = public.solana_fee_escrow_accruals.monthly_flushed + excluded.monthly_flushed,
        recruiter_flushed = public.solana_fee_escrow_accruals.recruiter_flushed + excluded.recruiter_flushed,
@@ -991,15 +1102,15 @@ async function handleEvent(event: AnchorEvent, signature: string, logIndex: numb
     return;
   }
   if (event.kind === "FeeEscrowInitialized") {
-    await persistFeeEscrowInitialized(event);
+    await persistFeeEscrowInitialized(event, signature, logIndex);
     return;
   }
   if (event.kind === "FeeSlicesAccrued") {
-    await persistFeeAccrual(event, signature, blockTime);
+    await persistFeeAccrual(event, signature, logIndex, blockTime);
     return;
   }
   if (event.kind === "FeeEscrowFlushed") {
-    await persistFeeEscrowFlushed(event, signature, blockTime);
+    await persistFeeEscrowFlushed(event, signature, logIndex, blockTime);
     return;
   }
   if (event.kind === "CampaignGraduated") {

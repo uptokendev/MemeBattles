@@ -476,7 +476,7 @@ fn pending_sum(escrow: &FeeEscrow) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::authorized_trade::{ROUTE_PROFILE_LINKED, ROUTE_PROFILE_OG, ROUTE_PROFILE_UNLINKED};
+    use crate::{ROUTE_PROFILE_LINKED, ROUTE_PROFILE_OG, ROUTE_PROFILE_UNLINKED};
 
     #[test]
     fn fee_escrow_account_size_is_stable() {

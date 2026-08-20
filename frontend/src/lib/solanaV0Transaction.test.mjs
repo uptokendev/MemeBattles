@@ -443,7 +443,6 @@ test("CREATE and BUY/SELL V0 compile through the same helper used by graduation"
       payer: trade.payer,
       recentBlockhash: BLOCKHASH,
       instructions: [
-        trade.computeInstruction,
         trade.ed25519Instruction,
         trade.programInstruction,
       ],

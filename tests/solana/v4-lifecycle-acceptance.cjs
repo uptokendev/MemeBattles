@@ -676,6 +676,70 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       assert.ok(expected.test(text), `${label} failed for the wrong reason:\n${text}`);
     }
 
+    async function rewardVaultSnapshot() {
+      const out = {};
+      for (const [name, pubkey] of Object.entries(rewardVaultKeys())) {
+        out[name] = BigInt(await connection.getBalance(pubkey, "confirmed"));
+      }
+      return out;
+    }
+
+    async function txFeeLamports(signature) {
+      const landed = await connection.getTransaction(signature, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      });
+      assert.ok(landed?.meta, `${signature} missing transaction meta`);
+      return BigInt(landed.meta.fee);
+    }
+
+    async function assertSellExactAccounting(tokensIn, label) {
+      const beforeSnap = await snapshot();
+      const sellerBefore = BigInt(
+        await connection.getBalance(buyer.keypair.publicKey, "confirmed"),
+      );
+      const vaultsBefore = await rewardVaultSnapshot();
+      const sold = await sendSell(tokensIn);
+      const afterSnap = await snapshot();
+      const sellerAfter = BigInt(
+        await connection.getBalance(buyer.keypair.publicKey, "confirmed"),
+      );
+      const vaultsAfter = await rewardVaultSnapshot();
+      const feePaid = await txFeeLamports(sold.signature);
+
+      const gross =
+        BigInt(beforeSnap.campaign.netRaisedLamports.toString()) -
+        BigInt(afterSnap.campaign.netRaisedLamports.toString());
+      const fee = BigInt(afterSnap.escrow) - BigInt(beforeSnap.escrow);
+      const net = gross - fee;
+      assert.ok(gross > 0n, `${label}: gross must be > 0`);
+      assert.equal(
+        BigInt(beforeSnap.vault) - BigInt(afterSnap.vault),
+        gross,
+        `${label}: solVaultBefore - solVaultAfter must equal gross`,
+      );
+      assert.equal(
+        fee,
+        (gross * BigInt(SELL_FEE_BPS)) / 10000n,
+        `${label}: feeEscrowAfter - feeEscrowBefore must equal fee`,
+      );
+      assert.equal(net + fee, gross, `${label}: net + fee must equal gross`);
+      assert.equal(
+        sellerAfter + feePaid - sellerBefore,
+        net,
+        `${label}: seller must receive net after accounting for tx fee`,
+      );
+      for (const name of Object.keys(vaultsBefore)) {
+        assert.equal(
+          vaultsAfter[name],
+          vaultsBefore[name],
+          `${label}: ${name} reward vault moved before flush`,
+        );
+      }
+      after = afterSnap;
+      return afterSnap;
+    }
+
     await expectProgramFail(
       "buy before fee escrow init",
       () => sendBuy(BUY_LAMPORTS),
@@ -791,17 +855,14 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     const sellAmount = after.tokenAmount / 4n;
     assert.ok(sellAmount > 0n);
     before = after;
-    await sendSell(sellAmount);
-    after = await snapshot();
-    assert.ok(after.tokenAmount < before.tokenAmount);
-    assert.ok(BigInt(after.campaign.soldTokens.toString()) < BigInt(before.campaign.soldTokens.toString()));
-    assert.ok(BigInt(after.campaign.netRaisedLamports.toString()) < BigInt(before.campaign.netRaisedLamports.toString()));
+    await assertSellExactAccounting(sellAmount, "sell #1");
 
-    before = after;
+    before = await snapshot();
     await sendBuy(BUY_LAMPORTS);
     after = await snapshot();
     const sellAmount2 = after.tokenAmount / 5n;
-    await sendSell(sellAmount2);
+    before = after;
+    await assertSellExactAccounting(sellAmount2, "sell #2");
     after = await snapshot();
     assert.equal(after.campaign.curveClosed, false);
 
