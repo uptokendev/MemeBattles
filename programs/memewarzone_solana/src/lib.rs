@@ -82,6 +82,8 @@ pub const TIER_3_CREATOR_LOCK_SECONDS: u32 = 3_600;
 pub mod authorized_create;
 pub use authorized_create::*;
 
+pub mod campaign_view;
+
 pub mod authorized_trade;
 pub use authorized_trade::*;
 

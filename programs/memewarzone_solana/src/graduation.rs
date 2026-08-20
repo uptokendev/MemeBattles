@@ -33,16 +33,18 @@ use anchor_spl::token::{
 };
 
 use crate::{
-    authorized_create::{
-        Campaign, CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED,
-    },
+    authorized_create::{CAMPAIGN_SEED, SOL_VAULT_SEED, TOKEN_VAULT_SEED},
     authorized_trade::{
         route_fee_slices, validate_route_profile_id, TRADE_SIDE_FINALIZE,
     },
+    campaign_view::{load_campaign_view, mark_campaign_graduated, CampaignView},
     CreatorProfile, GenerationConfig, GlobalConfig, LaunchpadError, BPS_DENOMINATOR,
     CREATOR_PROFILE_SEED, DEX_ADAPTER_METEORA_DAMM_V2, ECONOMICS_VERSION_V3,
     GENERATION_CONFIG_SEED, GLOBAL_CONFIG_SEED,
 };
+
+#[cfg(test)]
+use crate::{authorized_create::Campaign, campaign_view::campaign_view_from_campaign};
 
 pub const GRADUATION_SEED: &[u8] = b"graduation";
 pub const GRADUATION_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_GRADUATION_V1";
@@ -274,7 +276,7 @@ pub fn begin_graduation_handler(
     );
 
     let campaign_key = ctx.accounts.campaign.key();
-    let campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;
+    let campaign = load_campaign_view(&ctx.accounts.campaign.to_account_info())?;
     validate_campaign_accounts(
         &campaign,
         campaign_key,
@@ -441,7 +443,7 @@ pub fn confirm_graduation_handler(ctx: Context<ConfirmGraduation>) -> Result<()>
     );
 
     let campaign_key = ctx.accounts.campaign.key();
-    let mut campaign = load_campaign(&ctx.accounts.campaign.to_account_info())?;
+    let campaign = load_campaign_view(&ctx.accounts.campaign.to_account_info())?;
     validate_campaign_accounts(
         &campaign,
         campaign_key,
@@ -635,8 +637,7 @@ pub fn confirm_graduation_handler(ctx: Context<ConfirmGraduation>) -> Result<()>
         creator_payout,
     )?;
 
-    campaign.graduated = true;
-    store_campaign(&ctx.accounts.campaign.to_account_info(), &campaign)?;
+    mark_campaign_graduated(&ctx.accounts.campaign.to_account_info())?;
     update_creator_profile_after_graduation(
         &ctx.accounts.creator_profile.to_account_info(),
         campaign.creator,
@@ -669,7 +670,7 @@ pub fn confirm_graduation_handler(ctx: Context<ConfirmGraduation>) -> Result<()>
     Ok(())
 }
 
-pub fn final_spot_nano_lamports(campaign: &Campaign) -> Result<u128> {
+pub fn final_spot_nano_lamports(campaign: &CampaignView) -> Result<u128> {
     require!(
         campaign.economics_version >= ECONOMICS_VERSION_V3,
         LaunchpadError::InvalidGenerationEconomics
@@ -686,7 +687,7 @@ pub fn final_spot_nano_lamports(campaign: &Campaign) -> Result<u128> {
     base.checked_add(slope).ok_or_else(|| error!(LaunchpadError::MathOverflow))
 }
 
-pub fn graduation_quote(campaign: &Campaign) -> Result<GraduationQuote> {
+pub fn graduation_quote(campaign: &CampaignView) -> Result<GraduationQuote> {
     let spot = final_spot_nano_lamports(campaign)?;
     require!(spot > 0, LaunchpadError::GraduationLiquidityZero);
 
@@ -779,7 +780,7 @@ fn read_graduation_global(info: &AccountInfo) -> Result<(Pubkey, Pubkey)> {
 }
 
 #[inline(never)]
-fn validate_generation_binding(campaign: &Campaign, generation_info: &AccountInfo) -> Result<()> {
+fn validate_generation_binding(campaign: &CampaignView, generation_info: &AccountInfo) -> Result<()> {
     require_keys_eq!(
         campaign.generation_config,
         *generation_info.key,
@@ -815,7 +816,7 @@ fn validate_generation_binding(campaign: &Campaign, generation_info: &AccountInf
 }
 
 fn validate_campaign_accounts(
-    campaign: &Campaign,
+    campaign: &CampaignView,
     campaign_key: Pubkey,
     mint: Pubkey,
     token_vault: Pubkey,
@@ -1120,20 +1121,6 @@ fn unpack_spl_account(info: &AccountInfo) -> Result<SplTokenAccount> {
         .map_err(|_| error!(LaunchpadError::InvalidCampaign))
 }
 
-#[inline(never)]
-fn load_campaign(info: &AccountInfo) -> Result<Box<Campaign>> {
-    require_keys_eq!(*info.owner, crate::ID, LaunchpadError::InvalidCampaign);
-    let data = info.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    Ok(Box::new(Campaign::try_deserialize(&mut slice)?))
-}
-
-fn store_campaign(info: &AccountInfo, campaign: &Campaign) -> Result<()> {
-    let mut data = info.try_borrow_mut_data()?;
-    let mut cursor = std::io::Cursor::new(&mut data[..]);
-    campaign.try_serialize(&mut cursor)
-}
-
 fn update_creator_profile_after_graduation(info: &AccountInfo, creator: Pubkey) -> Result<()> {
     let (expected, _) = Pubkey::find_program_address(
         &[CREATOR_PROFILE_SEED, creator.as_ref()],
@@ -1293,9 +1280,9 @@ mod tests {
     fn v3_spot_rises_with_sold_supply() {
         let mut c = campaign_for_quote();
         c.sold_tokens = 0;
-        let first = final_spot_nano_lamports(&c).unwrap();
+        let first = final_spot_nano_lamports(&campaign_view_from_campaign(&c)).unwrap();
         c.sold_tokens = 1_000_000_000_000;
-        let second = final_spot_nano_lamports(&c).unwrap();
+        let second = final_spot_nano_lamports(&campaign_view_from_campaign(&c)).unwrap();
         assert!(second > first);
         assert_eq!(first, 1_000_000_000);
     }
@@ -1303,14 +1290,15 @@ mod tests {
     #[test]
     fn graduation_quote_conserves_net_principal() {
         let c = campaign_for_quote();
-        let q = graduation_quote(&c).unwrap();
+        let view = campaign_view_from_campaign(&c);
+        let q = graduation_quote(&view).unwrap();
         assert!(q.max_liquidity_tokens > 0);
         assert!(q.max_liquidity_lamports > 0);
         assert_eq!(
             q.finalize_fee_lamports
                 + q.max_liquidity_lamports
                 + q.creator_payout_lamports,
-            c.net_raised_lamports
+            view.net_raised_lamports
         );
     }
 
