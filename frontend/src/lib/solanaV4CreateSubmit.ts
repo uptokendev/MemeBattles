@@ -24,6 +24,13 @@ import {
   requireLaunchpadAltAddress,
   simulateLaunchpadV0OrThrow,
 } from "@/lib/solanaV0Transaction";
+import {
+  CREATE_EXPIRED_BEFORE_CONFIRMATION,
+  LaunchpadSignatureExpiredError,
+  LaunchpadSignatureUnconfirmedError,
+  confirmLaunchpadSignature,
+  isLaunchpadBlockhashError,
+} from "@/lib/solanaConfirmSignature";
 
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -251,7 +258,14 @@ export async function submitSolanaV4CreatePlan(
       maxRetries: 3,
     });
     sentSignature = signature;
-    const confirmed = await confirmCreateSignature(connection, signature, unsigned.latest);
+    const confirmed = await confirmLaunchpadSignature(connection, {
+      signature,
+      lastValidBlockHeight: unsigned.latest.lastValidBlockHeight,
+      recover: async () => {
+        const again = await connection.getAccountInfo(campaignPk, "confirmed");
+        return Boolean(again && again.owner.equals(programPk));
+      },
+    });
     if (confirmed.err) {
       const logs = await fetchTransactionLogs(connection, signature);
       throw Object.assign(new Error("Solana create transaction failed on-chain."), {
@@ -265,8 +279,25 @@ export async function submitSolanaV4CreatePlan(
   const recoverIfLanded = async (knownSignature?: string | null) => {
     if (knownSignature) {
       try {
-        const landed = await waitForCreateSignature(connection, knownSignature);
-        if (!landed.err) {
+        const status = await connection.getSignatureStatuses([knownSignature], {
+          searchTransactionHistory: true,
+        });
+        const value = status?.value?.[0];
+        if (!value?.err && (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized")) {
+          return {
+            signature: knownSignature,
+            campaignAddress: plan.createCampaign.accounts.campaign,
+            mintAddress: plan.createCampaign.accounts.mint,
+            programId: plan.programId,
+            plan,
+            recovered: true as const,
+          };
+        }
+        const tx = await connection.getTransaction(knownSignature, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        });
+        if (tx && !tx.meta?.err) {
           return {
             signature: knownSignature,
             campaignAddress: plan.createCampaign.accounts.campaign,
@@ -300,9 +331,15 @@ export async function submitSolanaV4CreatePlan(
   } catch (error: unknown) {
     const recovered = await recoverIfLanded(sentSignature);
     if (recovered) return recovered;
+    if (error instanceof LaunchpadSignatureExpiredError) {
+      throw new Error(CREATE_EXPIRED_BEFORE_CONFIRMATION);
+    }
+    if (error instanceof LaunchpadSignatureUnconfirmedError) {
+      throw error;
+    }
     const msg = await formatSolanaSendError(error);
     // A signature that left the wallet must not be rebuilt — that would prompt Phantom twice.
-    if (sentSignature || !(isBlockhashError(error) || isBlockhashError(msg))) {
+    if (sentSignature || !(isLaunchpadBlockhashError(error) || isLaunchpadBlockhashError(msg))) {
       throw new Error(msg);
     }
     try {
@@ -310,6 +347,9 @@ export async function submitSolanaV4CreatePlan(
     } catch (retryError: unknown) {
       const recoveredRetry = await recoverIfLanded(sentSignature);
       if (recoveredRetry) return recoveredRetry;
+      if (retryError instanceof LaunchpadSignatureExpiredError) {
+        throw new Error(CREATE_EXPIRED_BEFORE_CONFIRMATION);
+      }
       throw new Error(await formatSolanaSendError(retryError));
     }
   }
@@ -321,69 +361,6 @@ export async function submitSolanaV4CreatePlan(
     programId: plan.programId,
     plan,
   };
-}
-
-function isBlockhashError(value: unknown): boolean {
-  return /blockhash not found|block height exceeded|expired blockhash/i.test(String((value as Error)?.message || value || ""));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForCreateSignature(
-  connection: {
-    getSignatureStatuses: Function;
-    getTransaction?: Function;
-  },
-  signature: string,
-  timeoutMs = 45_000,
-): Promise<{ err: unknown }> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const status = await connection.getSignatureStatuses([signature], {
-      searchTransactionHistory: true,
-    });
-    const value = status?.value?.[0];
-    if (value?.err) return { err: value.err };
-    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
-      return { err: null };
-    }
-    await sleep(1_500);
-  }
-  if (typeof connection.getTransaction === "function") {
-    const tx = await connection.getTransaction(signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
-    if (tx) return { err: tx?.meta?.err || null };
-  }
-  throw new Error(`Signature ${signature} has expired: block height exceeded.`);
-}
-
-async function confirmCreateSignature(
-  connection: {
-    confirmTransaction: Function;
-    getSignatureStatuses: Function;
-    getTransaction?: Function;
-  },
-  signature: string,
-  latest: { blockhash: string; lastValidBlockHeight: number },
-): Promise<{ err: unknown }> {
-  try {
-    const result = await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: latest.blockhash,
-        lastValidBlockHeight: latest.lastValidBlockHeight,
-      },
-      "confirmed",
-    );
-    return { err: result?.value?.err || null };
-  } catch (error) {
-    if (!isBlockhashError(error)) throw error;
-    return waitForCreateSignature(connection, signature);
-  }
 }
 
 async function fetchTransactionLogs(
@@ -474,7 +451,7 @@ async function formatSolanaSendError(error: unknown): Promise<string> {
   if (/Access violation|stack frame|Program failed to complete/i.test(combined)) {
     return "Solana create blocked before signing: the deployed program hit a BPF execution/stack failure. Do not approve or deploy this transaction.";
   }
-  if (isBlockhashError(combined)) {
+  if (isLaunchpadBlockhashError(combined)) {
     return "Solana create failed: the wallet took too long and the transaction blockhash expired. Approve the next Phantom popup quickly after MemeWarzone simulation passes.";
   }
   if (/InvalidCreateAuthorization/i.test(combined) || explained?.startsWith("InvalidCreateAuthorization")) {

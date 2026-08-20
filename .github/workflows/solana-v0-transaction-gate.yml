@@ -11,6 +11,8 @@ on:
       - frontend/package-lock.json
       - frontend/src/lib/solanaV0Transaction.ts
       - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaConfirmSignature.ts
+      - frontend/src/lib/solanaConfirmSignature.test.mjs
       - frontend/src/lib/solanaLaunchpadInstructions.ts
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
@@ -30,6 +32,8 @@ on:
       - frontend/package-lock.json
       - frontend/src/lib/solanaV0Transaction.ts
       - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaConfirmSignature.ts
+      - frontend/src/lib/solanaConfirmSignature.test.mjs
       - frontend/src/lib/solanaLaunchpadInstructions.ts
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
@@ -74,6 +78,9 @@ jobs:
 
       - name: Run V0 transaction invariants
         run: npm --prefix frontend run test:solana-v0
+
+      - name: Run launchpad confirmation helper tests
+        run: npm --prefix frontend run test:solana-confirm
 
       - name: Emit deterministic launchpad ALT plan
         shell: bash

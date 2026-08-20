@@ -19,6 +19,11 @@ import {
   requireLaunchpadAltAddress,
   simulateLaunchpadV0OrThrow,
 } from "@/lib/solanaV0Transaction";
+import {
+  LaunchpadSignatureExpiredError,
+  TRADE_EXPIRED_BEFORE_CONFIRMATION,
+  confirmLaunchpadSignature,
+} from "@/lib/solanaConfirmSignature";
 
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
@@ -294,6 +299,9 @@ export function mapSolanaTradeError(err: unknown): string {
   if (/SlippageExceeded/i.test(msg)) {
     return "Slippage exceeded — retry with a higher slippage or smaller size.";
   }
+  if (/expired before confirmation/i.test(msg)) {
+    return msg;
+  }
   if (/buffer is not defined|Buffer is not defined/i.test(msg)) {
     return "Browser crypto missing Buffer — hard-refresh after the latest frontend deploy.";
   }
@@ -488,16 +496,26 @@ export async function submitSolanaTradeV1(
     skipPreflight: false,
     maxRetries: 3,
   });
-  const confirmation = await connection.confirmTransaction(
-    {
+  const programPk = new PublicKey(auth.programId);
+  const tradeAuthPk = new PublicKey(a.tradeAuthorization);
+  let confirmation;
+  try {
+    confirmation = await confirmLaunchpadSignature(connection, {
       signature: sig,
-      blockhash: unsigned.latest.blockhash,
       lastValidBlockHeight: unsigned.latest.lastValidBlockHeight,
-    },
-    "confirmed",
-  );
-  if (confirmation.value?.err) {
-    throw new Error(`Trade failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+      recover: async () => {
+        const info = await connection.getAccountInfo(tradeAuthPk, "confirmed");
+        return Boolean(info && info.owner.equals(programPk));
+      },
+    });
+  } catch (error) {
+    if (error instanceof LaunchpadSignatureExpiredError) {
+      throw new Error(TRADE_EXPIRED_BEFORE_CONFIRMATION);
+    }
+    throw error;
+  }
+  if (confirmation.err) {
+    throw new Error(`Trade failed on-chain: ${JSON.stringify(confirmation.err)}`);
   }
   return { signature: sig };
 }
