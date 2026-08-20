@@ -40,7 +40,7 @@ async function main() {
       missing: [],
     };
   } else if (requireAlt) {
-    throw new Error("SOLANA_LAUNCHPAD_ALT_ADDRESS is required for this check");
+    throw new Error("SOLANA_LAUNCHPAD_ALT_ADDRESS or VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS is required for this check");
   }
 
   if (json) {

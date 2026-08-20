@@ -24,7 +24,9 @@ const {
   buildLaunchpadV0Transaction,
   compileAndAssertLaunchpadV0,
   compileLaunchpadV0WithLatestBlockhash,
+  configuredLaunchpadAltAddress,
   inspectLaunchpadV0Envelope,
+  requireLaunchpadAltAddress,
 } = await loadSolanaV0Module();
 const {
   buildCreateCampaignInstruction,
@@ -396,6 +398,38 @@ test("launchpad ALT plan is deterministic and unique", () => {
   );
   assert.ok(first.length >= 15);
   assert.equal(new Set(first.map((entry) => entry.label)).size, first.length);
+  for (const label of [
+    "memewarzoneProgram",
+    "globalConfig",
+    "ed25519Program",
+    "tokenProgram",
+    "systemProgram",
+    "rewardsTreasuryProgram",
+    "weeklyLeagueVault",
+    "protocolVault",
+  ]) {
+    assert.ok(first.some((entry) => entry.label === label), `ALT plan missing ${label}`);
+  }
+});
+
+test("launchpad ALT address is fail-closed until configured", () => {
+  const previous = process.env.SOLANA_LAUNCHPAD_ALT_ADDRESS;
+  const previousVite = process.env.VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS;
+  delete process.env.SOLANA_LAUNCHPAD_ALT_ADDRESS;
+  delete process.env.VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS;
+  try {
+    assert.equal(configuredLaunchpadAltAddress(), "");
+    assert.throws(() => requireLaunchpadAltAddress(), /VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS/);
+    const address = Keypair.generate().publicKey.toBase58();
+    process.env.SOLANA_LAUNCHPAD_ALT_ADDRESS = address;
+    assert.equal(configuredLaunchpadAltAddress(), address);
+    assert.equal(requireLaunchpadAltAddress(), address);
+  } finally {
+    if (previous == null) delete process.env.SOLANA_LAUNCHPAD_ALT_ADDRESS;
+    else process.env.SOLANA_LAUNCHPAD_ALT_ADDRESS = previous;
+    if (previousVite == null) delete process.env.VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS;
+    else process.env.VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS = previousVite;
+  }
 });
 
 test("CREATE and BUY/SELL V0 compile through the same helper used by graduation", () => {

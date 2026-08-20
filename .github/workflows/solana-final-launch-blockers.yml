@@ -22,6 +22,7 @@ on:
       - frontend/scripts/load-solana-v0-module.mjs
       - frontend/scripts/solana-launchpad-alt-plan.mjs
       - frontend/scripts/create-launchpad-alt.mjs
+      - docs/solana/launchpad-alt.md
       - tools/solana-meteora-graduation/graduate.mjs
       - frontend/api/dev-fix/solana-trade-authorization-v1.js
       - frontend/api/dev-fix/solana-trade-preflight-final.test.mjs

@@ -73,7 +73,7 @@ export function requireLaunchpadAltAddress(): string {
   const address = configuredLaunchpadAltAddress();
   if (!address) {
     throw new Error(
-      "Solana launchpad ALT is not configured. Set VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS to the pre-created static lookup table.",
+      "Solana launchpad ALT is not configured. Set VITE_SOLANA_LAUNCHPAD_ALT_ADDRESS in the frontend Coolify build env (Vite bakes it at build time). Operator/CI scripts can use SOLANA_LAUNCHPAD_ALT_ADDRESS. This table is distinct from SOLANA_GRADUATION_ALT_ADDRESS.",
     );
   }
   return address;

@@ -18,6 +18,7 @@ on:
       - frontend/scripts/solana-launchpad-alt-plan.mjs
       - frontend/scripts/load-solana-v0-module.mjs
       - frontend/scripts/create-launchpad-alt.mjs
+      - docs/solana/launchpad-alt.md
       - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
   pull_request:
@@ -35,6 +36,7 @@ on:
       - frontend/scripts/solana-launchpad-alt-plan.mjs
       - frontend/scripts/load-solana-v0-module.mjs
       - frontend/scripts/create-launchpad-alt.mjs
+      - docs/solana/launchpad-alt.md
       - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
   schedule:
