@@ -212,7 +212,7 @@ function isAllowedOrigin(origin) {
     const host = hostname.toLowerCase();
     if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
-    if (host.endsWith(".netlify.app")) return true;
+    if (host === "memewarzone.netlify.app" || host.endsWith("--memewarzone.netlify.app")) return true;
     if (isCoolifyOrSelfHostPreview(host)) return true;
   } catch {}
   return false;

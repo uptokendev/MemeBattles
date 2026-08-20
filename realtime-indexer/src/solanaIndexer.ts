@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
+import { checkMilestones } from "./milestones.js";
 import { publishCandle, publishStats, publishTrade } from "./ably.js";
 import { TIMEFRAMES, bucketStart, type TF } from "./timeframes.js";
 

@@ -550,6 +550,7 @@ async function insertTrade(row: {
   }
 
   await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
+  await checkMilestones(pool, row.chainId, row.campaign);
 
   return { inserted: isInsert, tokenAmount, bnbAmount, priceBnb };
 }

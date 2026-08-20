@@ -308,7 +308,7 @@ function isAllowedOrigin(origin?: string) {
     }
 
     // Netlify deploy previews / branch deploys
-    if (host.endsWith(".netlify.app")) {
+    if (host === "memewarzone.netlify.app" || host.endsWith("--memewarzone.netlify.app")) {
       return true;
     }
 
@@ -319,13 +319,13 @@ function isAllowedOrigin(origin?: string) {
 
     // Old Vercel previews
     if (
-      host.endsWith(".vercel.app") &&
-      (host.includes("memebattles") || host.includes("meme-battles") || host.includes("memewar"))
+      host === "memebattles.vercel.app" || 
+      host.endsWith("--memebattles.vercel.app") ||
+      host === "meme-battles.vercel.app" || 
+      host.endsWith("--meme-battles.vercel.app") ||
+      host === "memewar.vercel.app" || 
+      host.endsWith("--memewar.vercel.app")
     ) {
-      return true;
-    }
-
-    if (host.includes("meme-battles") || host.includes("memebattles") || host.includes("memewar")) {
       return true;
     }
   } catch {
