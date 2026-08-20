@@ -39,6 +39,7 @@
     "lint": "eslint .",
     "test:wallet-discovery": "node --test src/lib/injectedProviderDiscovery.test.mjs",
     "test:solana-v0": "node --test src/lib/solanaV0Transaction.test.mjs",
+    "test:solana-confirm": "node --test src/lib/solanaConfirmSignature.test.mjs",
     "check:solana-launchpad-alt": "node scripts/solana-launchpad-alt-plan.mjs --json",
     "check:solana-launchpad-alt:live": "node scripts/verify-live-launchpad-alt.mjs",
     "create:solana-launchpad-alt": "node scripts/create-launchpad-alt.mjs",
