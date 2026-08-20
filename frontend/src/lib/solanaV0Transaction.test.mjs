@@ -64,6 +64,17 @@ function legacyBytes(payer, instructions) {
   return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
 }
 
+function reportSize(flow, legacy, stats) {
+  console.info(`[solana-v0-gate] ${flow}`, {
+    legacyBytes: legacy,
+    v0Bytes: stats.serializedBytes,
+    bytesSaved: legacy - stats.serializedBytes,
+    requiredSigners: stats.requiredSigners,
+    lookedUpAccounts: stats.lookupReadonlyCount + stats.lookupWritableCount,
+    releaseMaxBytes: SOLANA_RELEASE_MAX_BYTES,
+  });
+}
+
 function makeCreateFixture() {
   const payer = Keypair.generate().publicKey;
   const staticAccounts = randomKeys(8);
@@ -136,6 +147,7 @@ test("CREATE-like V0+ALT envelope stays comfortably below legacy size and preser
     lookupTableAccounts: [fixture.lookupTable],
   });
 
+  reportSize("CREATE", legacy, stats);
   assert.equal(stats.requiredSigners, 1);
   assert.equal(stats.instructionCount, 2);
   assert.ok(stats.lookupReadonlyCount + stats.lookupWritableCount >= 6);
@@ -164,6 +176,7 @@ test("BUY/SELL-like V0+ALT envelope keeps one signer and meaningful packet headr
     lookupTableAccounts: [fixture.lookupTable],
   });
 
+  reportSize("BUY_SELL", legacy, stats);
   assert.equal(stats.requiredSigners, 1);
   assert.equal(stats.instructionCount, 3);
   assert.ok(stats.lookupReadonlyCount + stats.lookupWritableCount >= 8);
