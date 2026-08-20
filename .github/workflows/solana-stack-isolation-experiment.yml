@@ -35,10 +35,17 @@ env:
   PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
 
 jobs:
-  trade-auth-isolation:
-    name: Probe trade auth frames on Mainnet Agave
+  stack-probe:
+    name: Probe ${{ matrix.variant }} on Mainnet Agave
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - trade-marker
+          - trade-risk-constraint-lite
+          - graduation-box
     steps:
       - name: Checkout candidate SHA
         uses: actions/checkout@v4
@@ -89,29 +96,54 @@ jobs:
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
-      - name: Apply trade-auth stack isolation candidate in runner
+      - name: Apply isolated source variant in runner
         shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
           python - <<'PY'
+          import os
           from pathlib import Path
 
-          path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
-          source = path.read_text(encoding="utf-8")
-          replacements = {
-              "\nfn build_trade_authorization_digest(": "\n#[inline(never)]\nfn build_trade_authorization_digest(",
-              "\nfn create_trade_auth_account<'info>(": "\n#[inline(never)]\nfn create_trade_auth_account<'info>(",
-          }
-          for old, new in replacements.items():
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected exactly one stack-isolation target for {old!r}, found {count}")
-              source = source.replace(old, new, 1)
-          path.write_text(source, encoding="utf-8")
+          variant = os.environ["VARIANT"]
+          trade_path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
+          graduation_path = Path("programs/memewarzone_solana/src/graduation.rs")
+
+          if variant.startswith("trade-"):
+              source = trade_path.read_text(encoding="utf-8")
+              marker_old = "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
+              marker_new = "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    msg!(\"BUY_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;"
+              if source.count(marker_old) != 1:
+                  raise SystemExit("buy handler marker target not unique")
+              source = source.replace(marker_old, marker_new, 1)
+
+              if variant == "trade-risk-constraint-lite":
+                  risk = "    #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]\n    pub risk_profile: UncheckedAccount<'info>,"
+                  if source.count(risk) != 2:
+                      raise SystemExit(f"expected two risk PDA constraints, found {source.count(risk)}")
+                  source = source.replace(risk, "    pub risk_profile: UncheckedAccount<'info>,")
+
+              trade_path.write_text(source, encoding="utf-8")
+
+          elif variant == "graduation-box":
+              source = graduation_path.read_text(encoding="utf-8")
+              marker_old = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
+              marker_new = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    msg!(\"BEGIN_GRAD_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;"
+              if source.count(marker_old) != 1:
+                  raise SystemExit("begin graduation marker target not unique")
+              source = source.replace(marker_old, marker_new, 1)
+
+              account = "    pub graduation_state: Account<'info, GraduationState>,"
+              if source.count(account) != 2:
+                  raise SystemExit(f"expected two GraduationState Account wrappers, found {source.count(account)}")
+              source = source.replace(account, "    pub graduation_state: Box<Account<'info, GraduationState>>,")
+              graduation_path.write_text(source, encoding="utf-8")
+          else:
+              raise SystemExit(f"unknown variant {variant}")
           PY
-          grep -n -B1 -E 'fn (build_trade_authorization_digest|create_trade_auth_account)' \
-            programs/memewarzone_solana/src/authorized_trade.rs
-          git diff -- programs/memewarzone_solana/src/authorized_trade.rs
+          echo "variant=$VARIANT"
+          git diff -- programs/memewarzone_solana/src/authorized_trade.rs programs/memewarzone_solana/src/graduation.rs
 
       - name: Create ephemeral payer
         shell: bash
@@ -122,14 +154,16 @@ jobs:
             --outfile "$HOME/.config/solana/id.json"
           echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
 
-      - name: Build stack-isolated SBF
+      - name: Build source variant SBF
         shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -o pipefail
           anchor build --program-name memewarzone_solana --no-idl \
-            2>&1 | tee /tmp/mwz-stack-isolation-build.log | tail -n 180
+            2>&1 | tee "/tmp/mwz-${VARIANT}-build.log" | tail -n 180
           test -s target/deploy/memewarzone_solana.so
-          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-stack-isolation-sha.txt
+          sha256sum target/deploy/memewarzone_solana.so | tee "/tmp/mwz-${VARIANT}-sha.txt"
           wc -c target/deploy/memewarzone_solana.so
 
       - name: Generate matching IDL
@@ -147,44 +181,51 @@ jobs:
       - name: Install acceptance dependencies
         run: npm install --prefix tests/solana --no-audit --no-fund
 
-      - name: Run lifecycle on Agave with Mainnet feature set
+      - name: Run targeted Agave/Mainnet probe
         shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/mwz-stack-isolation-ledger
+          rm -rf "/tmp/mwz-${VARIANT}-ledger"
           "$AGAVE_BIN/solana-test-validator" \
             --reset \
             --quiet \
-            --ledger /tmp/mwz-stack-isolation-ledger \
+            --ledger "/tmp/mwz-${VARIANT}-ledger" \
             --url "$MAINNET_RPC" \
             --clone-feature-set \
             --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
-            > /tmp/mwz-stack-isolation-validator.log 2>&1 &
+            > "/tmp/mwz-${VARIANT}-validator.log" 2>&1 &
           validator_pid=$!
           trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 120); do
             if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
-            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-stack-isolation-validator.log >&2; exit 1; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 "/tmp/mwz-${VARIANT}-validator.log" >&2; exit 1; fi
             sleep 2
           done
           "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
           "$AGAVE_BIN/solana" airdrop 100 >/dev/null
+          if [[ "$VARIANT" == graduation-* ]]; then
+            TEST_GREP='begin_graduation'
+          else
+            TEST_GREP='create.*close curve'
+          fi
           (
             cd tests/solana
             ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
-          ) 2>&1 | tee /tmp/mwz-stack-isolation-acceptance.log
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs --grep "$TEST_GREP"
+          ) 2>&1 | tee "/tmp/mwz-${VARIANT}-acceptance.log"
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: solana-stack-isolation-${{ github.sha }}
+          name: solana-stack-${{ matrix.variant }}-${{ github.sha }}
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            /tmp/mwz-stack-isolation-build.log
-            /tmp/mwz-stack-isolation-sha.txt
-            /tmp/mwz-stack-isolation-validator.log
-            /tmp/mwz-stack-isolation-acceptance.log
+            /tmp/mwz-${{ matrix.variant }}-build.log
+            /tmp/mwz-${{ matrix.variant }}-sha.txt
+            /tmp/mwz-${{ matrix.variant }}-validator.log
+            /tmp/mwz-${{ matrix.variant }}-acceptance.log
             target/deploy/memewarzone_solana.so
