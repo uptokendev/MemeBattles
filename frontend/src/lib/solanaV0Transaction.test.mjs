@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { transform } from "esbuild";
 import {
   AddressLookupTableAccount,
   ComputeBudgetProgram,
@@ -13,22 +11,17 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 import * as web3 from "@solana/web3.js";
+import { loadSolanaV0Module } from "../../scripts/load-solana-v0-module.mjs";
 
-const sourceUrl = new URL("./solanaV0Transaction.ts", import.meta.url);
-const source = await readFile(sourceUrl, "utf8");
-const compiled = await transform(source, {
-  format: "esm",
-  loader: "ts",
-  target: "es2022",
-});
-const moduleUrl = `data:text/javascript;base64,${Buffer.from(compiled.code).toString("base64")}`;
 const {
   SOLANA_RELEASE_MAX_BYTES,
   assertLaunchpadV0Intent,
   assertLookupTableContains,
+  buildLaunchpadAltPlan,
   buildLaunchpadV0Transaction,
+  compileAndAssertLaunchpadV0,
   inspectLaunchpadV0Envelope,
-} = await import(moduleUrl);
+} = await loadSolanaV0Module();
 
 const PROGRAM_ID = new PublicKey("3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt");
 const BLOCKHASH = Keypair.generate().publicKey.toBase58();
@@ -256,4 +249,55 @@ test("ALT verification fails closed when a required static address is missing", 
     () => assertLookupTableContains(lookupTable, [...addresses, Keypair.generate().publicKey]),
     /missing required addresses/i,
   );
+});
+
+test("launchpad ALT plan is deterministic and unique", () => {
+  const first = buildLaunchpadAltPlan(web3);
+  const second = buildLaunchpadAltPlan(web3);
+  assert.equal(first.length, second.length);
+  assert.deepEqual(
+    first.map((entry) => entry.address.toBase58()),
+    second.map((entry) => entry.address.toBase58()),
+  );
+  assert.ok(first.length >= 15);
+  assert.equal(new Set(first.map((entry) => entry.label)).size, first.length);
+});
+
+test("CREATE and BUY/SELL V0 compile through the same helper used by graduation", () => {
+  const payer = Keypair.generate().publicKey;
+  const plan = buildLaunchpadAltPlan(web3);
+  const lookupTable = makeLookupTable(plan.map((entry) => entry.address));
+  const ed25519Instruction = makeEd25519Instruction();
+  const programInstruction = new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      ...plan.slice(0, 8).map((entry, index) => ({
+        pubkey: entry.address,
+        isSigner: false,
+        isWritable: index >= 4,
+      })),
+    ],
+    data: Buffer.alloc(73, 0x11),
+  });
+  const { stats } = compileAndAssertLaunchpadV0(
+    web3,
+    {
+      payer,
+      recentBlockhash: BLOCKHASH,
+      instructions: [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+        ed25519Instruction,
+        programInstruction,
+      ],
+      lookupTableAccounts: [lookupTable],
+    },
+    {
+      payer,
+      ed25519Instruction,
+      programInstruction,
+    },
+  );
+  assert.equal(stats.requiredSigners, 1);
+  assert.ok(stats.serializedBytes <= SOLANA_RELEASE_MAX_BYTES);
 });

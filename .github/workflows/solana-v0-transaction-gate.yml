@@ -15,6 +15,9 @@ on:
       - frontend/src/lib/solanaTradeV1.ts
       - frontend/src/lib/solanaWallet.ts
       - frontend/scripts/solana-launchpad-alt-plan.mjs
+      - frontend/scripts/load-solana-v0-module.mjs
+      - frontend/scripts/create-launchpad-alt.mjs
+      - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
   pull_request:
     branches:
@@ -28,6 +31,9 @@ on:
       - frontend/src/lib/solanaTradeV1.ts
       - frontend/src/lib/solanaWallet.ts
       - frontend/scripts/solana-launchpad-alt-plan.mjs
+      - frontend/scripts/load-solana-v0-module.mjs
+      - frontend/scripts/create-launchpad-alt.mjs
+      - tools/solana-meteora-graduation/graduate.mjs
       - .github/workflows/solana-v0-transaction-gate.yml
   schedule:
     - cron: '17 5 * * *'

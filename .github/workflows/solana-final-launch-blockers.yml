@@ -16,6 +16,12 @@ on:
       - tests/solana/**
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
+      - frontend/src/lib/solanaV0Transaction.ts
+      - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/scripts/load-solana-v0-module.mjs
+      - frontend/scripts/solana-launchpad-alt-plan.mjs
+      - frontend/scripts/create-launchpad-alt.mjs
+      - tools/solana-meteora-graduation/graduate.mjs
       - frontend/api/dev-fix/solana-trade-authorization-v1.js
       - frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
       - scripts/solana/upgrade-mainnet-launchpad.cjs
@@ -247,7 +253,7 @@ jobs:
           (
             cd tests/solana
             ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs v0-launchpad-onchain.cjs
           ) 2>&1 | tee /tmp/mwz-lifecycle-acceptance.log
           if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-lifecycle-acceptance.log; then
             echo 'FATAL: lifecycle acceptance contains a BPF crash signature' >&2
@@ -321,7 +327,7 @@ jobs:
           (
             cd tests/solana
             ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs v0-launchpad-onchain.cjs
           ) 2>&1 | tee /tmp/mwz-agave-lifecycle-acceptance.log
           if grep -Eqi 'Access violation|stack frame|Program failed to complete' /tmp/mwz-agave-lifecycle-acceptance.log; then
             echo 'FATAL: Agave/Mainnet-feature lifecycle contains a BPF crash signature' >&2

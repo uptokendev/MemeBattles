@@ -12,12 +12,19 @@ import type { SolanaV4CreateAuthorizationResponse } from "@/lib/solanaCreateAuth
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { loadSolanaWeb3, type SolanaWeb3Module } from "@/lib/solanaWeb3";
+import {
+  assertLaunchpadV0Intent,
+  buildLaunchpadAltPlan,
+  buildLaunchpadV0Transaction,
+  fetchAndVerifyLaunchpadLookupTable,
+  requireLaunchpadAltAddress,
+  simulateLaunchpadV0OrThrow,
+} from "@/lib/solanaV0Transaction";
 
 const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
 const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
-const MAX_SOLANA_TRANSACTION_BYTES = 1_232;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const MIN_CREATE_LAMPORTS = 30_000_000; // conservative balance guard / fallback only
 const CREATE_RENT_ACCOUNT_SIZES = [720, 82, 165, 81, 155] as const;
@@ -234,7 +241,7 @@ export async function submitSolanaV4CreatePlan(
   }
 
   const web3 = await loadSolanaWeb3();
-  const { Connection, Transaction, PublicKey } = web3;
+  const { Connection, PublicKey } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
@@ -268,6 +275,11 @@ export async function submitSolanaV4CreatePlan(
 
   const ed25519Ix = buildEd25519VerifyIx(web3, plan);
   const createIx = buildCreateCampaignIx(web3, plan);
+  const createInstructions = [ed25519Ix, createIx];
+  const lookupTable = await fetchAndVerifyLaunchpadLookupTable(web3, connection, {
+    address: requireLaunchpadAltAddress(),
+    requiredAddresses: buildLaunchpadAltPlan(web3).map((entry) => entry.address),
+  });
 
   const balance = await connection.getBalance(new PublicKey(creatorPk), "confirmed");
   if (balance < MIN_CREATE_LAMPORTS) {
@@ -276,71 +288,48 @@ export async function submitSolanaV4CreatePlan(
     );
   }
 
-  const buildUnsigned = (blockhash: string) => {
-    const next = new Transaction();
-    // Ed25519 must immediately precede createCampaign (program invariant).
-    next.add(ed25519Ix);
-    next.add(createIx);
-    next.feePayer = new PublicKey(creatorPk);
-    next.recentBlockhash = blockhash;
-    return next;
+  const buildUnsignedV0 = (blockhash: string) => {
+    const transaction = buildLaunchpadV0Transaction(web3, {
+      payer: creatorPk,
+      recentBlockhash: blockhash,
+      instructions: createInstructions,
+      lookupTableAccounts: [lookupTable],
+    });
+    const stats = assertLaunchpadV0Intent(web3, transaction, {
+      payer: creatorPk,
+      ed25519Instruction: ed25519Ix,
+      programInstruction: createIx,
+      lookupTableAccounts: [lookupTable],
+    });
+    return { transaction, stats };
   };
 
-  const simulateUnsignedCreate = async (unsigned: InstanceType<typeof Transaction>) => {
-    let serializedBytes = 0;
-    try {
-      serializedBytes = unsigned.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-      }).length;
-    } catch (error) {
-      throw new Error(`Solana create could not be serialized before simulation: ${String((error as Error)?.message || error)}`);
-    }
-    if (serializedBytes > MAX_SOLANA_TRANSACTION_BYTES) {
-      throw new Error(
-        `Solana create transaction is too large (${serializedBytes} bytes; maximum ${MAX_SOLANA_TRANSACTION_BYTES}).`,
-      );
-    }
-    if (serializedBytes > 1_100) {
-      console.warn("[solanaV4CreateSubmit] create transaction near size limit", serializedBytes);
-    }
-
-    // web3.js 1.95 legacy Transaction overload: omit the second argument.
-    // This performs the same unsigned pre-sign simulation used by the accepted SBF gate.
-    const simulation = await connection.simulateTransaction(unsigned);
-    const logs = Array.isArray(simulation.value.logs) ? simulation.value.logs : [];
-    const source = `${simulation.value.err == null ? "" : JSON.stringify(simulation.value.err)}\n${logs.join("\n")}`;
-    if (/Access violation|stack frame|Program failed to complete/i.test(source)) {
-      throw Object.assign(
-        new Error("Solana create blocked before wallet signing: deployed program hit a BPF execution/stack failure."),
-        { logs, simulationErr: simulation.value.err },
-      );
-    }
-    if (simulation.value.err) {
-      throw Object.assign(
-        new Error("Solana create blocked before wallet signing: RPC simulation failed."),
-        { logs, simulationErr: simulation.value.err },
-      );
-    }
-
-    const unitsConsumed = simulation.value.unitsConsumed ?? null;
-    const instructionCount = unsigned.instructions.length;
+  const simulateUnsignedCreate = async (unsigned: ReturnType<typeof buildUnsignedV0>) => {
+    const simulated = await simulateLaunchpadV0OrThrow(
+      connection,
+      unsigned.transaction,
+      "Solana create blocked before wallet signing",
+    );
     console.info("[solanaV4CreateSubmit] unsigned create simulation passed", {
-      serializedBytes,
-      unitsConsumed,
-      instructionCount,
-      requiredWalletSigners: 1,
+      serializedBytes: unsigned.stats.serializedBytes,
+      unitsConsumed: simulated.unitsConsumed,
+      instructionCount: unsigned.stats.instructionCount,
+      requiredWalletSigners: unsigned.stats.requiredSigners,
     });
-    return { serializedBytes, unitsConsumed, instructionCount };
+    return {
+      serializedBytes: unsigned.stats.serializedBytes,
+      unitsConsumed: simulated.unitsConsumed,
+      instructionCount: unsigned.stats.instructionCount,
+    };
   };
 
   const estimateDeploymentCost = async (
-    unsigned: InstanceType<typeof Transaction>,
+    unsigned: ReturnType<typeof buildUnsignedV0>,
     simulation: { serializedBytes: number; unitsConsumed: number | null; instructionCount: number },
   ): Promise<SolanaV4CreatePreflightPreview> => {
     let estimatedFeeLamports: number | null = null;
     try {
-      const fee = await connection.getFeeForMessage(unsigned.compileMessage(), "confirmed");
+      const fee = await connection.getFeeForMessage(unsigned.transaction.message, "confirmed");
       estimatedFeeLamports = typeof fee.value === "number" ? fee.value : null;
     } catch (error) {
       console.warn("[solanaV4CreateSubmit] fee estimate unavailable", error);
@@ -378,25 +367,24 @@ export async function submitSolanaV4CreatePlan(
 
   let preflightPreviewShown = false;
   const signAndSend = async () => {
-    // Simulate first with a temporary blockhash. Only a clean simulation is allowed
-    // to reach Phantom; then rebuild the identical instruction set with a fresh hash.
-    const simulationLatest = await connection.getLatestBlockhash("confirmed");
-    const simulationTx = buildUnsigned(simulationLatest.blockhash);
-    const simulation = await simulateUnsignedCreate(simulationTx);
-    const preview = await estimateDeploymentCost(simulationTx, simulation);
+    const latest = await connection.getLatestBlockhash("confirmed");
+    const unsigned = buildUnsignedV0(latest.blockhash);
+    const simulation = await simulateUnsignedCreate(unsigned);
+    const preview = await estimateDeploymentCost(unsigned, simulation);
     if (!preflightPreviewShown && opts?.onPreflightReady) {
       await opts.onPreflightReady(preview);
       preflightPreviewShown = true;
     }
-
-    const latest = await connection.getLatestBlockhash("confirmed");
-    const unsigned = buildUnsigned(latest.blockhash);
-    const signed = await provider.signTransaction(unsigned);
+    const signed = await provider.signTransaction(unsigned.transaction);
+    assertLaunchpadV0Intent(web3, signed, {
+      payer: creatorPk,
+      ed25519Instruction: ed25519Ix,
+      programInstruction: createIx,
+      lookupTableAccounts: [lookupTable],
+    });
     const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
-    // Do not perform another RPC preflight after the user signs: a long wallet delay can
-    // expire the blockhash. The exact unsigned transaction already passed simulation.
     const signature = await connection.sendRawTransaction(raw, {
-      skipPreflight: true,
+      skipPreflight: false,
       maxRetries: 3,
     });
     const confirmed = await confirmCreateSignature(connection, signature, latest);

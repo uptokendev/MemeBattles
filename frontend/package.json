@@ -40,6 +40,7 @@
     "test:wallet-discovery": "node --test src/lib/injectedProviderDiscovery.test.mjs",
     "test:solana-v0": "node --test src/lib/solanaV0Transaction.test.mjs",
     "check:solana-launchpad-alt": "node scripts/solana-launchpad-alt-plan.mjs --json",
+    "create:solana-launchpad-alt": "node scripts/create-launchpad-alt.mjs",
     "preview": "vite preview",
     "check:core-api": "node scripts/check-core-api-routes.mjs",
     "check:phase3-core-flow": "node scripts/check-phase3-core-flow.mjs",

@@ -7,6 +7,14 @@ import { apiFetch } from "@/lib/apiBase";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { loadSolanaWeb3, type SolanaWeb3Module } from "@/lib/solanaWeb3";
+import {
+  assertLaunchpadV0Intent,
+  buildLaunchpadAltPlan,
+  buildLaunchpadV0Transaction,
+  fetchAndVerifyLaunchpadLookupTable,
+  requireLaunchpadAltAddress,
+  simulateLaunchpadV0OrThrow,
+} from "@/lib/solanaV0Transaction";
 
 const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
 const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
@@ -357,11 +365,6 @@ export function mapSolanaTradeError(err: unknown): string {
   return msg;
 }
 
-function collectSimSource(err: unknown, logs: string[]): string {
-  const errText = typeof err === "string" ? err : JSON.stringify(err);
-  return `${errText}\n${logs.join("\n")}`;
-}
-
 /** SPL token balance (raw base units) for owner ATA. */
 export async function getSolanaTokenBalanceRaw(input: {
   mint: string;
@@ -445,7 +448,7 @@ export async function submitSolanaTradeV1(
   }
 
   const web3 = await loadSolanaWeb3();
-  const { Connection, Transaction, PublicKey, ComputeBudgetProgram, TransactionInstruction } = web3;
+  const { Connection, PublicKey, ComputeBudgetProgram, TransactionInstruction } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
@@ -504,50 +507,50 @@ export async function submitSolanaTradeV1(
     keys,
     data,
   });
+  const lookupTable = await fetchAndVerifyLaunchpadLookupTable(web3, connection, {
+    address: requireLaunchpadAltAddress(),
+    requiredAddresses: buildLaunchpadAltPlan(web3).map((entry) => entry.address),
+  });
+  const tradeInstructions = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+    ed25519Ix,
+    tradeIx,
+  ];
 
-  const buildUnsignedTrade = (blockhash: string) => {
-    const next = new Transaction();
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const unsigned = buildLaunchpadV0Transaction(web3, {
+    payer: traderPk,
+    recentBlockhash: latest.blockhash,
+    instructions: tradeInstructions,
+    lookupTableAccounts: [lookupTable],
+  });
+  const stats = assertLaunchpadV0Intent(web3, unsigned, {
+    payer: traderPk,
+    ed25519Instruction: ed25519Ix,
+    programInstruction: tradeIx,
+    lookupTableAccounts: [lookupTable],
+  });
+  try {
+    await simulateLaunchpadV0OrThrow(connection, unsigned, "[solanaTradeV1] trade simulation failed");
+  } catch (error) {
     try {
-      next.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
-    } catch {
-      /* optional */
-    }
-    next.add(ed25519Ix);
-    next.add(tradeIx);
-    next.feePayer = new PublicKey(traderPk);
-    next.recentBlockhash = blockhash;
-    return next;
-  };
-
-  // Simulate with a temporary blockhash. Phantom is never called unless the
-  // exact instruction set is clean on MemeWarzone's RPC.
-  const simulationLatest = await connection.getLatestBlockhash("confirmed");
-  const simulationTx = buildUnsignedTrade(simulationLatest.blockhash);
-  const simulation = await connection.simulateTransaction(simulationTx);
-  const simLogs = Array.isArray(simulation.value?.logs) ? simulation.value.logs.map(String) : [];
-  const source = collectSimSource(simulation.value?.err, simLogs);
-  if (/Access violation|stack frame|Program failed to complete/i.test(source)) {
-    throw new Error(source);
-  }
-  if (simulation.value?.err) {
-    try {
-      console.error("[solanaTradeV1] trade simulation failed", {
-        err: simulation.value.err,
-        logs: simLogs,
-      });
+      console.error("[solanaTradeV1] trade simulation failed", error);
     } catch {
       /* ignore console failures */
     }
-    throw new Error(source);
+    throw error;
   }
+  console.info("[solanaTradeV1] unsigned V0 trade simulation passed", stats);
 
-  // Simulation and wallet-signing blockhashes are deliberately separated.
-  // Rebuild the same instruction set with a fresh blockhash immediately before Phantom.
-  const latest = await connection.getLatestBlockhash("confirmed");
-  const tx = buildUnsignedTrade(latest.blockhash);
-  const signed = await provider.signTransaction(tx);
+  const signed = await provider.signTransaction(unsigned);
+  assertLaunchpadV0Intent(web3, signed, {
+    payer: traderPk,
+    ed25519Instruction: ed25519Ix,
+    programInstruction: tradeIx,
+    lookupTableAccounts: [lookupTable],
+  });
   const sig = await connection.sendRawTransaction(signed.serialize(), {
-    skipPreflight: true,
+    skipPreflight: false,
     maxRetries: 3,
   });
   const confirmation = await connection.confirmTransaction(
