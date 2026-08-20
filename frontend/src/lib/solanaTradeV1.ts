@@ -394,7 +394,7 @@ export async function submitSolanaTradeV1(
   }
 
   const web3 = await loadSolanaWeb3();
-  const { Connection, PublicKey, ComputeBudgetProgram } = web3;
+  const { Connection, PublicKey } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
@@ -462,7 +462,6 @@ export async function submitSolanaTradeV1(
   const v0Input = {
     payer: traderPk,
     instructions: [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       ed25519Ix,
       tradeIx,
     ],
