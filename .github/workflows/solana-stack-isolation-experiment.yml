@@ -36,7 +36,7 @@ env:
 
 jobs:
   raw-campaign-probe:
-    name: Prove raw Campaign BUY/SELL hot path on Mainnet Agave
+    name: Prove raw Campaign trade/pause path on Mainnet Agave
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -89,7 +89,7 @@ jobs:
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
-      - name: Apply raw Campaign read/write hot path in runner only
+      - name: Apply raw Campaign trade/pause hot path in runner only
         shell: bash
         run: |
           set -euo pipefail
@@ -137,6 +137,7 @@ jobs:
           const CAMPAIGN_BUYER_COUNT_OFFSET: usize = 694;
           const CAMPAIGN_CREATOR_BOUGHT_OFFSET: usize = 702;
           const CAMPAIGN_CURVE_CLOSED_OFFSET: usize = 714;
+          const CAMPAIGN_PAUSED_OFFSET: usize = 715;
 
           fn trade_data_range<'a>(data: &'a [u8], offset: usize, len: usize) -> Result<&'a [u8]> {
               let end = offset.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
@@ -230,7 +231,7 @@ jobs:
                   creator_bought_tokens: trade_read_u64(&data, CAMPAIGN_CREATOR_BOUGHT_OFFSET)?,
                   graduated: trade_read_bool(&data, 713)?,
                   curve_closed: trade_read_bool(&data, CAMPAIGN_CURVE_CLOSED_OFFSET)?,
-                  paused: trade_read_bool(&data, 715)?,
+                  paused: trade_read_bool(&data, CAMPAIGN_PAUSED_OFFSET)?,
                   bump: trade_read_u8(&data, 716)?,
               })
           }
@@ -349,6 +350,36 @@ jobs:
 
           ''')
           source = source[:apply_buy_start] + raw_apply + source[route_start:]
+
+          pause_start = source.index("pub fn set_campaign_pause_handler(")
+          validate_start = source.index("fn validate_trade_accounts(", pause_start)
+          raw_pause = dedent(r'''
+          pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) -> Result<()> {
+              let global = &ctx.accounts.global_config;
+              if ctx.accounts.authority.key() != global.admin && ctx.accounts.authority.key() != global.pauser
+              {
+                  return err!(LaunchpadError::Unauthorized);
+              }
+              let campaign_key = ctx.accounts.campaign.key();
+              let campaign_info = ctx.accounts.campaign.to_account_info();
+              require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+              let mut data = campaign_info.try_borrow_mut_data()?;
+              trade_assert_campaign_data(&data)?;
+              let campaign_id = trade_read_32(&data, 8)?;
+              let (expected_campaign, _) =
+                  Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign_id.as_ref()], &crate::ID);
+              require_keys_eq!(campaign_key, expected_campaign, LaunchpadError::InvalidCampaign);
+              trade_write_u8(&mut data, CAMPAIGN_PAUSED_OFFSET, u8::from(paused))?;
+              emit!(crate::CampaignPauseUpdated {
+                  campaign: campaign_key,
+                  authority: ctx.accounts.authority.key(),
+                  paused,
+              });
+              Ok(())
+          }
+
+          ''')
+          source = source[:pause_start] + raw_pause + source[validate_start:]
           path.write_text(source, encoding="utf-8")
           PY
           git diff --check
