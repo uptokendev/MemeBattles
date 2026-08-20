@@ -900,7 +900,6 @@ fn load_campaign_box(info: &AccountInfo) -> Result<Box<Campaign>> {
     Ok(Box::new(Campaign::try_deserialize(&mut slice)?))
 }
 
-
 #[derive(Clone, Copy)]
 struct TradeCampaignSnapshot {
     campaign_id: [u8; 32],
@@ -940,7 +939,9 @@ const CAMPAIGN_CURVE_CLOSED_OFFSET: usize = 714;
 const CAMPAIGN_PAUSED_OFFSET: usize = 715;
 
 fn trade_data_range<'a>(data: &'a [u8], offset: usize, len: usize) -> Result<&'a [u8]> {
-    let end = offset.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
+    let end = offset
+        .checked_add(len)
+        .ok_or(LaunchpadError::MathOverflow)?;
     require!(end <= data.len(), LaunchpadError::InvalidCampaign);
     Ok(&data[offset..end])
 }
@@ -964,12 +965,18 @@ fn trade_read_u16(data: &[u8], offset: usize) -> Result<u16> {
 
 fn trade_read_u64(data: &[u8], offset: usize) -> Result<u64> {
     let raw = trade_data_range(data, offset, 8)?;
-    Ok(u64::from_le_bytes(raw.try_into().map_err(|_| error!(LaunchpadError::InvalidCampaign))?))
+    Ok(u64::from_le_bytes(
+        raw.try_into()
+            .map_err(|_| error!(LaunchpadError::InvalidCampaign))?,
+    ))
 }
 
 fn trade_read_i64(data: &[u8], offset: usize) -> Result<i64> {
     let raw = trade_data_range(data, offset, 8)?;
-    Ok(i64::from_le_bytes(raw.try_into().map_err(|_| error!(LaunchpadError::InvalidCampaign))?))
+    Ok(i64::from_le_bytes(
+        raw.try_into()
+            .map_err(|_| error!(LaunchpadError::InvalidCampaign))?,
+    ))
 }
 
 fn trade_read_32(data: &[u8], offset: usize) -> Result<[u8; 32]> {
@@ -983,7 +990,10 @@ fn trade_read_pubkey(data: &[u8], offset: usize) -> Result<Pubkey> {
 }
 
 fn trade_assert_campaign_data(data: &[u8]) -> Result<()> {
-    require!(data.len() >= CAMPAIGN_ACCOUNT_BYTES, LaunchpadError::InvalidCampaign);
+    require!(
+        data.len() >= CAMPAIGN_ACCOUNT_BYTES,
+        LaunchpadError::InvalidCampaign
+    );
     require!(
         data.get(..8) == Some(<Campaign as anchor_lang::Discriminator>::DISCRIMINATOR.as_ref()),
         LaunchpadError::InvalidCampaign
@@ -1045,16 +1055,32 @@ fn validate_trade_snapshot_accounts(
     sol_vault_key: Pubkey,
 ) -> Result<()> {
     require_keys_eq!(campaign.mint, mint_key, LaunchpadError::InvalidCampaign);
-    require_keys_eq!(campaign.token_vault, token_vault_key, LaunchpadError::InvalidCampaign);
-    require_keys_eq!(campaign.sol_vault, sol_vault_key, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        campaign.token_vault,
+        token_vault_key,
+        LaunchpadError::InvalidCampaign
+    );
+    require_keys_eq!(
+        campaign.sol_vault,
+        sol_vault_key,
+        LaunchpadError::InvalidCampaign
+    );
     let (expected_campaign, _) =
         Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign.campaign_id.as_ref()], &crate::ID);
-    require_keys_eq!(campaign_key, expected_campaign, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        campaign_key,
+        expected_campaign,
+        LaunchpadError::InvalidCampaign
+    );
     let (expected_vault, _) = Pubkey::find_program_address(
         &[TOKEN_VAULT_SEED, campaign.campaign_id.as_ref()],
         &crate::ID,
     );
-    require_keys_eq!(token_vault_key, expected_vault, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        token_vault_key,
+        expected_vault,
+        LaunchpadError::InvalidCampaign
+    );
     let (expected_sol, _) =
         Pubkey::find_program_address(&[SOL_VAULT_SEED, campaign.campaign_id.as_ref()], &crate::ID);
     require_keys_eq!(sol_vault_key, expected_sol, LaunchpadError::InvalidCampaign);
@@ -1247,7 +1273,6 @@ fn prepare_sell(
     })
 }
 
-
 #[inline(never)]
 fn apply_buy_state(
     campaign_info: &AccountInfo,
@@ -1258,7 +1283,11 @@ fn apply_buy_state(
     creator_bought_update: Option<u64>,
     native_target_lamports: u64,
 ) -> Result<(u64, u64)> {
-    require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
     let mut data = campaign_info.try_borrow_mut_data()?;
     trade_assert_campaign_data(&data)?;
     let sold_after = trade_read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
@@ -1290,12 +1319,12 @@ fn apply_buy_state(
 }
 
 #[inline(never)]
-fn apply_sell_state(
-    campaign_info: &AccountInfo,
-    tokens_in: u64,
-    gross: u64,
-) -> Result<(u64, u64)> {
-    require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+fn apply_sell_state(campaign_info: &AccountInfo, tokens_in: u64, gross: u64) -> Result<(u64, u64)> {
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
     let mut data = campaign_info.try_borrow_mut_data()?;
     trade_assert_campaign_data(&data)?;
     let sold_after = trade_read_u64(&data, CAMPAIGN_SOLD_TOKENS_OFFSET)?
@@ -1583,7 +1612,6 @@ fn quote_buy_prepared(
     }
 }
 
-
 pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) -> Result<()> {
     let global = &ctx.accounts.global_config;
     if ctx.accounts.authority.key() != global.admin && ctx.accounts.authority.key() != global.pauser
@@ -1592,13 +1620,21 @@ pub fn set_campaign_pause_handler(ctx: Context<SetCampaignPause>, paused: bool) 
     }
     let campaign_key = ctx.accounts.campaign.key();
     let campaign_info = ctx.accounts.campaign.to_account_info();
-    require_keys_eq!(*campaign_info.owner, crate::ID, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        *campaign_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidCampaign
+    );
     let mut data = campaign_info.try_borrow_mut_data()?;
     trade_assert_campaign_data(&data)?;
     let campaign_id = trade_read_32(&data, 8)?;
     let (expected_campaign, _) =
         Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign_id.as_ref()], &crate::ID);
-    require_keys_eq!(campaign_key, expected_campaign, LaunchpadError::InvalidCampaign);
+    require_keys_eq!(
+        campaign_key,
+        expected_campaign,
+        LaunchpadError::InvalidCampaign
+    );
     trade_write_u8(&mut data, CAMPAIGN_PAUSED_OFFSET, u8::from(paused))?;
     emit!(crate::CampaignPauseUpdated {
         campaign: campaign_key,
