@@ -1,4 +1,4 @@
-name: Solana Stack Isolation Experiment
+name: Solana BUY Stack Boundary Probe
 
 on:
   push:
@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: solana-stack-isolation-${{ github.event.pull_request.number || github.ref }}
+  group: solana-buy-stack-boundary-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -35,17 +35,10 @@ env:
   PROGRAM_ID: 3JSGNiFstsSQEd98GUJduBnceXNg8kh2qWg7zEeZfmBt
 
 jobs:
-  stack-probe:
-    name: Probe ${{ matrix.variant }} on Mainnet Agave
+  boundary-probe:
+    name: Locate BUY frame-13 boundary on Mainnet Agave
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        variant:
-          - trade-marker
-          - trade-risk-constraint-lite
-          - graduation-box
     steps:
       - name: Checkout candidate SHA
         uses: actions/checkout@v4
@@ -96,54 +89,49 @@ jobs:
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
-      - name: Apply isolated source variant in runner
+      - name: Inject BUY stage markers in runner only
         shell: bash
-        env:
-          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import os
           from pathlib import Path
 
-          variant = os.environ["VARIANT"]
-          trade_path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
-          graduation_path = Path("programs/memewarzone_solana/src/graduation.rs")
-
-          if variant.startswith("trade-"):
-              source = trade_path.read_text(encoding="utf-8")
-              marker_old = "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
-              marker_new = "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    msg!(\"BUY_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;"
-              if source.count(marker_old) != 1:
-                  raise SystemExit("buy handler marker target not unique")
-              source = source.replace(marker_old, marker_new, 1)
-
-              if variant == "trade-risk-constraint-lite":
-                  risk = "    #[account(seeds = [RISK_PROFILE_SEED, trader.key().as_ref()], bump)]\n    pub risk_profile: UncheckedAccount<'info>,"
-                  if source.count(risk) != 2:
-                      raise SystemExit(f"expected two risk PDA constraints, found {source.count(risk)}")
-                  source = source.replace(risk, "    pub risk_profile: UncheckedAccount<'info>,")
-
-              trade_path.write_text(source, encoding="utf-8")
-
-          elif variant == "graduation-box":
-              source = graduation_path.read_text(encoding="utf-8")
-              marker_old = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;"
-              marker_new = "pub fn begin_graduation_handler(\n    ctx: Context<BeginGraduation>,\n    args: BeginGraduationArgs,\n) -> Result<()> {\n    msg!(\"BEGIN_GRAD_HANDLER_ENTER\");\n    let now = Clock::get()?.unix_timestamp;"
-              if source.count(marker_old) != 1:
-                  raise SystemExit("begin graduation marker target not unique")
-              source = source.replace(marker_old, marker_new, 1)
-
-              account = "    pub graduation_state: Account<'info, GraduationState>,"
-              if source.count(account) != 2:
-                  raise SystemExit(f"expected two GraduationState Account wrappers, found {source.count(account)}")
-              source = source.replace(account, "    pub graduation_state: Box<Account<'info, GraduationState>>,")
-              graduation_path.write_text(source, encoding="utf-8")
-          else:
-              raise SystemExit(f"unknown variant {variant}")
+          path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
+          source = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;",
+                  "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    msg!(\"BUY_STAGE_0_ENTER\");\n    let now = Clock::get()?.unix_timestamp;",
+              ),
+              (
+                  "    let (route_signer, auth_required) =\n        read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;\n\n    let prepared = prepare_buy(",
+                  "    let (route_signer, auth_required) =\n        read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;\n    msg!(\"BUY_STAGE_1_GLOBAL\");\n\n    let prepared = prepare_buy(",
+              ),
+              (
+                  "        auth_required,\n        &args,\n    )?;\n    let campaign_id = prepared.campaign_id;",
+                  "        auth_required,\n        &args,\n    )?;\n    msg!(\"BUY_STAGE_2_PREPARED\");\n    let campaign_id = prepared.campaign_id;",
+              ),
+              (
+                  "    let creator_bought_update = prepared.creator_bought_update;\n\n    if auth_required {\n        let digest = build_trade_authorization_digest(",
+                  "    let creator_bought_update = prepared.creator_bought_update;\n    msg!(\"BUY_STAGE_3_LOCALS\");\n\n    if auth_required {\n        msg!(\"BUY_STAGE_4_AUTH_START\");\n        let digest = build_trade_authorization_digest(",
+              ),
+              (
+                  "            args.route_profile,\n        );\n        create_trade_auth_account(",
+                  "            args.route_profile,\n        );\n        msg!(\"BUY_STAGE_5_DIGEST\");\n        create_trade_auth_account(",
+              ),
+              (
+                  "            trade_auth_bump,\n        )?;\n    }\n\n    invoke(",
+                  "            trade_auth_bump,\n        )?;\n        msg!(\"BUY_STAGE_6_AUTH_CREATED\");\n    }\n\n    msg!(\"BUY_STAGE_7_TRANSFER\");\n    invoke(",
+              ),
+          ]
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"marker target not unique: found {count} for {old[:80]!r}")
+              source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
           PY
-          echo "variant=$VARIANT"
-          git diff -- programs/memewarzone_solana/src/authorized_trade.rs programs/memewarzone_solana/src/graduation.rs
+          git diff -- programs/memewarzone_solana/src/authorized_trade.rs
 
       - name: Create ephemeral payer
         shell: bash
@@ -154,16 +142,14 @@ jobs:
             --outfile "$HOME/.config/solana/id.json"
           echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
 
-      - name: Build source variant SBF
+      - name: Build marked SBF
         shell: bash
-        env:
-          VARIANT: ${{ matrix.variant }}
         run: |
           set -o pipefail
           anchor build --program-name memewarzone_solana --no-idl \
-            2>&1 | tee "/tmp/mwz-${VARIANT}-build.log" | tail -n 180
+            2>&1 | tee /tmp/mwz-buy-boundary-build.log | tail -n 180
           test -s target/deploy/memewarzone_solana.so
-          sha256sum target/deploy/memewarzone_solana.so | tee "/tmp/mwz-${VARIANT}-sha.txt"
+          sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-buy-boundary-sha.txt
           wc -c target/deploy/memewarzone_solana.so
 
       - name: Generate matching IDL
@@ -181,51 +167,44 @@ jobs:
       - name: Install acceptance dependencies
         run: npm install --prefix tests/solana --no-audit --no-fund
 
-      - name: Run targeted Agave/Mainnet probe
+      - name: Run BUY lifecycle boundary probe on Mainnet Agave
         shell: bash
-        env:
-          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
-          rm -rf "/tmp/mwz-${VARIANT}-ledger"
+          rm -rf /tmp/mwz-buy-boundary-ledger
           "$AGAVE_BIN/solana-test-validator" \
             --reset \
             --quiet \
-            --ledger "/tmp/mwz-${VARIANT}-ledger" \
+            --ledger /tmp/mwz-buy-boundary-ledger \
             --url "$MAINNET_RPC" \
             --clone-feature-set \
             --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
-            > "/tmp/mwz-${VARIANT}-validator.log" 2>&1 &
+            > /tmp/mwz-buy-boundary-validator.log 2>&1 &
           validator_pid=$!
           trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 120); do
             if "$AGAVE_BIN/solana" cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
-            if [ "$attempt" -eq 120 ]; then tail -n 240 "/tmp/mwz-${VARIANT}-validator.log" >&2; exit 1; fi
+            if [ "$attempt" -eq 120 ]; then tail -n 240 /tmp/mwz-buy-boundary-validator.log >&2; exit 1; fi
             sleep 2
           done
           "$AGAVE_BIN/solana" config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
           "$AGAVE_BIN/solana" airdrop 100 >/dev/null
-          if [[ "$VARIANT" == graduation-* ]]; then
-            TEST_GREP='begin_graduation'
-          else
-            TEST_GREP='create.*close curve'
-          fi
           (
             cd tests/solana
             ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
-              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs --grep "$TEST_GREP"
-          ) 2>&1 | tee "/tmp/mwz-${VARIANT}-acceptance.log"
+              npx mocha --timeout 1000000 v4-lifecycle-acceptance.cjs --grep 'create.*close curve'
+          ) 2>&1 | tee /tmp/mwz-buy-boundary-acceptance.log
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: solana-stack-${{ matrix.variant }}-${{ github.sha }}
+          name: solana-buy-boundary-${{ github.sha }}
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            /tmp/mwz-${{ matrix.variant }}-build.log
-            /tmp/mwz-${{ matrix.variant }}-sha.txt
-            /tmp/mwz-${{ matrix.variant }}-validator.log
-            /tmp/mwz-${{ matrix.variant }}-acceptance.log
+            /tmp/mwz-buy-boundary-build.log
+            /tmp/mwz-buy-boundary-sha.txt
+            /tmp/mwz-buy-boundary-validator.log
+            /tmp/mwz-buy-boundary-acceptance.log
             target/deploy/memewarzone_solana.so
