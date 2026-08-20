@@ -36,7 +36,7 @@ env:
 
 jobs:
   boundary-probe:
-    name: Locate BUY frame-13 boundary on Mainnet Agave
+    name: Locate prepare_buy frame-13 boundary on Mainnet Agave
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -89,7 +89,7 @@ jobs:
       - name: Install Anchor CLI
         run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
-      - name: Inject BUY stage markers in runner only
+      - name: Inject prepare_buy stage markers in runner only
         shell: bash
         run: |
           set -euo pipefail
@@ -98,45 +98,50 @@ jobs:
 
           path = Path("programs/memewarzone_solana/src/authorized_trade.rs")
           source = path.read_text(encoding="utf-8")
-          buy_start = source.index("pub fn buy_tokens_handler(")
-          sell_start = source.index("pub fn sell_tokens_handler(", buy_start)
-          prefix = source[:buy_start]
-          buy = source[buy_start:sell_start]
-          suffix = source[sell_start:]
+          prepare_start = source.index("fn prepare_buy(")
+          prepare_end = source.index("#[inline(never)]\nfn prepare_sell(", prepare_start)
+          prefix = source[:prepare_start]
+          prepare = source[prepare_start:prepare_end]
+          suffix = source[prepare_end:]
 
           replacements = [
               (
-                  "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    let now = Clock::get()?.unix_timestamp;",
-                  "pub fn buy_tokens_handler(ctx: Context<BuyTokens>, args: BuyTokensArgs) -> Result<()> {\n    msg!(\"BUY_STAGE_0_ENTER\");\n    let now = Clock::get()?.unix_timestamp;",
+                  ") -> Result<PreparedBuy> {\n    let campaign = load_campaign_box(campaign_info)?;",
+                  ") -> Result<PreparedBuy> {\n    msg!(\"PREP_0_ENTER\");\n    let campaign = load_campaign_box(campaign_info)?;\n    msg!(\"PREP_1_CAMPAIGN_LOADED\");",
               ),
               (
-                  "    let (route_signer, auth_required) =\n        read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;\n\n    let prepared = prepare_buy(",
-                  "    let (route_signer, auth_required) =\n        read_trade_global(&ctx.accounts.global_config.to_account_info(), true)?;\n    msg!(\"BUY_STAGE_1_GLOBAL\");\n\n    let prepared = prepare_buy(",
+                  "        sol_vault_key,\n    )?;\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);",
+                  "        sol_vault_key,\n    )?;\n    msg!(\"PREP_2_ACCOUNTS_VALIDATED\");\n    require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);",
               ),
               (
-                  "        auth_required,\n        &args,\n    )?;\n    let campaign_id = prepared.campaign_id;",
-                  "        auth_required,\n        &args,\n    )?;\n    msg!(\"BUY_STAGE_2_PREPARED\");\n    let campaign_id = prepared.campaign_id;",
+                  "    let campaign_mint = campaign.mint;\n    drop(campaign);",
+                  "    let campaign_mint = campaign.mint;\n    drop(campaign);\n    msg!(\"PREP_3_FIELDS_COPIED\");",
               ),
               (
-                  "    let creator_bought_update = prepared.creator_bought_update;\n\n    if auth_required {\n        let digest = build_trade_authorization_digest(",
-                  "    let creator_bought_update = prepared.creator_bought_update;\n    msg!(\"BUY_STAGE_3_LOCALS\");\n\n    if auth_required {\n        msg!(\"BUY_STAGE_4_AUTH_START\");\n        let digest = build_trade_authorization_digest(",
+                  "    if auth_required {\n        verify_buy_authorization(",
+                  "    if auth_required {\n        msg!(\"PREP_4_AUTH_START\");\n        verify_buy_authorization(",
               ),
               (
-                  "            args.route_profile,\n        );\n        create_trade_auth_account(",
-                  "            args.route_profile,\n        );\n        msg!(\"BUY_STAGE_5_DIGEST\");\n        create_trade_auth_account(",
+                  "            args,\n        )?;\n    }\n\n    let (tokens_out, net, fee, lamports_spent) = quote_buy_prepared(",
+                  "            args,\n        )?;\n        msg!(\"PREP_5_AUTH_VERIFIED\");\n    }\n\n    msg!(\"PREP_6_QUOTE_START\");\n    let (tokens_out, net, fee, lamports_spent) = quote_buy_prepared(",
               ),
               (
-                  "            trade_auth_bump,\n        )?;\n    }\n\n    invoke(",
-                  "            trade_auth_bump,\n        )?;\n        msg!(\"BUY_STAGE_6_AUTH_CREATED\");\n    }\n\n    msg!(\"BUY_STAGE_7_TRANSFER\");\n    invoke(",
+                  "        decimals,\n    )?;\n    require!(\n        tokens_out >= args.min_tokens_out,",
+                  "        decimals,\n    )?;\n    msg!(\"PREP_7_QUOTED\");\n    require!(\n        tokens_out >= args.min_tokens_out,",
+              ),
+              (
+                  "    Ok(PreparedBuy {\n        campaign_id,",
+                  "    msg!(\"PREP_8_COMPLETE\");\n    Ok(PreparedBuy {\n        campaign_id,",
               ),
           ]
-          for old, new in replacements:
-              count = buy.count(old)
-              if count != 1:
-                  raise SystemExit(f"BUY marker target not unique: found {count} for {old[:80]!r}")
-              buy = buy.replace(old, new, 1)
 
-          path.write_text(prefix + buy + suffix, encoding="utf-8")
+          for old, new in replacements:
+              count = prepare.count(old)
+              if count != 1:
+                  raise SystemExit(f"prepare_buy marker target not unique: found {count} for {old[:100]!r}")
+              prepare = prepare.replace(old, new, 1)
+
+          path.write_text(prefix + prepare + suffix, encoding="utf-8")
           PY
           git diff -- programs/memewarzone_solana/src/authorized_trade.rs
 
