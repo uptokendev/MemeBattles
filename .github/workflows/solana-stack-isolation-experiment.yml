@@ -8,13 +8,20 @@ on:
       - programs/memewarzone_solana/**
       - tests/solana/**
       - .github/workflows/solana-stack-isolation-experiment.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - programs/memewarzone_solana/**
+      - tests/solana/**
+      - .github/workflows/solana-stack-isolation-experiment.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: solana-stack-isolation-${{ github.ref }}
+  group: solana-stack-isolation-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -36,7 +43,7 @@ jobs:
       - name: Checkout candidate SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
 
       - name: Use Node.js
