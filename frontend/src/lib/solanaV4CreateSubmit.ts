@@ -234,7 +234,7 @@ export async function submitSolanaV4CreatePlan(
   }
 
   const web3 = await loadSolanaWeb3();
-  const { Connection, Transaction, PublicKey, ComputeBudgetProgram } = web3;
+  const { Connection, Transaction, PublicKey } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
@@ -278,11 +278,6 @@ export async function submitSolanaV4CreatePlan(
 
   const buildUnsigned = (blockhash: string) => {
     const next = new Transaction();
-    try {
-      next.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
-    } catch {
-      // optional
-    }
     // Ed25519 must immediately precede createCampaign (program invariant).
     next.add(ed25519Ix);
     next.add(createIx);
