@@ -6,26 +6,22 @@
 import { apiFetch } from "@/lib/apiBase";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { getSolanaProvider } from "@/lib/solanaWallet";
-import { loadSolanaWeb3, type SolanaWeb3Module } from "@/lib/solanaWeb3";
+import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
+import {
+  buildLaunchpadEd25519Instruction,
+  buildTradeTokensInstruction,
+} from "@/lib/solanaLaunchpadInstructions";
 import {
   assertLaunchpadV0Intent,
   buildLaunchpadAltPlan,
-  buildLaunchpadV0Transaction,
+  compileLaunchpadV0WithLatestBlockhash,
   fetchAndVerifyLaunchpadLookupTable,
   requireLaunchpadAltAddress,
   simulateLaunchpadV0OrThrow,
 } from "@/lib/solanaV0Transaction";
 
-const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
-const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
-
-/** Anchor sha256("global:buy_tokens")[0..8] */
-const BUY_TOKENS_DISCRIMINATOR = new Uint8Array([0xbd, 0x15, 0xe6, 0x85, 0xf7, 0x02, 0x6e, 0x2a]);
-/** Anchor sha256("global:sell_tokens")[0..8] */
-const SELL_TOKENS_DISCRIMINATOR = new Uint8Array([0x72, 0xf2, 0x19, 0x0c, 0x3e, 0x7e, 0x5c, 0x02]);
 
 export type SolanaTradeSide = "buy" | "sell";
 
@@ -79,64 +75,6 @@ function base64ToBytes(value: string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
-}
-
-function u64le(value: string | number | bigint): Uint8Array {
-  let n = BigInt(value);
-  if (n < 0n) throw new Error("u64 cannot be negative");
-  const out = new Uint8Array(8);
-  for (let i = 0; i < 8; i += 1) {
-    out[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  return out;
-}
-
-function i64le(value: string | number | bigint): Uint8Array {
-  let n = BigInt(value);
-  const out = new Uint8Array(8);
-  if (n < 0n) n = (1n << 64n) + n;
-  for (let i = 0; i < 8; i += 1) {
-    out[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  return out;
-}
-
-function encodeTradeIxData(
-  discriminator: Uint8Array,
-  amountIn: string,
-  minOut: string,
-  deadline: string,
-  nonce: number[],
-  nativeTargetLamports: string | undefined,
-  routeProfile: number,
-): Uint8Array {
-  const parts = [discriminator, u64le(amountIn), u64le(minOut), i64le(deadline), Uint8Array.from(nonce)];
-  if (nativeTargetLamports != null) parts.push(u64le(nativeTargetLamports));
-  parts.push(Uint8Array.from([routeProfile & 0xff]));
-  let total = 0;
-  for (const p of parts) total += p.length;
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
-}
-
-function buildEd25519Ix(web3: SolanaWeb3Module, publicKey: string, message: Uint8Array, signature: Uint8Array) {
-  const { PublicKey, Ed25519Program } = web3;
-  const publicKeyBytes = new PublicKey(publicKey).toBytes();
-  if (typeof Ed25519Program?.createInstructionWithPublicKey === "function") {
-    return Ed25519Program.createInstructionWithPublicKey({
-      publicKey: publicKeyBytes,
-      message,
-      signature,
-    });
-  }
-  throw new Error("Ed25519Program helper unavailable in bundled web3.");
 }
 
 /**
@@ -448,7 +386,7 @@ export async function submitSolanaTradeV1(
   }
 
   const web3 = await loadSolanaWeb3();
-  const { Connection, PublicKey, ComputeBudgetProgram, TransactionInstruction } = web3;
+  const { Connection, PublicKey, ComputeBudgetProgram } = web3;
   const rpc =
     String(import.meta.env.VITE_SOLANA_RPC || "").trim() ||
     getPublicRpcUrl(SOLANA_CHAIN_ID) ||
@@ -457,7 +395,11 @@ export async function submitSolanaTradeV1(
 
   const digest = base64ToBytes(auth.authorization.digestBase64);
   const signature = base64ToBytes(auth.authorization.signatureBase64);
-  const ed25519Ix = buildEd25519Ix(web3, auth.authorization.routeSigner, digest, signature);
+  const ed25519Ix = buildLaunchpadEd25519Instruction(web3, {
+    publicKey: auth.authorization.routeSigner,
+    message: digest,
+    signature,
+  });
 
   const isBuy = auth.side === "buy";
   const a = auth.accounts;
@@ -468,70 +410,66 @@ export async function submitSolanaTradeV1(
   if (!a.clusterProfile) {
     throw new Error("Trade authorization is missing clusterProfile.");
   }
+  if (!a.tokenVault || !a.solVault) {
+    throw new Error("Trade authorization is missing tokenVault/solVault.");
+  }
   if (!a.leagueVault || !a.airdropVault || !a.monthlyLeagueVault || !a.recruiterVault || !a.squadVault || !a.protocolVault) {
     throw new Error("Trade authorization is missing the six reward vaults.");
   }
-  const data = encodeTradeIxData(
-    isBuy ? BUY_TOKENS_DISCRIMINATOR : SELL_TOKENS_DISCRIMINATOR,
-    auth.createArgs.amountIn,
-    auth.createArgs.minOut,
-    auth.createArgs.deadline,
-    auth.createArgs.nonce,
-    isBuy ? auth.createArgs.nativeTargetLamports || "0" : undefined,
+  const tradeIx = buildTradeTokensInstruction(web3, {
+    programId: auth.programId,
+    side: isBuy ? "buy" : "sell",
+    amountIn: auth.createArgs.amountIn,
+    minOut: auth.createArgs.minOut,
+    deadline: auth.createArgs.deadline,
+    nonce: auth.createArgs.nonce,
+    nativeTargetLamports: isBuy ? auth.createArgs.nativeTargetLamports || "0" : undefined,
     routeProfile,
-  );
-  const keys = [
-    { pubkey: new PublicKey(a.trader), isSigner: true, isWritable: true },
-    { pubkey: new PublicKey(a.globalConfig), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.campaign), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.mint), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.tokenVault!), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.solVault!), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.traderTokenAccount), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.riskProfile), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.clusterProfile), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.tradeAuthorization), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.instructions || SYSVAR_INSTRUCTIONS), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.tokenProgram || TOKEN_PROGRAM), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.systemProgram || SYSTEM_PROGRAM), isSigner: false, isWritable: false },
-    { pubkey: new PublicKey(a.leagueVault), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.airdropVault), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.monthlyLeagueVault), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.recruiterVault), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.squadVault), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(a.protocolVault), isSigner: false, isWritable: true },
-  ];
-
-  const tradeIx = new TransactionInstruction({
-    programId: new PublicKey(auth.programId),
-    keys,
-    data,
+    accounts: {
+      trader: a.trader,
+      globalConfig: a.globalConfig,
+      campaign: a.campaign,
+      mint: a.mint,
+      tokenVault: a.tokenVault,
+      solVault: a.solVault,
+      traderTokenAccount: a.traderTokenAccount,
+      riskProfile: a.riskProfile,
+      clusterProfile: a.clusterProfile,
+      tradeAuthorization: a.tradeAuthorization,
+      instructions: a.instructions,
+      tokenProgram: a.tokenProgram,
+      systemProgram: a.systemProgram,
+      leagueVault: a.leagueVault,
+      airdropVault: a.airdropVault,
+      monthlyLeagueVault: a.monthlyLeagueVault,
+      recruiterVault: a.recruiterVault,
+      squadVault: a.squadVault,
+      protocolVault: a.protocolVault,
+    },
   });
   const lookupTable = await fetchAndVerifyLaunchpadLookupTable(web3, connection, {
     address: requireLaunchpadAltAddress(),
     requiredAddresses: buildLaunchpadAltPlan(web3).map((entry) => entry.address),
   });
-  const tradeInstructions = [
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
-    ed25519Ix,
-    tradeIx,
-  ];
-
-  const latest = await connection.getLatestBlockhash("confirmed");
-  const unsigned = buildLaunchpadV0Transaction(web3, {
+  const v0Input = {
     payer: traderPk,
-    recentBlockhash: latest.blockhash,
-    instructions: tradeInstructions,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ed25519Ix,
+      tradeIx,
+    ],
     lookupTableAccounts: [lookupTable],
-  });
-  const stats = assertLaunchpadV0Intent(web3, unsigned, {
+  };
+  const v0Expectation = {
     payer: traderPk,
     ed25519Instruction: ed25519Ix,
     programInstruction: tradeIx,
     lookupTableAccounts: [lookupTable],
-  });
+  };
+
+  const preflight = await compileLaunchpadV0WithLatestBlockhash(web3, connection, v0Input, v0Expectation);
   try {
-    await simulateLaunchpadV0OrThrow(connection, unsigned, "[solanaTradeV1] trade simulation failed");
+    await simulateLaunchpadV0OrThrow(connection, preflight.transaction, "[solanaTradeV1] trade simulation failed");
   } catch (error) {
     try {
       console.error("[solanaTradeV1] trade simulation failed", error);
@@ -540,21 +478,22 @@ export async function submitSolanaTradeV1(
     }
     throw error;
   }
-  console.info("[solanaTradeV1] unsigned V0 trade simulation passed", stats);
+  console.info("[solanaTradeV1] unsigned V0 trade simulation passed", preflight.stats);
 
-  const signed = await provider.signTransaction(unsigned);
-  assertLaunchpadV0Intent(web3, signed, {
-    payer: traderPk,
-    ed25519Instruction: ed25519Ix,
-    programInstruction: tradeIx,
-    lookupTableAccounts: [lookupTable],
-  });
+  const unsigned = await compileLaunchpadV0WithLatestBlockhash(web3, connection, v0Input, v0Expectation);
+  await simulateLaunchpadV0OrThrow(connection, unsigned.transaction, "[solanaTradeV1] trade simulation failed");
+  const signed = await provider.signTransaction(unsigned.transaction);
+  assertLaunchpadV0Intent(web3, signed, v0Expectation);
   const sig = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: false,
     maxRetries: 3,
   });
   const confirmation = await connection.confirmTransaction(
-    { signature: sig, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+    {
+      signature: sig,
+      blockhash: unsigned.latest.blockhash,
+      lastValidBlockHeight: unsigned.latest.lastValidBlockHeight,
+    },
     "confirmed",
   );
   if (confirmation.value?.err) {

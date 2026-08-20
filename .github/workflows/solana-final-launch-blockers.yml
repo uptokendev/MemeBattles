@@ -16,6 +16,7 @@ on:
       - tests/solana/**
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
+      - frontend/src/lib/solanaLaunchpadInstructions.ts
       - frontend/src/lib/solanaV0Transaction.ts
       - frontend/src/lib/solanaV0Transaction.test.mjs
       - frontend/scripts/load-solana-v0-module.mjs

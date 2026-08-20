@@ -172,8 +172,8 @@ test("token-based routes resolve to canonical campaign contracts before trading"
     assert.ok(preflightIndex > resolveIndex, operation + " must resolve before protection preflight");
   }
 
-  assert.match(pageSource, /lifecycleCampaignAddress/);
-  assert.match(pageSource, /campaign:\s*lifecycleCampaignAddress/);
+  assert.match(pageSource, /await buyTokens\(campaign\.campaign,/);
+  assert.match(pageSource, /await sellTokens\(campaign\.campaign,/);
 });
 
 test("server canonicalizes token routes before preflight, cap reservation, and signing", async () => {

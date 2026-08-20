@@ -4,19 +4,20 @@ const assert = require("assert");
 const {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
-  Connection,
-  Ed25519Program,
   Keypair,
-  PublicKey,
   Transaction,
-  TransactionInstruction,
 } = require("@solana/web3.js");
 const web3 = require("@solana/web3.js");
 const { AnchorProvider } = require("@coral-xyz/anchor");
 
 async function loadV0() {
-  const { loadSolanaV0Module } = await import("../../frontend/scripts/load-solana-v0-module.mjs");
-  return loadSolanaV0Module();
+  const { loadSolanaLaunchpadInstructions, loadSolanaV0Module } = await import(
+    "../../frontend/scripts/load-solana-v0-module.mjs"
+  );
+  return {
+    v0: await loadSolanaV0Module(),
+    instructions: await loadSolanaLaunchpadInstructions(),
+  };
 }
 
 async function sendLegacy(connection, payer, ixs) {
@@ -31,14 +32,19 @@ async function sendLegacy(connection, payer, ixs) {
 describe("shared V0/ALT launchpad helper on local validator", function () {
   this.timeout(180_000);
 
-  it("creates a static launchpad ALT and compiles CREATE/BUY through the shared helper", async function () {
-    const v0 = await loadV0();
+  it("creates a static launchpad ALT and compiles production CREATE/BUY through the shared helper", async function () {
+    const { v0, instructions } = await loadV0();
     const provider = AnchorProvider.env();
     const connection = provider.connection;
     const payer = provider.wallet.payer;
     assert.ok(payer?.secretKey, "local validator wallet must be a Keypair");
 
     const plan = v0.buildLaunchpadAltPlan(web3);
+    const planAddress = (label) => {
+      const entry = plan.find((item) => item.label === label);
+      assert.ok(entry, `missing ALT plan address: ${label}`);
+      return entry.address.toBase58();
+    };
     const slot = await connection.getSlot("confirmed");
     const [createIx, lookupTable] = AddressLookupTableProgram.createLookupTable({
       authority: payer.publicKey,
@@ -64,35 +70,73 @@ describe("shared V0/ALT launchpad helper on local validator", function () {
       expectedAuthority: payer.publicKey,
     });
 
-    const ed25519Instruction = Ed25519Program.createInstructionWithPublicKey({
-      publicKey: Keypair.generate().publicKey.toBytes(),
-      message: Uint8Array.from({ length: 32 }, (_, index) => index + 1),
+    const bytes32 = (fill) => Array.from({ length: 32 }, (_, index) => (fill + index) & 0xff);
+    const ed25519Instruction = instructions.buildLaunchpadEd25519Instruction(web3, {
+      publicKey: Keypair.generate().publicKey.toBase58(),
+      message: Uint8Array.from(bytes32(1)),
       signature: Uint8Array.from({ length: 64 }, (_, index) => (index + 9) & 0xff),
     });
-    const programId = new PublicKey(v0.SOLANA_LAUNCHPAD_PROGRAM_ID);
-    const createInstruction = new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-        ...plan.slice(0, 8).map((entry, index) => ({
-          pubkey: entry.address,
-          isSigner: false,
-          isWritable: index === 0,
-        })),
-      ],
-      data: Buffer.alloc(232, 0x5a),
+    const createInstruction = instructions.buildCreateCampaignInstruction(web3, {
+      programId: v0.SOLANA_LAUNCHPAD_PROGRAM_ID,
+      args: {
+        campaignId: bytes32(2),
+        metadataHash: bytes32(3),
+        clusterHash: bytes32(4),
+        tickerHash: bytes32(5),
+        reservationIdHash: bytes32(6),
+        reservationVersion: "1",
+        launchAt: "0",
+        graduationTargetUsdMicros: "6000000",
+        deadline: "1770000000",
+        nonce: bytes32(7),
+      },
+      accounts: {
+        creator: payer.publicKey.toBase58(),
+        globalConfig: planAddress("globalConfig"),
+        generationConfig: Keypair.generate().publicKey.toBase58(),
+        creatorProfile: Keypair.generate().publicKey.toBase58(),
+        riskProfile: Keypair.generate().publicKey.toBase58(),
+        clusterProfile: Keypair.generate().publicKey.toBase58(),
+        campaign: Keypair.generate().publicKey.toBase58(),
+        mint: Keypair.generate().publicKey.toBase58(),
+        tokenVault: Keypair.generate().publicKey.toBase58(),
+        solVault: Keypair.generate().publicKey.toBase58(),
+        createAuthorization: Keypair.generate().publicKey.toBase58(),
+        instructions: planAddress("instructionsSysvar"),
+        tokenProgram: planAddress("tokenProgram"),
+        systemProgram: planAddress("systemProgram"),
+      },
     });
-    const tradeInstruction = new TransactionInstruction({
-      programId,
-      keys: [
-        { pubkey: payer.publicKey, isSigner: true, isWritable: true },
-        ...plan.map((entry, index) => ({
-          pubkey: entry.address,
-          isSigner: false,
-          isWritable: index >= 9,
-        })),
-      ],
-      data: Buffer.alloc(73, 0x33),
+    const tradeInstruction = instructions.buildTradeTokensInstruction(web3, {
+      programId: v0.SOLANA_LAUNCHPAD_PROGRAM_ID,
+      side: "buy",
+      amountIn: "100000000",
+      minOut: "1",
+      deadline: "1770000000",
+      nonce: bytes32(12),
+      nativeTargetLamports: "100000000",
+      routeProfile: 1,
+      accounts: {
+        trader: payer.publicKey.toBase58(),
+        globalConfig: planAddress("globalConfig"),
+        campaign: Keypair.generate().publicKey.toBase58(),
+        mint: Keypair.generate().publicKey.toBase58(),
+        tokenVault: Keypair.generate().publicKey.toBase58(),
+        solVault: Keypair.generate().publicKey.toBase58(),
+        traderTokenAccount: Keypair.generate().publicKey.toBase58(),
+        riskProfile: Keypair.generate().publicKey.toBase58(),
+        clusterProfile: Keypair.generate().publicKey.toBase58(),
+        tradeAuthorization: Keypair.generate().publicKey.toBase58(),
+        instructions: planAddress("instructionsSysvar"),
+        tokenProgram: planAddress("tokenProgram"),
+        systemProgram: planAddress("systemProgram"),
+        leagueVault: planAddress("weeklyLeagueVault"),
+        airdropVault: planAddress("airdropVault"),
+        monthlyLeagueVault: planAddress("monthlyLeagueVault"),
+        recruiterVault: planAddress("recruiterVault"),
+        squadVault: planAddress("squadVault"),
+        protocolVault: planAddress("protocolVault"),
+      },
     });
 
     const latest = await connection.getLatestBlockhash("confirmed");
@@ -106,11 +150,11 @@ describe("shared V0/ALT launchpad helper on local validator", function () {
       },
       { payer: payer.publicKey, ed25519Instruction, programInstruction: createInstruction },
     );
-    const tradeV0 = v0.compileAndAssertLaunchpadV0(
+    const tradeV0 = await v0.compileLaunchpadV0WithLatestBlockhash(
       web3,
+      connection,
       {
         payer: payer.publicKey,
-        recentBlockhash: latest.blockhash,
         instructions: [
           ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
           ed25519Instruction,
@@ -122,7 +166,9 @@ describe("shared V0/ALT launchpad helper on local validator", function () {
     );
 
     console.info("[v0-onchain] CREATE", createV0.stats);
-    console.info("[v0-onchain] BUY/SELL", tradeV0.stats);
+    console.info("[v0-onchain] BUY", tradeV0.stats);
+    assert.equal(createInstruction.keys.length, 14);
+    assert.equal(tradeInstruction.keys.length, 19);
     assert.equal(createV0.stats.requiredSigners, 1);
     assert.equal(tradeV0.stats.requiredSigners, 1);
     assert.ok(createV0.stats.serializedBytes <= v0.SOLANA_RELEASE_MAX_BYTES);

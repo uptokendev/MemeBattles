@@ -11,6 +11,7 @@ on:
       - frontend/package-lock.json
       - frontend/src/lib/solanaV0Transaction.ts
       - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaLaunchpadInstructions.ts
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
       - frontend/src/lib/solanaWallet.ts
@@ -27,6 +28,7 @@ on:
       - frontend/package-lock.json
       - frontend/src/lib/solanaV0Transaction.ts
       - frontend/src/lib/solanaV0Transaction.test.mjs
+      - frontend/src/lib/solanaLaunchpadInstructions.ts
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
       - frontend/src/lib/solanaWallet.ts

@@ -11,163 +11,25 @@ import {
 import type { SolanaV4CreateAuthorizationResponse } from "@/lib/solanaCreateAuthorizationV4";
 import { getSolanaProvider } from "@/lib/solanaWallet";
 import { getPublicRpcUrl, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { loadSolanaWeb3, type SolanaWeb3Module } from "@/lib/solanaWeb3";
+import { loadSolanaWeb3 } from "@/lib/solanaWeb3";
+import {
+  buildCreateCampaignInstruction,
+  buildLaunchpadEd25519Instruction,
+} from "@/lib/solanaLaunchpadInstructions";
 import {
   assertLaunchpadV0Intent,
   buildLaunchpadAltPlan,
-  buildLaunchpadV0Transaction,
+  compileLaunchpadV0WithLatestBlockhash,
   fetchAndVerifyLaunchpadLookupTable,
   requireLaunchpadAltAddress,
   simulateLaunchpadV0OrThrow,
 } from "@/lib/solanaV0Transaction";
 
-const ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111";
-const SYSVAR_INSTRUCTIONS = "Sysvar1nstructions1111111111111111111111111";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const MIN_CREATE_LAMPORTS = 30_000_000; // conservative balance guard / fallback only
 const CREATE_RENT_ACCOUNT_SIZES = [720, 82, 165, 81, 155] as const;
 const CREATOR_PROFILE_ACCOUNT_BYTES = 84;
-
-/** Anchor 0.30: first 8 bytes of sha256("global:create_campaign") */
-const CREATE_CAMPAIGN_DISCRIMINATOR = new Uint8Array([
-  0x6f, 0x83, 0xbb, 0x62, 0xa0, 0xc1, 0x72, 0xf4,
-]);
-
-function u64le(value: string | number | bigint): Uint8Array {
-  let n = BigInt(value);
-  if (n < 0n) throw new Error("u64 cannot be negative");
-  const out = new Uint8Array(8);
-  for (let i = 0; i < 8; i += 1) {
-    out[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  return out;
-}
-
-function i64le(value: string | number | bigint): Uint8Array {
-  let n = BigInt(value);
-  const out = new Uint8Array(8);
-  // two's complement
-  if (n < 0n) n = (1n << 64n) + n;
-  for (let i = 0; i < 8; i += 1) {
-    out[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  return out;
-}
-
-function encodeCreateCampaignData(args: SolanaV4GeneratedIdlInvocationPlan["createCampaign"]["args"]): Uint8Array {
-  const parts: Uint8Array[] = [CREATE_CAMPAIGN_DISCRIMINATOR];
-  const pushBytes = (arr: number[]) => {
-    parts.push(Uint8Array.from(arr));
-  };
-  pushBytes(args.campaignId);
-  pushBytes(args.metadataHash);
-  pushBytes(args.clusterHash);
-  pushBytes(args.tickerHash);
-  pushBytes(args.reservationIdHash);
-  parts.push(u64le(args.reservationVersion));
-  parts.push(i64le(args.launchAt));
-  parts.push(u64le(args.graduationTargetUsdMicros));
-  parts.push(i64le(args.deadline));
-  pushBytes(args.nonce);
-
-  let total = 0;
-  for (const p of parts) total += p.length;
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
-  return out;
-}
-
-function buildEd25519VerifyIx(web3: SolanaWeb3Module, plan: SolanaV4GeneratedIdlInvocationPlan) {
-  const { PublicKey, Ed25519Program, TransactionInstruction } = web3;
-  const publicKeyBytes = new PublicKey(plan.ed25519Verification.publicKey).toBytes();
-  const message = plan.ed25519Verification.message;
-  const signature = plan.ed25519Verification.signature;
-
-  if (typeof Ed25519Program?.createInstructionWithPublicKey === "function") {
-    return Ed25519Program.createInstructionWithPublicKey({
-      publicKey: publicKeyBytes,
-      message,
-      signature,
-    });
-  }
-
-  // Fallback encoding if the web3 build omits Ed25519Program helpers.
-  const numSignatures = 1;
-  const padding = 0;
-  const signatureOffset = 16;
-  const signatureInstructionIndex = 0xffff;
-  const publicKeyOffset = signatureOffset + 64;
-  const publicKeyInstructionIndex = 0xffff;
-  const messageDataOffset = publicKeyOffset + 32;
-  const messageDataSize = message.length;
-  const messageInstructionIndex = 0xffff;
-
-  const header = new Uint8Array(16);
-  header[0] = numSignatures;
-  header[1] = padding;
-  const view = new DataView(header.buffer);
-  view.setUint16(2, signatureOffset, true);
-  view.setUint16(4, signatureInstructionIndex, true);
-  view.setUint16(6, publicKeyOffset, true);
-  view.setUint16(8, publicKeyInstructionIndex, true);
-  view.setUint16(10, messageDataOffset, true);
-  view.setUint16(12, messageDataSize, true);
-  view.setUint16(14, messageInstructionIndex, true);
-
-  const data = new Uint8Array(messageDataOffset + message.length);
-  data.set(header, 0);
-  data.set(signature, signatureOffset);
-  data.set(publicKeyBytes, publicKeyOffset);
-  data.set(message, messageDataOffset);
-
-  return new TransactionInstruction({
-    keys: [],
-    programId: new PublicKey(ED25519_PROGRAM_ID),
-    data,
-  });
-}
-
-function buildCreateCampaignIx(web3: SolanaWeb3Module, plan: SolanaV4GeneratedIdlInvocationPlan) {
-  const { PublicKey, TransactionInstruction, SystemProgram } = web3;
-  const a = plan.createCampaign.accounts;
-  const data = encodeCreateCampaignData(plan.createCampaign.args);
-
-  // Matches programs/memewarzone_solana CreateCampaign account metas (init PDAs are writable, not signers).
-  const meta = (pubkey: string, isSigner: boolean, isWritable: boolean) => ({
-    pubkey: new PublicKey(pubkey),
-    isSigner,
-    isWritable,
-  });
-
-  return new TransactionInstruction({
-    programId: new PublicKey(plan.programId),
-    keys: [
-      meta(a.creator, true, true),
-      meta(a.globalConfig, false, true),
-      meta(a.generationConfig, false, false),
-      meta(a.creatorProfile, false, true),
-      meta(a.riskProfile, false, false),
-      meta(a.clusterProfile, false, false),
-      meta(a.campaign, false, true),
-      meta(a.mint, false, true), // program-owned mint PDA (not external keypair signer)
-      meta(a.tokenVault, false, true),
-      meta(a.solVault, false, true),
-      meta(a.createAuthorization, false, true),
-      meta(a.instructions || SYSVAR_INSTRUCTIONS, false, false),
-      meta(a.tokenProgram || TOKEN_PROGRAM, false, false),
-      meta(a.systemProgram || SYSTEM_PROGRAM || SystemProgram.programId.toBase58(), false, false),
-    ],
-    data,
-  });
-}
 
 export type SolanaV4CreateSubmitResult = {
   signature: string;
@@ -273,13 +135,28 @@ export async function submitSolanaV4CreatePlan(
     );
   }
 
-  const ed25519Ix = buildEd25519VerifyIx(web3, plan);
-  const createIx = buildCreateCampaignIx(web3, plan);
+  const ed25519Ix = buildLaunchpadEd25519Instruction(web3, plan.ed25519Verification);
+  const createIx = buildCreateCampaignInstruction(web3, {
+    programId: plan.programId,
+    args: plan.createCampaign.args,
+    accounts: plan.createCampaign.accounts,
+  });
   const createInstructions = [ed25519Ix, createIx];
   const lookupTable = await fetchAndVerifyLaunchpadLookupTable(web3, connection, {
     address: requireLaunchpadAltAddress(),
     requiredAddresses: buildLaunchpadAltPlan(web3).map((entry) => entry.address),
   });
+  const v0Input = {
+    payer: creatorPk,
+    instructions: createInstructions,
+    lookupTableAccounts: [lookupTable],
+  };
+  const v0Expectation = {
+    payer: creatorPk,
+    ed25519Instruction: ed25519Ix,
+    programInstruction: createIx,
+    lookupTableAccounts: [lookupTable],
+  };
 
   const balance = await connection.getBalance(new PublicKey(creatorPk), "confirmed");
   if (balance < MIN_CREATE_LAMPORTS) {
@@ -288,23 +165,12 @@ export async function submitSolanaV4CreatePlan(
     );
   }
 
-  const buildUnsignedV0 = (blockhash: string) => {
-    const transaction = buildLaunchpadV0Transaction(web3, {
-      payer: creatorPk,
-      recentBlockhash: blockhash,
-      instructions: createInstructions,
-      lookupTableAccounts: [lookupTable],
-    });
-    const stats = assertLaunchpadV0Intent(web3, transaction, {
-      payer: creatorPk,
-      ed25519Instruction: ed25519Ix,
-      programInstruction: createIx,
-      lookupTableAccounts: [lookupTable],
-    });
-    return { transaction, stats };
-  };
+  const compileUnsignedCreate = () =>
+    compileLaunchpadV0WithLatestBlockhash(web3, connection, v0Input, v0Expectation);
 
-  const simulateUnsignedCreate = async (unsigned: ReturnType<typeof buildUnsignedV0>) => {
+  const simulateUnsignedCreate = async (
+    unsigned: Awaited<ReturnType<typeof compileUnsignedCreate>>,
+  ) => {
     const simulated = await simulateLaunchpadV0OrThrow(
       connection,
       unsigned.transaction,
@@ -324,7 +190,7 @@ export async function submitSolanaV4CreatePlan(
   };
 
   const estimateDeploymentCost = async (
-    unsigned: ReturnType<typeof buildUnsignedV0>,
+    unsigned: Awaited<ReturnType<typeof compileUnsignedCreate>>,
     simulation: { serializedBytes: number; unitsConsumed: number | null; instructionCount: number },
   ): Promise<SolanaV4CreatePreflightPreview> => {
     let estimatedFeeLamports: number | null = null;
@@ -367,27 +233,23 @@ export async function submitSolanaV4CreatePlan(
 
   let preflightPreviewShown = false;
   const signAndSend = async () => {
-    const latest = await connection.getLatestBlockhash("confirmed");
-    const unsigned = buildUnsignedV0(latest.blockhash);
-    const simulation = await simulateUnsignedCreate(unsigned);
-    const preview = await estimateDeploymentCost(unsigned, simulation);
+    const preflight = await compileUnsignedCreate();
+    const simulation = await simulateUnsignedCreate(preflight);
+    const preview = await estimateDeploymentCost(preflight, simulation);
     if (!preflightPreviewShown && opts?.onPreflightReady) {
       await opts.onPreflightReady(preview);
       preflightPreviewShown = true;
     }
+    const unsigned = await compileUnsignedCreate();
+    await simulateUnsignedCreate(unsigned);
     const signed = await provider.signTransaction(unsigned.transaction);
-    assertLaunchpadV0Intent(web3, signed, {
-      payer: creatorPk,
-      ed25519Instruction: ed25519Ix,
-      programInstruction: createIx,
-      lookupTableAccounts: [lookupTable],
-    });
+    assertLaunchpadV0Intent(web3, signed, v0Expectation);
     const raw = typeof signed?.serialize === "function" ? signed.serialize() : signed;
     const signature = await connection.sendRawTransaction(raw, {
       skipPreflight: false,
       maxRetries: 3,
     });
-    const confirmed = await confirmCreateSignature(connection, signature, latest);
+    const confirmed = await confirmCreateSignature(connection, signature, unsigned.latest);
     if (confirmed.err) {
       const logs = await fetchTransactionLogs(connection, signature);
       throw Object.assign(new Error("Solana create transaction failed on-chain."), {

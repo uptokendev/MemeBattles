@@ -305,6 +305,34 @@ export function compileAndAssertLaunchpadV0(
   return { transaction, stats };
 }
 
+export type LaunchpadBlockhashSource = {
+  getLatestBlockhash: (
+    commitment?: "processed" | "confirmed" | "finalized",
+  ) => Promise<{ blockhash: string; lastValidBlockHeight: number }>;
+};
+
+/**
+ * Fetch a current blockhash and compile the same instructions + ALT into a V0
+ * transaction. Call this immediately before wallet signing so Phantom never
+ * signs a hash that aged during simulation or UI delay.
+ */
+export async function compileLaunchpadV0WithLatestBlockhash(
+  web3: SolanaWeb3Module,
+  connection: LaunchpadBlockhashSource,
+  input: Omit<LaunchpadV0BuildInput, "recentBlockhash">,
+  expectation: Omit<LaunchpadV0IntentExpectation, "lookupTableAccounts"> & {
+    lookupTableAccounts?: AddressLookupTableAccount[];
+  },
+) {
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const compiled = compileAndAssertLaunchpadV0(
+    web3,
+    { ...input, recentBlockhash: latest.blockhash },
+    expectation,
+  );
+  return { ...compiled, latest };
+}
+
 export async function simulateLaunchpadV0Transaction(
   connection: Connection,
   transaction: VersionedTransaction,
