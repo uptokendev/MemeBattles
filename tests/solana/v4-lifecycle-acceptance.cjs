@@ -325,37 +325,31 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       lookupTableAccounts: [lookupTableAccount],
       releaseMaxBytes: null,
     });
-    const signature = await connection.sendRawTransaction(unsigned.transaction.serialize(), {
+    const signature = await connection.sendTransaction(unsigned.transaction, {
       // Local validators, especially Agave --clone-feature-set, can spend
       // a full blockhash window inside RPC preflight. The unsigned V0
       // simulation above already proved the program. Production still uses
       // skipPreflight: false against real RPCs.
       skipPreflight: true,
-      maxRetries: 3,
+      maxRetries: 5,
+      preflightCommitment: "confirmed",
     });
-    let confirmation;
-    try {
-      confirmation = await connection.confirmTransaction(
-        {
-          signature,
-          blockhash: unsigned.latest.blockhash,
-          lastValidBlockHeight: unsigned.latest.lastValidBlockHeight,
-        },
-        "confirmed",
-      );
-    } catch (error) {
-      if (recoverAccount && /expired|block height/i.test(String(error))) {
-        const info = await connection.getAccountInfo(recoverAccount, "confirmed");
-        if (info) {
-          return { signature, logs: simulated.logs || [] };
-        }
+    const deadlineMs = Date.now() + 20_000;
+    while (Date.now() < deadlineMs) {
+      const status = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+      if (status?.value?.err) {
+        throw new Error(`${label} landed with error: ${JSON.stringify(status.value.err)}`);
       }
-      throw error;
+      if (status?.value?.confirmationStatus === "confirmed" || status?.value?.confirmationStatus === "finalized") {
+        return { signature, logs: simulated.logs || [] };
+      }
+      if (recoverAccount) {
+        const info = await connection.getAccountInfo(recoverAccount, "confirmed");
+        if (info) return { signature, logs: simulated.logs || [] };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
     }
-    if (confirmation.value.err) {
-      throw new Error(`${label} landed with error: ${JSON.stringify(confirmation.value.err)}`);
-    }
-    return { signature, logs: simulated.logs || [] };
+    throw new Error(`${label} did not confirm within 20s (${signature})`);
   }
 
   async function fund(pubkey, sol) {
@@ -492,7 +486,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         "extendLaunchpadAlt",
       );
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 2500));
     lookupTableAccount = await v0Helpers.fetchAndVerifyLaunchpadLookupTable(web3, connection, {
       address: lookupTable.toBase58(),
       requiredAddresses: plan.map((entry) => entry.address),
