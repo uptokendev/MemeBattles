@@ -41,8 +41,8 @@ jobs:
       BSC_TESTNET_PRIVATE_KEY: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
       DEPLOYER_PK: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
       PRIVATE_KEY_DEPLOY: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
-      BSC_TESTNET_RPC: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
-      BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
+      BSC_TESTNET_RPC: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC || 'https://bsc-testnet-dataseed.bnbchain.org' }}
+      BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC || 'https://bsc-testnet-dataseed.bnbchain.org' }}
       SOLANA_FEE_ESCROW_PAYER_KEYPAIR: ${{ secrets.SOLANA_FEE_ESCROW_PAYER_KEYPAIR }}
       SOLANA_DEVNET_PAYER: ${{ secrets.SOLANA_DEVNET_PAYER || secrets.SOLANA_FEE_ESCROW_PAYER_KEYPAIR }}
       SOLANA_RPC_URL: ${{ vars.SOLANA_DEVNET_RPC || 'https://api.devnet.solana.com' }}

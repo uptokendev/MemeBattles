@@ -28,8 +28,8 @@ jobs:
       DEPLOYER_PK: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
       PRIVATE_KEY_DEPLOY: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
       ROUTE_AUTHORITY_PRIVATE_KEY: ${{ secrets.ROUTE_AUTHORITY_PRIVATE_KEY }}
-      BSC_TESTNET_RPC: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
-      BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
+      BSC_TESTNET_RPC: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC || 'https://bsc-testnet-dataseed.bnbchain.org' }}
+      BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC || 'https://bsc-testnet-dataseed.bnbchain.org' }}
       MWZ_API_BASE: ${{ vars.MWZ_API_BASE }}
       TOKEN_API_BASE: ${{ vars.TOKEN_API_BASE || 'https://memebattles-production-dca0.up.railway.app' }}
       DASHBOARD_BASE_URL: ${{ vars.DASHBOARD_BASE_URL }}
