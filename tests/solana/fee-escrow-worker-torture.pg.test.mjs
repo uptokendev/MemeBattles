@@ -1,8 +1,25 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const url = String(process.env.DATABASE_URL || process.env.PG_TEST_URL || "").trim();
 const skip = !url;
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const claimSqlPath = path.join(root, "realtime-indexer/src/solanaFeeEscrowClaimSql.ts");
+const workerPath = path.join(root, "realtime-indexer/src/solanaFeeEscrowWorker.ts");
+
+function readExportedSql(name) {
+  const src = fs.readFileSync(claimSqlPath, "utf8");
+  const match = src.match(new RegExp(`export const ${name} = \\\`([\\s\\S]*?)\\\`;`));
+  assert.ok(match, `missing ${name} in solanaFeeEscrowClaimSql.ts`);
+  return match[1];
+}
+
+const ACQUIRE_LEASE_SQL = readExportedSql("ACQUIRE_LEASE_SQL");
+const CLAIM_INIT_SQL = readExportedSql("CLAIM_INIT_SQL");
+const CLAIM_FLUSH_SQL = readExportedSql("CLAIM_FLUSH_SQL");
 
 const WORKER_NAME = "solana-fee-escrow-worker-torture";
 const CHAIN_ID = 101;
@@ -24,67 +41,32 @@ async function withPool(fn) {
 }
 
 async function acquire(client, owner, ttlSeconds) {
-  const result = await client.query(
-    `insert into public.solana_worker_leases (worker_name, owner_id, lease_expires_at, heartbeat_at)
-     values ($1, $2, now() + make_interval(secs => $3), now())
-     on conflict (worker_name) do update set
-       owner_id = excluded.owner_id,
-       lease_expires_at = excluded.lease_expires_at,
-       heartbeat_at = now(),
-       updated_at = now()
-     where public.solana_worker_leases.lease_expires_at < now()
-        or public.solana_worker_leases.owner_id = excluded.owner_id
-     returning owner_id`,
-    [WORKER_NAME, owner, ttlSeconds],
-  );
+  const result = await client.query(ACQUIRE_LEASE_SQL, [WORKER_NAME, owner, ttlSeconds]);
   return result.rows[0]?.owner_id === owner;
 }
 
 async function claimInit(client, campaign) {
-  const result = await client.query(
-    `update public.solana_fee_escrow_accruals
-        set init_attempts = init_attempts + 1,
-            last_init_attempt_at = now(),
-            next_init_attempt_at = now() + interval '60 seconds',
-            updated_at = now()
-      where chain_id=$1
-        and campaign_address=$2
-        and init_status in ('pending','failed')
-        and (next_init_attempt_at is null or next_init_attempt_at <= now())
-      returning campaign_address, init_attempts`,
-    [CHAIN_ID, campaign],
-  );
+  const result = await client.query(CLAIM_INIT_SQL, [CHAIN_ID, campaign]);
   return result.rows[0] || null;
 }
 
 async function claimFlush(client, campaign) {
-  const result = await client.query(
-    `update public.solana_fee_escrow_accruals
-        set flush_status='submitted',
-            flush_attempts = flush_attempts + 1,
-            updated_at = now()
-      where chain_id=$1
-        and campaign_address=$2
-        and init_status='initialized'
-        and (
-          flush_status in ('idle','queued','failed')
-          or (flush_status='submitted' and updated_at < now() - interval '2 minutes')
-        )
-      returning campaign_address`,
-    [CHAIN_ID, campaign],
-  );
+  const result = await client.query(CLAIM_FLUSH_SQL, [CHAIN_ID, campaign]);
   return result.rows[0] || null;
 }
 
 function createRpc(options = {}) {
+  const attempts = [];
   const inits = [];
   const flushes = [];
   const hangMs = Number(options.hangMs || 0);
   const crashOn = options.crashOn || null;
   return {
+    attempts,
     inits,
     flushes,
     async init(campaign) {
+      attempts.push(campaign);
       if (crashOn === campaign) throw new Error(`rpc crash ${campaign}`);
       if (hangMs) await new Promise((resolve) => setTimeout(resolve, hangMs));
       inits.push(campaign);
@@ -267,32 +249,6 @@ test("Gate O: three workers, 100 jobs, exclusive lease, no duplicate init/flush,
         leaseClient.release();
       }
 
-      await pool.query(`delete from public.solana_fee_escrow_accruals where campaign_address like $1`, [`${PREFIX}%`]);
-      await seedJobs(pool, 3);
-      const crashTarget = campaignId(0);
-      const crashRpc = createRpc({ crashOn: crashTarget });
-      await runWorkerTick(pool, "A", crashRpc, 60);
-      const crashed = await pool.query(
-        `select init_status, last_error from public.solana_fee_escrow_accruals where campaign_address=$1`,
-        [crashTarget],
-      );
-      assert.equal(crashed.rows[0].init_status, "failed");
-      assert.match(String(crashed.rows[0].last_error || ""), /rpc crash/);
-      await pool.query(
-        `update public.solana_fee_escrow_accruals
-            set next_init_attempt_at = now() - interval '1 second', init_status='failed'
-          where campaign_address=$1`,
-        [crashTarget],
-      );
-      const recoverRpc = createRpc();
-      await runWorkerTick(pool, "B", recoverRpc, 60);
-      const recovered = await pool.query(
-        `select init_status from public.solana_fee_escrow_accruals where campaign_address=$1`,
-        [crashTarget],
-      );
-      assert.equal(recovered.rows[0].init_status, "initialized");
-      assert.equal(recoverRpc.inits.filter((id) => id === crashTarget).length, 1);
-
       const eventCampaign = campaignId(99);
       const insertEvent = async () =>
         pool.query(
@@ -318,6 +274,104 @@ test("Gate O: three workers, 100 jobs, exclusive lease, no duplicate init/flush,
       };
       await pool.query(`delete from public.solana_fee_escrow_events where campaign_address=$1`, [eventCampaign]);
       await pool.query(`delete from public.solana_fee_escrow_accruals where campaign_address=$1`, [eventCampaign]);
+      assert.equal(await applyAccrual(), true);
+      assert.equal(await applyAccrual(), false);
+      const aggregate = await pool.query(
+        `select weekly_accrued::int as weekly from public.solana_fee_escrow_accruals where campaign_address=$1`,
+        [eventCampaign],
+      );
+      assert.equal(aggregate.rows[0].weekly, 5);
+    } finally {
+      await cleanup(pool);
+    }
+  });
+});
+
+test("Gate O crash/replay uses production claim SQL and retries exactly once after takeover", { skip }, async () => {
+  const workerSrc = fs.readFileSync(workerPath, "utf8");
+  assert.match(workerSrc, /CLAIM_INIT_SQL/);
+  assert.match(workerSrc, /CLAIM_FLUSH_SQL/);
+  assert.match(workerSrc, /ACQUIRE_LEASE_SQL/);
+
+  await withPool(async (pool) => {
+    await cleanup(pool);
+    try {
+      const crashTarget = campaignId(0);
+      await seedJobs(pool, 1);
+      const crashRpc = createRpc({ crashOn: crashTarget });
+      const first = await runWorkerTick(pool, "A", crashRpc, 60);
+      assert.equal(first.skipped, false, "lease owner A must claim the crash job");
+      assert.deepEqual(crashRpc.attempts, [crashTarget]);
+      assert.deepEqual(crashRpc.inits, []);
+
+      const crashed = await pool.query(
+        `select init_status, last_error, init_attempts::int as init_attempts, next_init_attempt_at
+           from public.solana_fee_escrow_accruals
+          where campaign_address=$1`,
+        [crashTarget],
+      );
+      assert.equal(crashed.rows[0].init_status, "failed");
+      assert.match(String(crashed.rows[0].last_error || ""), /rpc crash/);
+      assert.equal(crashed.rows[0].init_attempts, 1);
+      assert.ok(new Date(crashed.rows[0].next_init_attempt_at).getTime() > Date.now(), "claim-before-RPC must set retry backoff");
+
+      assert.equal(await acquire(pool, "B", 60), false, "B cannot steal A's live lease");
+
+      await pool.query(
+        `update public.solana_worker_leases
+            set lease_expires_at = now() - interval '1 second'
+          where worker_name=$1`,
+        [WORKER_NAME],
+      );
+      await pool.query(
+        `update public.solana_fee_escrow_accruals
+            set next_init_attempt_at = now() - interval '1 second'
+          where campaign_address=$1`,
+        [crashTarget],
+      );
+
+      const recoverRpc = createRpc();
+      const second = await runWorkerTick(pool, "B", recoverRpc, 60);
+      assert.equal(second.skipped, false, "B must take over after lease expiry");
+      assert.deepEqual(recoverRpc.attempts, [crashTarget]);
+      assert.deepEqual(recoverRpc.inits, [crashTarget]);
+
+      const recovered = await pool.query(
+        `select init_status, init_attempts::int as init_attempts
+           from public.solana_fee_escrow_accruals
+          where campaign_address=$1`,
+        [crashTarget],
+      );
+      assert.equal(recovered.rows[0].init_status, "initialized");
+      assert.equal(recovered.rows[0].init_attempts, 2);
+      assert.equal([...crashRpc.attempts, ...recoverRpc.attempts].filter((id) => id === crashTarget).length, 2);
+      assert.equal([...crashRpc.inits, ...recoverRpc.inits].filter((id) => id === crashTarget).length, 1);
+
+      const eventCampaign = campaignId(1);
+      await pool.query(`delete from public.solana_fee_escrow_events where campaign_address=$1`, [eventCampaign]);
+      await pool.query(`delete from public.solana_fee_escrow_accruals where campaign_address=$1`, [eventCampaign]);
+      const insertEvent = async () =>
+        pool.query(
+          `insert into public.solana_fee_escrow_events (
+             chain_id, tx_hash, log_index, event_kind, campaign_address, escrow_address, weekly_lamports, total_lamports
+           ) values ($1,$2,$3,$4,$5,$5,$6,$6)
+           on conflict (chain_id, tx_hash, log_index, event_kind) do nothing
+           returning tx_hash`,
+          [CHAIN_ID, "crash-replay-sig", 1, "FeeSlicesAccrued", eventCampaign, 5],
+        );
+      const applyAccrual = async () => {
+        const inserted = await insertEvent();
+        if (!inserted.rows[0]) return false;
+        await pool.query(
+          `insert into public.solana_fee_escrow_accruals (
+             chain_id, campaign_address, escrow_address, init_status, weekly_accrued
+           ) values ($1,$2,$2,'initialized',$3)
+           on conflict (chain_id, campaign_address) do update set
+             weekly_accrued = public.solana_fee_escrow_accruals.weekly_accrued + excluded.weekly_accrued`,
+          [CHAIN_ID, eventCampaign, 5],
+        );
+        return true;
+      };
       assert.equal(await applyAccrual(), true);
       assert.equal(await applyAccrual(), false);
       const aggregate = await pool.query(

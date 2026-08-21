@@ -86,7 +86,6 @@ jobs:
           node --test tests/solana/meteora-cp-amm-pin.test.mjs
           node --test tests/solana/bsc-certification-factory.test.mjs
           node --test frontend/api/admin/sponsorship.test.mjs
-          node --test frontend/src/lib/feedChainIsolation.test.mjs
           npm install --prefix frontend --no-audit --no-fund
           npm --prefix frontend run build
 

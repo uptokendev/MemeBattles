@@ -6,6 +6,7 @@ on:
       - db/migrations/20260821_000003_solana_worker_leases.sql
       - db/migrations/20260821_000005_sponsorship_admin_rls.sql
       - realtime-indexer/src/solanaFeeEscrowWorker.ts
+      - realtime-indexer/src/solanaFeeEscrowClaimSql.ts
       - tests/solana/fee-escrow-lease.pg.test.mjs
       - tests/solana/fee-escrow-worker-torture.pg.test.mjs
       - .github/workflows/solana-fee-escrow-db-ci.yml
