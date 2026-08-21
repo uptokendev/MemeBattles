@@ -10,10 +10,15 @@
  *   --account-dir third_party/meteora/accounts
  */
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { Connection, PublicKey } = require("@solana/web3.js");
+
+const BPF_UPGRADEABLE = "BPFLoaderUpgradeab1e11111111111111111111111";
+const BPF_LOADER2 = "BPFLoader2111111111111111111111111111111111";
 
 const ROOT = path.resolve(__dirname, "../..");
 const MANIFEST = JSON.parse(
@@ -50,7 +55,26 @@ describe("Gate K pinned Meteora DAMM v2", function () {
       `Meteora DAMM v2 ${METEORA.toBase58()} is not loaded. Start the validator with --bpf-program ${METEORA.toBase58()} ${MANIFEST.artifact.localPath}`,
     );
     assert.equal(meteora.executable, true);
-    assert.ok(meteora.data.length >= MANIFEST.artifact.bytes, `loaded Meteora account too small: ${meteora.data.length}`);
+    const loader = meteora.owner.toBase58();
+    assert.ok(
+      loader === BPF_UPGRADEABLE || loader === BPF_LOADER2,
+      `Meteora program uses unexpected loader ${loader}`,
+    );
+    // Upgradeable program IDs are 36-byte Program accounts that point at ProgramData.
+    // Compare the dumped ELF with the pinned file instead of the program-ID account size.
+    const soPath = path.join(ROOT, MANIFEST.artifact.localPath);
+    const dumpPath = path.join(os.tmpdir(), "mwz-gate-k-dumped-cp-amm.so");
+    const dump = spawnSync("solana", ["program", "dump", METEORA.toBase58(), dumpPath, "--url", RPC], {
+      encoding: "utf8",
+    });
+    assert.equal(dump.status, 0, dump.stderr || dump.stdout || "solana program dump failed");
+    const dumped = fs.readFileSync(dumpPath);
+    const pinned = fs.readFileSync(soPath);
+    assert.ok(dumped.length >= pinned.length, `dumped ELF ${dumped.length} < pinned ${pinned.length}`);
+    assert.ok(
+      dumped.subarray(0, pinned.length).equals(pinned),
+      "deployed DAMM v2 ELF does not match the pinned SHA256 file",
+    );
   });
 
   it("pinned Meteora account fixtures are present", async function () {

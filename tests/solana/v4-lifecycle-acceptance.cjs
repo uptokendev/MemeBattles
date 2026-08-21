@@ -1696,16 +1696,30 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       instructions,
       lookupTableAccounts: [lookupTableAccount],
     });
-    const stats = v0Helpers.assertLaunchpadV0Intent(web3, versioned, {
-      payer: admin,
-      ed25519Instruction: ed25519,
-      programInstruction: beginIx,
-      lookupTableAccounts: [lookupTableAccount],
-      hardMaxBytes: 1232,
-      releaseMaxBytes: null,
-      maxRequiredSigners: 2,
-      allowAdditionalProgramInstructions: true,
+    const stats = v0Helpers.inspectLaunchpadV0Envelope(web3, versioned, [lookupTableAccount]);
+    assert.ok(stats.serializedBytes <= 1232, `Gate K graduation is ${stats.serializedBytes} bytes; hard max is 1232`);
+    assert.ok(stats.requiredSigners >= 1 && stats.requiredSigners <= 2, `Gate K signers=${stats.requiredSigners}`);
+    const decompiled = web3.TransactionMessage.decompile(versioned.message, {
+      addressLookupTableAccounts: [lookupTableAccount],
     });
+    const beginData = Buffer.from(beginIx.data);
+    const beginIndex = decompiled.instructions.findIndex(
+      (ix) => ix.programId.toBase58() === PROGRAM_ID && Buffer.from(ix.data).equals(beginData),
+    );
+    assert.ok(beginIndex > 0, "begin_graduation missing from V0 envelope");
+    assert.equal(
+      decompiled.instructions[beginIndex - 1].programId.toBase58(),
+      Ed25519Program.programId.toBase58(),
+      "Ed25519 must immediately precede begin_graduation",
+    );
+    const confirmIndex = decompiled.instructions.findIndex(
+      (ix, index) => index > beginIndex && ix.programId.toBase58() === PROGRAM_ID,
+    );
+    assert.ok(confirmIndex > beginIndex, "confirm_graduation missing after begin_graduation");
+    const meteoraBetween = decompiled.instructions
+      .slice(beginIndex + 1, confirmIndex)
+      .some((ix) => ix.programId.equals(METEORA_CP_AMM));
+    assert.ok(meteoraBetween, "Meteora createCustomPool must sit between begin_graduation and confirm_graduation");
     versioned.sign([adminKeypair, nftMint]);
     const serialized = versioned.serialize();
     console.log(`[gate-k] graduation bytes=${serialized.length} v0Stats=${JSON.stringify(stats)}`);
