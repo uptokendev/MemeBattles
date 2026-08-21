@@ -245,7 +245,9 @@ async function main() {
   const operatorPath = process.env.SOLANA_GRADUATION_OPERATOR_KEYPAIR || DEFAULT_OPERATOR;
   const operator = loadKeypair(operatorPath);
   const connection = new Connection(rpcUrl, "confirmed");
-  const idlPath = path.join(ROOT, "target/idl/memewarzone_solana.json");
+  const idlPath =
+    String(process.env.SOLANA_IDL_PATH || "").trim() ||
+    path.join(ROOT, "target/idl/memewarzone_solana.json");
   if (!fs.existsSync(idlPath)) fail(`generated graduation IDL missing: ${idlPath}`);
   const idl = JSON.parse(fs.readFileSync(idlPath, "utf8"));
   const provider = new AnchorProvider(connection, new Wallet(operator), {

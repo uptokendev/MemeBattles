@@ -9,6 +9,12 @@ on:
       - frontend/api/sponsorship-applications.js
       - frontend/src/lib/feedChainIsolation.test.mjs
       - tests/solana/fee-escrow-lease.pg.test.mjs
+      - tests/solana/meteora-cp-amm-pin.test.mjs
+      - tests/solana/bsc-certification-factory.test.mjs
+      - scripts/solana/fetch-pinned-meteora-cp-amm.mjs
+      - scripts/resolve-bsc-certification-factory.mjs
+      - config/solana/meteora-cp-amm.certification.json
+      - config/bsc-testnet-certification.json
       - db/migrations/20260821_000005_sponsorship_admin_rls.sql
 
 jobs:
@@ -27,15 +33,21 @@ jobs:
         run: |
           node --test tests/solana/graduate-operator-accounts.test.mjs
           node --test tests/solana/fee-escrow-lease.pg.test.mjs
+          node --test tests/solana/meteora-cp-amm-pin.test.mjs
+          node --test tests/solana/bsc-certification-factory.test.mjs
           node --test frontend/api/admin/sponsorship.test.mjs
           node --test frontend/src/lib/feedChainIsolation.test.mjs
+      - name: Pin and verify Meteora DAMM v2 CP-AMM artifact
+        run: node scripts/solana/fetch-pinned-meteora-cp-amm.mjs
       - name: BNB Topaz / lifecycle slice
         run: |
           npm ci
           npx hardhat test test/LaunchFactoryLifecycle.spec.ts test/LaunchCampaignTopazAdapter.spec.ts test/PermanentLpLockerHarvest.spec.ts test/TreasuryRouterV2.spec.ts
       - name: Blockers that remain manual
         run: |
-          echo "BLOCKER: local Meteora CP-AMM .so is not pinned in-repo; graduate.mjs cannot execute a real pool in this job."
-          echo "BLOCKER: Phantom malicious-dApp check requires a human wallet."
-          echo "BLOCKER: BSC/Solana real-network canaries require dedicated testnet secrets, not production funds."
-          echo "Use workflow solana-network-canary.yml (workflow_dispatch) when those secrets exist."
+          echo "Meteora CP-AMM binary is pinned to MeteoraAg/meteora-invent@6787734f46c85e9c490d298c9ddfd210e262fe4e (Gate K download+SHA256 ran in this job)."
+          echo "OPEN: local Gate K still needs a validator loaded with that binary plus a curve-closed campaign before graduate.mjs can create a real pool here."
+          echo "OPEN: sponsorship admin API is done; web-dashboard still writes some tables directly (dashboard integration OPEN)."
+          echo "SCAFFOLD FIXED: solana-network-canary.yml now maps testnet-certification secrets and executes Topaz / graduate.mjs. It is still secret-gated."
+          echo "BLOCKER: Phantom CREATE/BUY/SELL warning check requires a human wallet."
+          echo "ITEM 9: isolated SBF rebuild lives in solana-final-launch-blockers.yml; a cargo-cache hit is not the required clean-room proof."

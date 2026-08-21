@@ -11,6 +11,8 @@ test("admin sponsorship API requires admin/ops and does not grant anon writes", 
   const apps = fs.readFileSync(path.join(root, "api/sponsorship-applications.js"), "utf8");
   const settings = fs.readFileSync(path.join(root, "api/sponsorship-settings.js"), "utf8");
   assert.match(admin, /requireAdminOrOps/);
+  assert.match(admin, /resource === "packages"/);
+  assert.match(admin, /patchPlacement/);
   assert.match(apps, /requireAdminOrOps/);
   assert.match(apps, /"submitted"/);
   assert.doesNotMatch(settings, /grant select, insert, update on table public.sponsorship_settings to anon/);
