@@ -326,7 +326,11 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       releaseMaxBytes: null,
     });
     const signature = await connection.sendRawTransaction(unsigned.transaction.serialize(), {
-      skipPreflight: false,
+      // Local validators, especially Agave --clone-feature-set, can spend
+      // a full blockhash window inside RPC preflight. The unsigned V0
+      // simulation above already proved the program. Production still uses
+      // skipPreflight: false against real RPCs.
+      skipPreflight: true,
       maxRetries: 3,
     });
     let confirmation;
