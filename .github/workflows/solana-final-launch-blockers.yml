@@ -82,6 +82,7 @@ jobs:
           node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
           node --test tests/solana/graduate-operator-accounts.test.mjs
           node --test tests/solana/fee-escrow-lease.pg.test.mjs
+          node --test tests/solana/fee-escrow-worker-torture.pg.test.mjs
           node --test tests/solana/meteora-cp-amm-pin.test.mjs
           node --test tests/solana/bsc-certification-factory.test.mjs
           node --test frontend/api/admin/sponsorship.test.mjs

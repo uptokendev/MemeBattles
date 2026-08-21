@@ -7,6 +7,7 @@ on:
       - db/migrations/20260821_000005_sponsorship_admin_rls.sql
       - realtime-indexer/src/solanaFeeEscrowWorker.ts
       - tests/solana/fee-escrow-lease.pg.test.mjs
+      - tests/solana/fee-escrow-worker-torture.pg.test.mjs
       - .github/workflows/solana-fee-escrow-db-ci.yml
   push:
     branches:
@@ -47,5 +48,5 @@ jobs:
           psql "$DATABASE_URL" -f db/migrations/20260821_000003_solana_worker_leases.sql
           psql "$DATABASE_URL" -f db/migrations/20260821_000004_partner_listings_rls.sql
           psql "$DATABASE_URL" -f db/migrations/20260821_000005_sponsorship_admin_rls.sql
-      - name: Lease and RLS tests
-        run: npm install pg --no-audit --no-fund && node --test tests/solana/fee-escrow-lease.pg.test.mjs tests/solana/graduate-operator-accounts.test.mjs
+      - name: Lease, 3-worker torture, and RLS tests
+        run: npm install pg --no-audit --no-fund && node --test tests/solana/fee-escrow-lease.pg.test.mjs tests/solana/fee-escrow-worker-torture.pg.test.mjs tests/solana/graduate-operator-accounts.test.mjs

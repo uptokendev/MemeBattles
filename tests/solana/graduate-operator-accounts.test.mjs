@@ -22,4 +22,7 @@ test("FeeEscrow worker uses a DB lease instead of session advisory locks", () =>
   assert.match(source, /acquireLease/);
   assert.doesNotMatch(source, /pg_try_advisory_lock/);
   assert.match(source, /graduation_requested/);
+  assert.match(source, /next_init_attempt_at = now\(\) \+ interval '60 seconds'/);
+  assert.match(source, /flush_status='submitted'/);
+  assert.match(source, /if \(!\(await acquireLease\(\)\)\) return;/);
 });

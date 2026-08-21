@@ -9,6 +9,8 @@ on:
       - frontend/api/sponsorship-applications.js
       - frontend/src/lib/feedChainIsolation.test.mjs
       - tests/solana/fee-escrow-lease.pg.test.mjs
+      - tests/solana/fee-escrow-worker-torture.pg.test.mjs
+      - realtime-indexer/src/solanaFeeEscrowWorker.ts
       - tests/solana/meteora-cp-amm-pin.test.mjs
       - tests/solana/bsc-certification-factory.test.mjs
       - scripts/solana/fetch-pinned-meteora-cp-amm.mjs
@@ -37,6 +39,7 @@ jobs:
         run: |
           node --test tests/solana/graduate-operator-accounts.test.mjs
           node --test tests/solana/fee-escrow-lease.pg.test.mjs
+          node --test tests/solana/fee-escrow-worker-torture.pg.test.mjs
           node --test tests/solana/meteora-cp-amm-pin.test.mjs
           node --test tests/solana/bsc-certification-factory.test.mjs
           node --test frontend/api/admin/sponsorship.test.mjs
@@ -58,4 +61,5 @@ jobs:
           echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
           echo "ITEM 6 / Gate S: behavioral unit isolation runs here; Playwright browser suite runs in frontend-pr-proof.yml (PR base main/devpostgrad)."
           echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."
+          echo "PG17 / Gate O: three-worker 100-job crash-replay runs in solana-fee-escrow-db-ci.yml against postgres:17."
           echo "Phantom CREATE/BUY/SELL is last, after these automated gates."

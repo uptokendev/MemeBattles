@@ -228,7 +228,7 @@ async function flushOne(
 
 async function processInits(connection: Connection, payer: Keypair) {
   const rows = await pool.query(
-    `select campaign_address, escrow_address, init_attempts
+    `select campaign_address, escrow_address
        from public.solana_fee_escrow_accruals
       where chain_id=$1
         and init_status in ('pending','failed')
@@ -238,15 +238,31 @@ async function processInits(connection: Connection, payer: Keypair) {
     [SOLANA_CHAIN_ID],
   );
   for (const row of rows.rows) {
-    const campaign = new PublicKey(String(row.campaign_address));
-    const escrowPk = new PublicKey(
-      String(row.escrow_address || deriveFeeEscrowAddress(campaign.toBase58(), programId().toBase58())),
+    if (!(await acquireLease())) return;
+    const claimed = await pool.query(
+      `update public.solana_fee_escrow_accruals
+          set init_attempts = init_attempts + 1,
+              last_init_attempt_at = now(),
+              next_init_attempt_at = now() + interval '60 seconds',
+              updated_at = now()
+        where chain_id=$1
+          and campaign_address=$2
+          and init_status in ('pending','failed')
+          and (next_init_attempt_at is null or next_init_attempt_at <= now())
+        returning campaign_address, escrow_address, init_attempts`,
+      [SOLANA_CHAIN_ID, row.campaign_address],
     );
-    const nextAttempts = Number(row.init_attempts || 0) + 1;
+    const claimedRow = claimed.rows[0];
+    if (!claimedRow) continue;
+    const campaign = new PublicKey(String(claimedRow.campaign_address));
+    const escrowPk = new PublicKey(
+      String(claimedRow.escrow_address || deriveFeeEscrowAddress(campaign.toBase58(), programId().toBase58())),
+    );
+    const nextAttempts = Number(claimedRow.init_attempts || 0);
     try {
       const existing = await connection.getAccountInfo(escrowPk, "confirmed");
       if (existing && existing.owner.equals(programId()) && existing.data.length >= 8) {
-        await markInit(campaign.toBase58(), "initialized", undefined, undefined, Number(row.init_attempts || 0));
+        await markInit(campaign.toBase58(), "initialized", undefined, undefined, nextAttempts);
         continue;
       }
       const sig = await initializeOne(connection, payer, campaign);
@@ -295,6 +311,7 @@ async function processFlushes(connection: Connection, payer: Keypair, reconcilin
   );
   const now = Date.now();
   for (const row of rows.rows) {
+    if (!(await acquireLease())) return;
     const campaign = new PublicKey(String(row.campaign_address));
     const escrow = new PublicKey(
       String(row.escrow_address || deriveFeeEscrowAddress(campaign.toBase58(), programId().toBase58())),
@@ -314,7 +331,23 @@ async function processFlushes(connection: Connection, payer: Keypair, reconcilin
       if (pending <= 0n) continue;
       if (!(pending >= threshold || aged || forced)) continue;
 
-      await markFlush(campaign.toBase58(), "submitted");
+      const claimed = await pool.query(
+        `update public.solana_fee_escrow_accruals
+            set flush_status='submitted',
+                flush_attempts = flush_attempts + 1,
+                updated_at=now()
+          where chain_id=$1
+            and campaign_address=$2
+            and init_status='initialized'
+            and (
+              flush_status in ('idle','queued','failed')
+              or (flush_status='submitted' and updated_at < now() - interval '2 minutes')
+            )
+          returning campaign_address`,
+        [SOLANA_CHAIN_ID, campaign.toBase58()],
+      );
+      if (!claimed.rows[0]) continue;
+
       const sig = await flushOne(connection, payer, campaign, escrow);
       await markFlush(campaign.toBase58(), "confirmed", sig);
       if (forced) {
