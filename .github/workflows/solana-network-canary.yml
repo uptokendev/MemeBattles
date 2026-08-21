@@ -139,8 +139,11 @@ jobs:
           node scripts/solana/materialize-devnet-payer.mjs
           echo "SOLANA_GRADUATION_OPERATOR_KEYPAIR=$SOLANA_GRADUATION_OPERATOR_KEYPAIR" >> "$GITHUB_ENV"
 
-      - name: Run Solana graduate.mjs against devnet
+      - name: Generate frozen launchpad IDL for graduate.mjs
         if: ${{ inputs.network == 'solana-devnet-meteora' }}
+        env:
+          ANCHOR_VERSION: 0.30.1
+          IDL_RUST_TOOLCHAIN: nightly-2024-05-09
         shell: bash
         run: |
           set -euo pipefail
@@ -153,10 +156,21 @@ jobs:
             echo "BLOCKER: set GitHub Environment variable SOLANA_GRADUATION_AUTH_URL (Railway graduation-authorize URL). Not a secret."
             exit 1
           }
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+          mkdir -p target/idl
+          (
+            cd programs/memewarzone_solana
+            RUSTUP_TOOLCHAIN="$IDL_RUST_TOOLCHAIN" anchor idl build \
+              --out ../../target/idl/memewarzone_solana.json
+          )
+          test -s target/idl/memewarzone_solana.json
+
+      - name: Run Solana graduate.mjs against devnet
+        if: ${{ inputs.network == 'solana-devnet-meteora' }}
+        shell: bash
+        run: |
+          set -euo pipefail
           npm install --prefix tools/solana-meteora-graduation --no-audit --no-fund
-          if [ ! -s target/idl/memewarzone_solana.json ]; then
-            echo "BLOCKER: generated IDL target/idl/memewarzone_solana.json is missing on this runner."
-            echo "graduate.mjs requires the frozen launchpad IDL. Produce it with the Solana Final Launch Blocker Gate artifact or anchor idl build."
-            exit 1
-          fi
+          test -s target/idl/memewarzone_solana.json
           node tools/solana-meteora-graduation/graduate.mjs "$SOLANA_GRADUATION_CAMPAIGN"
