@@ -58,6 +58,6 @@ jobs:
           echo "LABEL: Gate K curve-close → graduate → DAMM v2 swap runs on the 1.18 lifecycle validator in solana-final-launch-blockers.yml with the pinned cp_amm.so loaded."
           echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
           echo "ITEM 6 / Gate S: required in frontend-pr-proof.yml (PR base main/devpostgrad). Not re-run here."
-          echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."
+          echo "ITEM 9: isolated in-job SBF rebuild already PASS; two runner-isolated freeze rooms run in solana-release-freeze.yml."
           echo "PG17 / Gate O: three-worker 100-job crash-replay runs in solana-fee-escrow-db-ci.yml against postgres:17."
           echo "Phantom CREATE/BUY/SELL is last, after these automated gates."
