@@ -106,7 +106,9 @@
     "agents:implement": "node scripts/agents/implement.mjs",
     "agents:check": "node scripts/agents/check.mjs",
     "agents:run": "node scripts/agents/run.mjs",
-    "agents:test": "node scripts/agents/test/smoke.mjs"
+    "agents:test": "node scripts/agents/test/smoke.mjs",
+    "audit:bnb-locker-mainnet": "hardhat run scripts/report-bnb-locker-mainnet-audit.ts --network hardhat",
+    "test:bnb-mainnet-fork": "cross-env BNB_FORK=1 hardhat test test/BnbMainnetForkTopazLifecycle.spec.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

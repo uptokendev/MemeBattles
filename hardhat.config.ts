@@ -7,12 +7,23 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC || process.env.BSC_TESTNET_RPC_URL || "";
+const bscMainnetRpcUrl =
+  process.env.BNB_FORK_RPC || process.env.BSC_MAINNET_RPC || process.env.BSC_MAINNET_RPC_URL || "https://bsc-dataseed.binance.org";
 const deployerPrivateKey = process.env.DEPLOYER_PK || process.env.PRIVATE_KEY_DEPLOY || "";
 const explorerApiKey = process.env.ETHERSCAN_API_KEY || "";
+const forkMainnet = ["1", "true", "yes", "on"].includes(String(process.env.BNB_FORK || "").trim().toLowerCase());
 
 const config: HardhatUserConfig = {
   networks: {
-    hardhat: {},
+    hardhat: {
+      chainId: forkMainnet ? 56 : 31337,
+      forking: forkMainnet
+        ? {
+            url: bscMainnetRpcUrl,
+            httpHeaders: { "User-Agent": "Mozilla/5.0 hardhat-fork" },
+          }
+        : undefined,
+    },
 
     // --- Added for deployments ---
     bscTestnet: {
@@ -46,7 +57,7 @@ const config: HardhatUserConfig = {
   },
 
   mocha: {
-    timeout: 120_000,
+    timeout: forkMainnet ? 600_000 : 120_000,
   },
 
   gasReporter: {
