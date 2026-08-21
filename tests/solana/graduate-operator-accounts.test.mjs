@@ -12,6 +12,8 @@ test("operator graduate.mjs keeps feeEscrow on beginGraduation only", () => {
   const confirm = source.split("confirmGraduation")[1] || "";
   assert.match(begin, /feeEscrow:/);
   assert.doesNotMatch(confirm, /feeEscrow:/);
+  assert.match(confirm, /remainingAccounts/);
+  assert.match(confirm, /leagueVault/);
 });
 
 test("FeeEscrow worker uses a DB lease instead of session advisory locks", () => {

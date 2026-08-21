@@ -1647,6 +1647,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
+      .remainingAccounts(remainingRewardAccounts())
       .instruction();
 
     const instructions = [

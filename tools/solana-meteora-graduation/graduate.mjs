@@ -432,6 +432,20 @@ async function main() {
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
+    .remainingAccounts(
+      [
+        "leagueVault",
+        "airdropVault",
+        "monthlyLeagueVault",
+        "recruiterVault",
+        "squadVault",
+        "protocolVault",
+      ].map((label) => ({
+        pubkey: asPk(auth.accounts[label], label),
+        isWritable: true,
+        isSigner: false,
+      })),
+    )
     .instruction();
 
   const computeUnits = Number(process.env.SOLANA_GRADUATION_COMPUTE_UNITS || 1_400_000);
