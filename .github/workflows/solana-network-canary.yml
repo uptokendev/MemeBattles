@@ -10,6 +10,7 @@ on:
         required: true
         type: choice
         options:
+          - bsc-testnet-preflight
           - bsc-testnet-full-cycle
           - solana-devnet-meteora
           - phantom-manual-checklist
@@ -67,6 +68,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.network }}" in
+            bsc-testnet-preflight)
+              echo "BNB canary preflight: bytecode/wiring only. Not Gate D full lifecycle."
+              ;;
             bsc-testnet-full-cycle)
               test -n "${BSC_TESTNET_PRIVATE_KEY:-}" || {
                 echo "BLOCKER: GitHub Environment secret BSC_TESTNET_PRIVATE_KEY is not mapped. Dedicated tBNB-only EOA, no production funds."
@@ -105,13 +109,13 @@ jobs:
           PY
 
       - name: Resolve BSC certification factory from the accepted test manifest
-        if: ${{ inputs.network == 'bsc-testnet-full-cycle' }}
+        if: ${{ inputs.network == 'bsc-testnet-preflight' || inputs.network == 'bsc-testnet-full-cycle' }}
         id: factory
         shell: bash
         run: node scripts/resolve-bsc-certification-factory.mjs --github-output
 
-      - name: Run BSC Testnet Topaz certification against the resolved factory
-        if: ${{ inputs.network == 'bsc-testnet-full-cycle' }}
+      - name: Run BSC Testnet Topaz preflight (not full lifecycle)
+        if: ${{ inputs.network == 'bsc-testnet-preflight' }}
         env:
           DEPLOYMENT_FILE: ${{ steps.factory.outputs.deployment_file }}
           TOPAZ_MANIFEST: ${{ steps.factory.outputs.topaz_manifest }}
@@ -126,9 +130,33 @@ jobs:
             exit 1
           }
           echo "certification_factory=$FACTORY_ADDRESS"
-          echo "deployment_file=$DEPLOYMENT_FILE"
+          echo "mode=preflight"
           npm ci
           npx hardhat run scripts/test-topaz-graduation-flow.ts --network bscTestnet
+
+      - name: Run BSC Testnet full lifecycle + evidence verifier
+        if: ${{ inputs.network == 'bsc-testnet-full-cycle' }}
+        env:
+          DEPLOYMENT_FILE: ${{ steps.factory.outputs.deployment_file }}
+          TOPAZ_MANIFEST: ${{ steps.factory.outputs.topaz_manifest }}
+          FACTORY_ADDRESS: ${{ steps.factory.outputs.factory }}
+          LAUNCH_FACTORY: ${{ steps.factory.outputs.factory }}
+          TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${FACTORY_ADDRESS:-}"
+          test -n "${BSC_TESTNET_RPC:-}" || {
+            echo "BLOCKER: set GitHub Environment variable BSC_TESTNET_RPC (public testnet RPC is configuration, not a secret)."
+            exit 1
+          }
+          echo "certification_factory=$FACTORY_ADDRESS"
+          echo "mode=full-cycle"
+          npm ci
+          npx hardhat run scripts/run-bnb-lifecycle-certification.ts --network bscTestnet
+          test -s "${TOPAZ_ACCEPTANCE_INPUT:-reports/bnb-lifecycle-certification-testnet.json}"
+          TOPAZ_ACCEPTANCE_INPUT="${TOPAZ_ACCEPTANCE_INPUT:-reports/bnb-lifecycle-certification-testnet.json}" \
+            npx hardhat run scripts/test-topaz-graduation-flow.ts --network bscTestnet
 
       - name: Materialize dedicated Solana devnet payer
         if: ${{ inputs.network == 'solana-devnet-meteora' }}

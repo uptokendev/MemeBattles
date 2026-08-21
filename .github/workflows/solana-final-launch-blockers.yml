@@ -14,6 +14,9 @@ on:
       - Cargo.lock
       - programs/memewarzone_solana/**
       - tests/solana/**
+      - tests/solana/gate-k-meteora.cjs
+      - config/solana/meteora-cp-amm.certification.json
+      - scripts/solana/fetch-pinned-meteora-cp-amm.mjs
       - frontend/src/lib/solanaV4CreateSubmit.ts
       - frontend/src/lib/solanaTradeV1.ts
       - frontend/src/lib/solanaLaunchpadInstructions.ts
@@ -303,6 +306,49 @@ jobs:
           trap - EXIT
           sha256sum -c /tmp/mwz-so-sha256.txt
 
+      - name: Gate K — load pinned Meteora DAMM v2 binary into local validator
+        shell: bash
+        env:
+          METEORA_PROGRAM_ID: cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG
+        run: |
+          set -euo pipefail
+          node scripts/solana/fetch-pinned-meteora-cp-amm.mjs --with-accounts
+          test -s third_party/meteora/cp_amm.so
+          python3 - <<'PY' | sha256sum -c
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("config/solana/meteora-cp-amm.certification.json").read_text())
+          print(f"{manifest['artifact']['sha256']}  {manifest['artifact']['localPath']}")
+          PY
+          rm -rf /tmp/mwz-gate-k-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/mwz-gate-k-ledger \
+            --bpf-program "$PROGRAM_ID" target/deploy/memewarzone_solana.so \
+            --bpf-program "$METEORA_PROGRAM_ID" third_party/meteora/cp_amm.so \
+            --account-dir third_party/meteora/accounts \
+            > /tmp/mwz-gate-k-validator.log 2>&1 &
+          validator_pid=$!
+          trap 'kill "$validator_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 90 ]; then tail -n 200 /tmp/mwz-gate-k-validator.log >&2; exit 1; fi
+            sleep 2
+          done
+          solana config set --url "$ANCHOR_PROVIDER_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+          (
+            cd tests/solana
+            ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" ANCHOR_WALLET="$ANCHOR_WALLET" \
+              npx mocha --timeout 1000000 gate-k-meteora.cjs
+          ) 2>&1 | tee /tmp/mwz-gate-k.log
+          kill "$validator_pid" 2>/dev/null || true
+          wait "$validator_pid" 2>/dev/null || true
+          trap - EXIT
+          sha256sum -c /tmp/mwz-so-sha256.txt
+          echo "GATE_K_PINNED_BINARY_LOADED=true"
+          echo "GATE_K_CURVE_CLOSE_GRADUATE_POOL_TRADE=OPEN"
+
       - name: Run CREATE acceptance on Agave with Mainnet feature set
         shell: bash
         run: |
@@ -452,6 +498,8 @@ jobs:
             /tmp/mwz-create-acceptance.log
             /tmp/mwz-lifecycle-validator.log
             /tmp/mwz-lifecycle-acceptance.log
+            /tmp/mwz-gate-k-validator.log
+            /tmp/mwz-gate-k.log
             /tmp/mwz-agave-create-validator.log
             /tmp/mwz-agave-create-acceptance.log
             /tmp/mwz-agave-lifecycle-validator.log

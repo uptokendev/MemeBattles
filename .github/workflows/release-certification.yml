@@ -16,6 +16,10 @@ on:
       - config/solana/meteora-cp-amm.certification.json
       - config/bsc-testnet-certification.json
       - db/migrations/20260821_000005_sponsorship_admin_rls.sql
+      - test/BnbLifecycleCertification.spec.ts
+      - scripts/run-bnb-lifecycle-certification.ts
+      - contracts/mocks/MockTopazRouter.sol
+      - tests/solana/gate-k-meteora.cjs
 
 jobs:
   static-and-local:
@@ -43,11 +47,15 @@ jobs:
         run: |
           npm ci
           npx hardhat test test/LaunchFactoryLifecycle.spec.ts test/LaunchCampaignTopazAdapter.spec.ts test/PermanentLpLockerHarvest.spec.ts test/TreasuryRouterV2.spec.ts
+      - name: BNB Gate D local full lifecycle evidence
+        run: npx hardhat test test/BnbLifecycleCertification.spec.ts
       - name: Blockers that remain manual
         run: |
-          echo "Meteora CP-AMM binary is pinned to MeteoraAg/meteora-invent@6787734f46c85e9c490d298c9ddfd210e262fe4e (Gate K download+SHA256 ran in this job)."
-          echo "OPEN: local Gate K still needs a validator loaded with that binary plus a curve-closed campaign before graduate.mjs can create a real pool here."
-          echo "OPEN: sponsorship admin API is done; web-dashboard still writes some tables directly (dashboard integration OPEN)."
-          echo "SCAFFOLD FIXED: solana-network-canary.yml now maps testnet-certification secrets and executes Topaz / graduate.mjs. It is still secret-gated."
-          echo "BLOCKER: Phantom CREATE/BUY/SELL warning check requires a human wallet."
-          echo "ITEM 9: isolated SBF rebuild lives in solana-final-launch-blockers.yml; a cargo-cache hit is not the required clean-room proof."
+          echo "LABEL: BNB local Gate D lifecycle (create/bond/grad/Topaz BUY/SELL/harvest/80-20/LP principal) ran in this job."
+          echo "LABEL: bsc-testnet-full-cycle is still secret-gated and must not be called preflight. Use bsc-testnet-preflight for bytecode-only."
+          echo "LABEL: Meteora pin/SHA256 ran in this job. Local Gate K that LOADS the .so lives in solana-final-launch-blockers.yml."
+          echo "OPEN: Gate K curve-close → graduate → DAMM v2 pool/trades against the pinned binary."
+          echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
+          echo "ITEM 6: feed isolation remains unit-level until Playwright."
+          echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."
+          echo "Phantom CREATE/BUY/SELL is last, after these automated gates."

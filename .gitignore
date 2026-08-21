@@ -43,6 +43,7 @@ output/testnet-cycle-results*.json
 output/security-access-matrix.md
 reports/topaz-graduation-testnet-*.json
 reports/topaz-graduation-testnet-*.md
+reports/bnb-lifecycle-certification-*.json
 
 # Local Netlify folder
 .netlify
