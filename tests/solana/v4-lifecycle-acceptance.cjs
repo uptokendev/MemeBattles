@@ -639,7 +639,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     const routeProfile = opts.routeProfile ?? ROUTE_PROFILE_UNLINKED;
     const includeVaults = opts.includeVaults !== false;
     const now = await chainUnixTimestamp(connection);
-    const nonce = hash32(`buy:${Date.now()}:${lamportsIn}:${Math.random()}`);
+    const nonce = opts.nonce || hash32(`buy:${Date.now()}:${lamportsIn}:${Math.random()}`);
     const deadline = opts.deadline ?? now + 3_600;
     const minOut = 1n;
     const digest = tradeDigest({
@@ -1064,6 +1064,47 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
         })
         .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" }),
       /AccountNotInitialized|account is not initialized|InvalidTradeAuthorization|custom program error/i,
+    );
+
+    const nowSellClose = await chainUnixTimestamp(connection);
+    const shortSell = await sendSell(after.tokenAmount / 10n, { deadline: nowSellClose + 3 });
+    await expectProgramFail(
+      "close SELL trade-auth with wrong trader",
+      () => program.methods
+        .closeExpiredTradeAuthorization({ nonce: Array.from(shortSell.nonce) })
+        .accountsStrict({
+          caller: admin,
+          trader: creator.keypair.publicKey,
+          tradeAuthorization: shortSell.tradeAuthorization,
+        })
+        .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" }),
+      /ConstraintSeeds|InvalidTradeAuthorization|custom program error/i,
+    );
+    await expectProgramFail(
+      "close SELL trade-auth with wrong PDA",
+      () => program.methods
+        .closeExpiredTradeAuthorization({ nonce: Array.from(shortSell.nonce) })
+        .accountsStrict({
+          caller: admin,
+          trader: buyer.keypair.publicKey,
+          tradeAuthorization: shortAuth.tradeAuthorization,
+        })
+        .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" }),
+      /ConstraintSeeds|InvalidTradeAuthorization|AccountNotInitialized|custom program error/i,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    await program.methods
+      .closeExpiredTradeAuthorization({ nonce: Array.from(shortSell.nonce) })
+      .accountsStrict({
+        caller: admin,
+        trader: buyer.keypair.publicKey,
+        tradeAuthorization: shortSell.tradeAuthorization,
+      })
+      .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" });
+    await expectProgramFail(
+      "replay expired BUY authorization",
+      () => sendBuy(BUY_LAMPORTS, 0n, { deadline: shortAuth.deadline, nonce: shortAuth.nonce }),
+      /TradeAuthorizationExpired|expired|simulation failed|custom program error/i,
     );
 
     await sendBuy(CLOSE_BUY_LAMPORTS, CLOSE_TARGET_LAMPORTS);

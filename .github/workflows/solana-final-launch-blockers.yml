@@ -74,6 +74,9 @@ jobs:
           node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
           node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
           node --test tests/solana/graduate-operator-accounts.test.mjs
+          node --test tests/solana/fee-escrow-lease.pg.test.mjs
+          node --test frontend/api/admin/sponsorship.test.mjs
+          node --test frontend/src/lib/feedChainIsolation.test.mjs
           npm install --prefix frontend --no-audit --no-fund
           npm --prefix frontend run build
 
@@ -155,6 +158,20 @@ jobs:
           test -s target/deploy/memewarzone_solana.so
           sha256sum target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-sha256.txt
           wc -c target/deploy/memewarzone_solana.so | tee /tmp/mwz-so-bytes.txt
+          cp target/deploy/memewarzone_solana.so /tmp/mwz-so-build-1.so
+
+      - name: Rebuild SBF independently and require identical SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf target/deploy/memewarzone_solana.so target/deploy/memewarzone_solana-keypair.json
+          anchor build --program-name memewarzone_solana --no-idl \
+            2>&1 | tee /tmp/mwz-anchor-rebuild.log | tail -n 80
+          test -s target/deploy/memewarzone_solana.so
+          sha256sum /tmp/mwz-so-build-1.so target/deploy/memewarzone_solana.so
+          cmp -s /tmp/mwz-so-build-1.so target/deploy/memewarzone_solana.so
+          sha256sum -c /tmp/mwz-so-sha256.txt
+          echo 'INDEPENDENT_SBF_REBUILD_MATCH=true'
 
       - name: Compare candidate with live mainnet program
         shell: bash

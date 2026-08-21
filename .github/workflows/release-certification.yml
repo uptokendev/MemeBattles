@@ -1,0 +1,41 @@
+name: Release certification (candidate SHA)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release-certification.yml
+      - frontend/api/admin/sponsorship.js
+      - frontend/api/sponsorship-applications.js
+      - frontend/src/lib/feedChainIsolation.test.mjs
+      - tests/solana/fee-escrow-lease.pg.test.mjs
+      - db/migrations/20260821_000005_sponsorship_admin_rls.sql
+
+jobs:
+  static-and-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Candidate SHA
+        run: echo "candidate=$(git rev-parse HEAD)"
+      - name: Certification unit surfaces
+        run: |
+          node --test tests/solana/graduate-operator-accounts.test.mjs
+          node --test tests/solana/fee-escrow-lease.pg.test.mjs
+          node --test frontend/api/admin/sponsorship.test.mjs
+          node --test frontend/src/lib/feedChainIsolation.test.mjs
+      - name: BNB Topaz / lifecycle slice
+        run: |
+          npm ci
+          npx hardhat test test/LaunchFactoryLifecycle.spec.ts test/LaunchCampaignTopazAdapter.spec.ts test/PermanentLpLockerHarvest.spec.ts test/TreasuryRouterV2.spec.ts
+      - name: Blockers that remain manual
+        run: |
+          echo "BLOCKER: local Meteora CP-AMM .so is not pinned in-repo; graduate.mjs cannot execute a real pool in this job."
+          echo "BLOCKER: Phantom malicious-dApp check requires a human wallet."
+          echo "BLOCKER: BSC/Solana real-network canaries require dedicated testnet secrets, not production funds."
+          echo "Use workflow solana-network-canary.yml (workflow_dispatch) when those secrets exist."

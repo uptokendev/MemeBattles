@@ -1,0 +1,43 @@
+name: Solana / BNB real-network canaries
+
+# Manual only. Consumes real testnet resources. Never production funds.
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Which canary to run
+        required: true
+        type: choice
+        options:
+          - bsc-testnet-full-cycle
+          - solana-devnet-meteora
+          - phantom-manual-checklist
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Fail closed unless required secrets exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "candidate_sha=$(git rev-parse HEAD)"
+          case "${{ inputs.network }}" in
+            bsc-testnet-full-cycle)
+              test -n "${BSC_TESTNET_PRIVATE_KEY:-}" || { echo "BLOCKER: BSC_TESTNET_PRIVATE_KEY is not configured. This canary is manual and must not use production funds."; exit 1; }
+              echo "Would run docs/TOPAZ_TESTNET_FLOW.md against the dedicated test factory."
+              ;;
+            solana-devnet-meteora)
+              test -n "${SOLANA_FEE_ESCROW_PAYER_KEYPAIR:-}${SOLANA_DEVNET_PAYER:-}" || { echo "BLOCKER: no Solana devnet payer secret. Pin Meteora CP-AMM 1.4.5 binary SHA256 before executing graduate.mjs on a real cluster."; exit 1; }
+              echo "Would run tools/solana-meteora-graduation/graduate.mjs on devnet."
+              ;;
+            phantom-manual-checklist)
+              echo "BLOCKER: Phantom CREATE/BUY/SELL warning check requires a human wallet session."
+              echo "Required evidence: Phantom version, CREATE sig, BUY#1, BUY#2, SELL#1, SELL#2, screenshots, sim logs."
+              echo "Production path remains unsigned sim + skipPreflight:false. Local Agave skipPreflight:true is harness-only."
+              exit 1
+              ;;
+          esac
