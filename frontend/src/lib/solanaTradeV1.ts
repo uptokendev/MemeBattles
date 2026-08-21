@@ -489,7 +489,13 @@ export async function submitSolanaTradeV1(
   const unsigned = await compileLaunchpadV0WithLatestBlockhash(web3, connection, v0Input, v0Expectation);
   await simulateLaunchpadV0OrThrow(connection, unsigned.transaction, "[solanaTradeV1] trade simulation failed");
   const signed = await provider.signTransaction(unsigned.transaction);
-  assertLaunchpadV0Intent(web3, signed, v0Expectation);
+  assertLaunchpadV0Intent(web3, signed, {
+    ...v0Expectation,
+    // Unsigned trades stay under the conservative 1000-byte release gate.
+    // Phantom may append Lighthouse / priority instructions after signing;
+    // enforce the real 1232-byte Solana packet limit on the returned tx.
+    releaseMaxBytes: null,
+  });
   const sig = await connection.sendRawTransaction(signed.serialize(), {
     skipPreflight: false,
     maxRetries: 3,

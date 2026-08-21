@@ -901,7 +901,40 @@ async function persistGraduation(
   });
 }
 
-async function insertFeeEscrowEvent(input: {
+type Queryable = {
+  query: (text: string, values?: unknown[]) => Promise<{ rowCount: number | null; rows: unknown[] }>;
+};
+
+async function withFeeEscrowTransaction<T>(fn: (db: Queryable) => Promise<T>): Promise<T> {
+  const client = await pool.connect() as Queryable & { query: (...args: any[]) => any; release: () => void };
+  const origQuery = client.query.bind(client);
+  client.query = (...args: any[]) => {
+    if (typeof args[0] === "string") {
+      return origQuery({ text: args[0], values: Array.isArray(args[1]) ? args[1] : undefined, simple: true });
+    }
+    if (args[0] && typeof args[0] === "object" && typeof args[0].text === "string") {
+      return origQuery({ ...args[0], simple: true });
+    }
+    return origQuery.apply(client, args);
+  };
+  try {
+    await client.query("begin");
+    const result = await fn(client);
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {
+      /* ignore rollback errors */
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function insertFeeEscrowEvent(db: Queryable, input: {
   signature: string;
   logIndex: number;
   eventKind: string;
@@ -915,7 +948,7 @@ async function insertFeeEscrowEvent(input: {
   protocol: string;
   total: string;
 }): Promise<boolean> {
-  const inserted = await pool.query(
+  const inserted = await db.query(
     `insert into public.solana_fee_escrow_events(
        chain_id, tx_hash, log_index, event_kind, campaign_address, escrow_address,
        weekly_lamports, monthly_lamports, recruiter_lamports, airdrop_lamports,
@@ -963,81 +996,85 @@ async function persistFeeAccrual(
   blockTime: Date,
 ) {
   const escrow = deriveFeeEscrowAddress(event.campaign);
-  const isNew = await insertFeeEscrowEvent({
-    signature,
-    logIndex,
-    eventKind: "FeeSlicesAccrued",
-    campaign: event.campaign,
-    escrow,
-    weekly: event.weekly.toString(),
-    monthly: event.monthly.toString(),
-    recruiter: event.recruiter.toString(),
-    airdrop: event.airdrop.toString(),
-    squad: event.squad.toString(),
-    protocol: event.protocol.toString(),
-    total: event.feeLamports.toString(),
-  });
-  if (!isNew) return;
-  await pool.query(
-    `insert into public.solana_fee_escrow_accruals(
-       chain_id, campaign_address, escrow_address, init_status,
-       weekly_accrued, monthly_accrued, recruiter_accrued, airdrop_accrued, squad_accrued, protocol_accrued,
-       first_accrued_at, last_accrued_at, flush_status, updated_at
-     ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$10,'queued', now())
-     on conflict (chain_id, campaign_address) do update set
-       escrow_address = excluded.escrow_address,
-       weekly_accrued = public.solana_fee_escrow_accruals.weekly_accrued + excluded.weekly_accrued,
-       monthly_accrued = public.solana_fee_escrow_accruals.monthly_accrued + excluded.monthly_accrued,
-       recruiter_accrued = public.solana_fee_escrow_accruals.recruiter_accrued + excluded.recruiter_accrued,
-       airdrop_accrued = public.solana_fee_escrow_accruals.airdrop_accrued + excluded.airdrop_accrued,
-       squad_accrued = public.solana_fee_escrow_accruals.squad_accrued + excluded.squad_accrued,
-       protocol_accrued = public.solana_fee_escrow_accruals.protocol_accrued + excluded.protocol_accrued,
-       first_accrued_at = coalesce(public.solana_fee_escrow_accruals.first_accrued_at, excluded.first_accrued_at),
-       last_accrued_at = excluded.last_accrued_at,
-       flush_status = 'queued',
-       updated_at = now()`,
-    [
-      SOLANA_CHAIN_ID,
-      event.campaign,
+  await withFeeEscrowTransaction(async (db) => {
+    const isNew = await insertFeeEscrowEvent(db, {
+      signature,
+      logIndex,
+      eventKind: "FeeSlicesAccrued",
+      campaign: event.campaign,
       escrow,
-      event.weekly.toString(),
-      event.monthly.toString(),
-      event.recruiter.toString(),
-      event.airdrop.toString(),
-      event.squad.toString(),
-      event.protocol.toString(),
-      blockTime,
-    ],
-  );
+      weekly: event.weekly.toString(),
+      monthly: event.monthly.toString(),
+      recruiter: event.recruiter.toString(),
+      airdrop: event.airdrop.toString(),
+      squad: event.squad.toString(),
+      protocol: event.protocol.toString(),
+      total: event.feeLamports.toString(),
+    });
+    if (!isNew) return;
+    await db.query(
+      `insert into public.solana_fee_escrow_accruals(
+         chain_id, campaign_address, escrow_address, init_status,
+         weekly_accrued, monthly_accrued, recruiter_accrued, airdrop_accrued, squad_accrued, protocol_accrued,
+         first_accrued_at, last_accrued_at, flush_status, updated_at
+       ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$10,'queued', now())
+       on conflict (chain_id, campaign_address) do update set
+         escrow_address = excluded.escrow_address,
+         weekly_accrued = public.solana_fee_escrow_accruals.weekly_accrued + excluded.weekly_accrued,
+         monthly_accrued = public.solana_fee_escrow_accruals.monthly_accrued + excluded.monthly_accrued,
+         recruiter_accrued = public.solana_fee_escrow_accruals.recruiter_accrued + excluded.recruiter_accrued,
+         airdrop_accrued = public.solana_fee_escrow_accruals.airdrop_accrued + excluded.airdrop_accrued,
+         squad_accrued = public.solana_fee_escrow_accruals.squad_accrued + excluded.squad_accrued,
+         protocol_accrued = public.solana_fee_escrow_accruals.protocol_accrued + excluded.protocol_accrued,
+         first_accrued_at = coalesce(public.solana_fee_escrow_accruals.first_accrued_at, excluded.first_accrued_at),
+         last_accrued_at = excluded.last_accrued_at,
+         flush_status = 'queued',
+         updated_at = now()`,
+      [
+        SOLANA_CHAIN_ID,
+        event.campaign,
+        escrow,
+        event.weekly.toString(),
+        event.monthly.toString(),
+        event.recruiter.toString(),
+        event.airdrop.toString(),
+        event.squad.toString(),
+        event.protocol.toString(),
+        blockTime,
+      ],
+    );
+  });
 }
 
 async function persistFeeEscrowInitialized(event: FeeEscrowInitializedEvent, signature: string, logIndex: number) {
-  const isNew = await insertFeeEscrowEvent({
-    signature,
-    logIndex,
-    eventKind: "FeeEscrowInitialized",
-    campaign: event.campaign,
-    escrow: event.escrow,
-    weekly: "0",
-    monthly: "0",
-    recruiter: "0",
-    airdrop: "0",
-    squad: "0",
-    protocol: "0",
-    total: "0",
+  await withFeeEscrowTransaction(async (db) => {
+    const isNew = await insertFeeEscrowEvent(db, {
+      signature,
+      logIndex,
+      eventKind: "FeeEscrowInitialized",
+      campaign: event.campaign,
+      escrow: event.escrow,
+      weekly: "0",
+      monthly: "0",
+      recruiter: "0",
+      airdrop: "0",
+      squad: "0",
+      protocol: "0",
+      total: "0",
+    });
+    if (!isNew) return;
+    await db.query(
+      `insert into public.solana_fee_escrow_accruals(
+         chain_id, campaign_address, escrow_address, init_status, init_signature, updated_at
+       ) values ($1,$2,$3,'initialized',$4, now())
+       on conflict (chain_id, campaign_address) do update set
+         escrow_address = excluded.escrow_address,
+         init_status = 'initialized',
+         init_signature = coalesce(public.solana_fee_escrow_accruals.init_signature, excluded.init_signature),
+         updated_at = now()`,
+      [SOLANA_CHAIN_ID, event.campaign, event.escrow, signature],
+    );
   });
-  if (!isNew) return;
-  await pool.query(
-    `insert into public.solana_fee_escrow_accruals(
-       chain_id, campaign_address, escrow_address, init_status, init_signature, updated_at
-     ) values ($1,$2,$3,'initialized',$4, now())
-     on conflict (chain_id, campaign_address) do update set
-       escrow_address = excluded.escrow_address,
-       init_status = 'initialized',
-       init_signature = coalesce(public.solana_fee_escrow_accruals.init_signature, excluded.init_signature),
-       updated_at = now()`,
-    [SOLANA_CHAIN_ID, event.campaign, event.escrow, signature],
-  );
 }
 
 async function persistFeeEscrowFlushed(
@@ -1046,53 +1083,55 @@ async function persistFeeEscrowFlushed(
   logIndex: number,
   blockTime: Date,
 ) {
-  const isNew = await insertFeeEscrowEvent({
-    signature,
-    logIndex,
-    eventKind: "FeeEscrowFlushed",
-    campaign: event.campaign,
-    escrow: event.escrow,
-    weekly: event.weekly.toString(),
-    monthly: event.monthly.toString(),
-    recruiter: event.recruiter.toString(),
-    airdrop: event.airdrop.toString(),
-    squad: event.squad.toString(),
-    protocol: event.protocol.toString(),
-    total: event.total.toString(),
-  });
-  if (!isNew) return;
-  await pool.query(
-    `insert into public.solana_fee_escrow_accruals(
-       chain_id, campaign_address, escrow_address, init_status,
-       weekly_flushed, monthly_flushed, recruiter_flushed, airdrop_flushed, squad_flushed, protocol_flushed,
-       last_flush_at, last_flush_signature, flush_status, updated_at
-     ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$11,'confirmed', now())
-     on conflict (chain_id, campaign_address) do update set
-       escrow_address = excluded.escrow_address,
-       weekly_flushed = public.solana_fee_escrow_accruals.weekly_flushed + excluded.weekly_flushed,
-       monthly_flushed = public.solana_fee_escrow_accruals.monthly_flushed + excluded.monthly_flushed,
-       recruiter_flushed = public.solana_fee_escrow_accruals.recruiter_flushed + excluded.recruiter_flushed,
-       airdrop_flushed = public.solana_fee_escrow_accruals.airdrop_flushed + excluded.airdrop_flushed,
-       squad_flushed = public.solana_fee_escrow_accruals.squad_flushed + excluded.squad_flushed,
-       protocol_flushed = public.solana_fee_escrow_accruals.protocol_flushed + excluded.protocol_flushed,
-       last_flush_at = excluded.last_flush_at,
-       last_flush_signature = excluded.last_flush_signature,
-       flush_status = 'confirmed',
-       updated_at = now()`,
-    [
-      SOLANA_CHAIN_ID,
-      event.campaign,
-      event.escrow,
-      event.weekly.toString(),
-      event.monthly.toString(),
-      event.recruiter.toString(),
-      event.airdrop.toString(),
-      event.squad.toString(),
-      event.protocol.toString(),
-      blockTime,
+  await withFeeEscrowTransaction(async (db) => {
+    const isNew = await insertFeeEscrowEvent(db, {
       signature,
-    ],
-  );
+      logIndex,
+      eventKind: "FeeEscrowFlushed",
+      campaign: event.campaign,
+      escrow: event.escrow,
+      weekly: event.weekly.toString(),
+      monthly: event.monthly.toString(),
+      recruiter: event.recruiter.toString(),
+      airdrop: event.airdrop.toString(),
+      squad: event.squad.toString(),
+      protocol: event.protocol.toString(),
+      total: event.total.toString(),
+    });
+    if (!isNew) return;
+    await db.query(
+      `insert into public.solana_fee_escrow_accruals(
+         chain_id, campaign_address, escrow_address, init_status,
+         weekly_flushed, monthly_flushed, recruiter_flushed, airdrop_flushed, squad_flushed, protocol_flushed,
+         last_flush_at, last_flush_signature, flush_status, updated_at
+       ) values ($1,$2,$3,'initialized',$4,$5,$6,$7,$8,$9,$10,$11,'confirmed', now())
+       on conflict (chain_id, campaign_address) do update set
+         escrow_address = excluded.escrow_address,
+         weekly_flushed = public.solana_fee_escrow_accruals.weekly_flushed + excluded.weekly_flushed,
+         monthly_flushed = public.solana_fee_escrow_accruals.monthly_flushed + excluded.monthly_flushed,
+         recruiter_flushed = public.solana_fee_escrow_accruals.recruiter_flushed + excluded.recruiter_flushed,
+         airdrop_flushed = public.solana_fee_escrow_accruals.airdrop_flushed + excluded.airdrop_flushed,
+         squad_flushed = public.solana_fee_escrow_accruals.squad_flushed + excluded.squad_flushed,
+         protocol_flushed = public.solana_fee_escrow_accruals.protocol_flushed + excluded.protocol_flushed,
+         last_flush_at = excluded.last_flush_at,
+         last_flush_signature = excluded.last_flush_signature,
+         flush_status = 'confirmed',
+         updated_at = now()`,
+      [
+        SOLANA_CHAIN_ID,
+        event.campaign,
+        event.escrow,
+        event.weekly.toString(),
+        event.monthly.toString(),
+        event.recruiter.toString(),
+        event.airdrop.toString(),
+        event.squad.toString(),
+        event.protocol.toString(),
+        blockTime,
+        signature,
+      ],
+    );
+  });
 }
 
 async function handleEvent(event: AnchorEvent, signature: string, logIndex: number, slot: number, blockTime: Date) {

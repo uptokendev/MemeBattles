@@ -19,6 +19,11 @@ const DEFAULT_TREASURY = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX";
 const CAMPAIGN_CURVE_CLOSED_OFFSET = 714;
 const FEE_ESCROW_PENDING_OFFSET = 8 + 32;
 const FEE_ESCROW_PENDING_LANES = 6;
+const WORKER_LOCK_KEY = "solana-fee-escrow-worker";
+const DEFAULT_FLUSH_THRESHOLD_LAMPORTS = 10_000_000n;
+
+let workerStarted = false;
+let tickRunning = false;
 
 const INIT_DISC = createHash("sha256").update("global:initialize_fee_escrow").digest().subarray(0, 8);
 const FLUSH_DISC = createHash("sha256").update("global:flush_campaign_fees").digest().subarray(0, 8);
@@ -43,12 +48,27 @@ function workerIntervalMs(): number {
 
 function flushThresholdLamports(): bigint {
   const raw = process.env.SOLANA_FEE_ESCROW_FLUSH_THRESHOLD_LAMPORTS;
-  if (raw == null || raw === "") return 1n;
+  if (raw == null || raw === "") return DEFAULT_FLUSH_THRESHOLD_LAMPORTS;
   try {
-    return BigInt(raw);
+    const parsed = BigInt(raw);
+    return parsed > 0n ? parsed : DEFAULT_FLUSH_THRESHOLD_LAMPORTS;
   } catch {
-    return 1n;
+    return DEFAULT_FLUSH_THRESHOLD_LAMPORTS;
   }
+}
+
+function withSimpleQuery<T extends { query: (...args: any[]) => any }>(client: T): T {
+  const origQuery = client.query.bind(client);
+  client.query = (...args: any[]) => {
+    if (typeof args[0] === "string") {
+      return origQuery({ text: args[0], values: Array.isArray(args[1]) ? args[1] : undefined, simple: true });
+    }
+    if (args[0] && typeof args[0] === "object" && typeof args[0].text === "string") {
+      return origQuery({ ...args[0], simple: true });
+    }
+    return origQuery.apply(client, args);
+  };
+  return client;
 }
 
 function flushMaxAgeMs(): number {
@@ -196,7 +216,7 @@ async function processFlushes(connection: Connection, payer: Keypair) {
   const threshold = flushThresholdLamports();
   const maxAgeMs = flushMaxAgeMs();
   const rows = await pool.query(
-    `select campaign_address, escrow_address, last_accrued_at, flush_status,
+    `select campaign_address, escrow_address, last_accrued_at,
             (weekly_accrued - weekly_flushed)
           + (monthly_accrued - monthly_flushed)
           + (recruiter_accrued - recruiter_flushed)
@@ -228,7 +248,8 @@ async function processFlushes(connection: Connection, payer: Keypair) {
       const accruedAt = row.last_accrued_at ? new Date(row.last_accrued_at).getTime() : 0;
       const aged = accruedAt > 0 && now - accruedAt >= maxAgeMs;
       if (pending <= 0n) continue;
-      if (!(pending >= threshold || aged || closed || row.flush_status === "queued")) continue;
+      // queued means pending work exists; flush only on threshold, age, or curve close.
+      if (!(pending >= threshold || aged || closed)) continue;
 
       await markFlush(campaign.toBase58(), "submitted");
       const sig = await flushOne(connection, payer, campaign, escrow);
@@ -242,7 +263,39 @@ async function processFlushes(connection: Connection, payer: Keypair) {
   }
 }
 
+async function runTick(connection: Connection, payer: Keypair): Promise<void> {
+  if (tickRunning) return;
+  tickRunning = true;
+  let lockClient: { query: (...args: any[]) => Promise<any>; release: () => void } | null = null;
+  let locked = false;
+  try {
+    lockClient = withSimpleQuery(await pool.connect());
+    const lock = await lockClient.query(
+      "select pg_try_advisory_lock(hashtext($1)::bigint) as acquired",
+      [WORKER_LOCK_KEY],
+    );
+    locked = Boolean(lock.rows[0]?.acquired);
+    if (!locked) {
+      console.info("[solana-fee-escrow] skip tick; another worker holds the lock");
+      return;
+    }
+    await processInits(connection, payer);
+    await processFlushes(connection, payer);
+  } finally {
+    if (lockClient && locked) {
+      await lockClient.query(
+        "select pg_advisory_unlock(hashtext($1)::bigint)",
+        [WORKER_LOCK_KEY],
+      ).catch(() => {});
+    }
+    lockClient?.release();
+    tickRunning = false;
+  }
+}
+
 export function startSolanaFeeEscrowWorker(): void {
+  if (workerStarted) return;
+  workerStarted = true;
   const payer = (() => {
     try {
       return loadPayer();
@@ -260,10 +313,7 @@ export function startSolanaFeeEscrowWorker(): void {
     return;
   }
   const connection = new Connection(url, "confirmed");
-  const tick = async () => {
-    await processInits(connection, payer);
-    await processFlushes(connection, payer);
-  };
+  const tick = () => runTick(connection, payer);
   void tick().catch((error) => {
     console.warn("[solana-fee-escrow] worker tick failed", error instanceof Error ? error.message : String(error));
   });

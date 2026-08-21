@@ -90,5 +90,5 @@ test-ledger/
 # Incremental TS build info
 *.tsbuildinfo
 
-# Confidential build planning docs (local only)
+# Confidential build planning / co-architect communication (local only, never GitHub)
 docs/build_plans/

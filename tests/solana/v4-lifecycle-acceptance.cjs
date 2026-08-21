@@ -621,7 +621,8 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       ed25519,
       sellIx,
     );
-    return simulateThenSend(tx, `sell_tokens ${tokensIn}`, [buyer.keypair]);
+    const sent = await simulateThenSend(tx, `sell_tokens ${tokensIn}`, [buyer.keypair]);
+    return { ...sent, tradeAuthorization: tradeAuth };
   }
 
   it("create → buy → buy → sell → buy → sell → close curve on the compiled SBF", async function () {
@@ -706,6 +707,9 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       );
       const vaultsAfter = await rewardVaultSnapshot();
       const feePaid = await txFeeLamports(sold.signature);
+      const actualTradeAuthorizationPdaBalance = BigInt(
+        await connection.getBalance(sold.tradeAuthorization, "confirmed"),
+      );
 
       const gross =
         BigInt(beforeSnap.campaign.netRaisedLamports.toString()) -
@@ -725,9 +729,9 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       );
       assert.equal(net + fee, gross, `${label}: net + fee must equal gross`);
       assert.equal(
-        sellerAfter + feePaid - sellerBefore,
+        sellerAfter + feePaid + actualTradeAuthorizationPdaBalance - sellerBefore,
         net,
-        `${label}: seller must receive net after accounting for tx fee`,
+        `${label}: sellerAfter + txFee + tradeAuthPdaBalance - sellerBefore must equal net`,
       );
       for (const name of Object.keys(vaultsBefore)) {
         assert.equal(
