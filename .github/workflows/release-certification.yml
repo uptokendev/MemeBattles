@@ -7,7 +7,6 @@ on:
       - .github/workflows/release-certification.yml
       - frontend/api/admin/sponsorship.js
       - frontend/api/sponsorship-applications.js
-      - frontend/src/lib/feedChainIsolation.test.mjs
       - tests/solana/fee-escrow-lease.pg.test.mjs
       - tests/solana/fee-escrow-worker-torture.pg.test.mjs
       - realtime-indexer/src/solanaFeeEscrowWorker.ts
@@ -43,7 +42,6 @@ jobs:
           node --test tests/solana/meteora-cp-amm-pin.test.mjs
           node --test tests/solana/bsc-certification-factory.test.mjs
           node --test frontend/api/admin/sponsorship.test.mjs
-          node --test frontend/src/lib/feedChainIsolation.test.mjs
       - name: Pin and verify Meteora DAMM v2 CP-AMM artifact
         run: node scripts/solana/fetch-pinned-meteora-cp-amm.mjs
       - name: BNB Topaz / lifecycle slice
@@ -59,7 +57,7 @@ jobs:
           echo "LABEL: Meteora pin/SHA256 ran in this job."
           echo "LABEL: Gate K curve-close → graduate → DAMM v2 swap runs on the 1.18 lifecycle validator in solana-final-launch-blockers.yml with the pinned cp_amm.so loaded."
           echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
-          echo "ITEM 6 / Gate S: behavioral unit isolation runs here; Playwright browser suite runs in frontend-pr-proof.yml (PR base main/devpostgrad)."
+          echo "ITEM 6 / Gate S: required in frontend-pr-proof.yml (PR base main/devpostgrad). Not re-run here."
           echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."
           echo "PG17 / Gate O: three-worker 100-job crash-replay runs in solana-fee-escrow-db-ci.yml against postgres:17."
           echo "Phantom CREATE/BUY/SELL is last, after these automated gates."
