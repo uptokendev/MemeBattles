@@ -12,8 +12,7 @@ use anchor_lang::{
         ed25519_program,
         hash::hash,
         program::invoke_signed,
-        system_instruction,
-        system_program,
+        system_instruction, system_program,
         sysvar::instructions::{
             load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
         },
@@ -1744,7 +1743,10 @@ pub fn close_expired_trade_authorization_handler(
         auth.bump == ctx.bumps.trade_authorization,
         LaunchpadError::InvalidTradeAuthorization
     );
-    require!(now > auth.deadline, LaunchpadError::TradeAuthorizationNotExpired);
+    require!(
+        now > auth.deadline,
+        LaunchpadError::TradeAuthorizationNotExpired
+    );
 
     let refund = auth_info.lamports();
     let trader_info = ctx.accounts.trader.to_account_info();
