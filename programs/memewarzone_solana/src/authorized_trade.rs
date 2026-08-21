@@ -13,6 +13,7 @@ use anchor_lang::{
         hash::hash,
         program::invoke_signed,
         system_instruction,
+        system_program,
         sysvar::instructions::{
             load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
         },
@@ -611,6 +612,29 @@ pub struct SellTokens<'info> {
         bump
     )]
     pub fee_escrow: UncheckedAccount<'info>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug)]
+pub struct CloseExpiredTradeAuthorizationArgs {
+    pub nonce: [u8; 32],
+}
+
+#[derive(Accounts)]
+#[instruction(args: CloseExpiredTradeAuthorizationArgs)]
+pub struct CloseExpiredTradeAuthorization<'info> {
+    /// Anyone may pay the cleanup fee. Rent is always refunded to `trader`.
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    /// CHECK: refund destination; must match the stored authorization trader.
+    #[account(mut)]
+    pub trader: UncheckedAccount<'info>,
+    /// CHECK: program-owned trade-auth PDA; closed only after deadline.
+    #[account(
+        mut,
+        seeds = [TRADE_AUTH_SEED, trader.key().as_ref(), args.nonce.as_ref()],
+        bump
+    )]
+    pub trade_authorization: UncheckedAccount<'info>,
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
@@ -1685,6 +1709,53 @@ fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
     let end = offset.checked_add(2).ok_or(LaunchpadError::MathOverflow)?;
     require!(end <= data.len(), LaunchpadError::InvalidTradeAuthorization);
     Ok(u16::from_le_bytes([data[offset], data[offset + 1]]))
+}
+
+pub fn close_expired_trade_authorization_handler(
+    ctx: Context<CloseExpiredTradeAuthorization>,
+    args: CloseExpiredTradeAuthorizationArgs,
+) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let auth_info = ctx.accounts.trade_authorization.to_account_info();
+    require_keys_eq!(
+        *auth_info.owner,
+        crate::ID,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(
+        auth_info.data_len() == 8 + TradeAuthorization::INIT_SPACE,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    let auth = {
+        let data = auth_info.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        TradeAuthorization::try_deserialize(&mut slice)?
+    };
+    require_keys_eq!(
+        auth.trader,
+        ctx.accounts.trader.key(),
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(
+        auth.nonce == args.nonce,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(
+        auth.bump == ctx.bumps.trade_authorization,
+        LaunchpadError::InvalidTradeAuthorization
+    );
+    require!(now > auth.deadline, LaunchpadError::TradeAuthorizationNotExpired);
+
+    let refund = auth_info.lamports();
+    let trader_info = ctx.accounts.trader.to_account_info();
+    let trader_lamports = trader_info.lamports();
+    **trader_info.try_borrow_mut_lamports()? = trader_lamports
+        .checked_add(refund)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    **auth_info.try_borrow_mut_lamports()? = 0;
+    auth_info.assign(&system_program::ID);
+    auth_info.realloc(0, false)?;
+    Ok(())
 }
 
 fn checked_slice(data: &[u8], offset: u16, len: usize) -> Result<&[u8]> {

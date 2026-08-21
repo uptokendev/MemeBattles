@@ -1,5 +1,6 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import fs from "node:fs";
+import os from "node:os";
 import {
   Connection,
   Keypair,
@@ -19,14 +20,22 @@ const DEFAULT_TREASURY = "2NzthKEZHtbnqXxT4eeEnEQRHkQsdqgqVsfzcCCoZBKX";
 const CAMPAIGN_CURVE_CLOSED_OFFSET = 714;
 const FEE_ESCROW_PENDING_OFFSET = 8 + 32;
 const FEE_ESCROW_PENDING_LANES = 6;
-const WORKER_LOCK_KEY = "solana-fee-escrow-worker";
+const WORKER_NAME = "solana-fee-escrow-worker";
 const DEFAULT_FLUSH_THRESHOLD_LAMPORTS = 10_000_000n;
+const LEASE_TTL_SECONDS = 60;
+const OWNER_ID = `${os.hostname()}:${process.pid}:${randomUUID()}`;
+const INIT_BACKOFF_SECONDS = [15, 30, 60, 120, 300];
 
 let workerStarted = false;
 let tickRunning = false;
+let tickCount = 0;
 
 const INIT_DISC = createHash("sha256").update("global:initialize_fee_escrow").digest().subarray(0, 8);
 const FLUSH_DISC = createHash("sha256").update("global:flush_campaign_fees").digest().subarray(0, 8);
+const CLOSE_TRADE_AUTH_DISC = createHash("sha256")
+  .update("global:close_expired_trade_authorization")
+  .digest()
+  .subarray(0, 8);
 
 function programId(): PublicKey {
   return new PublicKey(String(ENV.SOLANA_LAUNCHPAD_PROGRAM_ID || DEFAULT_PROGRAM_ID).trim());
@@ -57,18 +66,34 @@ function flushThresholdLamports(): bigint {
   }
 }
 
-function withSimpleQuery<T extends { query: (...args: any[]) => any }>(client: T): T {
-  const origQuery = client.query.bind(client);
-  client.query = (...args: any[]) => {
-    if (typeof args[0] === "string") {
-      return origQuery({ text: args[0], values: Array.isArray(args[1]) ? args[1] : undefined, simple: true });
-    }
-    if (args[0] && typeof args[0] === "object" && typeof args[0].text === "string") {
-      return origQuery({ ...args[0], simple: true });
-    }
-    return origQuery.apply(client, args);
-  };
-  return client;
+function initBackoffSeconds(attempts: number): number {
+  const index = Math.max(0, Math.min(INIT_BACKOFF_SECONDS.length - 1, attempts - 1));
+  return INIT_BACKOFF_SECONDS[index];
+}
+
+async function acquireLease(): Promise<boolean> {
+  try {
+    const result = await pool.query(
+      `insert into public.solana_worker_leases (worker_name, owner_id, lease_expires_at, heartbeat_at)
+       values ($1, $2, now() + make_interval(secs => $3), now())
+       on conflict (worker_name) do update set
+         owner_id = excluded.owner_id,
+         lease_expires_at = excluded.lease_expires_at,
+         heartbeat_at = now(),
+         updated_at = now()
+       where public.solana_worker_leases.lease_expires_at < now()
+          or public.solana_worker_leases.owner_id = excluded.owner_id
+       returning owner_id`,
+      [WORKER_NAME, OWNER_ID, LEASE_TTL_SECONDS],
+    );
+    return String(result.rows[0]?.owner_id || "") === OWNER_ID;
+  } catch (error) {
+    console.warn(
+      "[solana-fee-escrow] lease query failed",
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
 }
 
 function flushMaxAgeMs(): number {
@@ -104,15 +129,35 @@ function campaignCurveClosed(data: Buffer): boolean {
   return data.length > CAMPAIGN_CURVE_CLOSED_OFFSET && data[CAMPAIGN_CURVE_CLOSED_OFFSET] === 1;
 }
 
-async function markInit(campaign: string, status: "initialized" | "failed", signature?: string, error?: string) {
+async function markInit(
+  campaign: string,
+  status: "initialized" | "failed",
+  signature?: string,
+  error?: string,
+  attempts = 0,
+) {
   await pool.query(
     `update public.solana_fee_escrow_accruals
         set init_status=$3,
             init_signature=coalesce($4, init_signature),
             last_error=$5,
+            init_attempts = $6,
+            last_init_attempt_at = now(),
+            next_init_attempt_at = case
+              when $3 = 'failed' then now() + make_interval(secs => $7)
+              else null
+            end,
             updated_at=now()
       where chain_id=$1 and campaign_address=$2`,
-    [SOLANA_CHAIN_ID, campaign, status, signature || null, error || null],
+    [
+      SOLANA_CHAIN_ID,
+      campaign,
+      status,
+      signature || null,
+      error || null,
+      attempts,
+      status === "failed" ? initBackoffSeconds(attempts) : 0,
+    ],
   );
 }
 
@@ -183,9 +228,11 @@ async function flushOne(
 
 async function processInits(connection: Connection, payer: Keypair) {
   const rows = await pool.query(
-    `select campaign_address, escrow_address
+    `select campaign_address, escrow_address, init_attempts
        from public.solana_fee_escrow_accruals
-      where chain_id=$1 and init_status in ('pending','failed')
+      where chain_id=$1
+        and init_status in ('pending','failed')
+        and (next_init_attempt_at is null or next_init_attempt_at <= now())
       order by updated_at asc
       limit 25`,
     [SOLANA_CHAIN_ID],
@@ -195,39 +242,55 @@ async function processInits(connection: Connection, payer: Keypair) {
     const escrowPk = new PublicKey(
       String(row.escrow_address || deriveFeeEscrowAddress(campaign.toBase58(), programId().toBase58())),
     );
+    const nextAttempts = Number(row.init_attempts || 0) + 1;
     try {
       const existing = await connection.getAccountInfo(escrowPk, "confirmed");
       if (existing && existing.owner.equals(programId()) && existing.data.length >= 8) {
-        await markInit(campaign.toBase58(), "initialized");
+        await markInit(campaign.toBase58(), "initialized", undefined, undefined, Number(row.init_attempts || 0));
         continue;
       }
       const sig = await initializeOne(connection, payer, campaign);
-      await markInit(campaign.toBase58(), "initialized", sig);
+      await markInit(campaign.toBase58(), "initialized", sig, undefined, nextAttempts);
       console.info("[solana-fee-escrow] initialized", campaign.toBase58(), sig);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await markInit(campaign.toBase58(), "failed", undefined, message);
+      await markInit(campaign.toBase58(), "failed", undefined, message, nextAttempts);
       console.warn("[solana-fee-escrow] init failed", campaign.toBase58(), message);
     }
   }
 }
 
-async function processFlushes(connection: Connection, payer: Keypair) {
-  const threshold = flushThresholdLamports();
-  const maxAgeMs = flushMaxAgeMs();
-  const rows = await pool.query(
-    `select campaign_address, escrow_address, last_accrued_at,
-            (weekly_accrued - weekly_flushed)
+const PENDING_SQL = `(weekly_accrued - weekly_flushed)
           + (monthly_accrued - monthly_flushed)
           + (recruiter_accrued - recruiter_flushed)
           + (airdrop_accrued - airdrop_flushed)
           + (squad_accrued - squad_flushed)
-          + (protocol_accrued - protocol_flushed) as pending_total
-       from public.solana_fee_escrow_accruals
-      where chain_id=$1
-        and init_status='initialized'
-      order by last_accrued_at asc nulls last
-      limit 25`,
+          + (protocol_accrued - protocol_flushed)`;
+
+async function processFlushes(connection: Connection, payer: Keypair, reconciling: boolean) {
+  const threshold = flushThresholdLamports();
+  const maxAgeMs = flushMaxAgeMs();
+  const rows = await pool.query(
+    reconciling
+      ? `select campaign_address, escrow_address, last_accrued_at, graduation_requested,
+                ${PENDING_SQL} as pending_total
+           from public.solana_fee_escrow_accruals
+          where chain_id=$1 and init_status='initialized'
+          order by last_accrued_at asc nulls last
+          limit 100`
+      : `select campaign_address, escrow_address, last_accrued_at, graduation_requested,
+                ${PENDING_SQL} as pending_total
+           from public.solana_fee_escrow_accruals
+          where chain_id=$1
+            and init_status='initialized'
+            and (
+              ${PENDING_SQL} > 0
+              or graduation_requested = true
+              or flush_status in ('failed', 'submitted')
+            )
+          order by case when graduation_requested then 0 else 1 end,
+                   last_accrued_at asc nulls last
+          limit 25`,
     [SOLANA_CHAIN_ID],
   );
   const now = Date.now();
@@ -247,13 +310,21 @@ async function processFlushes(connection: Connection, payer: Keypair) {
       const pending = onChainPending > 0n ? onChainPending : dbPending;
       const accruedAt = row.last_accrued_at ? new Date(row.last_accrued_at).getTime() : 0;
       const aged = accruedAt > 0 && now - accruedAt >= maxAgeMs;
+      const forced = Boolean(row.graduation_requested) || closed;
       if (pending <= 0n) continue;
-      // queued means pending work exists; flush only on threshold, age, or curve close.
-      if (!(pending >= threshold || aged || closed)) continue;
+      if (!(pending >= threshold || aged || forced)) continue;
 
       await markFlush(campaign.toBase58(), "submitted");
       const sig = await flushOne(connection, payer, campaign, escrow);
       await markFlush(campaign.toBase58(), "confirmed", sig);
+      if (forced) {
+        await pool.query(
+          `update public.solana_fee_escrow_accruals
+              set graduation_requested=false, updated_at=now()
+            where chain_id=$1 and campaign_address=$2`,
+          [SOLANA_CHAIN_ID, campaign.toBase58()],
+        );
+      }
       console.info("[solana-fee-escrow] flushed", campaign.toBase58(), sig);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -263,32 +334,100 @@ async function processFlushes(connection: Connection, payer: Keypair) {
   }
 }
 
+async function closeExpiredTradeAuth(
+  connection: Connection,
+  payer: Keypair,
+  trader: PublicKey,
+  nonce: Buffer,
+  pda: PublicKey,
+): Promise<string> {
+  const data = Buffer.concat([CLOSE_TRADE_AUTH_DISC, nonce]);
+  const ix = new TransactionInstruction({
+    programId: programId(),
+    keys: [
+      { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: trader, isSigner: false, isWritable: true },
+      { pubkey: pda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+  return sendAndConfirmTransaction(connection, new Transaction().add(ix), [payer], {
+    commitment: "confirmed",
+  });
+}
+
+async function processTradeAuthCleanup(connection: Connection, payer: Keypair) {
+  const rows = await pool.query(
+    `select trader, nonce_hex, trade_auth_pda
+       from public.solana_trade_authorizations
+      where chain_id=$1
+        and cleanup_status in ('pending', 'failed')
+        and deadline < now()
+      order by deadline asc
+      limit 25`,
+    [SOLANA_CHAIN_ID],
+  );
+  for (const row of rows.rows) {
+    const pda = new PublicKey(String(row.trade_auth_pda));
+    const trader = new PublicKey(String(row.trader));
+    const nonceHex = String(row.nonce_hex || "").replace(/^0x/i, "");
+    try {
+      const info = await connection.getAccountInfo(pda, "confirmed");
+      if (!info) {
+        await pool.query(
+          `update public.solana_trade_authorizations
+              set cleanup_status='no_account', updated_at=now(), last_error=null
+            where chain_id=$1 and trade_auth_pda=$2`,
+          [SOLANA_CHAIN_ID, pda.toBase58()],
+        );
+        continue;
+      }
+      const nonce = Buffer.from(nonceHex, "hex");
+      if (nonce.length !== 32) throw new Error("invalid nonce_hex");
+      await pool.query(
+        `update public.solana_trade_authorizations
+            set cleanup_status='submitted', updated_at=now()
+          where chain_id=$1 and trade_auth_pda=$2`,
+        [SOLANA_CHAIN_ID, pda.toBase58()],
+      );
+      const sig = await closeExpiredTradeAuth(connection, payer, trader, nonce, pda);
+      await pool.query(
+        `update public.solana_trade_authorizations
+            set cleanup_status='closed', cleanup_signature=$3, last_error=null, updated_at=now()
+          where chain_id=$1 and trade_auth_pda=$2`,
+        [SOLANA_CHAIN_ID, pda.toBase58(), sig],
+      );
+      console.info("[solana-fee-escrow] closed trade-auth", pda.toBase58(), sig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await pool.query(
+        `update public.solana_trade_authorizations
+            set cleanup_status='failed', last_error=$3, updated_at=now()
+          where chain_id=$1 and trade_auth_pda=$2`,
+        [SOLANA_CHAIN_ID, pda.toBase58(), message],
+      );
+      console.warn("[solana-fee-escrow] trade-auth cleanup failed", pda.toBase58(), message);
+    }
+  }
+}
+
 async function runTick(connection: Connection, payer: Keypair): Promise<void> {
   if (tickRunning) return;
   tickRunning = true;
-  let lockClient: { query: (...args: any[]) => Promise<any>; release: () => void } | null = null;
-  let locked = false;
   try {
-    lockClient = withSimpleQuery(await pool.connect());
-    const lock = await lockClient.query(
-      "select pg_try_advisory_lock(hashtext($1)::bigint) as acquired",
-      [WORKER_LOCK_KEY],
-    );
-    locked = Boolean(lock.rows[0]?.acquired);
-    if (!locked) {
-      console.info("[solana-fee-escrow] skip tick; another worker holds the lock");
+    const owned = await acquireLease();
+    if (!owned) {
+      console.info("[solana-fee-escrow] skip tick; another worker holds the lease");
       return;
     }
     await processInits(connection, payer);
-    await processFlushes(connection, payer);
+    if (!(await acquireLease())) return;
+    tickCount += 1;
+    await processFlushes(connection, payer, tickCount % 10 === 0);
+    if (!(await acquireLease())) return;
+    await processTradeAuthCleanup(connection, payer);
+    await acquireLease();
   } finally {
-    if (lockClient && locked) {
-      await lockClient.query(
-        "select pg_advisory_unlock(hashtext($1)::bigint)",
-        [WORKER_LOCK_KEY],
-      ).catch(() => {});
-    }
-    lockClient?.release();
     tickRunning = false;
   }
 }

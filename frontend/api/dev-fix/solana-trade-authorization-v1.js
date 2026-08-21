@@ -888,6 +888,30 @@ export async function solanaTradeAuthorizationV1(req, res) {
     });
     const signature = signer.sign(digest);
 
+    if (pool) {
+      await pool.query(
+        `insert into public.solana_trade_authorizations (
+           chain_id, campaign_address, trader, nonce_hex, trade_auth_pda, deadline, side, cleanup_status
+         ) values (101, $1, $2, $3, $4, to_timestamp($5), $6, 'pending')
+         on conflict (chain_id, trade_auth_pda) do update set
+           deadline = excluded.deadline,
+           updated_at = now()`,
+        [
+          resolvedCampaign,
+          traderAddress,
+          Buffer.from(nonce).toString("hex"),
+          tradeAuth.publicKey,
+          Number(deadline),
+          sideRaw,
+        ],
+      ).catch((error) => {
+        console.warn(
+          "[solana-trade-v1] trade-auth persist skipped",
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    }
+
     return json(res, 200, {
       schemaVersion: TRADE_AUTH_SCHEMA_VERSION,
       side: sideRaw,

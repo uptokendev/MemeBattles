@@ -73,6 +73,7 @@ jobs:
           node --check scripts/solana/upgrade-mainnet-launchpad.cjs
           node --check frontend/api/dev-fix/solana-trade-authorization-v1.js
           node --test frontend/api/dev-fix/solana-trade-preflight-final.test.mjs
+          node --test tests/solana/graduate-operator-accounts.test.mjs
           npm install --prefix frontend --no-audit --no-fund
           npm --prefix frontend run build
 

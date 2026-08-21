@@ -421,6 +421,14 @@ pub mod memewarzone_solana {
         flush_campaign_fees_handler(ctx)
     }
 
+    /// Permissionless close of an expired TradeAuthorization PDA. Rent always returns to trader.
+    pub fn close_expired_trade_authorization(
+        ctx: Context<CloseExpiredTradeAuthorization>,
+        args: CloseExpiredTradeAuthorizationArgs,
+    ) -> Result<()> {
+        close_expired_trade_authorization_handler(ctx, args)
+    }
+
     /// Starts an atomic graduation transaction and stages only the bounded DAMM v2 liquidity.
     pub fn begin_graduation(
         ctx: Context<BeginGraduation>,
@@ -1644,6 +1652,8 @@ pub enum LaunchpadError {
     InvalidTradeAuthorization,
     #[msg("Trade authorization deadline has expired.")]
     TradeAuthorizationExpired,
+    #[msg("Trade authorization deadline has not expired yet.")]
+    TradeAuthorizationNotExpired,
     #[msg("Solana campaign graduation is paused.")]
     GraduationPaused,
     #[msg("Signed graduation authorization is missing, malformed, or does not match this transaction.")]
