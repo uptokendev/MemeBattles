@@ -40,6 +40,7 @@
     "test:wallet-discovery": "node --test src/lib/injectedProviderDiscovery.test.mjs",
     "test:feed-isolation": "node --test src/lib/feedChainIsolation.test.mjs",
     "test:e2e:isolation": "playwright test -c playwright.config.ts",
+    "test:e2e:bsc-cert": "playwright test -c playwright.bsc-cert.config.ts",
     "test:solana-v0": "node --test src/lib/solanaV0Transaction.test.mjs",
     "test:solana-confirm": "node --test src/lib/solanaConfirmSignature.test.mjs",
     "check:solana-launchpad-alt": "node scripts/solana-launchpad-alt-plan.mjs --json",

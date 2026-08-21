@@ -1,0 +1,138 @@
+name: BSC testnet graduation / post-grad remaining path
+
+# Manual only. Dedicated tBNB. Never production funds.
+# Secrets live in the GitHub Environment `testnet-certification`.
+on:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Campaign to continue (default WIC)
+        required: false
+        type: string
+        default: "0xECD05aC87007D5aE7a13407B59Db32B8030EAB3C"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bsc-testnet-graduation-postgrad
+  cancel-in-progress: false
+
+jobs:
+  remaining-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: testnet-certification
+    env:
+      BSC_TESTNET_PRIVATE_KEY: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
+      DEPLOYER_PK: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
+      PRIVATE_KEY_DEPLOY: ${{ secrets.BSC_TESTNET_PRIVATE_KEY }}
+      ROUTE_AUTHORITY_PRIVATE_KEY: ${{ secrets.ROUTE_AUTHORITY_PRIVATE_KEY }}
+      BSC_TESTNET_RPC: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
+      BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC || secrets.BSC_TESTNET_RPC }}
+      MWZ_API_BASE: ${{ vars.MWZ_API_BASE }}
+      TOKEN_API_BASE: ${{ vars.TOKEN_API_BASE || 'https://memebattles-production-dca0.up.railway.app' }}
+      DASHBOARD_BASE_URL: ${{ vars.DASHBOARD_BASE_URL }}
+      CERT_CAMPAIGN: ${{ inputs.campaign }}
+      DEPLOYMENT_FILE: deployments/bscTestnet.clean-slate-factory.json
+      TOPAZ_MANIFEST: deployments/bscTestnet/minimal-topaz.json
+      TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE: "true"
+      TOPAZ_ACCEPTANCE_INPUT: reports/bnb-lifecycle-certification-testnet.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fail closed unless factory pin and secrets exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${BSC_TESTNET_PRIVATE_KEY:-}" || {
+            echo "BLOCKER: GitHub Environment secret BSC_TESTNET_PRIVATE_KEY is not mapped. Dedicated tBNB-only EOA."
+            exit 1
+          }
+          test -n "${BSC_TESTNET_RPC:-}" || {
+            echo "BLOCKER: set GitHub Environment variable BSC_TESTNET_RPC (public testnet RPC is configuration, not a secret)."
+            exit 1
+          }
+          test -n "${MWZ_API_BASE:-}${ROUTE_AUTHORITY_PRIVATE_KEY:-}" || {
+            echo "BLOCKER: map MWZ_API_BASE (preferred live /api/routing/trade-authorization) or ROUTE_AUTHORITY_PRIVATE_KEY."
+            exit 1
+          }
+          FACTORY="$(node scripts/resolve-bsc-certification-factory.mjs | awk -F= '/^FACTORY_ADDRESS=/{print $2}')"
+          test "$FACTORY" = "0x77Af7634837643d4f93d1086b492571268b30B5F"
+          echo "certification_factory=$FACTORY"
+          echo "campaign=${CERT_CAMPAIGN}"
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Remaining-path on-chain driver (WIC, no CREATE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx hardhat run scripts/run-bnb-graduation-postgrad.ts --network bscTestnet
+          test -s reports/bnb-lifecycle-certification-testnet.json
+          grep -q "0x77Af7634837643d4f93d1086b492571268b30B5F" reports/bnb-lifecycle-certification-testnet.json
+          grep -q "0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a" reports/bnb-lifecycle-certification-testnet.json
+          ! grep -q "0x8Aa70e9b6BDB1bb3B15425af24693B3B14fE5Ce6" reports/bnb-lifecycle-certification-testnet.json
+          ! grep -q "0x01eAB0BCb207977bDF1416E92074a7607cC68542" reports/bnb-lifecycle-certification-testnet.json
+
+      - name: Strict Topaz verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOPAZ_ACCEPTANCE_INPUT=reports/bnb-lifecycle-certification-testnet.json \
+          TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE=true \
+          TOPAZ_MANIFEST=deployments/bscTestnet/minimal-topaz.json \
+          DEPLOYMENT_FILE=deployments/bscTestnet.clean-slate-factory.json \
+            npx hardhat run scripts/test-topaz-graduation-flow.ts --network bscTestnet
+
+      - name: Frontend Token Details chart + topazV2Trade BUY/SELL
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:e2e:bsc-cert
+
+      - name: Indexer / chart continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx hardhat run scripts/verify-bnb-graduation-continuity.ts --network bscTestnet
+          python3 - <<'PY'
+          import json, sys
+          evidence = json.load(open("reports/bnb-lifecycle-certification-testnet.json"))
+          required = [
+            "campaign","token","graduationTx","graduatedPool","buyTx","sellTx",
+            "frontendBuyTx","frontendSellTx","harvestTx","creatorTokenReceived",
+            "protocolTokenReceived","creatorWbnbReceived","protocolWbnbReceived",
+          ]
+          missing = [key for key in required if not evidence.get(key)]
+          if missing:
+            print("missing evidence", missing)
+            sys.exit(1)
+          if evidence.get("bondingBuyAfterGraduationReverted") != "Finalized":
+            print("bonding buy after graduation did not revert Finalized")
+            sys.exit(1)
+          if not evidence.get("uiFrontendBuyTx") or not evidence.get("uiFrontendSellTx"):
+            print("Playwright Token Details topazV2Trade BUY/SELL missing")
+            sys.exit(1)
+          print("LIVE_BSC_GRADUATION_POSTGRAD=PASS")
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsc-graduation-postgrad-evidence
+          path: |
+            reports/bnb-lifecycle-certification-testnet.json
+            reports/topaz-graduation-testnet-*.json
+            reports/topaz-graduation-testnet-*.md
+            reports/bnb-graduation-chart.png
+          if-no-files-found: warn

@@ -22,6 +22,7 @@ const skipBuild = process.env.PLAYWRIGHT_SKIP_WEBSERVER_BUILD === "1";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: /bsc-graduation-postgrad\.spec\.ts/,
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,

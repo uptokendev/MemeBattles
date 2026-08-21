@@ -10,10 +10,10 @@ import { network } from "hardhat";
  * test/BnbLifecycleCertification.spec.ts (create → bond → graduate →
  * Topaz BUY/SELL → harvest 80/20 → LP principal). This script delegates to it.
  *
- * bscTestnet: refuses to masquerade as a preflight. It requires a funded
- * dedicated test EOA plus route-authority signing, then must produce the
- * evidence file consumed by test-topaz-graduation-flow.ts with
- * TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE=true.
+ * bscTestnet: remaining-path only. Continues WIC on factory 0x77Af… —
+ * no CREATE, no extra pre-grad history. Factory/locker never come from
+ * deployments/bscTestnet.json. Evidence is consumed by
+ * test-topaz-graduation-flow.ts with TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE=true.
  */
 async function main() {
   if (network.name === "hardhat" || network.name === "localhost") {
@@ -35,15 +35,16 @@ async function main() {
     throw new Error(`unsupported network ${network.name}; use hardhat or bscTestnet`);
   }
 
-  throw new Error(
-    [
-      "bsc-testnet-full-cycle is not a preflight.",
-      "It must create → buy to the low-threshold factory 0x77Af… → graduate → Topaz BUY → SELL → harvest → 80/20 → LP principal,",
-      "then set TOPAZ_ACCEPTANCE_INPUT to that evidence and TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE=true.",
-      "Do not fund this path until the dedicated testnet-certification EOA and route-authority signer are in GitHub Environment secrets.",
-      "Local proof: npm run cert:bnb-lifecycle:local",
-    ].join(" "),
+  const remaining = spawnSync(
+    "npx",
+    ["hardhat", "run", "scripts/run-bnb-graduation-postgrad.ts", "--network", "bscTestnet"],
+    {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: process.env,
+    },
   );
+  if (remaining.status !== 0) process.exit(remaining.status || 1);
 }
 
 main().catch((error) => {

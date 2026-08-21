@@ -17,8 +17,20 @@ test("network canary distinguishes Topaz preflight from full-cycle", () => {
   assert.match(canary, /bsc-testnet-full-cycle/);
   assert.match(canary, /run-bnb-lifecycle-certification\.ts/);
   assert.match(canary, /TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE/);
-  assert.match(driver, /Do not fund this path until the dedicated testnet-certification/);
+  assert.match(driver, /run-bnb-graduation-postgrad\.ts/);
   assert.match(verifier, /acceptance preflight passed/);
+});
+
+test("remaining-path driver pins clean-slate factory/locker and rejects bscTestnet.json", () => {
+  const pins = fs.readFileSync(path.join(root, "scripts/lib/bscCertificationPins.ts"), "utf8");
+  const remaining = fs.readFileSync(path.join(root, "scripts/run-bnb-graduation-postgrad.ts"), "utf8");
+  assert.match(pins, /0x77Af7634837643d4f93d1086b492571268b30B5F/);
+  assert.match(pins, /0xb083929D2bbabdE7fc580090D5B18bbD918Fda9a/);
+  assert.match(pins, /0xe559d93643631E9E8Cc7d10ADFA581Be4b5399C8/);
+  assert.match(pins, /FORBIDDEN_DEPLOYMENT_FILE/);
+  assert.match(remaining, /CERT_ALLOW_CREATE is forbidden/);
+  assert.match(remaining, /do not use a hardcoded gap/);
+  assert.doesNotMatch(remaining, /createCampaign/);
 });
 
 test("BSC certification factory is resolved from the accepted test manifest", () => {

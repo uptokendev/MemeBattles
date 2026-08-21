@@ -142,6 +142,10 @@ jobs:
           FACTORY_ADDRESS: ${{ steps.factory.outputs.factory }}
           LAUNCH_FACTORY: ${{ steps.factory.outputs.factory }}
           TOPAZ_ACCEPTANCE_REQUIRE_EVIDENCE: "true"
+          CERT_CAMPAIGN: ${{ vars.BSC_CERT_CAMPAIGN || '0xECD05aC87007D5aE7a13407B59Db32B8030EAB3C' }}
+          MWZ_API_BASE: ${{ vars.MWZ_API_BASE }}
+          TOKEN_API_BASE: ${{ vars.TOKEN_API_BASE || 'https://memebattles-production-dca0.up.railway.app' }}
+          ROUTE_AUTHORITY_PRIVATE_KEY: ${{ secrets.ROUTE_AUTHORITY_PRIVATE_KEY }}
         shell: bash
         run: |
           set -euo pipefail
