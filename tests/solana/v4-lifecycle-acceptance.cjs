@@ -259,7 +259,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     return signature;
   }
 
-  async function sendProductionTrade({ label, signer, ed25519, programIx }) {
+  async function sendProductionTrade({ label, signer, ed25519, programIx, recoverAccount }) {
     assert.ok(v0Helpers && lookupTableAccount, "production V0/ALT envelope is not initialized");
     const compiled = await v0Helpers.compileLaunchpadV0WithLatestBlockhash(
       web3,
@@ -302,26 +302,52 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
     console.log(
       `[sbf-gate] ${label} unitsConsumed=${simulated.unitsConsumed ?? "n/a"} bytes=${compiled.stats.serializedBytes}`,
     );
-    compiled.transaction.sign([signer]);
-    v0Helpers.assertLaunchpadV0Intent(web3, compiled.transaction, {
+    const unsigned = await v0Helpers.compileLaunchpadV0WithLatestBlockhash(
+      web3,
+      connection,
+      {
+        payer: signer.publicKey,
+        instructions: [ed25519, programIx],
+        lookupTableAccounts: [lookupTableAccount],
+      },
+      {
+        payer: signer.publicKey,
+        ed25519Instruction: ed25519,
+        programInstruction: programIx,
+        lookupTableAccounts: [lookupTableAccount],
+      },
+    );
+    unsigned.transaction.sign([signer]);
+    v0Helpers.assertLaunchpadV0Intent(web3, unsigned.transaction, {
       payer: signer.publicKey,
       ed25519Instruction: ed25519,
       programInstruction: programIx,
       lookupTableAccounts: [lookupTableAccount],
       releaseMaxBytes: null,
     });
-    const signature = await connection.sendRawTransaction(compiled.transaction.serialize(), {
+    const signature = await connection.sendRawTransaction(unsigned.transaction.serialize(), {
       skipPreflight: false,
       maxRetries: 3,
     });
-    const confirmation = await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: compiled.latest.blockhash,
-        lastValidBlockHeight: compiled.latest.lastValidBlockHeight,
-      },
-      "confirmed",
-    );
+    let confirmation;
+    try {
+      confirmation = await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: unsigned.latest.blockhash,
+          lastValidBlockHeight: unsigned.latest.lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+    } catch (error) {
+      if (recoverAccount && /expired|block height/i.test(String(error))) {
+        const info = await connection.getAccountInfo(recoverAccount, "confirmed");
+        if (info) {
+          return { signature, logs: simulated.logs || [] };
+        }
+      }
+      throw error;
+    }
     if (confirmation.value.err) {
       throw new Error(`${label} landed with error: ${JSON.stringify(confirmation.value.err)}`);
     }
@@ -674,6 +700,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       signer: buyer.keypair,
       ed25519,
       programIx: buyIx,
+      recoverAccount: tradeAuth,
     });
     return { ...sent, tradeAuthorization: tradeAuth, nonce, deadline };
   }
@@ -741,6 +768,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       signer: buyer.keypair,
       ed25519,
       programIx: sellIx,
+      recoverAccount: tradeAuth,
     });
     return { ...sent, tradeAuthorization: tradeAuth, nonce, deadline };
   }
