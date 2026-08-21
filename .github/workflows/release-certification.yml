@@ -56,6 +56,6 @@ jobs:
           echo "LABEL: Meteora pin/SHA256 ran in this job."
           echo "LABEL: Gate K curve-close → graduate → DAMM v2 swap runs on the 1.18 lifecycle validator in solana-final-launch-blockers.yml with the pinned cp_amm.so loaded."
           echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
-          echo "ITEM 6: feed isolation remains unit-level until Playwright."
+          echo "ITEM 6 / Gate S: behavioral unit isolation runs here; Playwright browser suite runs in frontend-pr-proof.yml (PR base main/devpostgrad)."
           echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."
           echo "Phantom CREATE/BUY/SELL is last, after these automated gates."
