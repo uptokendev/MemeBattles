@@ -194,6 +194,13 @@ async function dispatchAdminFinance(pathname, req, res) {
   return true;
 }
 
+async function dispatchAdminSponsorship(pathname, req, res) {
+  if (!/^\/api\/admin\/sponsorship(?:\/|$|\?)/.test(pathname)) return false;
+  const sponsorshipAdmin = (await import("../api/admin/sponsorship.js")).default;
+  await sponsorshipAdmin(req, res);
+  return true;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -246,6 +253,7 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
     if (await dispatchDashboardLpFees(pathname, req, res)) return;
     if (await dispatchAdminFinance(pathname, req, res)) return;
+    if (await dispatchAdminSponsorship(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
     if (!shouldProxyToRailway(path)) return next();
