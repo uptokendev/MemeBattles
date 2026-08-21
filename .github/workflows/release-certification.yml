@@ -53,8 +53,8 @@ jobs:
         run: |
           echo "LABEL: BNB local Gate D lifecycle (create/bond/grad/Topaz BUY/SELL/harvest/80-20/LP principal) ran in this job."
           echo "LABEL: bsc-testnet-full-cycle is still secret-gated and must not be called preflight. Use bsc-testnet-preflight for bytecode-only."
-          echo "LABEL: Meteora pin/SHA256 ran in this job. Local Gate K that LOADS the .so lives in solana-final-launch-blockers.yml."
-          echo "OPEN: Gate K curve-close → graduate → DAMM v2 pool/trades against the pinned binary."
+          echo "LABEL: Meteora pin/SHA256 ran in this job."
+          echo "LABEL: Gate K curve-close → graduate → DAMM v2 swap runs on the 1.18 lifecycle validator in solana-final-launch-blockers.yml with the pinned cp_amm.so loaded."
           echo "ITEM 1: sponsorship API + dashboard PR #7 code complete; deployment/browser acceptance open."
           echo "ITEM 6: feed isolation remains unit-level until Playwright."
           echo "ITEM 9: isolated SBF rebuild is wired; two clean-room SHA256 matches still required."

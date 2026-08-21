@@ -1223,6 +1223,7 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       ? targetLiquidity
       : (maxTokens * spot) / (scale * nano);
     return {
+      spotNano: spot,
       finalizeFeeLamports: finalizeFee,
       maxLiquidityLamports: lpSol,
       maxLiquidityTokens: maxTokens,
@@ -1454,7 +1455,324 @@ describe("MemeWarzone Solana V4 local-validator bonding lifecycle", function () 
       atomic.logs.some((line) => /BeginGraduation|GraduationAtomicity|custom program error/i.test(line)),
       `expected our graduation handler, got:\n${atomic.logs.join("\n")}`,
     );
-    // A packed begin+Meteora+confirm tx is >1232 bytes locally. Real LP create
-    // stays on devnet/mainnet with Address Lookup Tables. This sim is our side.
+    // A packed begin+Meteora+confirm tx is >1232 bytes locally without ALT.
+    // Gate K uses the production V0+ALT envelope against the pinned DAMM v2 .so.
+  });
+
+  it("Gate K: graduate closed campaign into pinned DAMM v2 and swap", async function () {
+    assert.ok(campaignAccounts, "bonding lifecycle must create+close a campaign first");
+    const meteoraAccount = await connection.getAccountInfo(METEORA_CP_AMM, "confirmed");
+    if (!meteoraAccount || !meteoraAccount.executable) {
+      this.skip();
+    }
+
+    const adminKeypair = provider.wallet.payer;
+    assert.ok(adminKeypair?.secretKey, "Anchor wallet must expose a local Keypair payer");
+    assert.ok(v0Helpers && lookupTableAccount, "production V0/ALT envelope is not initialized");
+
+    const sdk = await import("@meteora-ag/cp-amm-sdk");
+    const {
+      ActivationType,
+      BaseFeeMode,
+      CollectFeeMode,
+      CpAmm,
+      getBaseFeeParams,
+      getSqrtPriceFromPrice,
+      MAX_SQRT_PRICE,
+      MIN_SQRT_PRICE,
+    } = sdk;
+
+    const campaign = decodeCampaign(
+      (await connection.getAccountInfo(campaignAccounts.campaign, "confirmed")).data,
+    );
+    assert.equal(campaign.curveClosed, true);
+    assert.equal(campaign.graduated, false);
+
+    const authorityAta = getAssociatedTokenAddressSync(campaignAccounts.mint, admin);
+    if (!(await connection.getAccountInfo(authorityAta, "confirmed"))) {
+      const ataTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(admin, authorityAta, admin, campaignAccounts.mint),
+      );
+      await simulateThenSend(ataTx, "gateKCreateAuthorityAta", [adminKeypair]);
+    }
+    const creatorAta = getAssociatedTokenAddressSync(campaignAccounts.mint, campaign.creator);
+    if (!(await connection.getAccountInfo(creatorAta, "confirmed"))) {
+      const ataTx = new Transaction().add(
+        createAssociatedTokenAccountInstruction(admin, creatorAta, campaign.creator, campaignAccounts.mint),
+      );
+      await simulateThenSend(ataTx, "gateKCreateCreatorAta", [adminKeypair]);
+    }
+
+    const nftMint = Keypair.generate();
+    const pool = deriveMeteoraPool(campaignAccounts.mint);
+    const position = deriveMeteoraPosition(nftMint.publicKey);
+    const graduationState = derivePda(program.programId, "graduation", campaignAccounts.campaign.toBuffer());
+    const now = await chainUnixTimestamp(connection);
+    const deadline = now + 3_600;
+    const nonce = hash32("graduation:gate-k");
+    const oraclePrice = 150_000_000n;
+    const nativeTarget =
+      (campaign.graduationTargetUsdMicros * 1_000_000_000n + oraclePrice - 1n) / oraclePrice;
+    assert.equal(nativeTarget, CLOSE_TARGET_LAMPORTS);
+
+    const digest = graduationDigest({
+      campaign: campaignAccounts.campaign,
+      mint: campaignAccounts.mint,
+      authority: admin,
+      graduationTargetUsdMicros: campaign.graduationTargetUsdMicros,
+      nativeTargetLamports: nativeTarget,
+      oraclePriceUsdMicros: oraclePrice,
+      pool,
+      position,
+      nftMint: nftMint.publicKey,
+      deadline,
+      nonce,
+      finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
+    });
+    const ed25519 = Ed25519Program.createInstructionWithPrivateKey({
+      privateKey: routeSigner.secretKey,
+      message: digest,
+    });
+    const beginIx = await program.methods
+      .beginGraduation({
+        nativeTargetLamports: new BN(nativeTarget.toString()),
+        oraclePriceUsdMicros: new BN(oraclePrice.toString()),
+        deadline: new BN(deadline),
+        nonce: Array.from(nonce),
+        positionNftMint: nftMint.publicKey,
+        finalizeRouteProfile: ROUTE_PROFILE_UNLINKED,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        generationConfig,
+        campaign: campaignAccounts.campaign,
+        mint: campaignAccounts.mint,
+        tokenVault: campaignAccounts.tokenVault,
+        solVault: campaignAccounts.solVault,
+        feeEscrow: campaignAccounts.feeEscrow,
+        authorityTokenAccount: authorityAta,
+        meteoraPool: pool,
+        meteoraPosition: position,
+        positionNftMint: nftMint.publicKey,
+        graduationState,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const quote = graduationQuote(campaign);
+    const cpAmm = new CpAmm(connection);
+    const scale = 10n ** 18n;
+    const whole = quote.spotNano / scale;
+    const fraction = (quote.spotNano % scale).toString().padStart(18, "0").replace(/0+$/, "");
+    const initialPrice = fraction ? `${whole}.${fraction}` : whole.toString();
+    const initSqrtPrice = getSqrtPriceFromPrice(initialPrice, campaign.tokenDecimals, 9);
+    const tokenAAmount = new BN(quote.maxLiquidityTokens.toString());
+    const tokenBAmount = new BN(quote.maxLiquidityLamports.toString());
+    const liquidityDelta = cpAmm.getLiquidityDelta({
+      maxAmountTokenA: tokenAAmount,
+      maxAmountTokenB: tokenBAmount,
+      sqrtPrice: initSqrtPrice,
+      sqrtMinPrice: MIN_SQRT_PRICE,
+      sqrtMaxPrice: MAX_SQRT_PRICE,
+      collectFeeMode: CollectFeeMode.BothToken,
+    });
+    const { tx: meteoraTx, pool: sdkPool, position: sdkPosition } = await cpAmm.createCustomPool({
+      payer: admin,
+      creator: admin,
+      positionNft: nftMint.publicKey,
+      tokenAMint: campaignAccounts.mint,
+      tokenBMint: NATIVE_MINT,
+      tokenAAmount,
+      tokenBAmount,
+      sqrtMinPrice: MIN_SQRT_PRICE,
+      sqrtMaxPrice: MAX_SQRT_PRICE,
+      liquidityDelta,
+      initSqrtPrice,
+      poolFees: {
+        baseFee: getBaseFeeParams(
+          {
+            baseFeeMode: BaseFeeMode.FeeTimeSchedulerLinear,
+            feeTimeSchedulerParam: {
+              startingFeeBps: 25,
+              endingFeeBps: 25,
+              numberOfPeriod: 0,
+              totalDuration: 0,
+            },
+          },
+          9,
+          ActivationType.Timestamp,
+        ),
+        compoundingFeeBps: 0,
+        padding: 0,
+        dynamicFee: null,
+      },
+      hasAlphaVault: false,
+      activationType: ActivationType.Timestamp,
+      collectFeeMode: CollectFeeMode.BothToken,
+      activationPoint: null,
+      tokenAProgram: TOKEN_PROGRAM_ID,
+      tokenBProgram: TOKEN_PROGRAM_ID,
+      isLockLiquidity: true,
+    });
+    assert.equal(sdkPool.toBase58(), pool.toBase58(), "SDK pool PDA must match program derivation");
+    assert.equal(sdkPosition.toBase58(), position.toBase58(), "SDK position PDA must match program derivation");
+
+    const confirmIx = await program.methods
+      .confirmGraduation()
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        campaign: campaignAccounts.campaign,
+        mint: campaignAccounts.mint,
+        tokenVault: campaignAccounts.tokenVault,
+        solVault: campaignAccounts.solVault,
+        authorityTokenAccount: authorityAta,
+        creator: campaign.creator,
+        creatorTokenAccount: creatorAta,
+        creatorProfile: derivePda(program.programId, "creator", campaign.creator.toBuffer()),
+        graduationState,
+        meteoraPool: pool,
+        meteoraPosition: position,
+        meteoraTokenVault: PublicKey.findProgramAddressSync(
+          [Buffer.from("token_vault"), campaignAccounts.mint.toBuffer(), pool.toBuffer()],
+          METEORA_CP_AMM,
+        )[0],
+        meteoraNativeVault: PublicKey.findProgramAddressSync(
+          [Buffer.from("token_vault"), NATIVE_MINT.toBuffer(), pool.toBuffer()],
+          METEORA_CP_AMM,
+        )[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const instructions = [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+      ed25519,
+      beginIx,
+      ...meteoraTx.instructions,
+      confirmIx,
+    ];
+
+    const present = new Set(lookupTableAccount.state.addresses.map((item) => item.toBase58()));
+    const missing = [];
+    for (const ix of instructions) {
+      for (const key of [ix.programId, ...(ix.keys || []).map((meta) => meta.pubkey)]) {
+        const encoded = key.toBase58();
+        if (present.has(encoded) || missing.some((item) => item.equals(key))) continue;
+        missing.push(key);
+      }
+    }
+    const payer = adminKeypair;
+    for (let i = 0; i < missing.length; i += 20) {
+      await sendLegacy(
+        payer,
+        [
+          AddressLookupTableProgram.extendLookupTable({
+            payer: payer.publicKey,
+            authority: payer.publicKey,
+            lookupTable: lookupTableAccount.key,
+            addresses: missing.slice(i, i + 20),
+          }),
+        ],
+        "gateKExtendAlt",
+      );
+    }
+    if (missing.length) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      lookupTableAccount = (
+        await connection.getAddressLookupTable(lookupTableAccount.key)
+      ).value;
+      assert.ok(lookupTableAccount, "ALT disappeared after Gate K extend");
+    }
+
+    const latest = await connection.getLatestBlockhash("confirmed");
+    const versioned = v0Helpers.buildLaunchpadV0Transaction(web3, {
+      payer: admin,
+      recentBlockhash: latest.blockhash,
+      instructions,
+      lookupTableAccounts: [lookupTableAccount],
+    });
+    const stats = v0Helpers.assertLaunchpadV0Intent(web3, versioned, {
+      payer: admin,
+      ed25519Instruction: ed25519,
+      programInstruction: beginIx,
+      lookupTableAccounts: [lookupTableAccount],
+      hardMaxBytes: 1232,
+      releaseMaxBytes: null,
+      maxRequiredSigners: 2,
+      allowAdditionalProgramInstructions: true,
+    });
+    versioned.sign([adminKeypair, nftMint]);
+    const serialized = versioned.serialize();
+    console.log(`[gate-k] graduation bytes=${serialized.length} v0Stats=${JSON.stringify(stats)}`);
+    const simulation = await v0Helpers.simulateLaunchpadV0Transaction(connection, versioned);
+    if (simulation.value.err) {
+      throw new Error(
+        `Gate K graduation simulation failed: ${JSON.stringify(simulation.value.err)}\n${(simulation.value.logs || []).join("\n")}`,
+      );
+    }
+    const signature = await connection.sendRawTransaction(serialized, {
+      skipPreflight: true,
+      maxRetries: 5,
+    });
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+      "confirmed",
+    );
+    if (confirmation.value.err) {
+      throw new Error(`Gate K graduation landed with error: ${JSON.stringify(confirmation.value.err)}`);
+    }
+
+    const poolInfo = await connection.getAccountInfo(pool, "confirmed");
+    assert.ok(poolInfo, "DAMM v2 pool must exist after graduation");
+    assert.equal(poolInfo.owner.toBase58(), METEORA_CP_AMM.toBase58());
+    const graduated = decodeCampaign(
+      (await connection.getAccountInfo(campaignAccounts.campaign, "confirmed")).data,
+    );
+    assert.equal(graduated.graduated, true, "campaign must be graduated");
+
+    const poolState = await cpAmm.fetchPoolState(pool);
+    const buyerAta = getAssociatedTokenAddressSync(campaignAccounts.mint, buyer.keypair.publicKey);
+    const sellAmount = (await getAccount(connection, buyerAta, "confirmed")).amount / 20n;
+    assert.ok(sellAmount > 0n, "buyer must hold launch tokens to swap");
+    const swapTx = await cpAmm.swap({
+      payer: buyer.keypair.publicKey,
+      pool,
+      inputTokenMint: campaignAccounts.mint,
+      outputTokenMint: NATIVE_MINT,
+      amountIn: new BN(sellAmount.toString()),
+      minimumAmountOut: new BN(1),
+      tokenAMint: poolState.tokenAMint,
+      tokenBMint: poolState.tokenBMint,
+      tokenAVault: poolState.tokenAVault,
+      tokenBVault: poolState.tokenBVault,
+      tokenAProgram: TOKEN_PROGRAM_ID,
+      tokenBProgram: TOKEN_PROGRAM_ID,
+      referralTokenAccount: null,
+    });
+    swapTx.feePayer = buyer.keypair.publicKey;
+    const swapLatest = await connection.getLatestBlockhash("confirmed");
+    swapTx.recentBlockhash = swapLatest.blockhash;
+    swapTx.sign(buyer.keypair);
+    const swapSig = await connection.sendRawTransaction(swapTx.serialize(), {
+      skipPreflight: true,
+      maxRetries: 3,
+    });
+    const swapConfirm = await connection.confirmTransaction(
+      { signature: swapSig, ...swapLatest },
+      "confirmed",
+    );
+    if (swapConfirm.value.err) {
+      throw new Error(`Gate K DAMM v2 swap failed: ${JSON.stringify(swapConfirm.value.err)}`);
+    }
+    const stillGraduated = decodeCampaign(
+      (await connection.getAccountInfo(campaignAccounts.campaign, "confirmed")).data,
+    );
+    assert.equal(stillGraduated.graduated, true);
+    console.log(`[gate-k] GRADUATED ${signature} pool=${pool.toBase58()} swap=${swapSig}`);
   });
 });
