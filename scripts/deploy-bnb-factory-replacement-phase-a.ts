@@ -84,11 +84,18 @@ async function main() {
   }
 
   const balance = await ethers.provider.getBalance(deployerAddress);
+  const fee = await ethers.provider.getFeeData();
+  const gasPrice = fee.gasPrice ?? ethers.parseUnits("1", "gwei");
+  const gasBudget = 12_000_000n;
+  const required = gasBudget * gasPrice;
   console.log(`[phase-a] network=${network.name} chainId=${net.chainId}`);
   console.log(`[phase-a] deployer=${deployerAddress}`);
   console.log(`[phase-a] deployerBalance=${ethers.formatEther(balance)} BNB`);
-  if (balance < ethers.parseEther("0.05")) {
-    throw new Error(`Deployer BNB balance too low: ${ethers.formatEther(balance)}`);
+  console.log(`[phase-a] gasPrice=${ethers.formatUnits(gasPrice, "gwei")} gwei required≈${ethers.formatEther(required)} BNB`);
+  if (balance < required) {
+    throw new Error(
+      `Deployer BNB balance too low: have ${ethers.formatEther(balance)}, need about ${ethers.formatEther(required)} at current gas`,
+    );
   }
 
   for (const [label, address] of [
