@@ -16,9 +16,9 @@ const BPS = 10000n;
 const EXEC_ROUTER_ABI = [
   "function defaultFactory() view returns (address)",
   "function weth() view returns (address)",
-  "function getAmountsOut(uint256 amountIn,(address from,address to,bool stable,address factory)[] routes) view returns (uint256[] amounts)",
-  "function swapExactETHForTokens(uint256 amountOutMin,(address from,address to,bool stable,address factory)[] routes,address to,uint256 deadline) payable returns (uint256[] amounts)",
-  "function swapExactTokensForETH(uint256 amountIn,uint256 amountOutMin,(address from,address to,bool stable,address factory)[] routes,address to,uint256 deadline) returns (uint256[] amounts)",
+  "function getAmountsOut(uint256 amountIn,(address from,address dest,bool stable,address factory)[] routes) view returns (uint256[] amounts)",
+  "function swapExactETHForTokens(uint256 amountOutMin,(address from,address dest,bool stable,address factory)[] routes,address recipient,uint256 deadline) payable returns (uint256[] amounts)",
+  "function swapExactTokensForETH(uint256 amountIn,uint256 amountOutMin,(address from,address dest,bool stable,address factory)[] routes,address recipient,uint256 deadline) returns (uint256[] amounts)",
 ];
 
 const POOL_ABI = [
@@ -42,12 +42,40 @@ function forkEnabled() {
   return ["1", "true", "yes", "on"].includes(String(process.env.BNB_FORK || "").trim().toLowerCase());
 }
 
-async function impersonate(address: string) {
-  await network.provider.request({ method: "hardhat_impersonateAccount", params: [address] });
-  await network.provider.send("hardhat_setBalance", [address, "0x56BC75E2D63100000"]);
-  return ethers.getSigner(address);
+async function impersonatedSend(from: string, to: string, data: string) {
+  const methods = ["anvil_impersonateAccount", "hardhat_impersonateAccount"];
+  let impersonated = false;
+  for (const method of methods) {
+    try {
+      await network.provider.request({ method, params: [from] });
+      impersonated = true;
+      break;
+    } catch {
+      /* try next */
+    }
+  }
+  if (!impersonated) throw new Error(`unable to impersonate ${from}`);
+  try {
+    await network.provider.send("anvil_setBalance", [from, "0x56BC75E2D63100000"]);
+  } catch {
+    await network.provider.send("hardhat_setBalance", [from, "0x56BC75E2D63100000"]);
+  }
+  const rpc = new ethers.JsonRpcProvider((network.config as any).url || "http://127.0.0.1:8545", 56);
+  const hash = await rpc.send("eth_sendTransaction", [{ from, to, data, gas: "0x7a120" }]);
+  await rpc.waitForTransaction(hash);
+  return hash;
 }
 
+/**
+ * BNB mainnet integration fork certification.
+ *
+ * Proves LaunchCampaign → real Topaz → locker → harvest on a chain-56 fork.
+ * Does NOT certify production CREATE/security. Those already passed on live mainnet.
+ *
+ * Run:
+ *   anvil --fork-url <archive-or-blastapi> --chain-id 56 --accounts 2 --port 8545
+ *   BNB_FORK=1 npx hardhat test test/BnbMainnetForkTopazLifecycle.spec.ts --network bscMainnetFork
+ */
 describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
   it("create → bond → graduate into 30-bps Topaz → 80/20 harvest → LP principal unchanged", async function () {
     if (!forkEnabled()) this.skip();
@@ -103,6 +131,10 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
       graduationTarget: ethers.parseEther("15000"),
       liquidityBps: cfg.liquidityBps,
     });
+    // FORK HARNESS ONLY. Isolates LaunchCampaign → Topaz → locker → harvest.
+    // The final mainnet factory MUST keep production security:
+    // requireRouteAuthorization=true, requireAuthorizedTrading=true, securityDefaultsLocked=true.
+    // This disable is not evidence for shipping an unlocked factory.
     await factory.setRequireRouteAuthorization(false);
     await factory.setRequireAuthorizedTrading(false);
     await factory.enableLive();
@@ -117,8 +149,8 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
       ],
       ethers.provider,
     );
-    const treasuryAdmin = await impersonate(await treasury.admin());
-    await treasury.connect(treasuryAdmin).setAuthorizedLpLocker(lockerAddr, true);
+    const authorizeData = treasury.interface.encodeFunctionData("setAuthorizedLpLocker", [lockerAddr, true]);
+    await impersonatedSend(await treasury.admin(), TREASURY, authorizeData);
     expect(await treasury.permanentLpLocker()).to.equal(PROD_LOCKER);
 
     const createTx = await factory.createCampaign({
@@ -177,13 +209,15 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
 
     const buyer = deployer;
     const router = new ethers.Contract(TOPAZ_ROUTER, EXEC_ROUTER_ABI, buyer);
-    const buyRoute = [{ from: WBNB, to: created.token, stable: false, factory: TOPAZ_FACTORY }];
-    const sellRoute = [{ from: created.token, to: WBNB, stable: false, factory: TOPAZ_FACTORY }];
+    const buyRoute = [{ from: WBNB, dest: created.token, stable: false, factory: TOPAZ_FACTORY }];
+    const sellRoute = [{ from: created.token, dest: WBNB, stable: false, factory: TOPAZ_FACTORY }];
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp) + 3600n;
     const buyIn = ethers.parseEther("0.02");
     const buyOut = await router.getAmountsOut(buyIn, buyRoute);
+    const swapGas = { gasLimit: 3_000_000n };
     const buyTx = await router.swapExactETHForTokens((buyOut[buyOut.length - 1] * 90n) / 100n, buyRoute, await buyer.getAddress(), deadline, {
       value: buyIn,
+      ...swapGas,
     });
     expect((buyTx.to || "").toLowerCase()).to.equal(TOPAZ_ROUTER.toLowerCase());
     await buyTx.wait();
@@ -192,11 +226,40 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
     const tokenBal = BigInt(await tokenContract.balanceOf(await buyer.getAddress()));
     const sellAmt = tokenBal / 5n;
     expect(sellAmt).to.be.gt(0n);
-    await tokenContract.approve(TOPAZ_ROUTER, sellAmt);
+    const approveTx = await tokenContract.approve(TOPAZ_ROUTER, ethers.MaxUint256);
+    await approveTx.wait();
     const sellOut = await router.getAmountsOut(sellAmt, sellRoute);
-    const sellTx = await router.swapExactTokensForETH((sellOut[sellOut.length - 1] * 90n) / 100n, sellRoute, await buyer.getAddress(), deadline);
-    expect((sellTx.to || "").toLowerCase()).to.equal(TOPAZ_ROUTER.toLowerCase());
-    await sellTx.wait();
+    const minOut = (sellOut[sellOut.length - 1] * 90n) / 100n;
+    let sellTx;
+    try {
+      sellTx = await router.swapExactTokensForETH(sellAmt, minOut, sellRoute, await buyer.getAddress(), deadline, swapGas);
+      await sellTx.wait();
+    } catch (firstSellError) {
+      const feeRouter = new ethers.Contract(
+        TOPAZ_ROUTER,
+        [
+          "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn,uint256 amountOutMin,(address from,address dest,bool stable,address factory)[] routes,address recipient,uint256 deadline)",
+        ],
+        buyer,
+      );
+      try {
+        sellTx = await feeRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
+          sellAmt,
+          minOut,
+          sellRoute,
+          await buyer.getAddress(),
+          deadline,
+          swapGas,
+        );
+        await sellTx.wait();
+      } catch (secondSellError) {
+        console.log("sellAmt", sellAmt.toString(), "allowance", (await tokenContract.allowance(await buyer.getAddress(), TOPAZ_ROUTER)).toString());
+        console.log("first", (firstSellError as any)?.shortMessage || firstSellError);
+        console.log("second", (secondSellError as any)?.shortMessage || secondSellError);
+        throw secondSellError;
+      }
+    }
+    expect((sellTx!.to || "").toLowerCase()).to.equal(TOPAZ_ROUTER.toLowerCase());
 
     let claimable0 = 0n;
     let claimable1 = 0n;
@@ -208,7 +271,10 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
       claimable1 = 0n;
     }
     if (claimable0 + claimable1 === 0n) {
-      const extra = await router.swapExactETHForTokens(1n, buyRoute, await buyer.getAddress(), deadline + 100n, { value: ethers.parseEther("0.05") });
+      const extra = await router.swapExactETHForTokens(1n, buyRoute, await buyer.getAddress(), deadline + 100n, {
+        value: ethers.parseEther("0.05"),
+        ...swapGas,
+      });
       await extra.wait();
       try {
         claimable0 = await pool.claimable0(lockerAddr);
@@ -230,7 +296,7 @@ describe("BNB mainnet fork: corrected locker vs real Topaz", function () {
     const protocolWbnbBefore = BigInt(await wbnb.balanceOf(protocolVault));
     const lpBeforeHarvest = await pool.balanceOf(lockerAddr);
 
-    await locker.harvest(poolAddr);
+    await locker.harvest(poolAddr, { gasLimit: 3_000_000n });
 
     const lpAfterHarvest = await pool.balanceOf(lockerAddr);
     expect(lpAfterHarvest).to.equal(lpBeforeHarvest);
