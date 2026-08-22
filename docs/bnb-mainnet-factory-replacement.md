@@ -1,9 +1,11 @@
 # BNB mainnet factory + locker replacement (prepare only)
 
-Do **not** execute until this checklist is reviewed.
+Do **not** execute until the user explicitly says **deploy now**. A local deployer key is not permission to send chain-56 transactions.
 
-Fork certification: **PASS** on Anvil chain-56 fork of real Topaz (integration only).
+Fork certification: **PASS** on Anvil chain-56 fork of real Topaz (local execution evidence, not GitHub Actions CI).
 This does **not** recertify CREATE/security. Route-auth disable is fork-harness only.
+
+Replacement-sequence test: `npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts` (Hardhat 31337, security left on).
 
 Frozen Solana SBF remains `123469c581ddbd3a616518d7f47dc1248294e8548d239ea948b5699921cd97e8`.
 Do not rebuild or substitute that binary.
@@ -71,6 +73,37 @@ New locker is created automatically. Source must be:
 
 No `$6` on chain 56.
 
+## Who can send which transaction
+
+A deployer EOA (`DEPLOYER_PK` / `PRIVATE_KEY_DEPLOY`) can only own a **newly constructed** factory. Live CreatorRegistry and TreasuryRouterV2 are already owned/admin'd by the Safe. After `transferOwnership`, the EOA cannot `enableLive` or unpause CREATE.
+
+| Step | Actor | Why |
+|---|---|---|
+| Deploy factory + locker, `setCreatePaused(true)`, registries/routes/config, `setLaunchProtectionConfig(0,0,0)`, `lockSecurityDefaults()`, locker self-check, `transferOwnership(0x1edc…)` | Deployer EOA | New factory `onlyOwner` |
+| `CreatorRegistry.setLaunchRecorder(newFactory, true)` | Safe `0x1edc…` | Registry `onlyOwner` |
+| `setAuthorizedLpLocker(newLocker,true)` then `setPrimaryLpLocker(newLocker)`; keep `0x6471…` authorized | Safe `0x1edc…` | TreasuryRouterV2 `admin` is immutable |
+| `enableLive()`, later `setCreatePaused(false)` | Safe `0x1edc…` | Factory owner after handoff |
+| Turn route-auth or authorized-trading off | Nobody after lock | `SecurityDefaultsLocked` |
+
+`live=true` is harmless while `createPaused=true`. Authorized CREATE is what the pause blocks after `enableLive`.
+
+## Verify commands (read-only)
+
+Never attach the deployer key. The verifier uses `JsonRpcProvider` only.
+
+```bash
+# Live production snapshot (Safe control, old locker 30/6667/3333, protection (0,0,0))
+npx hardhat run scripts/verify-bnb-factory-replacement.ts
+
+# After the replacement factory exists
+REPLACEMENT_FACTORY=0x... npx hardhat run scripts/verify-bnb-factory-replacement.ts
+
+# Local sequence test (no chain-56 spend)
+npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts
+```
+
+After CREATE is reopened, set `REPLACEMENT_EXPECT_CREATE_PAUSED=false` so the verifier does not fail on the final unpause.
+
 ## Ordered transactions
 
 Do **not** use `scripts/deploy-factory-only.ts` as-is. It enables live by default, never pauses creation, never copies launch protection, never `lockSecurityDefaults()`, and never `transferOwnership`. See audit below.
@@ -89,7 +122,7 @@ Do **not** use `scripts/deploy-factory-only.ts` as-is. It enables live by defaul
 10. `lockSecurityDefaults()`.
 11. Read-only self-check: locker 30/8000/2000; `campaignImplementation==0xbe3c…`; `router==0x5c31…`; adapter unwraps to Topaz `0x1E98…` / `0x65E6…` / WBNB `0xbb4C…`; `getFee(0,false)==30`; `isGraduationTargetAllowedForChain(56, 6e18)==false`; `createPaused==true`; `live==false`.
 12. `transferOwnership(0x1edcEdf5E5D9C2FAd5F9F6B964077dD74020A7A7)`.
-13. Verify `owner()==0x1edc…`. Deployer must not remain owner.
+13. Verify `owner()==0x1edc…`. Deployer `enableLive` must revert. `REPLACEMENT_FACTORY` verifier will still fail recorder/primary until steps 14–15.
 
 ### B. Production Safe `0x1edc…` (TreasuryRouter + CreatorRegistry + live)
 
@@ -105,6 +138,7 @@ Do **not** use `scripts/deploy-factory-only.ts` as-is. It enables live by defaul
     - `permanentLpLocker() == newLocker`
     - `0x3068…` code unchanged
     - new factory `owner()==0x1edc…`, `createPaused==true`, `securityDefaultsLocked==true`, `live==false`
+    - `REPLACEMENT_FACTORY=newFactory npx hardhat run scripts/verify-bnb-factory-replacement.ts` must PASS (create still paused)
 17. `newFactory.enableLive()`.
 18. Update frontend/API/indexer **only after** those checks pass:
     - `VITE_FACTORY_ADDRESS_56=newFactory`
