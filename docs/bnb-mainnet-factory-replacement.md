@@ -5,7 +5,7 @@ Do **not** execute until the user explicitly says **deploy now**. A local deploy
 Fork certification: **PASS** on Anvil chain-56 fork of real Topaz (local execution evidence, not GitHub Actions CI).
 This does **not** recertify CREATE/security. Route-auth disable is fork-harness only.
 
-Replacement-sequence test: `npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts` (Hardhat 31337, security left on).
+Replacement-sequence test: `npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts` (Hardhat 31337, security left on). It mirrors the live trust boundary: EOA configures/locks/`transferOwnership`, then Safe wires CreatorRegistry + TreasuryRouter, then Safe `enableLive`. `campaignsCount()` stays 0.
 
 Frozen Solana SBF remains `123469c581ddbd3a616518d7f47dc1248294e8548d239ea948b5699921cd97e8`.
 Do not rebuild or substitute that binary.
@@ -92,17 +92,25 @@ A deployer EOA (`DEPLOYER_PK` / `PRIVATE_KEY_DEPLOY`) can only own a **newly con
 Never attach the deployer key. The verifier uses `JsonRpcProvider` only.
 
 ```bash
-# Live production snapshot (Safe control, old locker 30/6667/3333, protection (0,0,0))
+# Live production snapshot (Safe control, old locker 30/6667/3333, primary locker, protection (0,0,0))
 npx hardhat run scripts/verify-bnb-factory-replacement.ts
 
-# After the replacement factory exists
+# After ownership handoff + Safe wiring, before enableLive (defaults)
 REPLACEMENT_FACTORY=0x... npx hardhat run scripts/verify-bnb-factory-replacement.ts
+# asserts live==false, createPaused==true, campaignsCount==0, full production config
+
+# After enableLive, CREATE still paused
+REPLACEMENT_FACTORY=0x... REPLACEMENT_EXPECT_LIVE=true npx hardhat run scripts/verify-bnb-factory-replacement.ts
+
+# After CREATE is reopened
+REPLACEMENT_FACTORY=0x... REPLACEMENT_EXPECT_LIVE=true REPLACEMENT_EXPECT_CREATE_PAUSED=false \
+  npx hardhat run scripts/verify-bnb-factory-replacement.ts
 
 # Local sequence test (no chain-56 spend)
 npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts
 ```
 
-After CREATE is reopened, set `REPLACEMENT_EXPECT_CREATE_PAUSED=false` so the verifier does not fail on the final unpause.
+`REPLACEMENT_EXPECT_LIVE` defaults **false**. `REPLACEMENT_EXPECT_CREATE_PAUSED` defaults **true**. The replacement verifier must PASS with those defaults before `enableLive()`.
 
 ## Ordered transactions
 
@@ -138,8 +146,9 @@ Do **not** use `scripts/deploy-factory-only.ts` as-is. It enables live by defaul
     - `permanentLpLocker() == newLocker`
     - `0x3068…` code unchanged
     - new factory `owner()==0x1edc…`, `createPaused==true`, `securityDefaultsLocked==true`, `live==false`
-    - `REPLACEMENT_FACTORY=newFactory npx hardhat run scripts/verify-bnb-factory-replacement.ts` must PASS (create still paused)
+    - `REPLACEMENT_FACTORY=newFactory npx hardhat run scripts/verify-bnb-factory-replacement.ts` must PASS (`live==false`, `createPaused==true`, `campaignsCount==0`, full config)
 17. `newFactory.enableLive()`.
+    Then `REPLACEMENT_EXPECT_LIVE=true` verifier must PASS (`createPaused` still true).
 18. Update frontend/API/indexer **only after** those checks pass:
     - `VITE_FACTORY_ADDRESS_56=newFactory`
     - `VITE_SUPPORTED_FACTORY_ADDRESSES_56=newFactory,0x3068eAE6…`

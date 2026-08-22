@@ -156,13 +156,20 @@ describe("BNB factory replacement security sequence", function () {
     expect(await factory.isGraduationTargetAllowedForChain(56, ethers.parseEther("30000"))).to.equal(true);
     expect(await factory.live()).to.equal(false);
     expect(await factory.createPaused()).to.equal(true);
+    expect(await factory.campaignsCount()).to.equal(0n);
 
+    await factory.connect(deployer).transferOwnership(await safe.getAddress());
+    expect(await factory.owner()).to.equal(await safe.getAddress());
+    await expect(factory.connect(deployer).setCreatePaused(false)).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    await expect(factory.connect(deployer).enableLive()).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    await expect(factory.connect(deployer).setConfig(PRODUCTION_CONFIG)).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
     await expect(creatorRegistry.connect(deployer).setLaunchRecorder(await factory.getAddress(), true)).to.be.revertedWithCustomError(
       creatorRegistry,
       "OwnableUnauthorizedAccount",
     );
     await expect(treasury.connect(deployer).setAuthorizedLpLocker(await locker.getAddress(), true)).to.be.revertedWith("not admin");
     await expect(treasury.connect(deployer).setPrimaryLpLocker(await locker.getAddress())).to.be.revertedWith("not admin");
+    expect(await factory.campaignsCount()).to.equal(0n);
 
     await creatorRegistry.connect(safe).setLaunchRecorder(await factory.getAddress(), true);
     expect(await creatorRegistry.launchRecorder(await factory.getAddress())).to.equal(true);
@@ -171,12 +178,7 @@ describe("BNB factory replacement security sequence", function () {
     expect(await treasury.authorizedLpLocker(await oldLocker.getAddress())).to.equal(true);
     expect(await treasury.authorizedLpLocker(await locker.getAddress())).to.equal(true);
     expect(await treasury.permanentLpLocker()).to.equal(await locker.getAddress());
-
-    await factory.connect(deployer).transferOwnership(await safe.getAddress());
-    expect(await factory.owner()).to.equal(await safe.getAddress());
-    await expect(factory.connect(deployer).setCreatePaused(false)).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-    await expect(factory.connect(deployer).enableLive()).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-    await expect(factory.connect(deployer).setConfig(PRODUCTION_CONFIG)).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    expect(await factory.campaignsCount()).to.equal(0n);
 
     await factory.connect(safe).enableLive();
     expect(await factory.live()).to.equal(true);
@@ -184,6 +186,7 @@ describe("BNB factory replacement security sequence", function () {
     expect(await factory.requireRouteAuthorization()).to.equal(true);
     expect(await factory.requireAuthorizedTrading()).to.equal(true);
     expect(await factory.securityDefaultsLocked()).to.equal(true);
+    expect(await factory.campaignsCount()).to.equal(0n);
 
     await expect(factory.connect(creator).createCampaign(campaignReq)).to.be.revertedWithCustomError(
       factory,
