@@ -111,6 +111,7 @@
     "audit:bnb-locker-mainnet": "hardhat run scripts/report-bnb-locker-mainnet-audit.ts",
     "test:bnb-factory-replacement": "hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts",
     "verify:bnb-factory-replacement": "hardhat run scripts/verify-bnb-factory-replacement.ts",
+    "deploy:bnb-factory-replacement:phase-a": "hardhat run scripts/deploy-bnb-factory-replacement-phase-a.ts --network bscMainnet",
     "test:bnb-mainnet-fork": "cross-env BNB_FORK=1 hardhat test test/BnbMainnetForkTopazLifecycle.spec.ts --network bscMainnetFork",
     "cert:bnb-lifecycle:local": "hardhat test test/BnbLifecycleCertification.spec.ts",
     "cert:bnb-lifecycle:bsc-testnet": "hardhat run scripts/run-bnb-lifecycle-certification.ts --network bscTestnet",

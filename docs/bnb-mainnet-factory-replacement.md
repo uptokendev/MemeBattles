@@ -116,6 +116,15 @@ npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts
 
 Do **not** use `scripts/deploy-factory-only.ts` as-is. It enables live by default, never pauses creation, never copies launch protection, never `lockSecurityDefaults()`, and never `transferOwnership`. See audit below.
 
+Phase A sender (EOA only, fail-closed):
+
+```bash
+CONFIRM_BNB_FACTORY_REPLACEMENT=I_UNDERSTAND_MAINNET \
+  npx hardhat run scripts/deploy-bnb-factory-replacement-phase-a.ts --network bscMainnet
+```
+
+That script never `enableLive()`, never `setCreatePaused(false)`, and never writes CreatorRegistry or TreasuryRouter. After it, STOP for the Safe.
+
 ### A. Deployer EOA (new factory owner at construction)
 
 1. Deploy `LaunchFactory` (locker created in constructor). Record `newFactory`, `newLocker`, deploy block.
