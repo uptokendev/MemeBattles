@@ -194,6 +194,20 @@ async function dispatchAdminFinance(pathname, req, res) {
   return true;
 }
 
+async function dispatchAnalytics(pathname, req, res) {
+  if (pathname === "/api/analytics/ingest") {
+    const ingest = (await import("../api/analytics/ingest.js")).default;
+    await ingest(req, res);
+    return true;
+  }
+  if (/^\/api\/admin\/analytics(?:\/|$)/.test(pathname)) {
+    const admin = (await import("../api/analytics/admin.js")).default;
+    await admin(req, res);
+    return true;
+  }
+  return false;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -217,7 +231,7 @@ function shouldProxyToRailway(path) {
 
 function copyRequestHeaders(req, hasBody) {
   const headers = {};
-  const passthrough = ["authorization", "content-type", "x-diagnostics-token", "x-rank-events-token", "x-ops-key"];
+  const passthrough = ["authorization", "content-type", "x-diagnostics-token", "x-rank-events-token", "x-ops-key", "x-analytics-key"];
 
   for (const name of passthrough) {
     const value = req.headers?.[name];
@@ -246,6 +260,7 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
     if (await dispatchDashboardLpFees(pathname, req, res)) return;
     if (await dispatchAdminFinance(pathname, req, res)) return;
+    if (await dispatchAnalytics(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
     if (!shouldProxyToRailway(path)) return next();
