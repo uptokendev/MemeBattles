@@ -1,21 +1,41 @@
-# BNB mainnet factory + locker replacement (prepare only)
+# BNB mainnet factory + locker replacement (active)
 
-Do **not** execute until the user explicitly says **deploy now**. A local deployer key is not permission to send chain-56 transactions.
+Replacement is **complete** on chain 56. New CREATE uses the corrected 30 / 8000 / 2000 locker. Do not redeploy. Do not touch BNB contracts again unless a new defect appears.
 
 Fork certification: **PASS** on Anvil chain-56 fork of real Topaz (local execution evidence, not GitHub Actions CI).
-This does **not** recertify CREATE/security. Route-auth disable is fork-harness only.
-
-Replacement-sequence test: `npx hardhat test test/BnbFactoryReplacementSecuritySequence.spec.ts` (Hardhat 31337, security left on). It mirrors the live trust boundary: EOA configures/locks/`transferOwnership`, then Safe wires CreatorRegistry + TreasuryRouter, then Safe `enableLive`. `campaignsCount()` stays 0.
+First live campaign on the new factory (BNBisTHeWay / BTW): CREATE, non-creator BUY, and non-creator SELL **PASS**.
 
 Frozen Solana SBF remains `123469c581ddbd3a616518d7f47dc1248294e8548d239ea948b5699921cd97e8`.
 Do not rebuild or substitute that binary.
 
-## Live production (do not mutate)
+## Current production (active)
 
 | Piece | Address |
 |---|---|
-| Creation factory | `0x3068eAE6F8431bFc3c5Faae9c3bBB95F007be59a` |
-| Production locker | `0x64710A4f87aBa3b5ED5B8B25e8ebA4DaC339C998` |
+| **Creation factory** | `0xc378221E57898106079aE4B818a92978e4cd9559` |
+| **Primary locker** | `0xFcE77642e22ef04B8398fB6dfEE99614CAb32f69` (30 / 8000 / 2000) |
+| Support-only factory | `0x3068eAE6F8431bFc3c5Faae9c3bBB95F007be59a` |
+| Authorized legacy locker | `0x64710A4f87aBa3b5ED5B8B25e8ebA4DaC339C998` (30 / 6667 / 3333) |
+| Deploy block | `117413737` |
+| Manifest | `deployments/bscMainnet.factory-30bps-80-20.json` |
+
+Public env (no secrets):
+
+```bash
+VITE_FACTORY_ADDRESS_56=0xc378221E57898106079aE4B818a92978e4cd9559
+FACTORY_ADDRESS_56=0xc378221E57898106079aE4B818a92978e4cd9559
+VITE_PERMANENT_LP_LOCKER_ADDRESS_56=0xFcE77642e22ef04B8398fB6dfEE99614CAb32f69
+VITE_SUPPORTED_FACTORY_ADDRESSES_56=0xc378221E57898106079aE4B818a92978e4cd9559,0x3068eAE6F8431bFc3c5Faae9c3bBB95F007be59a
+SUPPORTED_FACTORY_ADDRESSES_56=0xc378221E57898106079aE4B818a92978e4cd9559,0x3068eAE6F8431bFc3c5Faae9c3bBB95F007be59a
+FACTORY_START_BLOCK_56=117413737
+```
+
+## Previous production (support only)
+
+| Piece | Address |
+|---|---|
+| Legacy creation factory | `0x3068eAE6F8431bFc3c5Faae9c3bBB95F007be59a` |
+| Legacy locker | `0x64710A4f87aBa3b5ED5B8B25e8ebA4DaC339C998` |
 | Campaign implementation | `0xbe3caF640F77e8436BCAF89730251A00fB01608f` |
 | TopazRouterAdapter | `0x5c3135Dfaad519A9114DEa2E546f0Cd051d0D35a` |
 | Topaz router | `0x1E98c8226e7d452e1888e3d3d2F929346321c6c3` |
