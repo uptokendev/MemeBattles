@@ -381,6 +381,22 @@ export async function submitSolanaTradeV1(
   auth: SolanaTradeAuthResponse,
   opts?: { traderAddress?: string },
 ): Promise<{ signature: string }> {
+  const { runCatalogAction } = await import("@/lib/analytics/actions");
+  const side = auth.side === "sell" ? "sell" : "buy";
+  return runCatalogAction({
+    fn: side,
+    start: side === "sell" ? "sell_started" : "buy_started",
+    success: side === "sell" ? "sell_submitted" : "buy_submitted",
+    fail: side === "sell" ? "sell_failed" : "buy_failed",
+    properties: { surface: "launchpad", chain: "solana" },
+    work: () => submitSolanaTradeV1Untracked(auth, opts),
+  });
+}
+
+async function submitSolanaTradeV1Untracked(
+  auth: SolanaTradeAuthResponse,
+  opts?: { traderAddress?: string },
+): Promise<{ signature: string }> {
   const provider = getSolanaProvider();
   if (!provider?.publicKey || typeof provider.signTransaction !== "function") {
     throw new Error("Connect a Solana wallet that can sign transactions.");
